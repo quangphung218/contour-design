@@ -294,14 +294,21 @@ xattr -dr com.apple.quarantine /Applications/Contour.app
 
 ### macOS keeps asking to allow Contour under App Management
 
-An export that needs Chrome starts Chrome headless. Chrome, its helper apps
-or its updater then try to change an app bundle, and macOS charges that
-to Contour, which started them: it denies the change and asks you to allow
-Contour under System Settings ▸ Privacy & Security ▸ App Management.
-Allowing it lasts only until the next update: the download is not signed,
-so macOS sees each version as a new app. (The data folder holds no
-app-like name either: `daemon.lock.app` became `daemon-app.url` after
-0.2.0-beta.40.)
+Up to 0.2.0-beta.40, an export that needs Chrome started Chrome headless
+as Contour's own process. Chrome, its helper apps or its updater then
+tried to change an app bundle, and macOS charged that to Contour: it
+denied the change and asked you to allow Contour under System Settings ▸
+Privacy & Security ▸ App Management. Allowing it lasted only until the
+next update: the download is not signed, so macOS sees each version as a
+new app. (The data folder holds no app-like name either:
+`daemon.lock.app` became `daemon-app.url` after 0.2.0-beta.40.)
+
+Later versions ask macOS to start the Chrome, Edge or Chromium app itself
+(as Finder would), so what it does is no longer charged to Contour. Still
+asked? Check whether `OD_CHROME_PATH` names a file outside an `.app`
+bundle (a script, a bare binary): such a browser still starts as
+Contour's own process. Point it at the app's binary
+(`…/Google Chrome.app/Contents/MacOS/Google Chrome`) instead.
 
 ### `make install` refuses to replace the app
 

@@ -7,9 +7,15 @@
 //! but localhost disabled, loads a file from disk, and closes it again.
 //! The page may load nothing but that file (`data:`/`blob:` aside): every
 //! other request, `file://` or network, is failed through CDP `Fetch`.
+//!
+//! On macOS a browser inside an `.app` bundle is started through
+//! LaunchServices, not as our child (`launch_services`): macOS would charge
+//! what Chrome and its updater do to Contour (App Management prompts).
 
 pub mod ffmpeg;
 pub mod hyperframes_cli;
+#[cfg(target_os = "macos")]
+mod launch_services;
 mod script;
 
 use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
@@ -53,8 +59,29 @@ pub const NO_SANDBOX_ENV: &str = "OD_CHROME_NO_SANDBOX";
 const OPEN_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Browser launches tried when DevTools does not answer within the launch
-/// timeout (30 s each).
+/// timeout ([`LAUNCH_TIMEOUT`] each).
 const LAUNCH_ATTEMPTS: u32 = 2;
+/// Longest wait for one launched browser to open DevTools.
+const LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest wait for one DevTools command.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Switches every render passes on top of chromiumoxide's defaults, as
+/// (key, value) without `--`: chromiumoxide adds it (`--x` would reach
+/// Chrome as `----x`, which it ignores; tests/launch_flags.rs).
+const RENDER_SWITCHES: &[(&str, Option<&str>)] = &[
+    // No outbound network: only localhost resolves.
+    (
+        "host-resolver-rules",
+        Some("MAP * ~NOTFOUND , EXCLUDE localhost"),
+    ),
+    ("no-first-run", None),
+    ("no-default-browser-check", None),
+    ("disable-sync", None),
+    ("disable-component-update", None),
+    ("disable-domain-reliability", None),
+    ("metrics-recording-only", None),
+];
 
 /// Why a launch failed: only a timeout is worth one more try.
 enum LaunchError {
@@ -301,8 +328,19 @@ struct Session {
     gate: Option<tokio::task::JoinHandle<()>>,
     width: u32,
     height: u32,
+    /// Started through LaunchServices: not our child, so closing waits for
+    /// its processes by profile rather than by `wait`.
+    detached: bool,
     /// Dropped last: after the browser, so its processes are gone first.
-    _profile: Profile,
+    profile: Profile,
+}
+
+/// A browser just started and connected to.
+struct Launched {
+    browser: Browser,
+    handler: chromiumoxide::Handler,
+    profile: Profile,
+    detached: bool,
 }
 
 /// Prefix of browser profile folders in the temp dir.
@@ -357,21 +395,29 @@ impl Drop for Profile {
 }
 
 /// Pids of the processes started with `--user-data-dir=<dir>` (Chrome and
-/// every helper it spawns).
+/// every helper it spawns); none when `ps` cannot run.
 #[cfg(unix)]
 fn profile_users(dir: &Path) -> Vec<i32> {
+    profile_users_checked(dir).unwrap_or_default()
+}
+
+/// [`profile_users`], `None` when `ps` cannot run (it is setuid root on
+/// macOS and fails inside `sandbox-exec`).
+#[cfg(unix)]
+fn profile_users_checked(dir: &Path) -> Option<Vec<i32>> {
     let flag = format!("--user-data-dir={}", dir.display());
-    let Ok(out) = std::process::Command::new("ps")
+    let out = std::process::Command::new("ps")
         .args(["-A", "-ww", "-o", "pid=,args="])
         .output()
-    else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|l| l.contains(&flag))
-        .filter_map(|l| l.split_whitespace().next()?.parse().ok())
-        .collect()
+        .ok()
+        .filter(|o| o.status.success())?;
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| l.contains(&flag))
+            .filter_map(|l| l.split_whitespace().next()?.parse().ok())
+            .collect(),
+    )
 }
 
 /// Kills what still runs with `dir` as its profile and waits (≤ 3 s) for
@@ -444,7 +490,12 @@ impl Session {
         // A cold first start (Windows scanning a fresh profile) can miss the
         // launch timeout once; a second launch with a new profile is warm.
         let mut attempt = 1;
-        let (browser, mut handler, profile) = loop {
+        let Launched {
+            browser,
+            mut handler,
+            profile,
+            detached,
+        } = loop {
             match Self::launch(exe, no_sandbox).await {
                 Err(LaunchError::Timeout(_)) if attempt < LAUNCH_ATTEMPTS => attempt += 1,
                 Err(LaunchError::Timeout(e) | LaunchError::Other(e)) => return Err(e),
@@ -462,7 +513,8 @@ impl Session {
             gate: None,
             width: target.width.max(1),
             height: target.height.max(1),
-            _profile: profile,
+            detached,
+            profile,
         };
         session.resize(session.width, session.height).await?;
         let url = file_url(&target.html_path)?;
@@ -475,10 +527,11 @@ impl Session {
         Ok(session)
     }
 
-    async fn launch(
-        exe: &Path,
-        no_sandbox: bool,
-    ) -> Result<(Browser, chromiumoxide::Handler, Profile), LaunchError> {
+    /// Starts the browser at `exe` on a fresh profile and connects to it:
+    /// every render's browser starts here. On macOS a browser in an `.app`
+    /// bundle goes through LaunchServices ([`launch_services`]); anything
+    /// else is spawned as our child by chromiumoxide.
+    async fn launch(exe: &Path, no_sandbox: bool) -> Result<Launched, LaunchError> {
         let profile = Profile::new()
             .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))
             .map_err(LaunchError::Other)?;
@@ -486,6 +539,31 @@ impl Session {
             .tmp()
             .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))
             .map_err(LaunchError::Other)?;
+        #[cfg(target_os = "macos")]
+        if let Some(app) = launch_services::app_bundle(exe) {
+            if let Some((browser, handler)) = launch_services::launch(
+                &app,
+                exe,
+                profile.path(),
+                tmp.as_deref(),
+                no_sandbox,
+                LAUNCH_TIMEOUT,
+                REQUEST_TIMEOUT,
+            )
+            .await?
+            {
+                return Ok(Launched {
+                    browser,
+                    handler,
+                    profile,
+                    detached: true,
+                });
+            }
+            tracing::warn!(
+                app = %app.display(),
+                "LaunchServices started no browser (inside another sandbox?); starting it as our child"
+            );
+        }
         let mut config = BrowserConfig::builder();
         if no_sandbox {
             config = config.no_sandbox();
@@ -493,28 +571,29 @@ impl Session {
         if let Some(tmp) = tmp {
             config = config.env("TMPDIR", tmp.to_string_lossy());
         }
+        for (key, value) in RENDER_SWITCHES {
+            config = match value {
+                Some(value) => config.arg((*key, *value)),
+                None => config.arg(*key),
+            };
+        }
         let config = config
             .chrome_executable(exe)
             .new_headless_mode()
             .user_data_dir(profile.path())
             .viewport(None)
-            .launch_timeout(Duration::from_secs(30))
-            .request_timeout(Duration::from_secs(120))
-            // Keys without `--`: chromiumoxide adds it (`--x` would reach
-            // Chrome as `----x`, which it ignores; tests/launch_flags.rs).
-            // No outbound network: only localhost resolves.
-            .arg(("host-resolver-rules", "MAP * ~NOTFOUND , EXCLUDE localhost"))
-            .arg("no-first-run")
-            .arg("no-default-browser-check")
-            .arg("disable-sync")
-            .arg("disable-component-update")
-            .arg("disable-domain-reliability")
-            .arg("metrics-recording-only")
+            .launch_timeout(LAUNCH_TIMEOUT)
+            .request_timeout(REQUEST_TIMEOUT)
             .build()
             .map_err(|e| RenderError::Unavailable(format!("browser config: {e}")))
             .map_err(LaunchError::Other)?;
         match Browser::launch(config).await {
-            Ok((browser, handler)) => Ok((browser, handler, profile)),
+            Ok((browser, handler)) => Ok(Launched {
+                browser,
+                handler,
+                profile,
+                detached: false,
+            }),
             Err(e) => {
                 let err = RenderError::Unavailable(format!("cannot start {}: {e}", exe.display()));
                 Err(match e {
@@ -656,7 +735,8 @@ impl Session {
     /// Asks the browser to quit and waits for it, at most [`CLOSE_TIMEOUT`]:
     /// waiting without a bound once held an export until the CLI gave up
     /// after 600 s. A browser still running then is killed when `self`
-    /// drops (chromiumoxide spawns it with `kill_on_drop`).
+    /// drops (chromiumoxide spawns its child with `kill_on_drop`; the
+    /// profile ends every process started with it).
     async fn close(mut self) {
         if let Some(gate) = self.gate.take() {
             gate.abort();
@@ -664,6 +744,9 @@ impl Session {
         let quit = async {
             let _ = self.browser.close().await;
             let _ = self.browser.wait().await;
+            if self.detached {
+                wait_profile_unused(self.profile.path()).await;
+            }
         };
         if tokio::time::timeout(CLOSE_TIMEOUT, quit).await.is_err() {
             tracing::warn!("the browser did not exit after closing; killing it");
@@ -671,6 +754,25 @@ impl Session {
         self.handler.abort();
     }
 }
+
+/// Waits until no process runs with `dir` as its profile (or `ps` cannot
+/// tell): `wait` for a browser that is not our child.
+#[cfg(unix)]
+async fn wait_profile_unused(dir: &Path) {
+    loop {
+        let d = dir.to_path_buf();
+        let users = tokio::task::spawn_blocking(move || profile_users(&d))
+            .await
+            .unwrap_or_default();
+        if users.is_empty() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_profile_unused(_dir: &Path) {}
 
 #[derive(Debug, Clone, Copy)]
 struct PageInfo {
