@@ -814,15 +814,15 @@ or a revision folder made read-only.
 
 | ID | Scenario | Steps | Expected | P | Status |
 |---|---|---|---|---|---|
-| UL-01 | Files panel: two images, one with a name too long | Upload `ok.png` + 300-letter `.png` together | Error that says which file and why (not a bare "Try again", which fails the same way); neither file in the panel, on disk or in the ZIP; then `ok.png` alone lands as `ok.png` | P0 | auto (QA-106) |
+| UL-01 | Files panel: two images, one with a name too long | Upload `ok.png` + 300-letter `.png` together | Both land: `ok.png`, and the long one under a name shortened to fit the disk, keeping `.png` (in the panel and the ZIP); sent again, it gets a name of its own | P0 | auto (QA-106) |
 | UL-02 | Files panel: an image and a page, `.file-versions` a link | Link; upload `a.png` + `p.html` | Refused, the message names the link; `a.png` not left | P1 | auto |
-| UL-03 | Comment: two images, one with a name too long | Comment mode, attach both | "Could not attach …"; no chip, nothing in `comments/`; attaching `shot.png` again lands `comments/shot.png` | P0 | auto (QA-106) |
+| UL-03 | Comment: two images, one with a name too long | Comment mode, attach both | Two chips; `comments/shot.png` and the long one under a shortened name keeping `.png`; no failure line | P0 | auto (QA-106) |
 | UL-04 | Comment: the second image cannot be recorded as the draft's | Trigger on `draft_uploads` for the 2nd; attach 2; drop trigger; attach again | First try: nothing on disk; second: both at their own names, both chips | P1 | auto |
-| UL-05 | Chat composer: two files, one with a name too long | Attach both in the composer | Sent one by one: the good one attached; the other's card says which name and why | P1 | auto (QA-106) |
-| UL-06 | Media library: two images, one with a name too long | Media ▸ Upload both | An error; no new tile; `a.png` alone then lands once | P1 | auto (QA-106) |
+| UL-05 | Chat composer: two files, one with a name too long | Attach both in the composer | Both attached, no failed card; the long one under a shortened name keeping `.png` | P1 | auto (QA-106) |
+| UL-06 | Media library: two images, one with a name too long | Media ▸ Upload both | Both kept as tiles; the long one under a shortened name keeping `.png` | P1 | auto (QA-106) |
 | UL-07 | Add from Library: one chosen asset deleted meanwhile | Pick two assets; delete one on disk; Add | An error; the project gets neither copy | P1 | auto |
 | UL-08 | Chat to design, the project cannot take its prompt | Trigger on `pendingPrompt`; Chat to design | An error; no new project in Projects, no folder on disk; the Library keeps its assets | P1 | auto |
-| UL-09 | Use a saved template one of whose files cannot be written | Template saved; its file list given a 300-letter page; Use | An error; Projects unchanged, twice | P1 | auto |
+| UL-09 | Use a saved template one of whose files cannot be written | Template saved; its file list given a 300-letter page; Use | An error saying the file name is too long (not "Try again"); Projects unchanged, twice | P1 | auto (QA-106) |
 | DS-01 | Design system: an image and a text file together | Kit ▸ upload `logo.png` + `notes.txt` | Refused, names `notes.txt`; `logo.png` not added | P1 | auto |
 | DS-02 | Design system: two Vietnamese names | Upload `màu.png` + `mẫu.png` | Both kept (or one refused with a reason); never one silently written over the other | P1 | auto (QA-107) |
 | DS-03 | Accept a revision whose decision cannot be saved | Rebuild tokens; revision folder read-only; Accept | An error; `tokens.css` unchanged; still pending; after the folder is writable, Reject leaves `tokens.css` as before | P1 | auto |

@@ -653,22 +653,34 @@ async fn media_library_lists_uploads_and_chats_to_design() {
     assert_eq!(v["projectId"], "media-library");
     let (s, _) = upload(&d, "/api/library/upload", &[("notes.txt", b"x")]).await;
     assert_eq!(s, 400, "only media files");
-    // The second file cannot be written (a name too long for the disk):
-    // all or nothing, so Try again does not add `first-1.png`.
+    // A name too long for the disk is shortened, keeping its extension
+    // (QA-106), not refused every time.
     let long = format!("{}.png", "x".repeat(300));
-    let (s, v) = upload(
-        &d,
-        "/api/library/upload",
-        &[("first.png", PNG), (long.as_str(), PNG)],
-    )
-    .await;
-    assert!(s >= 400, "{s} {v}");
+    let (s, v) = upload(&d, "/api/library/upload", &[(long.as_str(), PNG)]).await;
+    assert_eq!(s, 200, "{v}");
+    let kept = v["files"][0]["path"].as_str().unwrap().to_owned();
     assert!(
-        !d.data
-            .join("projects/media-library/uploads/first.png")
-            .exists(),
-        "the first file kept"
+        kept.starts_with("uploads/xxx") && kept.ends_with(".png"),
+        "{kept}"
     );
+    assert!(kept.len() <= "uploads/".len() + od_store::paths::MAX_UPLOAD_NAME_BYTES);
+    // The second file cannot be written (a link out of the folder at its
+    // name): all or nothing, so Try again does not add `first-1.png`.
+    #[cfg(unix)]
+    {
+        let uploads = d.data.join("projects/media-library/uploads");
+        std::os::unix::fs::symlink(d.data.join("nowhere/x.png"), uploads.join("second.png"))
+            .unwrap();
+        let (s, v) = upload(
+            &d,
+            "/api/library/upload",
+            &[("first.png", PNG), ("second.png", PNG)],
+        )
+        .await;
+        assert!(s >= 400, "{s} {v}");
+        assert!(!uploads.join("first.png").exists(), "the first file kept");
+        std::fs::remove_file(uploads.join("second.png")).unwrap();
+    }
     // The project holding uploads is not one of the user's designs.
     let listed = d.get_json("/api/projects").await;
     let ids: Vec<&str> = listed["projects"]
@@ -686,7 +698,7 @@ async fn media_library_lists_uploads_and_chats_to_design() {
         .iter()
         .map(|a| a["path"].as_str().unwrap())
         .collect();
-    assert_eq!(paths.len(), 3, "{paths:?}");
+    assert_eq!(paths.len(), 4, "{paths:?}");
     assert!(paths.contains(&"uploads/mood.png"));
     let audio = d.get_json("/api/library/assets?kind=audio").await;
     assert_eq!(audio["assets"].as_array().unwrap().len(), 1);
@@ -1087,6 +1099,42 @@ async fn design_system_kit_import_copy_and_revisions() {
             .exists(),
         "the file before the refused one kept"
     );
+    // QA-107: Vietnamese names keep their letters, so two of them are two
+    // assets, not one `m-u.png` written over the other.
+    let assets = d.data.join("design-systems/my-airbnb/assets");
+    let (s, v) = upload(
+        &d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[("màu.png", b"red"), ("mẫu.png", b"blue!")],
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(std::fs::read(assets.join("màu.png")).unwrap(), b"red");
+    assert_eq!(std::fs::read(assets.join("mẫu.png")).unwrap(), b"blue!");
+    // Two files one name in a batch: refused, naming both, none written.
+    let (s, v) = upload(
+        &d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[("Hình.png", PNG), ("hình.png", PNG)],
+    )
+    .await;
+    assert_eq!(s, 400, "{v}");
+    let said = v["error"]["message"].as_str().unwrap();
+    assert!(
+        said.contains("Hình.png") && said.contains("hình.png"),
+        "{said}"
+    );
+    assert!(!assets.join("Hình.png").exists() && !assets.join("hình.png").exists());
+    for n in ["màu.png", "mẫu.png"] {
+        let (s, _) = call(
+            &d,
+            "POST",
+            &format!("/api/design-systems/{id}/assets/{n}/delete"),
+            None,
+        )
+        .await;
+        assert_eq!(s, 200, "delete {n}");
+    }
     let kit = d.get_json(&format!("/api/design-systems/{id}/kit")).await;
     let kinds: Vec<&str> = kit["assets"]
         .as_array()
@@ -1244,7 +1292,9 @@ async fn design_system_kit_import_copy_and_revisions() {
         )
         .await;
         locked(&stuck, false);
-        assert_eq!(s, 500, "{stuck:?}: {v}");
+        // A refused write says so, not "try again" (QA-106).
+        assert_eq!(s, 403, "{stuck:?}: {v}");
+        assert_eq!(v["error"]["code"], "NO_WRITE_PERMISSION", "{v}");
         for (name, was) in [("DESIGN.md", &design), ("tokens.css", &tokens)] {
             assert_eq!(
                 &std::fs::read_to_string(package.join(name)).unwrap(),
@@ -1359,6 +1409,30 @@ async fn design_system_from_sources() {
     )
     .await;
     assert_eq!(s, 400, "no brief and no source");
+    // QA-107: two attached files kept under one name are refused, never
+    // one written over the other in `source/`.
+    let png = base64::engine::general_purpose::STANDARD.encode(PNG);
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/design-systems/generate",
+        Some(json!({
+            "name": "Twice", "brief": "",
+            "files": [
+                { "name": "Hướng dẫn màu.png", "dataBase64": png },
+                { "name": "a/hướng dẫn màu.png", "dataBase64": png },
+            ],
+        })),
+    )
+    .await;
+    assert_eq!(s, 400, "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Rename one"),
+        "{v}"
+    );
     let brands = d.get_json("/api/design-systems/brands").await;
     assert!(brands["brands"].as_array().unwrap().len() >= 30);
 }

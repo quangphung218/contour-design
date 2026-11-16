@@ -52,6 +52,7 @@ use od_runtime::env::{RunEnv, agent_env};
 use od_runtime::{LaunchSpec, McpLaunch, PermissionMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::path::{Component, PathBuf};
 use std::sync::Arc;
 
@@ -151,8 +152,7 @@ fn inside(dir: &std::path::Path, rel: &str) -> ApiResult<PathBuf> {
 
 /// [`inside`] for I/O helpers.
 fn inside_io(dir: &std::path::Path, rel: &str) -> std::io::Result<PathBuf> {
-    inside(dir, rel)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.message))
+    inside(dir, rel).map_err(|e| std::io::Error::other(e.message))
 }
 
 fn read(dir: &std::path::Path, name: &str) -> String {
@@ -306,10 +306,10 @@ pub async fn import(
     };
     let root = user_root(&state);
     let installed = write_and_reload(&state, move || {
-        let staging = tempfile::tempdir().map_err(|e| ApiErr::internal(e.to_string()))?;
+        let staging = tempfile::tempdir().map_err(ApiErr::io)?;
         std::fs::write(staging.path().join("DESIGN.md"), design)
             .and_then(|()| std::fs::write(staging.path().join("tokens.css"), tokens))
-            .map_err(|e| ApiErr::internal(e.to_string()))?;
+            .map_err(ApiErr::io)?;
         Ok(design_system_gen::install_imported(
             staging.path(),
             &root,
@@ -552,8 +552,7 @@ pub async fn save_design_md(
         return Err(ApiErr::bad_request("DESIGN.md cannot be empty"));
     }
     write_and_reload(&state, move || {
-        std::fs::write(inside(&e.dir, "DESIGN.md")?, body.body)
-            .map_err(|err| ApiErr::internal(err.to_string()))
+        std::fs::write(inside(&e.dir, "DESIGN.md")?, body.body).map_err(ApiErr::io)
     })
     .await?;
     Ok(Json(json!({ "ok": true })))
@@ -594,8 +593,7 @@ pub async fn set_status(
     let e = editable(&state, &id)?;
     let status = body.status.clone();
     write_and_reload(&state, move || {
-        patch_metadata(&e.dir, &json!({ "status": status }))
-            .map_err(|err| ApiErr::internal(err.to_string()))
+        patch_metadata(&e.dir, &json!({ "status": status })).map_err(ApiErr::io)
     })
     .await?;
     Ok(Json(json!({ "status": body.status })))
@@ -634,7 +632,7 @@ pub async fn copy(
         .unwrap_or_else(|| format!("{} copy", e.summary.title));
     let root = user_root(&state);
     let new_id = write_and_reload(&state, move || {
-        std::fs::create_dir_all(&root).map_err(|err| ApiErr::internal(err.to_string()))?;
+        std::fs::create_dir_all(&root).map_err(ApiErr::io)?;
         let slug = design_system_gen::slugify(&name);
         let dest = (1..)
             .map(|n| {
@@ -671,7 +669,7 @@ pub async fn copy(
             &dest,
             &json!({ "title": name, "category": e.summary.category, "status": "draft" }),
         )
-        .map_err(|err| ApiErr::internal(err.to_string()))?;
+        .map_err(ApiErr::io)?;
         Ok(format!(
             "{}{folder}",
             od_content::design_systems::USER_ID_PREFIX
@@ -730,7 +728,7 @@ pub async fn archive(State(state): State<AppState>, Path(id): Path<String>) -> A
     })
     .await
     .map_err(|err| ApiErr::internal(err.to_string()))?
-    .map_err(|err| ApiErr::internal(err.to_string()))?;
+    .map_err(ApiErr::io)?;
     let filename = format!(
         "{}.zip",
         od_export::archive::sanitize_filename(&entry(&state, &id)?.summary.title)
@@ -748,24 +746,40 @@ pub async fn archive(State(state): State<AppState>, Path(id): Path<String>) -> A
         .into_response())
 }
 
-fn safe_asset_name(raw: &str) -> Option<String> {
+/// The name a file the user sent is kept under in a design system's own
+/// folder (its `assets/`, a new one's `source/`): its last segment, as
+/// [`od_store::paths::upload_name`] keeps it (Unicode letters kept, a name
+/// too long for the disk shortened; QA-106/107). `None` for no name or a
+/// hidden one.
+pub(crate) fn kept_name(raw: &str) -> Option<String> {
     let base = raw.rsplit(['/', '\\']).next()?.trim();
-    let clean: String = base
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let ok = !clean.is_empty() && !clean.starts_with('.') && clean.contains('.');
+    (!base.is_empty() && !base.starts_with('.')).then(|| od_store::paths::upload_name(base))
+}
+
+/// Refuses a batch two of whose files would be kept under one name: the
+/// second would be written over the first (QA-107). Compared ignoring
+/// case, as macOS and Windows disks do.
+pub(crate) fn refuse_same_name<'a>(
+    names: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> ApiResult<()> {
+    let mut seen: HashMap<String, &str> = HashMap::new();
+    for (raw, name) in names {
+        if let Some(first) = seen.insert(name.to_lowercase(), raw) {
+            return Err(ApiErr::bad_request(format!(
+                "{first} and {raw} would both be saved as {name}. Rename one, then try again."
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn safe_asset_name(raw: &str) -> Option<String> {
+    let clean = kept_name(raw)?;
     let allowed = [
         ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".woff2", ".woff", ".ttf", ".otf",
     ];
-    let lower = clean.to_ascii_lowercase();
-    (ok && allowed.iter().any(|e| lower.ends_with(e))).then_some(clean)
+    let lower = clean.to_lowercase();
+    allowed.iter().any(|e| lower.ends_with(e)).then_some(clean)
 }
 
 pub async fn upload_assets(
@@ -798,21 +812,24 @@ pub async fn upload_assets(
         // Its path checked here too (a link planted at it): refused before
         // any of the batch is written.
         let path = inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?;
-        parts.push((name, path, bytes));
+        parts.push((raw, name, path, bytes));
     }
     if parts.is_empty() {
         return Err(ApiErr::bad_request("no files in upload"));
     }
+    refuse_same_name(
+        parts
+            .iter()
+            .map(|(raw, name, ..)| (raw.as_str(), name.as_str())),
+    )?;
     // A write that fails half way keeps those before it: they replace
     // assets of the same name, so Try again writes them over, adding none.
     tokio::fs::create_dir_all(inside(&e.dir, ASSETS_DIR)?)
         .await
-        .map_err(|err| ApiErr::internal(err.to_string()))?;
+        .map_err(ApiErr::io)?;
     let mut saved = Vec::with_capacity(parts.len());
-    for (name, path, bytes) in parts {
-        tokio::fs::write(path, &bytes)
-            .await
-            .map_err(|err| ApiErr::internal(err.to_string()))?;
+    for (_, name, path, bytes) in parts {
+        tokio::fs::write(path, &bytes).await.map_err(ApiErr::io)?;
         saved.push(json!({ "name": name, "kind": asset_kind(&name), "size": bytes.len() }));
     }
     Ok(Json(json!({ "assets": saved })))
@@ -870,7 +887,7 @@ pub async fn rebuild(
     tokio::task::spawn_blocking(move || write_revision(&dir, &saved))
         .await
         .map_err(|err| ApiErr::internal(err.to_string()))?
-        .map_err(|err| ApiErr::internal(err.to_string()))?;
+        .map_err(ApiErr::io)?;
     Ok(Json(
         json!({ "decision": "revision", "score": s, "revision": r }),
     ))
@@ -918,7 +935,7 @@ fn accept_files_with(
             let old = match std::fs::read(&path) {
                 Ok(bytes) => Some(bytes),
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-                Err(err) => return Err(ApiErr::internal(err.to_string())),
+                Err(err) => return Err(ApiErr::io(err)),
             };
             // Listed before the write: one that fails half way is put back.
             prior.push(Prior {
@@ -926,7 +943,7 @@ fn accept_files_with(
                 old,
                 wrote: None,
             });
-            internal(write(&path, f.content.as_bytes()))?;
+            io(write(&path, f.content.as_bytes()))?;
             if let Some(p) = prior.last_mut() {
                 p.wrote = Some(f.content.clone().into_bytes());
             }
@@ -1022,7 +1039,7 @@ pub async fn decide(
         if decided.is_err() {
             put_back(&prior);
         }
-        internal(decided)
+        io(decided)
     })
     .await?;
     Ok(Json(
@@ -1075,7 +1092,7 @@ pub async fn revise(
         .map(|s| s.trim().to_owned())
         .filter(|s| !s.is_empty());
     let mut r = new_revision("agent", Some(feedback.clone()), section.clone());
-    let work = internal(tempfile::Builder::new().prefix("od-ds-revision-").tempdir())?;
+    let work = io(tempfile::Builder::new().prefix("od-ds-revision-").tempdir())?;
     for f in REVISABLE {
         if let Ok(from) = inside(&e.dir, f) {
             let _ = std::fs::copy(from, work.path().join(f));
@@ -1092,7 +1109,7 @@ pub async fn revise(
     .await?;
     r.run_id = Some(launched.run_id.clone());
     let dir = e.dir.clone();
-    internal(write_revision(&dir, &r))?;
+    io(write_revision(&dir, &r))?;
     let out = r.clone();
     tokio::spawn(async move {
         let outcome = launched.handle.await;
@@ -1127,8 +1144,10 @@ pub async fn revise(
     Ok((StatusCode::ACCEPTED, Json(json!({ "revision": out }))))
 }
 
-fn internal<T, E: std::fmt::Display>(r: Result<T, E>) -> ApiResult<T> {
-    r.map_err(|e| ApiErr::internal(e.to_string()))
+/// A file system result, its error sorted by [`ApiErr::io`]: a refused
+/// write reads as one, not as "try again" (QA-106).
+fn io<T>(r: std::io::Result<T>) -> ApiResult<T> {
+    r.map_err(ApiErr::io)
 }
 
 /// An agent run in `cwd`, outside any project, streamed like any run.
@@ -1271,6 +1290,31 @@ mod tests {
         assert_eq!(asset_kind("brand-logo.png"), "logo");
         assert_eq!(asset_kind("Inter.woff2"), "font");
         assert_eq!(asset_kind("hero.jpg"), "image");
+    }
+
+    /// QA-107: Vietnamese names keep their letters, so `màu.png` and
+    /// `mẫu.png` stay two assets; a name too long for the disk is
+    /// shortened (QA-106); two files one name in a batch are refused.
+    #[test]
+    fn asset_names_keep_their_letters_and_never_collide_unseen() {
+        let mau = safe_asset_name("màu.png").unwrap();
+        let mau2 = safe_asset_name("mẫu.png").unwrap();
+        assert_eq!((mau.as_str(), mau2.as_str()), ("màu.png", "mẫu.png"));
+        assert_eq!(
+            safe_asset_name("logo chính.PNG").as_deref(),
+            Some("logo-chính.PNG")
+        );
+        let long = safe_asset_name(&format!("{}.png", "ảnh-".repeat(100))).unwrap();
+        assert!(long.len() <= od_store::paths::MAX_UPLOAD_NAME_BYTES && long.ends_with(".png"));
+        assert!(refuse_same_name([("màu.png", mau.as_str()), ("mẫu.png", mau2.as_str())]).is_ok());
+        let err =
+            refuse_same_name([("Logo.png", "Logo.png"), ("a/logo.png", "logo.png")]).unwrap_err();
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert!(
+            err.message.contains("Logo.png") && err.message.contains("a/logo.png"),
+            "{}",
+            err.message
+        );
     }
 
     #[test]

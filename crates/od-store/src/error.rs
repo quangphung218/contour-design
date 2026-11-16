@@ -50,6 +50,12 @@ pub enum StoreError {
     /// The disk is full (`ENOSPC`, `SQLITE_FULL`).
     #[error("The disk is full. Free some space, then try again.")]
     StorageFull,
+    /// The OS refused a name (`ENAMETOOLONG`; on Windows also a name it
+    /// does not allow): sending it again fails the same way (QA-106).
+    #[error(
+        "The file name is too long, or not allowed on this disk. Use a shorter name, then try again."
+    )]
+    NameTooLong,
     /// Any other I/O error. Built through `From<io::Error>`, which sorts
     /// out the two above.
     #[error("io error: {0}")]
@@ -111,6 +117,7 @@ impl From<io::Error> for StoreError {
                 Self::NoWritePermission(None)
             }
             io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded => Self::StorageFull,
+            io::ErrorKind::InvalidFilename => Self::NameTooLong,
             _ => Self::Io(err),
         }
     }
@@ -150,6 +157,13 @@ mod tests {
             "{text}"
         );
         assert!(!full.to_string().contains("os error"));
+        // QA-106: ENAMETOOLONG names its cause, not "os error 63".
+        #[cfg(unix)]
+        {
+            let long = StoreError::from(io::Error::from_raw_os_error(libc_enametoolong()));
+            assert!(matches!(long, StoreError::NameTooLong), "{long:?}");
+            assert!(long.to_string().contains("name is too long"));
+        }
         let other = StoreError::from(io::Error::other("boom"));
         assert!(matches!(other, StoreError::Io(_)));
     }
@@ -169,5 +183,11 @@ mod tests {
             StoreError::from_read_io(io::Error::from(io::ErrorKind::StorageFull)),
             StoreError::StorageFull
         ));
+    }
+
+    /// `ENAMETOOLONG`: 63 on macOS and the BSDs, 36 on Linux.
+    #[cfg(unix)]
+    fn libc_enametoolong() -> i32 {
+        if cfg!(target_os = "linux") { 36 } else { 63 }
     }
 }

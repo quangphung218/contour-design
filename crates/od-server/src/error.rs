@@ -43,6 +43,13 @@ impl ApiErr {
             message,
         )
     }
+
+    /// A file system error, sorted as the store sorts it: a refused
+    /// write, a full disk or a name too long gets its own code and words
+    /// the user can act on; the rest is internal.
+    pub fn io(err: std::io::Error) -> Self {
+        StoreError::from(err).into()
+    }
 }
 
 impl IntoResponse for ApiErr {
@@ -65,6 +72,7 @@ impl From<StoreError> for ApiErr {
             | StoreError::ReservedPath
             | StoreError::InvalidId
             | StoreError::NotHtml
+            | StoreError::NameTooLong
             | StoreError::BadRequest(_) => (S::BAD_REQUEST, ErrorCode::BadRequest),
             StoreError::HiddenSegment => (S::FORBIDDEN, ErrorCode::Forbidden),
             StoreError::PathEscape => (S::FORBIDDEN, ErrorCode::PathEscape),
@@ -126,6 +134,19 @@ mod tests {
         assert_eq!(full.status, StatusCode::INSUFFICIENT_STORAGE);
         assert_eq!(full.code, ErrorCode::StorageFull);
         assert!(full.message.contains("disk is full"), "{}", full.message);
+        // QA-106: a name the disk refuses is the user's to fix, not "try
+        // again"; ApiErr::io sorts a plain io::Error the same way.
+        let long = ApiErr::io(std::io::Error::from(std::io::ErrorKind::InvalidFilename));
+        assert_eq!(long.status, StatusCode::BAD_REQUEST);
+        assert!(
+            long.message.contains("name is too long"),
+            "{}",
+            long.message
+        );
+        let denied = ApiErr::io(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        assert_eq!(denied.code, ErrorCode::NoWritePermission);
+        let other = ApiErr::io(std::io::Error::other("boom"));
+        assert_eq!(other.code, ErrorCode::InternalError);
     }
 
     /// QA-085: a refused read has its own code and says "read".

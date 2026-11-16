@@ -10,7 +10,7 @@ use od_contracts::{
     RenameFileRequest, RestoreVersionRequest, RestoreVersionResponse, UploadResponse,
     VersionContentResponse, VersionResponse, WriteFileRequest,
 };
-use od_store::paths::{sanitize_name, sanitize_path};
+use od_store::paths::{sanitize_path, upload_name};
 
 const NO_STORE: [(header::HeaderName, &str); 1] = [(header::CACHE_CONTROL, "no-store")];
 
@@ -200,7 +200,7 @@ pub async fn write(
         let (original, bytes) = upload.ok_or_else(|| ApiErr::bad_request("file part required"))?;
         let target = match name.filter(|n| !n.trim().is_empty()) {
             Some(n) => sanitize_path(&n)?,
-            None => sanitize_name(&original),
+            None => upload_name(&original),
         };
         let project = id.clone();
         let written = state
