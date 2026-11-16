@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.43] - 2026-11-17
+
 ### Fixed
 
 - macOS: exporting (PNG, PDF, MP4, editable PPTX) works again with a Chrome that was installed but never opened from Finder (for example with `brew install --cask google-chrome`); it waited 90 s and failed with "started but did not show the page", because macOS held the browser until someone approved its first launch. Such a Chrome now starts as Contour's child, and so does any Chrome macOS does not start within 20 s, so how Chrome is started no longer fails an export.
@@ -1238,7 +1240,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.42...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.43...HEAD
+[0.2.0-beta.43]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.42...v0.2.0-beta.43
 [0.2.0-beta.42]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.41...v0.2.0-beta.42
 [0.2.0-beta.41]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.40...v0.2.0-beta.41
 [0.2.0-beta.40]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.39...v0.2.0-beta.40
