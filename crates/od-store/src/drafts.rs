@@ -9,8 +9,10 @@
 //! Studio left, the page closed, the app quit) or, if nothing released it
 //! (a crash), once they are a day old.
 //!
-//! Every step runs under the database lock, so an upload that lands after
-//! its session was released is deleted at once, whatever the order.
+//! Every change to the record runs under the database lock, so an upload
+//! that lands after its session was released is deleted at once, whatever
+//! the order. Images are read (to tell them, [`content_ident`]) before it
+//! is taken, and checked again under it.
 
 use crate::error::{Result, StoreError};
 use crate::files::{self, ProjectRoot};
@@ -52,11 +54,75 @@ pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// What tells the file the server wrote for a draft from another file put
-/// at the same path later: its size, its mtime to the nanosecond and, where
-/// there is one, its inode. A file moved, copied or unzipped there keeps
-/// its own mtime, often older than the record, so the mtime alone is not
-/// enough. `None` when the file cannot be read.
+/// What tells the file the server wrote (a draft's image, an upload of a
+/// batch) from another file put at the same path later: its content,
+/// `sha256:<len>:<hex>` of the bytes the server wrote, taken from those
+/// bytes (the disk is not read back). No metadata does: a size is shared
+/// by many images, an mtime by every file written within the clock's step
+/// (2 s on FAT, a few ms on ext4) or set back by `unzip`, `rsync -t`,
+/// `cp -p`, and an inode is kept by a write in place, reused once freed,
+/// and none at all on Windows.
+///
+/// What stays: a file of the very same bytes put at the path by someone
+/// else (the agent, Finder) is taken for the server's, and deleted as it
+/// would be. Nothing of it is lost: it is that same content.
+pub(crate) fn content_ident(bytes: &[u8]) -> String {
+    format!(
+        "sha256:{}:{}",
+        bytes.len(),
+        hex::encode(<sha2::Sha256 as sha2::Digest>::digest(bytes))
+    )
+}
+
+/// What the file at a path is, told by [`content_ident`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Holds {
+    /// The file `ident` was taken from.
+    Same,
+    /// Another file.
+    Other,
+    /// No file (gone), or the path cannot be resolved.
+    Nothing,
+    /// A file the disk will not let be read: whose it is cannot be told.
+    Unknown,
+}
+
+/// What `path` holds, against `ident`: a [`content_ident`], or for a row
+/// made before identities were of content, a [`file_ident`]. A file of
+/// another size is another without being read; one of the same size is
+/// read and hashed.
+pub(crate) fn holds(root: &ProjectRoot, path: &str, ident: &str) -> Holds {
+    let Some(content) = ident.strip_prefix("sha256:") else {
+        return match file_ident(root, path) {
+            Some(now) if now == ident => Holds::Same,
+            Some(_) => Holds::Other,
+            None => Holds::Nothing,
+        };
+    };
+    let Some((len, _)) = content.split_once(':') else {
+        return Holds::Other;
+    };
+    let Ok((_, full)) = files::stat_file(root, path) else {
+        return Holds::Nothing;
+    };
+    match std::fs::symlink_metadata(&full) {
+        Ok(meta) if meta.len().to_string() != len => return Holds::Other,
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Holds::Nothing,
+        Err(_) => return Holds::Unknown,
+    }
+    match std::fs::read(&full) {
+        Ok(bytes) if content_ident(&bytes) == ident => Holds::Same,
+        Ok(_) => Holds::Other,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Holds::Nothing,
+        Err(_) => Holds::Unknown,
+    }
+}
+
+/// The identity rows made before [`content_ident`] kept (at most a day
+/// old): size, mtime to the nanosecond and, where there is one, inode.
+/// Read only to tell those rows' files. `None` when the file cannot be
+/// read.
 pub(crate) fn file_ident(root: &ProjectRoot, path: &str) -> Option<String> {
     let (_, full) = files::stat_file(root, path).ok()?;
     let meta = std::fs::symlink_metadata(full).ok()?;
@@ -166,38 +232,104 @@ pub(crate) fn forget_folder(
 /// written and still be that image (clocks of a write and its record).
 const MTIME_SLACK_MS: f64 = 2000.0;
 
-/// Which file a delete of a draft image may take.
-enum Expect<'a> {
-    /// The one just uploaded, whatever it is (its session was released).
-    Any,
-    /// The one recorded: `ident` ([`file_ident`]), or for a record made
-    /// before it was kept, one not written after `uploaded_at` (ms).
-    Recorded(Option<&'a str>, i64),
+/// What a delete of a draft's image does with the file at its path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fate {
+    /// The draft's (or none): it goes.
+    Delete,
+    /// Another file (put there by the agent, Finder, an unzip, a restore):
+    /// the user's, it stays.
+    Other,
+    /// Whose it is cannot be told (the disk will not let it be read): it
+    /// stays, and so does its row, for a later release or sweep.
+    Unknown,
 }
 
-/// Deletes the file `path` of a draft; one already gone is fine. Another
-/// file at that path (put there by the agent, Finder, an unzip, a restore)
-/// is the user's: it stays. False when the draft's file is still there (the
-/// disk refused the delete): its row must stay, or the file would ship as
-/// the project's.
-fn delete_image(root: &ProjectRoot, path: &str, expect: Expect<'_>) -> bool {
-    let other = match expect {
-        Expect::Any => false,
-        Expect::Recorded(Some(ident), _) => file_ident(root, path).is_some_and(|now| now != ident),
-        Expect::Recorded(None, uploaded_at) => files::stat_file(root, path)
-            .is_ok_and(|(file, _)| file.mtime > uploaded_at as f64 + MTIME_SLACK_MS),
-    };
-    if other {
-        tracing::info!(path, "a draft image's path holds another file: kept");
-        return true;
-    }
-    match files::delete_file(root, path) {
-        Ok(_) | Err(StoreError::FileNotFound) => true,
-        Err(e) => {
-            tracing::warn!(path, error = %e, "cannot delete a draft image");
-            false
+/// The fate of `path`, a draft's image: the file of `ident` ([`holds`]),
+/// or for a record made before it was kept (`None`), one not written after
+/// `uploaded_at` (ms).
+fn fate(root: &ProjectRoot, path: &str, ident: Option<&str>, uploaded_at: i64) -> Fate {
+    match ident {
+        Some(ident) => match holds(root, path, ident) {
+            Holds::Same | Holds::Nothing => Fate::Delete,
+            Holds::Other => Fate::Other,
+            Holds::Unknown => Fate::Unknown,
+        },
+        None => {
+            if files::stat_file(root, path)
+                .is_ok_and(|(file, _)| file.mtime > uploaded_at as f64 + MTIME_SLACK_MS)
+            {
+                Fate::Other
+            } else {
+                Fate::Delete
+            }
         }
     }
+}
+
+/// Acts on `fate` for `path`. One already gone is fine. False when the
+/// draft's file may still be there (the disk refused the delete, or the
+/// read that tells it): its row must stay, or the file would ship as the
+/// project's.
+fn settle(root: &ProjectRoot, path: &str, fate: Fate) -> bool {
+    match fate {
+        Fate::Other => {
+            tracing::info!(path, "a draft image's path holds another file: kept");
+            true
+        }
+        Fate::Unknown => {
+            tracing::warn!(path, "a draft image cannot be read: kept for later");
+            false
+        }
+        Fate::Delete => match files::delete_file(root, path) {
+            Ok(_) | Err(StoreError::FileNotFound) => true,
+            Err(e) => {
+                tracing::warn!(path, error = %e, "cannot delete a draft image");
+                false
+            }
+        },
+    }
+}
+
+/// Deletes the file `path` of a draft if it is still the draft's
+/// ([`fate`], [`settle`]).
+fn delete_image(root: &ProjectRoot, path: &str, ident: Option<&str>, uploaded_at: i64) -> bool {
+    settle(root, path, fate(root, path, ident, uploaded_at))
+}
+
+/// A draft image's [`fate`] told before the database lock is taken:
+/// reading and hashing images (5 of 20 MB take some 70 ms) would hold
+/// every other call of the store. `stamp` is the file's metadata
+/// ([`file_ident`]) before it was read: a write while it is read changes
+/// it.
+struct Foretold {
+    fate: Fate,
+    stamp: Option<String>,
+}
+
+fn foretell(root: &ProjectRoot, path: &str, ident: Option<&str>, uploaded_at: i64) -> Foretold {
+    let stamp = file_ident(root, path);
+    let fate = fate(root, path, ident, uploaded_at);
+    Foretold { fate, stamp }
+}
+
+/// [`delete_image`] under the lock, with the fate told before it: kept
+/// while the file's metadata is as it was then, told again otherwise.
+/// What stays: a file written over in place between the two, its size,
+/// mtime and inode kept, takes the fate of the one before (a window of
+/// a few ms, for a writer outside the app).
+fn delete_foretold(
+    root: &ProjectRoot,
+    path: &str,
+    ident: Option<&str>,
+    uploaded_at: i64,
+    told: Foretold,
+) -> bool {
+    let fate = match told.stamp {
+        Some(stamp) if file_ident(root, path).is_some_and(|now| now == stamp) => told.fate,
+        _ => fate(root, path, ident, uploaded_at),
+    };
+    settle(root, path, fate)
 }
 
 /// A row taken out of the record by a write that may still fail
@@ -212,31 +344,32 @@ pub struct TakenDraft {
 
 impl Store {
     /// Notes `path`, just uploaded into `project_id` by the draft session
-    /// `session`. Returns false when that session was released already:
+    /// `session`, its content `ident` ([`content_ident`] of the bytes
+    /// written). Returns false when that session was released already:
     /// the file is deleted at once (an upload that landed after its page
-    /// was left).
+    /// was left), if it is still that content.
     ///
     /// # Errors
     /// A bad session id, project or SQLite errors.
-    pub fn record_draft_upload(&self, project_id: &str, session: &str, path: &str) -> Result<bool> {
+    pub(crate) fn record_draft_upload(
+        &self,
+        project_id: &str,
+        session: &str,
+        path: &str,
+        ident: &str,
+    ) -> Result<bool> {
         check_session(session)?;
         let root = self.root_for(project_id)?;
         self.with_conn(|conn| {
             if released(conn, session)? {
                 // No row to keep: a sweep never sees it if this fails.
-                delete_image(&root, path, Expect::Any);
+                delete_image(&root, path, Some(ident), crate::now_ms());
                 return Ok(false);
             }
             conn.execute(
                 "INSERT OR REPLACE INTO draft_uploads \
                  (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    project_id,
-                    path,
-                    session,
-                    crate::now_ms(),
-                    file_ident(&root, path)
-                ],
+                params![project_id, path, session, crate::now_ms(), ident],
             )?;
             Ok(true)
         })
@@ -249,27 +382,58 @@ impl Store {
     /// # Errors
     /// A bad session id, project or SQLite errors.
     pub fn release_draft_session(&self, project_id: &str, session: &str) -> Result<Vec<String>> {
+        self.release_draft_session_each(project_id, session, || {})
+    }
+
+    /// [`Self::release_draft_session`], calling `told` once the images'
+    /// fates are told and before the lock is taken again to act on them,
+    /// so a test can act there as another request would.
+    pub(crate) fn release_draft_session_each(
+        &self,
+        project_id: &str,
+        session: &str,
+        told: impl FnOnce(),
+    ) -> Result<Vec<String>> {
         check_session(session)?;
         let root = self.root_for(project_id)?;
-        self.with_conn(|conn| {
+        let rows: Vec<(String, i64, Option<String>)> = self.with_conn(|conn| {
+            // From here on an upload of the session goes at once.
             conn.execute(
                 "INSERT OR IGNORE INTO draft_sessions_released (session, released_at) \
                  VALUES (?1, ?2)",
                 params![session, crate::now_ms()],
             )?;
-            let rows: Vec<(String, i64, Option<String>)> = {
-                let mut stmt = conn.prepare(
-                    "SELECT path, uploaded_at, ident FROM draft_uploads \
-                     WHERE project_id = ?1 AND session = ?2",
-                )?;
-                stmt.query_map(params![project_id, session], |r| {
+            let mut stmt = conn.prepare(
+                "SELECT path, uploaded_at, ident FROM draft_uploads \
+                 WHERE project_id = ?1 AND session = ?2",
+            )?;
+            let rows = stmt
+                .query_map(params![project_id, session], |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?))
                 })?
-                .collect::<rusqlite::Result<Vec<_>>>()?
-            };
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        })?;
+        let rows: Vec<_> = rows
+            .into_iter()
+            .map(|(path, at, ident)| {
+                let fate = foretell(&root, &path, ident.as_deref(), at);
+                (path, at, ident, fate)
+            })
+            .collect();
+        told();
+        self.with_conn(|conn| {
             let mut paths = Vec::new();
-            for (path, at, ident) in rows {
-                if delete_image(&root, &path, Expect::Recorded(ident.as_deref(), at)) {
+            for (path, at, ident, fate) in rows {
+                // Taken meanwhile (a comment sent, a page written), renamed
+                // or deleted: no longer this draft's to release.
+                let still: bool = conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM draft_uploads WHERE project_id = ?1 \
+                     AND path = ?2 AND session = ?3 AND uploaded_at = ?4 AND ident IS ?5)",
+                    params![project_id, path, session, at, ident],
+                    |r| r.get(0),
+                )?;
+                if still && delete_foretold(&root, &path, ident.as_deref(), at, fate) {
                     forget(conn, project_id, &path)?;
                     paths.push(path);
                 }
@@ -317,6 +481,9 @@ impl Store {
         for (project, path, at, ident) in rows {
             // A project whose folder is gone: its rows go all the same.
             let root = self.root_for(&project).ok();
+            let fate = root
+                .as_ref()
+                .map(|root| foretell(root, &path, ident.as_deref(), at));
             self.with_conn(|conn| {
                 // Taken meanwhile (a comment sent): it stays.
                 let still: bool = conn.query_row(
@@ -326,9 +493,12 @@ impl Store {
                     |r| r.get(0),
                 )?;
                 let deleted = still
-                    && root.as_ref().is_none_or(|root| {
-                        delete_image(root, &path, Expect::Recorded(ident.as_deref(), at))
-                    });
+                    && match (root.as_ref(), fate) {
+                        (Some(root), Some(fate)) => {
+                            delete_foretold(root, &path, ident.as_deref(), at, fate)
+                        }
+                        _ => true,
+                    };
                 if deleted {
                     forget(conn, &project, &path)?;
                     gone += 1;
@@ -409,11 +579,7 @@ impl Store {
             for t in &taken {
                 if released(conn, &t.session)?
                     && root.as_ref().is_some_and(|root| {
-                        delete_image(
-                            root,
-                            &t.path,
-                            Expect::Recorded(t.ident.as_deref(), t.uploaded_at),
-                        )
+                        delete_image(root, &t.path, t.ident.as_deref(), t.uploaded_at)
                     })
                 {
                     continue;
@@ -473,7 +639,7 @@ mod tests {
             .upload_file(p, Some("comments"), name, PNG)
             .unwrap_or_else(|e| panic!("{e}"));
         let kept = s
-            .record_draft_upload(p, session, &up.path)
+            .record_draft_upload(p, session, &up.path, &content_ident(PNG))
             .unwrap_or_else(|e| panic!("{e}"));
         (up.path, kept)
     }
@@ -704,7 +870,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("{e}"))
             .path;
         assert!(
-            s.record_draft_upload(&p, "s1", &img)
+            s.record_draft_upload(&p, "s1", &img, &content_ident(PNG))
                 .unwrap_or_else(|e| panic!("{e}"))
         );
         s.delete_folder(&p, "Ảnh").unwrap_or_else(|e| panic!("{e}"));
@@ -1043,9 +1209,211 @@ mod tests {
         assert!(!exists(&s, &p, "comments/c.png"));
     }
 
+    /// Writes `bytes` over the file at `full` in place (same inode), then
+    /// gives it back its old mtime: `unzip -o`, `rsync -t`, `cp -p` onto it.
+    /// Every identity of metadata (size, mtime, inode) stays the same.
+    fn overwrite_keeping_mtime(full: &std::path::Path, bytes: &[u8]) {
+        let was = std::fs::metadata(full)
+            .and_then(|m| m.modified())
+            .unwrap_or_else(|e| panic!("{e}"));
+        let mut f = std::fs::File::options()
+            .write(true)
+            .truncate(true)
+            .open(full)
+            .unwrap_or_else(|e| panic!("{e}"));
+        std::io::Write::write_all(&mut f, bytes).unwrap_or_else(|e| panic!("{e}"));
+        f.set_modified(was).unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// Deletes the file at `full` and puts `bytes` there as a new file with
+    /// the old one's mtime: a clock too coarse to tell them apart (FAT 2 s,
+    /// a raw kernel clock), on a disk that reuses the inode or has none.
+    fn recreate_keeping_mtime(full: &std::path::Path, bytes: &[u8]) {
+        let was = std::fs::metadata(full)
+            .and_then(|m| m.modified())
+            .unwrap_or_else(|e| panic!("{e}"));
+        std::fs::remove_file(full).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(full, bytes).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::File::options()
+            .write(true)
+            .open(full)
+            .and_then(|f| f.set_modified(was))
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// Same size as [`PNG`], other bytes: the user's own picture.
+    const THEIRS: &[u8] = b"\x89PNG\r\n\x1a\x00";
+
+    fn read(s: &Store, p: &str, path: &str) -> Vec<u8> {
+        s.read_file(p, path)
+            .map(|(_, bytes)| bytes)
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// A draft image written over in place by the user with a picture of
+    /// the same size, its mtime set back (an unzip, `rsync -t`): no
+    /// metadata tells it from the draft's. A release, the quit of the app
+    /// and the sweep leave it.
+    #[test]
+    fn a_draft_image_overwritten_in_place_with_its_size_and_mtime_is_the_users() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "a.png");
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        overwrite_keeping_mtime(&full, THEIRS);
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            exists(&s, &p, &img),
+            "the user's file, same size and mtime, deleted"
+        );
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+        let (other, _) = upload(&s, &p, "s2", "b.png");
+        let full = s.stat_file(&p, &other).unwrap_or_else(|e| panic!("{e}")).1;
+        overwrite_keeping_mtime(&full, THEIRS);
+        s.release_all_draft_uploads()
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(read(&s, &p, &other), THEIRS, "deleted on quit");
+    }
+
+    /// The draft's image itself, untouched or put back byte for byte (a
+    /// restore, a copy of it), is still the draft's: it goes.
+    #[test]
+    fn a_draft_image_put_back_byte_for_byte_still_goes() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "a.png");
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(&full, PNG).unwrap_or_else(|e| panic!("{e}"));
+        age_file(&s, &p, &img, 60 * 60 * 1000);
+        assert_eq!(
+            s.release_draft_session(&p, "s1").unwrap_or_default(),
+            std::slice::from_ref(&img)
+        );
+        assert!(!exists(&s, &p, &img));
+    }
+
+    /// An upload landing after its page was left goes at once, but only
+    /// while its path still holds what was written: a file the agent put
+    /// there in between (same size) stays.
+    #[test]
+    fn a_late_upload_whose_path_was_taken_meanwhile_leaves_the_other_file() {
+        let (_tmp, s, p, _) = store();
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        let up = s
+            .upload_file(&p, Some("comments"), "late.png", PNG)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let full = s
+            .stat_file(&p, &up.path)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .1;
+        recreate_keeping_mtime(&full, THEIRS);
+        let kept = s
+            .record_draft_upload(&p, "s1", &up.path, &content_ident(PNG))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!kept);
+        assert_eq!(read(&s, &p, &up.path), THEIRS, "the agent's file deleted");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// A release tells its images before it takes the lock to delete
+    /// them. One a comment takes in between stays the comment's.
+    #[test]
+    fn an_image_taken_while_its_release_reads_it_stays() {
+        let (_tmp, s, p, c) = store();
+        let (img, _) = upload(&s, &p, "s1", "a.png");
+        let gone = s
+            .release_draft_session_each(&p, "s1", || {
+                s.create_comment(
+                    &p,
+                    &c,
+                    CreateCommentRequest {
+                        file_path: "index.html".into(),
+                        selector: "h1".into(),
+                        note: "n".into(),
+                        attachments: vec![img.clone()],
+                        ..CreateCommentRequest::default()
+                    },
+                )
+                .unwrap_or_else(|e| panic!("{e}"));
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(gone.is_empty(), "{gone:?}");
+        assert!(exists(&s, &p, &img), "the comment's image deleted");
+    }
+
+    /// A file put at a draft image's path once the release told it (the
+    /// draft's then) is told again under the lock: the user's, it stays.
+    #[test]
+    fn a_file_put_while_its_release_reads_it_is_told_again() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "a.png");
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        s.release_draft_session_each(&p, "s1", || {
+            std::fs::write(&full, b"the user's, written just now")
+                .unwrap_or_else(|e| panic!("{e}"));
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(read(&s, &p, &img), b"the user's, written just now");
+    }
+
+    /// A row made before identities were of content (`size:mtime:inode`,
+    /// kept at most a day) is still read as it was written.
+    #[test]
+    fn a_row_with_an_identity_of_metadata_is_read_as_before() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "a.png");
+        let (moved, _) = upload(&s, &p, "s1", "b.png");
+        let root = s.root_for(&p).unwrap_or_else(|e| panic!("{e}"));
+        for path in [&img, &moved] {
+            let old = file_ident(&root, path).unwrap_or_else(|| panic!("no ident"));
+            s.with_conn(|c| {
+                c.execute(
+                    "UPDATE draft_uploads SET ident = ?1 WHERE path = ?2",
+                    params![old, path],
+                )?;
+                Ok(())
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        }
+        let full = s.stat_file(&p, &moved).unwrap_or_else(|e| panic!("{e}")).1;
+        std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+        std::fs::write(&full, b"the user's, another size").unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(!exists(&s, &p, &img), "the draft's image went");
+        assert!(exists(&s, &p, &moved), "another file at the path stays");
+    }
+
+    /// The disk cannot tell the file read: it stays, and so does its row,
+    /// for a later release or sweep.
+    #[cfg(unix)]
+    #[test]
+    fn a_draft_image_that_cannot_be_read_stays_a_drafts() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "a.png");
+        let full = s.stat_file(&p, &img).unwrap_or_else(|e| panic!("{e}")).1;
+        let mode = |m| {
+            std::fs::set_permissions(&full, std::fs::Permissions::from_mode(m))
+                .unwrap_or_else(|e| panic!("{e}"));
+        };
+        mode(0o000);
+        let released = s.release_draft_session(&p, "s1");
+        mode(0o644);
+        assert!(released.unwrap_or_else(|e| panic!("{e}")).is_empty());
+        assert!(exists(&s, &p, &img));
+        assert_eq!(
+            s.unclaimed_draft_uploads(&p).unwrap_or_default(),
+            HashSet::from([img.clone()])
+        );
+        assert_eq!(s.release_all_draft_uploads().unwrap_or(0), 1);
+    }
+
     /// An upload of a batch for a released session is deleted at once, its
-    /// path free again: when a later one fails, the undo leaves alone the
-    /// file another upload put there in between.
+    /// path free again. The batch keeps the store's write lock until it is
+    /// done, undo included: another upload of the app waits for it, then
+    /// lands where it likes, its file left alone.
     #[cfg(unix)]
     #[test]
     fn a_batch_undone_keeps_the_file_another_upload_put_where_one_of_its_was() {
@@ -1059,20 +1427,24 @@ mod tests {
             .unwrap_or_else(|e| panic!("{e}"));
         let theirs: &[u8] = b"\x89PNG\r\n\x1a\nanother page's";
         let both = [("a.png", PNG), ("b.html", b"<p>b</p>".as_slice())];
-        let failed = s.upload_files_each(&p, Some("comments"), &both, Some("s1"), |path| {
-            if path == "comments/a.png" {
-                assert!(!exists(&s, &p, path), "a late draft image is deleted");
-                let other = s
-                    .upload_file(&p, Some("comments"), "a.png", theirs)
-                    .unwrap_or_else(|e| panic!("{e}"));
-                assert_eq!(other.path, path);
-            }
+        let other = std::thread::scope(|sc| {
+            let mut other = None;
+            let failed = s.upload_files_each(&p, Some("comments"), &both, Some("s1"), |path| {
+                if path == "comments/a.png" {
+                    assert!(!exists(&s, &p, path), "a late draft image is deleted");
+                    assert!(s.versions_busy(), "the batch let go of the lock");
+                    other = Some(sc.spawn(|| s.upload_file(&p, Some("comments"), "a.png", theirs)));
+                }
+            });
+            assert!(failed.is_err());
+            other
+                .unwrap_or_else(|| panic!("no other upload"))
+                .join()
+                .unwrap_or_else(|_| panic!("the other upload panicked"))
+                .unwrap_or_else(|e| panic!("{e}"))
         });
-        assert!(failed.is_err());
         assert_eq!(
-            s.read_file(&p, "comments/a.png")
-                .map(|(_, bytes)| bytes)
-                .unwrap_or_else(|e| panic!("{e}")),
+            read(&s, &p, &other.path),
             theirs,
             "another upload's file deleted"
         );
@@ -1080,8 +1452,9 @@ mod tests {
     }
 
     /// The page is left while its batch is stored: the release deletes an
-    /// image recorded already, and another upload takes its path before a
-    /// later image fails. The undo deletes only what is still the batch's.
+    /// image recorded already, and another upload of the app waits for the
+    /// batch (the lock) before a later image fails. The undo deletes only
+    /// what is still the batch's; the other upload's file stays.
     #[cfg(unix)]
     #[test]
     fn a_batch_undone_after_its_page_was_left_mid_way_keeps_the_other_upload() {
@@ -1090,31 +1463,34 @@ mod tests {
         let elsewhere = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
         std::os::unix::fs::symlink(elsewhere.path(), dir.join(crate::versions::VERSION_ROOT))
             .unwrap_or_else(|e| panic!("{e}"));
-        let theirs: &[u8] = b"\x89PNG\r\n\x1a\nanother page's";
         let batch = [
             ("keep.png", PNG),
             ("a.png", PNG),
             ("b.html", b"<p>b</p>".as_slice()),
         ];
-        let failed = s.upload_files_each(&p, Some("comments"), &batch, Some("s1"), |path| {
-            if path == "comments/a.png" {
-                assert!(exists(&s, &p, path), "recorded, the session alive");
-                let gone = s
-                    .release_draft_session(&p, "s1")
-                    .unwrap_or_else(|e| panic!("{e}"));
-                assert_eq!(gone.len(), 2, "{gone:?}");
-                let other = s
-                    .upload_file(&p, Some("comments"), "a.png", theirs)
-                    .unwrap_or_else(|e| panic!("{e}"));
-                assert_eq!(other.path, path);
-            }
+        let other = std::thread::scope(|sc| {
+            let mut other = None;
+            let failed = s.upload_files_each(&p, Some("comments"), &batch, Some("s1"), |path| {
+                if path == "comments/a.png" {
+                    assert!(exists(&s, &p, path), "recorded, the session alive");
+                    let gone = s
+                        .release_draft_session(&p, "s1")
+                        .unwrap_or_else(|e| panic!("{e}"));
+                    assert_eq!(gone.len(), 2, "{gone:?}");
+                    assert!(s.versions_busy(), "the batch let go of the lock");
+                    other = Some(sc.spawn(|| s.upload_file(&p, Some("comments"), "a.png", THEIRS)));
+                }
+            });
+            assert!(failed.is_err());
+            other
+                .unwrap_or_else(|| panic!("no other upload"))
+                .join()
+                .unwrap_or_else(|_| panic!("the other upload panicked"))
+                .unwrap_or_else(|e| panic!("{e}"))
         });
-        assert!(failed.is_err());
         assert_eq!(
-            s.read_file(&p, "comments/a.png")
-                .map(|(_, bytes)| bytes)
-                .unwrap_or_else(|e| panic!("{e}")),
-            theirs,
+            read(&s, &p, &other.path),
+            THEIRS,
             "another upload's file deleted by the undo"
         );
         for path in ["comments/keep.png", "comments/b.html"] {
@@ -1123,26 +1499,81 @@ mod tests {
     }
 
     /// The undo still deletes what the batch stored when nothing touched
-    /// it, a file of another kind put next to it left alone.
+    /// it. A file the agent wrote over in place (its shell, an unzip) is
+    /// no longer the batch's, even of the same size and mtime; nor one
+    /// put there anew with that mtime (a coarse clock: FAT, Windows, where
+    /// there is no inode).
     #[test]
     fn a_batch_undone_deletes_its_own_files() {
         let (_tmp, s, p, _) = store();
-        let refuse = "CREATE TRIGGER no_c BEFORE INSERT ON draft_uploads \
-                      WHEN NEW.path LIKE '%c.png' BEGIN SELECT RAISE(ABORT, 'busy'); END;";
+        let refuse = "CREATE TRIGGER no_d BEFORE INSERT ON draft_uploads \
+                      WHEN NEW.path LIKE '%d.png' BEGIN SELECT RAISE(ABORT, 'busy'); END;";
         s.with_conn(|c| Ok(c.execute_batch(refuse)?))
             .unwrap_or_else(|e| panic!("{e}"));
-        let batch = [("a.png", PNG), ("b.png", PNG), ("c.png", PNG)];
+        let batch = [
+            ("a.png", PNG),
+            ("b.png", PNG),
+            ("c.png", PNG),
+            ("d.png", PNG),
+        ];
         let failed = s.upload_files_each(&p, Some("comments"), &batch, Some("s1"), |path| {
-            if path == "comments/b.png" {
-                // Replaced in place (the agent's shell): no longer the batch's.
-                let full = s.stat_file(&p, path).unwrap_or_else(|e| panic!("{e}")).1;
-                std::fs::write(full, b"the agent's").unwrap_or_else(|e| panic!("{e}"));
+            let full = s.stat_file(&p, path).unwrap_or_else(|e| panic!("{e}")).1;
+            match path {
+                "comments/b.png" => overwrite_keeping_mtime(&full, THEIRS),
+                "comments/c.png" => recreate_keeping_mtime(&full, THEIRS),
+                _ => {}
             }
         });
         assert!(failed.is_err());
         assert!(!exists(&s, &p, "comments/a.png"));
-        assert!(!exists(&s, &p, "comments/c.png"));
-        assert!(exists(&s, &p, "comments/b.png"), "replaced since, kept");
+        assert!(!exists(&s, &p, "comments/d.png"));
+        assert_eq!(read(&s, &p, "comments/b.png"), THEIRS, "written over, kept");
+        assert_eq!(read(&s, &p, "comments/c.png"), THEIRS, "put anew, kept");
+    }
+
+    /// The batch undo on a real FAT32 volume (mtime in 2 s steps): the
+    /// agent puts a file of the same size where one of the batch was,
+    /// within the same 2 s. On macOS:
+    /// `hdiutil create -size 40m -fs "MS-DOS FAT32" -volname ODFAT -o fat.dmg`,
+    /// `hdiutil attach -nobrowse -mountpoint <dir> fat.dmg`, then
+    /// `PROBE_DIR=<dir> cargo test -p od-store fat32 -- --ignored`.
+    #[test]
+    #[ignore = "needs a FAT32 volume at PROBE_DIR"]
+    fn a_batch_undone_on_fat32_keeps_a_file_of_the_same_size() {
+        let probe = std::env::var("PROBE_DIR").unwrap_or_else(|_| panic!("PROBE_DIR unset"));
+        let tmp = tempfile::tempdir_in(probe).unwrap_or_else(|e| panic!("{e}"));
+        let s = Store::open(DataDir::new(tmp.path())).unwrap_or_else(|e| panic!("{e}"));
+        let (project, _) = s
+            .create_project(CreateProjectRequest {
+                name: "p".into(),
+                ..CreateProjectRequest::default()
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+        let p = project.id;
+        let refuse = "CREATE TRIGGER no_b BEFORE INSERT ON draft_uploads \
+                      WHEN NEW.path LIKE '%b.png' BEGIN SELECT RAISE(ABORT, 'busy'); END;";
+        s.with_conn(|c| Ok(c.execute_batch(refuse)?))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let batch = [("a.png", PNG), ("b.png", PNG)];
+        let mut same_mtime = false;
+        let failed = s.upload_files_each(&p, Some("comments"), &batch, Some("s1"), |path| {
+            if path == "comments/a.png" {
+                let full = s.stat_file(&p, path).unwrap_or_else(|e| panic!("{e}")).1;
+                let mtime =
+                    |f: &std::path::Path| std::fs::metadata(f).and_then(|m| m.modified()).ok();
+                let was = mtime(&full);
+                std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+                std::fs::write(&full, THEIRS).unwrap_or_else(|e| panic!("{e}"));
+                same_mtime = was == mtime(&full);
+            }
+        });
+        assert!(failed.is_err());
+        eprintln!("same mtime on the volume: {same_mtime}");
+        assert_eq!(
+            read(&s, &p, "comments/a.png"),
+            THEIRS,
+            "the agent's file deleted"
+        );
     }
 
     /// A project whose filling fails is not left half made.

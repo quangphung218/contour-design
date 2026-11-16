@@ -70,6 +70,13 @@ impl Store {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// Whether another holder has [`Self::versions_guard`] now (a test
+    /// checks a batch keeps it).
+    #[cfg(test)]
+    pub(crate) fn versions_busy(&self) -> bool {
+        self.versions_lock.try_lock().is_err()
+    }
+
     /// Runs `f` with the raw connection. For tests and future crates.
     pub fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         f(&self.conn())
@@ -736,47 +743,42 @@ impl Store {
         original_name: &str,
         bytes: &[u8],
     ) -> Result<UploadedFile> {
-        self.upload_file_ident(project_id, dir, original_name, bytes)
-            .map(|(uploaded, _)| uploaded)
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        self.upload_file_held(&root, project_id, dir, original_name, bytes)
     }
 
-    /// [`Self::upload_file`], with the file's identity
-    /// ([`crate::drafts::file_ident`]) taken before another write can come:
-    /// `None` when it cannot be read.
-    fn upload_file_ident(
+    /// [`Self::upload_file`] for a caller holding [`Self::versions_guard`].
+    fn upload_file_held(
         &self,
+        root: &ProjectRoot,
         project_id: &str,
         dir: Option<&str>,
         original_name: &str,
         bytes: &[u8],
-    ) -> Result<(UploadedFile, Option<String>)> {
-        let root = self.root_for(project_id)?;
-        let _guard = self.versions_guard();
-        let uploaded = files::upload_file(&root, dir, original_name, bytes)?;
+    ) -> Result<UploadedFile> {
+        let uploaded = files::upload_file(root, dir, original_name, bytes)?;
         // Its name is known only once written: a page whose history would be
         // refused (a linked history folder) goes again, as a write's would
         // not have been written.
         if records_version(&uploaded.name, bytes)
             && let Err(err) = versions::refuse_linked_history(&root.dir, &uploaded.name)
         {
-            let _ = files::delete_file(&root, &uploaded.path);
+            let _ = files::delete_file(root, &uploaded.path);
             return Err(err);
         }
         // Not a draft's until the caller records it so.
         self.forget_draft_row(project_id, &uploaded.path);
-        self.forget_comments_at(&root, project_id, &uploaded.path);
-        snapshot_written(&root, &uploaded.name, bytes);
-        let ident = crate::drafts::file_ident(&root, &uploaded.path);
-        Ok((uploaded, ident))
+        self.forget_comments_at(root, project_id, &uploaded.path);
+        snapshot_written(root, &uploaded.name, bytes);
+        Ok(uploaded)
     }
 
     /// Stores several uploads under `dir`, all or nothing: one that fails
     /// (or, for the draft session `draft`, cannot be recorded as its) and
     /// those already stored are deleted again before the error is
     /// returned. An upload never overwrites, so a kept half would make
-    /// Try again add `-1` copies (QA-105). Only a file still the one
-    /// stored is deleted: one released (its page left), deleted or
-    /// replaced since, its path maybe another upload's now, is left alone. Returns the files kept: with a
+    /// Try again add `-1` copies (QA-105). Returns the files kept: with a
     /// `draft` released already, those deleted at once are left out
     /// ([`Self::record_draft_upload`]).
     ///
@@ -795,6 +797,12 @@ impl Store {
     /// [`Self::upload_files`], calling `stored` with each upload's path
     /// once it is stored (and recorded or deleted again), so a test can
     /// act between two uploads of a batch as another request would.
+    ///
+    /// The whole batch, undo included, holds [`Self::versions_guard`]: no
+    /// upload or write of the app takes a path the batch freed before it
+    /// is done. Only a writer outside the app (the agent's shell, Finder)
+    /// can, so the undo deletes a file only while it is still the content
+    /// stored ([`crate::drafts::holds`]).
     pub(crate) fn upload_files_each<N: AsRef<str>, B: AsRef<[u8]>>(
         &self,
         project_id: &str,
@@ -803,17 +811,26 @@ impl Store {
         draft: Option<&str>,
         mut stored: impl FnMut(&str),
     ) -> Result<Vec<UploadedFile>> {
-        // Each stored file's path and identity when written.
-        let mut written: Vec<(String, Option<String>)> = Vec::with_capacity(uploads.len());
+        let root = self.root_for(project_id)?;
+        let _guard = self.versions_guard();
+        // Each stored file's path, and the bytes written there.
+        let mut written: Vec<(String, &[u8])> = Vec::with_capacity(uploads.len());
         let mut kept = Vec::with_capacity(uploads.len());
         let outcome = uploads.iter().try_for_each(|(name, bytes)| {
-            let (f, ident) =
-                self.upload_file_ident(project_id, dir, name.as_ref(), bytes.as_ref())?;
+            let bytes = bytes.as_ref();
+            let f = self.upload_file_held(&root, project_id, dir, name.as_ref(), bytes)?;
             // Listed before it is recorded: one the record refuses goes too.
-            written.push((f.path.clone(), ident));
+            written.push((f.path.clone(), bytes));
             let path = f.path.clone();
             match draft {
-                Some(session) if !self.record_draft_upload(project_id, session, &f.path)? => {
+                Some(session)
+                    if !self.record_draft_upload(
+                        project_id,
+                        session,
+                        &f.path,
+                        &crate::drafts::content_ident(bytes),
+                    )? =>
+                {
                     // Deleted at once: nothing of it to undo.
                     written.pop();
                 }
@@ -825,34 +842,22 @@ impl Store {
         match outcome {
             Ok(()) => Ok(kept),
             Err(err) => {
-                self.undo_uploads(project_id, &written);
+                self.undo_uploads_held(&root, project_id, &written);
                 Err(err)
             }
         }
     }
 
-    /// Deletes the files a failed batch stored, each only while it is still
-    /// the one written (same identity): the guard held from that check to
-    /// the delete, no upload or write of the app comes between.
-    fn undo_uploads(&self, project_id: &str, written: &[(String, Option<String>)]) {
-        if written.is_empty() {
-            return;
-        }
-        let root = match self.root_for(project_id) {
-            Ok(root) => root,
-            Err(err) => {
-                tracing::warn!(project = %project_id, error = %err, "an upload that failed cannot be undone");
-                return;
-            }
-        };
-        let _guard = self.versions_guard();
-        for (path, ident) in written {
-            let now = crate::drafts::file_ident(&root, path);
-            if ident.is_none() || now != *ident {
+    /// Deletes the files a failed batch stored, each only while it still
+    /// holds the bytes written. The caller holds [`Self::versions_guard`].
+    fn undo_uploads_held(&self, root: &ProjectRoot, project_id: &str, written: &[(String, &[u8])]) {
+        for (path, bytes) in written {
+            let ident = crate::drafts::content_ident(bytes);
+            if crate::drafts::holds(root, path, &ident) != crate::drafts::Holds::Same {
                 tracing::info!(file = %path, "a failed upload's path holds another file or none: kept");
                 continue;
             }
-            match self.delete_file_held(&root, project_id, path) {
+            match self.delete_file_held(root, project_id, path) {
                 Ok(()) | Err(StoreError::FileNotFound) => {}
                 Err(undo) => {
                     tracing::warn!(file = %path, error = %undo, "an upload that failed cannot be undone");
