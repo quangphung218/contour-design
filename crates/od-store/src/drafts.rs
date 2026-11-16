@@ -187,14 +187,37 @@ fn released(conn: &Connection, session: &str) -> rusqlite::Result<bool> {
     )
 }
 
+/// Runs `f`, which writes the record in more than one statement, all or
+/// nothing: an error half way (a disk full) must not leave a row both
+/// held and a draft's, or a release would delete a page's image. A
+/// SAVEPOINT, so it works inside a caller's transaction as well.
+fn atomic<T, E: From<rusqlite::Error>>(
+    conn: &Connection,
+    f: impl FnOnce() -> std::result::Result<T, E>,
+) -> std::result::Result<T, E> {
+    let outermost = conn.is_autocommit();
+    conn.execute_batch("SAVEPOINT drafts")?;
+    let res = f().and_then(|v| Ok(conn.execute_batch("RELEASE drafts").map(|()| v)?));
+    if res.is_err() {
+        // Best effort: the error itself is what the caller needs.
+        let _ = conn.execute_batch("ROLLBACK TO drafts; RELEASE drafts");
+        if outermost && !conn.is_autocommit() {
+            let _ = conn.execute_batch("ROLLBACK");
+        }
+    }
+    res
+}
+
 /// Takes `paths` of `project_id` out of the record: they are a comment's
 /// now, and ship with the project. A page write holding one that fails
 /// does not give it back.
 pub(crate) fn claim(conn: &Connection, project_id: &str, paths: &[String]) -> rusqlite::Result<()> {
-    for path in paths {
-        forget(conn, project_id, path)?;
-    }
-    Ok(())
+    atomic(conn, || {
+        for path in paths {
+            forget(conn, project_id, path)?;
+        }
+        Ok(())
+    })
 }
 
 /// The record follows a file renamed (or moved with its folder). A row
@@ -204,17 +227,19 @@ pub(crate) fn renamed(
     project_id: &str,
     pairs: &[(String, String)],
 ) -> rusqlite::Result<()> {
-    // A rename onto itself moves nothing: its row stays.
-    for (from, to) in pairs.iter().filter(|(from, to)| from != to) {
-        forget(conn, project_id, to)?;
-        for table in ["draft_uploads", "draft_held"] {
-            conn.execute(
-                &format!("UPDATE {table} SET path = ?3 WHERE project_id = ?1 AND path = ?2"),
-                params![project_id, from, to],
-            )?;
+    atomic(conn, || {
+        // A rename onto itself moves nothing: its row stays.
+        for (from, to) in pairs.iter().filter(|(from, to)| from != to) {
+            forget(conn, project_id, to)?;
+            for table in ["draft_uploads", "draft_held"] {
+                conn.execute(
+                    &format!("UPDATE {table} SET path = ?3 WHERE project_id = ?1 AND path = ?2"),
+                    params![project_id, from, to],
+                )?;
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 /// A file is written at `path` that is not a draft's (the user's upload,
@@ -222,13 +247,15 @@ pub(crate) fn renamed(
 /// outside the app no longer says anything about it, and a page write
 /// holding the draft's that fails does not give it back.
 pub(crate) fn forget(conn: &Connection, project_id: &str, path: &str) -> rusqlite::Result<()> {
-    for table in ["draft_uploads", "draft_held"] {
-        conn.execute(
-            &format!("DELETE FROM {table} WHERE project_id = ?1 AND path = ?2"),
-            params![project_id, path],
-        )?;
-    }
-    Ok(())
+    atomic(conn, || {
+        for table in ["draft_uploads", "draft_held"] {
+            conn.execute(
+                &format!("DELETE FROM {table} WHERE project_id = ?1 AND path = ?2"),
+                params![project_id, path],
+            )?;
+        }
+        Ok(())
+    })
 }
 
 /// Every row under folder `dir` goes with the folder deleted.
@@ -240,15 +267,17 @@ pub(crate) fn forget_folder(
     let prefix = format!("{}/", dir.trim_end_matches('/'));
     // `length` of SQLite itself: `substr` counts characters, Rust's `len`
     // bytes (`Ảnh/` is 4 of one, 6 of the other).
-    for table in ["draft_uploads", "draft_held"] {
-        conn.execute(
-            &format!(
-                "DELETE FROM {table} WHERE project_id = ?1 AND substr(path, 1, length(?2)) = ?2"
-            ),
-            params![project_id, prefix],
-        )?;
-    }
-    Ok(())
+    atomic(conn, || {
+        for table in ["draft_uploads", "draft_held"] {
+            conn.execute(
+                &format!(
+                    "DELETE FROM {table} WHERE project_id = ?1 AND substr(path, 1, length(?2)) = ?2"
+                ),
+                params![project_id, prefix],
+            )?;
+        }
+        Ok(())
+    })
 }
 
 /// How much later than its record a draft image's file may have been
@@ -565,14 +594,16 @@ impl Store {
             })?;
         }
         self.with_conn(|conn| {
-            conn.execute(
-                "DELETE FROM draft_sessions_released WHERE released_at <= ?1",
-                [before],
-            )?;
-            // Held by a write that wrote its page (or never ended): the
-            // image is not a draft's again, and its hold is not needed.
-            conn.execute("DELETE FROM draft_held WHERE held_at <= ?1", [before])?;
-            Ok(())
+            atomic(conn, || {
+                conn.execute(
+                    "DELETE FROM draft_sessions_released WHERE released_at <= ?1",
+                    [before],
+                )?;
+                // Held by a write that wrote its page (or never ended): the
+                // image is not a draft's again, and its hold is not needed.
+                conn.execute("DELETE FROM draft_held WHERE held_at <= ?1", [before])?;
+                Ok(())
+            })
         })?;
         Ok(gone)
     }
@@ -605,39 +636,42 @@ impl Store {
             for path in paths {
                 files::stat_file(&root, path)?;
             }
-            let mut taken = Vec::new();
-            for path in paths {
-                let held: Option<i64> = conn
-                    .query_row(
-                        "SELECT id FROM draft_held WHERE project_id = ?1 AND path = ?2",
-                        params![project_id, path],
-                        |r| r.get(0),
-                    )
-                    .optional()?;
-                if let Some(id) = held {
-                    conn.execute(
-                        "UPDATE draft_held SET holders = holders + 1 WHERE id = ?1",
-                        [id],
+            // Moving a row from the record to the holds is one step.
+            atomic(conn, || {
+                let mut taken = Vec::new();
+                for path in paths {
+                    let held: Option<i64> = conn
+                        .query_row(
+                            "SELECT id FROM draft_held WHERE project_id = ?1 AND path = ?2",
+                            params![project_id, path],
+                            |r| r.get(0),
+                        )
+                        .optional()?;
+                    if let Some(id) = held {
+                        conn.execute(
+                            "UPDATE draft_held SET holders = holders + 1 WHERE id = ?1",
+                            [id],
+                        )?;
+                        taken.push(TakenDraft(id));
+                        continue;
+                    }
+                    let moved = conn.execute(
+                        "INSERT INTO draft_held \
+                         (project_id, path, session, uploaded_at, ident, held_at, holders) \
+                         SELECT project_id, path, session, uploaded_at, ident, ?3, 1 \
+                         FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
+                        params![project_id, path, at],
                     )?;
-                    taken.push(TakenDraft(id));
-                    continue;
+                    if moved == 1 {
+                        taken.push(TakenDraft(conn.last_insert_rowid()));
+                        conn.execute(
+                            "DELETE FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
+                            params![project_id, path],
+                        )?;
+                    }
                 }
-                let moved = conn.execute(
-                    "INSERT INTO draft_held \
-                     (project_id, path, session, uploaded_at, ident, held_at, holders) \
-                     SELECT project_id, path, session, uploaded_at, ident, ?3, 1 \
-                     FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
-                    params![project_id, path, at],
-                )?;
-                if moved == 1 {
-                    taken.push(TakenDraft(conn.last_insert_rowid()));
-                    conn.execute(
-                        "DELETE FROM draft_uploads WHERE project_id = ?1 AND path = ?2",
-                        params![project_id, path],
-                    )?;
-                }
-            }
-            Ok(taken)
+                Ok(taken)
+            })
         })
     }
 
@@ -659,45 +693,47 @@ impl Store {
         told: impl FnOnce(),
     ) {
         let res = self.with_conn(|conn| {
-            let mut late = Vec::new();
-            for TakenDraft(id) in taken {
-                conn.execute(
-                    "UPDATE draft_held SET holders = holders - 1 WHERE id = ?1",
-                    [id],
-                )?;
-                let row = conn
-                    .query_row(
-                        "SELECT path, session, uploaded_at, ident FROM draft_held \
-                         WHERE id = ?1 AND holders <= 0",
+            atomic(conn, || {
+                let mut late = Vec::new();
+                for TakenDraft(id) in taken {
+                    conn.execute(
+                        "UPDATE draft_held SET holders = holders - 1 WHERE id = ?1",
                         [id],
-                        |r| {
-                            Ok(DraftRow {
-                                path: r.get(0)?,
-                                session: r.get(1)?,
-                                uploaded_at: r.get(2)?,
-                                ident: r.get(3)?,
-                            })
-                        },
-                    )
-                    .optional()?;
-                let Some(row) = row else { continue };
-                conn.execute("DELETE FROM draft_held WHERE id = ?1", [id])?;
-                conn.execute(
-                    "INSERT OR IGNORE INTO draft_uploads \
-                     (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![
-                        project_id,
-                        row.path,
-                        row.session,
-                        row.uploaded_at,
-                        row.ident
-                    ],
-                )?;
-                if released(conn, &row.session)? {
-                    late.push(row);
+                    )?;
+                    let row = conn
+                        .query_row(
+                            "SELECT path, session, uploaded_at, ident FROM draft_held \
+                             WHERE id = ?1 AND holders <= 0",
+                            [id],
+                            |r| {
+                                Ok(DraftRow {
+                                    path: r.get(0)?,
+                                    session: r.get(1)?,
+                                    uploaded_at: r.get(2)?,
+                                    ident: r.get(3)?,
+                                })
+                            },
+                        )
+                        .optional()?;
+                    let Some(row) = row else { continue };
+                    conn.execute("DELETE FROM draft_held WHERE id = ?1", [id])?;
+                    conn.execute(
+                        "INSERT OR IGNORE INTO draft_uploads \
+                         (project_id, path, session, uploaded_at, ident) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        params![
+                            project_id,
+                            row.path,
+                            row.session,
+                            row.uploaded_at,
+                            row.ident
+                        ],
+                    )?;
+                    if released(conn, &row.session)? {
+                        late.push(row);
+                    }
                 }
-            }
-            Ok(late)
+                Ok(late)
+            })
         });
         // A project whose folder is gone: its rows stay for the sweep.
         let res = res.and_then(|late| match self.root_for(project_id) {
@@ -1670,6 +1706,71 @@ mod tests {
             .unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(held(&s), 0);
         assert!(exists(&s, &p, &img), "the page's image stays");
+    }
+
+    /// Makes every `op` (DELETE, INSERT) on `table` fail as a full disk
+    /// would, until [`heal`].
+    fn fail_on(s: &Store, op: &str, table: &str) {
+        s.with_conn(|c| {
+            c.execute_batch(&format!(
+                "CREATE TEMP TRIGGER disk_full BEFORE {op} ON {table} \
+                 BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END"
+            ))?;
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    fn heal(s: &Store) {
+        s.with_conn(|c| Ok(c.execute_batch("DROP TRIGGER temp.disk_full")?))
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// A take failing half way (the disk full) leaves the image a draft's
+    /// only, not held too: Apply tried again takes it, and leaving the
+    /// page then leaves the page's image.
+    #[test]
+    fn a_take_failing_half_way_leaves_the_image_a_drafts_only() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        fail_on(&s, "DELETE", "draft_uploads");
+        assert!(
+            s.take_draft_uploads(&p, std::slice::from_ref(&img))
+                .is_err()
+        );
+        heal(&s);
+        // Tried again, the write wrote its page.
+        s.take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        s.release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(exists(&s, &p, &img), "the page's image deleted");
+        assert!(s.unclaimed_draft_uploads(&p).unwrap_or_default().is_empty());
+    }
+
+    /// A give back failing half way leaves the hold as it was: the image
+    /// is not lost between the two tables.
+    #[test]
+    fn a_give_back_failing_half_way_leaves_the_hold() {
+        let (_tmp, s, p, _) = store();
+        let (img, _) = upload(&s, &p, "s1", "hero.png");
+        let taken = s
+            .take_draft_uploads(&p, std::slice::from_ref(&img))
+            .unwrap_or_else(|e| panic!("{e}"));
+        fail_on(&s, "INSERT", "draft_uploads");
+        s.give_back_draft_uploads(&p, taken);
+        heal(&s);
+        let holders: i64 = s
+            .with_conn(|c| {
+                Ok(c.query_row(
+                    "SELECT COALESCE(SUM(holders), 0) FROM draft_held",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .unwrap_or(-1);
+        assert_eq!(holders, 1, "the hold lost with no row given back");
+        assert!(exists(&s, &p, &img));
     }
 
     /// A held image renamed: its hold follows, as its row would.
