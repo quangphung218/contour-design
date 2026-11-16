@@ -34,7 +34,7 @@ arc-swap = "1"
 axum = { version = "0.8", features = ["multipart", "macros"] }
 base64 = "0.23"
 # On a bump: crates/od-render-cdp/src/launch_services.rs copies its
-# DEFAULT_ARGS (tests/launch_services.rs compares, on macOS only).
+# DEFAULT_ARGS; run its ignored tests (docs/development.md, Browser launch).
 chromiumoxide = { version = "0.9", default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
 criterion = { version = "0.7", default-features = false }
