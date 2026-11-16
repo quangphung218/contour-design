@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.40] - 2026-11-16
+
 ### Fixed
 
 - Files: writing, creating, uploading, replacing or deleting a file, or deleting a folder, no longer reports an error after it was done when the database could not let go of what it held at that path (draft images, comments, the entry page); that is logged, and a deleted page's history still closes. Renaming or moving a file or folder already gone outside the app answers "not found" even when `.file-versions` is a link, as deleting does.
@@ -1215,7 +1217,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.39...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.40...HEAD
+[0.2.0-beta.40]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.39...v0.2.0-beta.40
 [0.2.0-beta.39]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.38...v0.2.0-beta.39
 [0.2.0-beta.38]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.37...v0.2.0-beta.38
 [0.2.0-beta.37]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.36...v0.2.0-beta.37
