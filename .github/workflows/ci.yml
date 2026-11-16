@@ -179,8 +179,9 @@ jobs:
           brew install ffmpeg
           ffmpeg -version | head -n1
       - run: make ui-dist
-      # The runner's Chrome as Homebrew left it: quarantined, never
-      # approved, so every export takes the child fallback.
+      # The runner's Chrome as the image left it: on most images quarantined
+      # by Homebrew and never approved, so every export takes the child
+      # fallback.
       - run: cargo test -p od-render-cdp -p od-cli
       # Then approved, as a Chrome opened once from Finder: the same
       # exports go through LaunchServices, and a test checks that they do.
@@ -188,7 +189,11 @@ jobs:
         env:
           OD_EXPECT_LAUNCH_SERVICES: "1"
         run: |
-          sudo xattr -d com.apple.quarantine "/Applications/Google Chrome.app"
+          # Some runner images leave Chrome unquarantined already.
+          chrome="/Applications/Google Chrome.app"
+          if xattr -p com.apple.quarantine "$chrome" > /dev/null 2>&1; then
+            sudo xattr -d com.apple.quarantine "$chrome"
+          fi
           cargo test -p od-render-cdp --lib the_installed_chrome_starts_through_launch_services
           cargo test -p od-render-cdp --test chrome
           cargo test -p od-cli --test m5 export_cli_writes_every_format
