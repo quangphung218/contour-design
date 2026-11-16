@@ -12,6 +12,7 @@ All notable changes to Contour are recorded here. The format follows
 
 - Files: an image attached to a comment that lands after its Studio was left, and that the disk will not let the app delete, stays out of the project's files (and the ZIP) until the day-old sweep or the next quit deletes it; before, it became one of the project's files. Giving back the images of a page write that failed no longer holds every other request while it reads them, and an image another write took meanwhile is no longer deleted.
 - Manual edit: when Apply runs twice with the same image and one write fails after the other put it in the page, the image stays the page's; before, it was left out of the ZIP and deleted when the Studio was left or the app quit. The same goes for an image a comment took, or a file written at its path, while the failed write ran.
+- Settings: saving the agent, preferences, notifications or another settings section right after changing the default project location (or from a second window opened before the change) no longer puts the old default location back, or drops a location just added.
 
 ## [0.2.0-beta.40] - 2026-11-16
 
