@@ -2,7 +2,9 @@
 # main run on Linux, plus the workspace tests on Windows; the macOS tests
 # and the Windows build run on a manual dispatch (with the other jobs) or
 # when release.yml calls this workflow, once per platform (`only: macos`,
-# `only: windows`). Docs links,
+# `only: windows`). A pull request that changes how Chrome starts or
+# renders (`chrome-paths`), and a manual dispatch, also run the Chrome
+# tests on macOS (`chrome-macos`): LaunchServices exists only there. Docs links,
 # script tests, actionlint and commit messages live in docs.yml, which also
 # runs for docs-only changes. `make ci` runs the checks locally and is the
 # main gate on macOS (docs/development.md).
@@ -121,6 +123,80 @@ jobs:
           fi
           ffmpeg -version | head -n1
       - run: make test
+
+  # Whether a pull request touches how Chrome starts or renders.
+  chrome-paths:
+    name: changed paths (Chrome)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      chrome: ${{ steps.diff.outputs.chrome }}
+    steps:
+      # The merge commit and its first parent, the base branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: diff
+        run: |
+          git diff --name-only HEAD^1 HEAD | tee changed.txt
+          if grep -qE '^(crates/od-render-cdp/|crates/od-cli/|Cargo\.lock$|\.github/workflows/ci\.yml$)' changed.txt; then
+            echo chrome=true >> "$GITHUB_OUTPUT"
+          else
+            echo chrome=false >> "$GITHUB_OUTPUT"
+          fi
+
+  # The Chrome tests on macOS for such a pull request: there a browser in an
+  # `.app` starts through LaunchServices, which the Linux job never runs
+  # (v0.2.0-beta.42 shipped a start that hung on every macOS runner). The
+  # tests in tests/launch_services.rs that run Chrome inside a throwaway
+  # bundle stay manual: there Chrome never opened DevTools, approved or not.
+  chrome-macos:
+    name: Chrome on macOS (LaunchServices)
+    needs: chrome-paths
+    # Also on a manual dispatch, where `chrome-paths` is skipped.
+    if: ${{ !cancelled() && (needs.chrome-paths.outputs.chrome == 'true' || (github.event_name == 'workflow_dispatch' && !inputs.only)) }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.100.0  # pinned: a new stable brings new clippy lints; bump by PR
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: trunk
+      # The MP4 export tests need ffmpeg and ffprobe, and fail without them.
+      - name: ffmpeg
+        run: |
+          brew install ffmpeg
+          ffmpeg -version | head -n1
+      - run: make ui-dist
+      # The runner's Chrome as the image left it: on most images quarantined
+      # by Homebrew and never approved, so every export takes the child
+      # fallback.
+      - run: cargo test -p od-render-cdp -p od-cli
+      # Then approved, as a Chrome opened once from Finder: the same
+      # exports go through LaunchServices, and a test checks that they do.
+      - name: Chrome approved, through LaunchServices
+        env:
+          OD_EXPECT_LAUNCH_SERVICES: "1"
+        run: |
+          # Some runner images leave Chrome unquarantined already.
+          chrome="/Applications/Google Chrome.app"
+          if xattr -p com.apple.quarantine "$chrome" > /dev/null 2>&1; then
+            sudo xattr -d com.apple.quarantine "$chrome"
+          fi
+          cargo test -p od-render-cdp --lib the_installed_chrome_starts_through_launch_services
+          cargo test -p od-render-cdp --test chrome
+          cargo test -p od-cli --test m5 export_cli_writes_every_format
 
   # The workspace tests on Windows: agent lookup (`.cmd` shims, the user's
   # Path in the registry), the Job Object, paths and file URLs.

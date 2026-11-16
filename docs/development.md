@@ -267,10 +267,22 @@ Run them on macOS, outside any sandbox:
 cargo test -p od-render-cdp --test launch_services -- --ignored
 ```
 
-They are ignored because they flaked in `make check` (2 of 6 runs, Chrome
-never opened DevTools) and `release.yml` runs the macOS tests. When one
-fails, its panic lists the fake browsers and Chrome profiles that were
-running.
+They are ignored because Chrome run from a throwaway bundle is slow to
+open DevTools through LaunchServices under `make check` load (over 30 s in
+2 of 6 runs; 4–7 s idle) and never opens it on the GitHub macOS runners.
+What CI checks instead (`chrome-macos`, on pull requests touching
+`crates/od-render-cdp` or `crates/od-cli`): the exports with the runner's
+Chrome as Homebrew left it (quarantined: the child fallback), then with it
+approved, where `the_installed_chrome_starts_through_launch_services`
+checks that Chrome is launchd's child, not ours. When one fails, its panic lists the fake browsers and Chrome
+profiles that were running.
+
+A start through LaunchServices that fails or passes 20 s falls back to
+starting Chrome as Contour's child, and so does a Chrome that is
+quarantined and was never opened from Finder: LaunchServices would wait
+for someone to approve its first launch (Chrome from `brew install --cask`,
+as on the GitHub macOS runners). Without the fallback v0.2.0-beta.42 could
+not export on those runners.
 
 ### Benchmarks
 
@@ -294,6 +306,7 @@ before asking for review.
 | test | `ci.yml` | Ubuntu | macOS (release); macOS and Ubuntu (manual) | ffmpeg (MP4 export tests), `make test` |
 | test (windows-2025) | `ci.yml` | Windows | manual run only | ffmpeg, `trunk build`, `cargo test --workspace --no-fail-fast` |
 | build (windows) | `ci.yml` | no | Windows (never blocks a release) | `trunk build`, `cargo build --workspace --all-targets` |
+| Chrome on macOS | `ci.yml` | macOS, PRs touching `crates/od-render-cdp/**`, `crates/od-cli/**`, `Cargo.lock` or `ci.yml` | manual run only | `cargo test -p od-render-cdp -p od-cli`, then again with the runner's Chrome approved (through LaunchServices) |
 | e2e | `ci.yml` | Ubuntu | manual run only | `make e2e`, screenshots uploaded on failure |
 | cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
 | docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |

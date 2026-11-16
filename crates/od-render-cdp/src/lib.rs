@@ -63,6 +63,12 @@ const OPEN_TIMEOUT: Duration = Duration::from_secs(90);
 const LAUNCH_ATTEMPTS: u32 = 2;
 /// Longest wait for one launched browser to open DevTools.
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest wait for a start through LaunchServices (`open`, DevTools,
+/// connecting) before the browser starts as our child instead. It normally
+/// takes 1–7 s. With [`LAUNCH_ATTEMPTS`] child starts after it, the worst
+/// case stays under [`OPEN_TIMEOUT`].
+#[cfg(target_os = "macos")]
+const LAUNCH_SERVICES_TIMEOUT: Duration = Duration::from_secs(20);
 /// Longest wait for one DevTools command.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -496,7 +502,8 @@ impl Session {
             profile,
             detached,
         } = loop {
-            match Self::launch(exe, no_sandbox).await {
+            // LaunchServices is tried once: a retry starts a child.
+            match Self::launch(exe, no_sandbox, attempt == 1).await {
                 Err(LaunchError::Timeout(_)) if attempt < LAUNCH_ATTEMPTS => attempt += 1,
                 Err(LaunchError::Timeout(e) | LaunchError::Other(e)) => return Err(e),
                 Ok(launched) => break launched,
@@ -529,9 +536,78 @@ impl Session {
 
     /// Starts the browser at `exe` on a fresh profile and connects to it:
     /// every render's browser starts here. On macOS a browser in an `.app`
-    /// bundle goes through LaunchServices ([`launch_services`]); anything
-    /// else is spawned as our child by chromiumoxide.
-    async fn launch(exe: &Path, no_sandbox: bool) -> Result<Launched, LaunchError> {
+    /// bundle goes through LaunchServices first, when `launch_services` is
+    /// set ([`Self::launch_detached`]); otherwise, or when that fails, it is
+    /// spawned as our child by chromiumoxide.
+    async fn launch(
+        exe: &Path,
+        no_sandbox: bool,
+        launch_services: bool,
+    ) -> Result<Launched, LaunchError> {
+        #[cfg(target_os = "macos")]
+        if launch_services && let Some(launched) = Self::launch_detached(exe, no_sandbox).await {
+            return Ok(launched);
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = launch_services;
+        Self::launch_child(exe, no_sandbox).await
+    }
+
+    /// The start through LaunchServices ([`launch_services`]), `None` when it
+    /// cannot be used here or failed: the caller starts a child instead, so
+    /// how the browser starts never fails an export. Its cost there is
+    /// that macOS may charge the child's doings to us (App Management).
+    #[cfg(target_os = "macos")]
+    async fn launch_detached(exe: &Path, no_sandbox: bool) -> Option<Launched> {
+        let app = launch_services::app_bundle(exe)?;
+        if launch_services::awaits_approval(&app) {
+            tracing::warn!(
+                app = %app.display(),
+                "the browser is quarantined and its first launch was never approved (opened from Finder), so LaunchServices would wait for that; it starts as our child instead"
+            );
+            return None;
+        }
+        let profile = Profile::new().ok()?;
+        let tmp = profile.tmp().ok()?;
+        match launch_services::launch(
+            &app,
+            exe,
+            profile.path(),
+            tmp.as_deref(),
+            no_sandbox,
+            LAUNCH_SERVICES_TIMEOUT,
+            REQUEST_TIMEOUT,
+        )
+        .await
+        {
+            Ok(Some((browser, handler))) => Some(Launched {
+                browser,
+                handler,
+                profile,
+                detached: true,
+            }),
+            Ok(None) => {
+                tracing::warn!(
+                    app = %app.display(),
+                    "`ps` cannot run (inside another sandbox?), so the browser starts as our child, not through LaunchServices"
+                );
+                None
+            }
+            Err(LaunchError::Timeout(e) | LaunchError::Other(e)) => {
+                tracing::warn!(
+                    app = %app.display(),
+                    error = %e,
+                    "starting the browser through LaunchServices failed; it starts as our child instead"
+                );
+                // Ends what LaunchServices started (waits up to 3 s).
+                let _ = tokio::task::spawn_blocking(move || drop(profile)).await;
+                None
+            }
+        }
+    }
+
+    /// The browser at `exe` spawned as our child by chromiumoxide.
+    async fn launch_child(exe: &Path, no_sandbox: bool) -> Result<Launched, LaunchError> {
         let profile = Profile::new()
             .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))
             .map_err(LaunchError::Other)?;
@@ -539,31 +615,6 @@ impl Session {
             .tmp()
             .map_err(|e| RenderError::Failed(format!("creating a browser profile: {e}")))
             .map_err(LaunchError::Other)?;
-        #[cfg(target_os = "macos")]
-        if let Some(app) = launch_services::app_bundle(exe) {
-            if let Some((browser, handler)) = launch_services::launch(
-                &app,
-                exe,
-                profile.path(),
-                tmp.as_deref(),
-                no_sandbox,
-                LAUNCH_TIMEOUT,
-                REQUEST_TIMEOUT,
-            )
-            .await?
-            {
-                return Ok(Launched {
-                    browser,
-                    handler,
-                    profile,
-                    detached: true,
-                });
-            }
-            tracing::warn!(
-                app = %app.display(),
-                "`ps` cannot run (inside another sandbox?), so the browser starts as our child, not through LaunchServices"
-            );
-        }
         let mut config = BrowserConfig::builder();
         if no_sandbox {
             config = config.no_sandbox();
@@ -1157,5 +1208,94 @@ mod tests {
         assert!(!is_deck(DeckMode::Auto, &page).unwrap());
         assert!(is_deck(DeckMode::Auto, &deck).unwrap());
         assert!(!is_deck(DeckMode::Page, &deck).unwrap());
+    }
+
+    /// A quarantined bundle never approved is not handed to LaunchServices,
+    /// which would wait for that approval (`open` hung 90 s on the GitHub
+    /// macOS runners, where Homebrew Cask leaves Chrome so). Nothing runs:
+    /// an unsigned bundle there would wait for Gatekeeper too, either way.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_quarantined_bundle_skips_launch_services() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Quarantined Browser.app");
+        let exe = app.join("Contents/MacOS/Quarantined Browser");
+        let ran = dir.path().join("ran");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        xattr::set(
+            &app,
+            "com.apple.quarantine",
+            b"0181;6af5c21a;Homebrew Cask;",
+        )
+        .unwrap();
+
+        let started = std::time::Instant::now();
+        assert!(Session::launch_detached(&exe, false).await.is_none());
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(!ran.exists(), "it was started");
+    }
+
+    /// The installed Chrome starts through LaunchServices: its browser
+    /// process is launchd's child, not ours. Skipped where that cannot be
+    /// (no Chrome, no `ps`, a Chrome never approved); `OD_EXPECT_LAUNCH_SERVICES=1`
+    /// turns a skip into a failure (ci.yml `chrome-macos`, after approving
+    /// the runner's Chrome).
+    #[cfg(target_os = "macos")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_installed_chrome_starts_through_launch_services() {
+        let expected = std::env::var("OD_EXPECT_LAUNCH_SERVICES").as_deref() == Ok("1");
+        let skip = |why: &str| {
+            assert!(!expected, "OD_EXPECT_LAUNCH_SERVICES=1 but {why}");
+            eprintln!("skipping: {why}");
+        };
+        if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+            return skip("OD_SKIP_CHROME_TESTS=1");
+        }
+        let Ok(exe) = find_chrome() else {
+            return skip("no Chrome");
+        };
+        let Some(app) = launch_services::app_bundle(&exe) else {
+            return skip("Chrome is not in an .app bundle");
+        };
+        if launch_services::awaits_approval(&app) {
+            return skip("Chrome is quarantined and was never approved");
+        }
+        if profile_users_checked(Path::new("/nowhere")).is_none() {
+            return skip("`ps` cannot run here");
+        }
+
+        let launched = Session::launch_detached(&exe, no_sandbox_from_env())
+            .await
+            .expect("LaunchServices did not start Chrome within the deadline");
+        assert!(launched.detached);
+        let users = profile_users(launched.profile.path());
+        let ppids: Vec<String> = users
+            .iter()
+            .filter_map(|pid| {
+                let out = std::process::Command::new("ps")
+                    .args(["-o", "ppid=", "-p", &pid.to_string()])
+                    .output()
+                    .ok()?;
+                Some(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+            })
+            .collect();
+        assert!(
+            ppids.contains(&"1".to_owned()),
+            "no process of launchd: {ppids:?}"
+        );
+        let ours = std::process::id().to_string();
+        assert!(!ppids.contains(&ours), "Chrome is our child: {ppids:?}");
+        drop(launched.browser);
+        let profile = launched.profile;
+        tokio::task::spawn_blocking(move || drop(profile))
+            .await
+            .unwrap();
     }
 }
