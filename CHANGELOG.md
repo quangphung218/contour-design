@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.41] - 2026-11-16
+
 ### Fixed
 
 - Uploads: a file whose name is too long for the disk (over 255 bytes, about 85 Vietnamese letters) is stored under a name shortened to fit, keeping its extension, where the upload failed with "Try again" every time (QA-106). This holds for the Files panel, a comment's images, the composer, the Media library and a design system's assets. A name too long that the user typed (a template's file, a folder) is answered "The file name is too long", and a design system write the disk refuses (no permission, disk full) says so instead of "Try again". Design systems keep the Vietnamese letters of an asset's name: `màu.png` and `mẫu.png` are two assets, where both became `m-u.png` and the second replaced the first while the page said "Uploaded." (QA-107). Two files in one batch that would be kept under one name (ignoring case, and `mẫu` composed or decomposed) are refused, naming both, and so are two attached files when creating a design system. A design system asset whose name was shortened never replaces another: it takes `name-1.png`; deleting an asset uses its name as it is on disk. Names macOS sends decomposed (NFD) keep their accents everywhere, where each accent became `_`.
@@ -1224,7 +1226,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.40...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.41...HEAD
+[0.2.0-beta.41]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.40...v0.2.0-beta.41
 [0.2.0-beta.40]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.39...v0.2.0-beta.40
 [0.2.0-beta.39]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.38...v0.2.0-beta.39
 [0.2.0-beta.38]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.37...v0.2.0-beta.38
