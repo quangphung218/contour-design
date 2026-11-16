@@ -7,7 +7,9 @@
 //!   replaced by `hasApiKey` and `apiKeyHint` (last four characters), and a
 //!   `byok` patch without `apiKey` keeps the stored one while the protocol
 //!   and base URL stay the same. A provider on a public host saved with
-//!   no key (sent or kept) is refused with 400.
+//!   no key (sent or kept) is refused with 400. Keys another route owns
+//!   (project locations) are left out of a `PUT`: the UI sends its whole
+//!   copy, which may predate that route's last write.
 //! - `POST /api/import/folder`: a project pointing at an existing folder.
 //! - Everything else that is not `/api/*`: the static `od-ui` bundle, with
 //!   `index.html` as the SPA fallback.
@@ -302,9 +304,12 @@ pub(crate) fn patch_config(store: &Store, patch: Value) -> Result<(), StoreError
 
 async fn put_config(
     State(state): State<AppState>,
-    ApiJson(patch): ApiJson<Map<String, Value>>,
+    ApiJson(mut patch): ApiJson<Map<String, Value>>,
 ) -> ApiResult<ApiJson<Value>> {
     validate_patch(&patch).map_err(ApiErr::bad_request)?;
+    for key in crate::routes::manage::locations::CONFIG_KEYS {
+        patch.remove(key);
+    }
     let config = state
         .blocking(move |s| {
             let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());

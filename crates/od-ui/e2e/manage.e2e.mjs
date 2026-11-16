@@ -373,6 +373,28 @@ try {
   await page.getByTestId('save-settings').click();
   await formSaved;
   assert.equal((await api('/api/project-locations')).body.defaultId, 'default', 'form save kept the new default');
+  // The same while the settings copy is still being read again after the
+  // location change (a slow reply, or a second window): the form sends
+  // the old default, and the daemon keeps the one the locations route set.
+  let slowRead = null;
+  await page.route('**/api/app-config', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await new Promise((resolve) => { slowRead = resolve; });
+    await route.continue();
+  });
+  await loc.getByTestId('location-default').click();
+  await until(async () => (await api('/api/project-locations')).body.defaultId !== 'default', 'default moved');
+  await until(async () => slowRead !== null, 'settings read again');
+  const oldCopySaved = page.waitForResponse((r) => r.url().endsWith('/api/app-config') && r.request().method() === 'PUT');
+  await page.getByTestId('save-settings').click();
+  await oldCopySaved;
+  const reread = page.waitForResponse((r) => r.url().endsWith('/api/app-config') && r.request().method() === 'GET');
+  slowRead();
+  await reread;
+  await page.unroute('**/api/app-config');
+  assert.notEqual((await api('/api/project-locations')).body.defaultId, 'default', 'a save with the old copy kept the new default');
+  await page.locator('[data-testid="location"]').first().getByTestId('location-default').click();
+  await until(async () => (await api('/api/project-locations')).body.defaultId === 'default', 'default back again');
   const openai = page.locator('[data-testid="media-provider"][data-provider="openai"]');
   await openai.getByTestId('media-key').fill('sk-media-1234');
   await page.getByTestId('media-save').click();

@@ -889,6 +889,62 @@ async fn project_locations_hold_new_projects_and_scan_finds_folders() {
     );
 }
 
+/// The settings form sends its whole copy of the app config on every
+/// save. A copy read before a location change carries the old locations:
+/// saving it must not undo the change (`PUT /api/project-locations` owns
+/// those keys).
+#[tokio::test]
+async fn a_settings_save_with_an_old_copy_keeps_the_locations() {
+    let d = common::daemon().await;
+    let holder = tempfile::Builder::new()
+        .prefix("od-work")
+        .tempdir()
+        .unwrap();
+    let base = holder.path().join("work");
+    std::fs::create_dir_all(&base).unwrap();
+    let base_s = base.canonicalize().unwrap().to_string_lossy().into_owned();
+    let res = put(
+        &d,
+        "/api/project-locations",
+        &json!({"locations": [{"name": "Work", "path": base_s}], "defaultId": "work"}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let stale = d.get_json("/api/app-config").await;
+    assert_eq!(stale["defaultProjectLocationId"], "work");
+    let res = put(
+        &d,
+        "/api/project-locations",
+        &json!({"locations": [{"id": "work", "name": "Work", "path": base_s}], "defaultId": "default"}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let mut form = stale.clone();
+    form["theme"] = json!("dark");
+    assert_eq!(
+        put(&d, "/api/app-config", &form).await.status(),
+        StatusCode::OK
+    );
+    let list = d.get_json("/api/project-locations").await;
+    assert_eq!(list["defaultId"], "default", "the old default came back");
+    assert_eq!(d.get_json("/api/app-config").await["theme"], "dark");
+
+    // An old copy from before the location was added does not drop it.
+    let mut older = stale;
+    older["projectLocations"] = json!([]);
+    older["defaultProjectLocationId"] = Value::Null;
+    assert_eq!(
+        put(&d, "/api/app-config", &older).await.status(),
+        StatusCode::OK
+    );
+    let list = d.get_json("/api/project-locations").await;
+    assert_eq!(
+        list["locations"][1]["id"], "work",
+        "the location was dropped"
+    );
+}
+
 #[tokio::test]
 async fn integrations_info_and_local_diagnostics() {
     let d = common::daemon().await;
