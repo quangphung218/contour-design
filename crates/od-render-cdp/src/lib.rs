@@ -65,11 +65,15 @@ const LAUNCH_ATTEMPTS: u32 = 2;
 const LAUNCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Longest wait for a start through LaunchServices (`open`, DevTools,
 /// connecting) before the browser starts as our child instead. It normally
-/// takes 1–7 s. A failed start counts as one of the [`LAUNCH_ATTEMPTS`], so
-/// the worst case (this, ending it, one child launch) leaves over 30 s of
-/// [`OPEN_TIMEOUT`] to open the page.
+/// takes 1–7 s. A failed start that took this long counts as one of the
+/// [`LAUNCH_ATTEMPTS`] ([`spent_a_launch`]), so the worst case (this,
+/// ending it, one child launch) leaves over 30 s of [`OPEN_TIMEOUT`] to
+/// open the page.
 #[cfg(target_os = "macos")]
 const LAUNCH_SERVICES_TIMEOUT: Duration = Duration::from_secs(20);
+/// What [`OPEN_TIMEOUT`] keeps, past every launch, for opening the page.
+#[cfg(target_os = "macos")]
+const PAGE_MARGIN: Duration = Duration::from_secs(15);
 /// Longest wait for one DevTools command.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -365,14 +369,23 @@ const PROFILE_PREFIX: &str = "od-chrome-";
 /// A profile folder without a browser lock this old is left over.
 #[cfg(unix)]
 const STALE_PROFILE: Duration = Duration::from_secs(60 * 60);
-/// Marks a profile whose browser failed to start ([`Profile::abandon`]):
-/// whatever runs with it is left over.
+/// Marks a profile a start through LaunchServices is under way on, from
+/// before `open` until the browser is connected to; it holds the pid of
+/// the process starting it. A mark left ([`Profile::abandon`], a cancelled
+/// render, a process that quit or was killed meanwhile) means whatever
+/// runs on the profile is a browser started for nobody: LaunchServices may
+/// start it well after `open` is gone. [`sweep_stale_profiles`] ends it.
+#[cfg(unix)]
+const OPENING: &str = "od-opening";
+/// The mark #235 left on a profile given up on, without a pid: read as an
+/// [`OPENING`] mark whose process is gone.
 #[cfg(unix)]
 const ABANDONED: &str = "od-abandoned";
-/// How long an abandoned profile is watched for a browser starting late.
-/// LaunchServices may still start one well after `open` was killed (a
-/// Gatekeeper check of a large bundle on a slow Mac).
-#[cfg(target_os = "macos")]
+/// How long a profile given up on is watched for a browser starting late,
+/// and how old its [`OPENING`] mark is before any sweep ends what runs on
+/// it and removes it. LaunchServices may still start a browser well after
+/// `open` was killed (a Gatekeeper check of a large bundle on a slow Mac).
+#[cfg(unix)]
 const ABANDONED_WATCH: Duration = Duration::from_secs(120);
 /// How often an abandoned profile is checked during [`ABANDONED_WATCH`].
 #[cfg(target_os = "macos")]
@@ -381,17 +394,26 @@ const ABANDONED_POLL: Duration = Duration::from_secs(1);
 /// A throwaway browser profile. Removed only once no process started with
 /// it is left: a Chrome helper still exiting would write it back (the
 /// browser is killed on drop, not waited for).
-struct Profile(Option<tempfile::TempDir>);
+struct Profile {
+    dir: Option<tempfile::TempDir>,
+    /// Marked [`OPENING`]: dropped so, the start was given up on midway.
+    #[cfg(target_os = "macos")]
+    opening: bool,
+}
 
 impl Profile {
     fn new() -> std::io::Result<Self> {
         sweep_stale_profiles(&std::env::temp_dir());
         let dir = tempfile::Builder::new().prefix(PROFILE_PREFIX).tempdir()?;
-        Ok(Self(Some(dir)))
+        Ok(Self {
+            dir: Some(dir),
+            #[cfg(target_os = "macos")]
+            opening: false,
+        })
     }
 
     fn path(&self) -> &Path {
-        self.0
+        self.dir
             .as_ref()
             .map_or(Path::new(""), tempfile::TempDir::path)
     }
@@ -410,48 +432,126 @@ impl Profile {
         Ok(Some(tmp))
     }
 
-    /// Ends a profile LaunchServices failed to start a browser on, and
-    /// whatever starts on it later: a request LaunchServices holds outlives
-    /// the `open` that made it, so the browser may come up after this. The
-    /// folder stays, marked [`ABANDONED`] (removed, it would come back
-    /// unmarked with such a browser); a thread kills what starts on it for
-    /// [`ABANDONED_WATCH`], and the next sweep, in any process, after that.
-    /// Blocks up to 3 s, as dropping does.
+    /// Marks the profile [`OPENING`], before `open` runs: from here on it
+    /// is given up on unless [`Self::opened`] clears the mark, whether this
+    /// drops, the render is cancelled or the process ends.
+    #[cfg(target_os = "macos")]
+    fn mark_opening(&mut self) -> std::io::Result<()> {
+        std::fs::write(self.path().join(OPENING), std::process::id().to_string())?;
+        self.opening = true;
+        Ok(())
+    }
+
+    /// Clears the [`OPENING`] mark: the browser on the profile is ours.
+    #[cfg(target_os = "macos")]
+    fn opened(&mut self) -> std::io::Result<()> {
+        std::fs::remove_file(self.path().join(OPENING))?;
+        self.opening = false;
+        Ok(())
+    }
+
+    /// Ends a profile LaunchServices failed to start a browser on, now
+    /// (blocks up to 3 s, as dropping does) and for [`ABANDONED_WATCH`]
+    /// after ([`watch_abandoned`]). The folder stays with its [`OPENING`]
+    /// mark: removed, it would come back unmarked with a browser starting
+    /// late; the first sweep after the watch removes it.
     #[cfg(target_os = "macos")]
     fn abandon(mut self) {
-        let Some(dir) = self.0.take() else {
+        let Some(dir) = self.dir.take() else {
             return;
         };
         let path = dir.keep();
         end_profile_users(&path);
-        if std::fs::write(path.join(ABANDONED), "").is_err() {
-            let _ = std::fs::remove_dir_all(&path);
-            return;
-        }
-        let watch = std::thread::Builder::new()
-            .name("od-abandoned-profile".to_owned())
-            .spawn(move || {
-                let until = std::time::Instant::now() + ABANDONED_WATCH;
-                while std::time::Instant::now() < until {
-                    std::thread::sleep(ABANDONED_POLL);
-                    end_profile_users(&path);
-                }
-            });
-        if let Err(e) = watch {
-            tracing::warn!(error = %e, "cannot watch an abandoned browser profile; the next render ends what starts on it");
-        }
+        watch_abandoned(path);
     }
 }
 
 impl Drop for Profile {
     fn drop(&mut self) {
-        if let Some(dir) = self.0.take() {
-            end_profile_users(dir.path());
-            let path = dir.path().to_path_buf();
-            if dir.close().is_err() || path.exists() {
-                let _ = std::fs::remove_dir_all(&path);
-            }
+        let Some(dir) = self.dir.take() else {
+            return;
+        };
+        // A start through LaunchServices dropped midway (a render cancelled
+        // while it waits for `open`): kept and watched as if abandoned, from
+        // another thread, as this may run on the async runtime.
+        #[cfg(target_os = "macos")]
+        if self.opening {
+            watch_abandoned(dir.keep());
+            return;
         }
+        end_profile_users(dir.path());
+        let path = dir.path().to_path_buf();
+        if dir.close().is_err() || path.exists() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
+}
+
+/// Kills whatever runs on the abandoned profile at `path` now and every
+/// [`ABANDONED_POLL`] for [`ABANDONED_WATCH`], on a thread of its own: a
+/// browser LaunchServices starts late. Past that, or once this process is
+/// gone, the next sweep (in any process) does it.
+#[cfg(target_os = "macos")]
+fn watch_abandoned(path: PathBuf) {
+    let watched = path.clone();
+    let watch = std::thread::Builder::new()
+        .name("od-abandoned-profile".to_owned())
+        .spawn(move || {
+            let until = std::time::Instant::now() + ABANDONED_WATCH;
+            loop {
+                end_profile_users(&watched);
+                if std::time::Instant::now() >= until {
+                    return;
+                }
+                std::thread::sleep(ABANDONED_POLL);
+            }
+        });
+    if let Err(e) = watch {
+        tracing::warn!(error = %e, "cannot watch an abandoned browser profile; the next render ends what starts on it");
+        end_profile_users(&path);
+    }
+}
+
+/// The [`OPENING`] mark on the profile `dir` (or #235's [`ABANDONED`]),
+/// `None` when it has none.
+#[cfg(unix)]
+struct OpeningMark {
+    /// The process that marked it still runs: its start may be under way.
+    writer_runs: bool,
+    age: Duration,
+}
+
+#[cfg(unix)]
+impl OpeningMark {
+    fn of(dir: &Path) -> Option<Self> {
+        let (mark, writer) = match std::fs::read_to_string(dir.join(OPENING)) {
+            Ok(pid) => (dir.join(OPENING), pid.trim().parse::<i32>().ok()),
+            Err(_) if dir.join(OPENING).exists() => (dir.join(OPENING), None),
+            Err(_) if dir.join(ABANDONED).exists() => (dir.join(ABANDONED), None),
+            Err(_) => return None,
+        };
+        let writer_runs = writer.filter(|pid| *pid > 0).is_some_and(|pid| {
+            !matches!(
+                nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+                Err(nix::errno::Errno::ESRCH)
+            )
+        });
+        let age = std::fs::metadata(&mark)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .unwrap_or(Duration::ZERO);
+        Some(Self { writer_runs, age })
+    }
+
+    /// Its start was given up on: what runs on the profile is left over.
+    fn given_up(&self) -> bool {
+        !self.writer_runs || self.age > ABANDONED_WATCH
+    }
+
+    /// Old enough that no browser starts on the profile any more.
+    fn expired(&self) -> bool {
+        self.age > ABANDONED_WATCH
     }
 }
 
@@ -504,8 +604,10 @@ fn end_profile_users(_dir: &Path) {}
 
 /// Removes profile folders a render killed with its process left in `tmp`:
 /// no process uses them and their lock names a dead browser, or they have
-/// no lock and are older than [`STALE_PROFILE`]. An [`ABANDONED`] one is
-/// removed with whatever still runs on it: a browser that started late.
+/// no lock and are older than [`STALE_PROFILE`]. On one marked
+/// [`OPENING`] whose start was given up on ([`OpeningMark::given_up`]) it
+/// ends whatever runs, a browser that started late; the folder goes once
+/// the mark is older than [`ABANDONED_WATCH`].
 #[cfg(unix)]
 fn sweep_stale_profiles(tmp: &Path) {
     let Ok(entries) = std::fs::read_dir(tmp) else {
@@ -521,9 +623,13 @@ fn sweep_stale_profiles(tmp: &Path) {
         if !is_profile {
             continue;
         }
-        if dir.join(ABANDONED).exists() {
-            end_profile_users(&dir);
-            let _ = std::fs::remove_dir_all(&dir);
+        if let Some(mark) = OpeningMark::of(&dir) {
+            if mark.given_up() {
+                end_profile_users(&dir);
+            }
+            if mark.expired() {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
             continue;
         }
         if !profile_users(&dir).is_empty() {
@@ -554,6 +660,15 @@ fn sweep_stale_profiles(tmp: &Path) {
 
 #[cfg(not(unix))]
 fn sweep_stale_profiles(_tmp: &Path) {}
+
+/// Whether a failed start through LaunchServices that took `took` counts
+/// as one of the [`LAUNCH_ATTEMPTS`]: when what it left of [`OPEN_TIMEOUT`]
+/// cannot hold all of them and [`PAGE_MARGIN`]. `open` failing at once
+/// leaves the child launch both.
+#[cfg(target_os = "macos")]
+fn spent_a_launch(took: Duration) -> bool {
+    took + LAUNCH_TIMEOUT * LAUNCH_ATTEMPTS + PAGE_MARGIN > OPEN_TIMEOUT
+}
 
 impl Session {
     async fn open(exe: &Path, target: &RenderTarget, no_sandbox: bool) -> RenderResult<Self> {
@@ -600,11 +715,12 @@ impl Session {
         #[cfg(target_os = "macos")]
         {
             let open = Path::new(launch_services::OPEN);
+            let started = std::time::Instant::now();
             match Self::launch_detached(open, LAUNCH_SERVICES_TIMEOUT, exe, no_sandbox).await {
                 Detached::Started(launched) => return Ok(*launched),
-                Detached::Skipped => {}
                 // It took a launch's time: the child launch left gets all of its own.
-                Detached::Failed => attempt += 1,
+                Detached::Failed if spent_a_launch(started.elapsed()) => attempt += 1,
+                Detached::Failed | Detached::Skipped => {}
             }
         }
         loop {
@@ -637,12 +753,18 @@ impl Session {
             );
             return Detached::Skipped;
         }
-        let Ok(profile) = Profile::new() else {
+        let Ok(mut profile) = Profile::new() else {
             return Detached::Skipped;
         };
         let Ok(tmp) = profile.tmp() else {
             return Detached::Skipped;
         };
+        // Before `open`: a browser it starts for nobody (this future dropped,
+        // the process gone) is found by the mark and ended.
+        if let Err(e) = profile.mark_opening() {
+            tracing::warn!(error = %e, "cannot mark the browser profile, so the browser starts as our child, not through LaunchServices");
+            return Detached::Skipped;
+        }
         match launch_services::launch(
             open,
             &app,
@@ -655,13 +777,24 @@ impl Session {
         )
         .await
         {
-            Ok(Some((browser, handler))) => Detached::Started(Box::new(Launched {
-                browser,
-                handler,
-                profile,
-                detached: true,
-            })),
+            Ok(Some((browser, handler))) => {
+                if let Err(e) = profile.opened() {
+                    // Left marked, a sweep would end it in the middle of a render.
+                    tracing::warn!(error = %e, "cannot clear the browser profile's mark; the browser starts as our child instead");
+                    drop((browser, handler));
+                    let _ = tokio::task::spawn_blocking(move || profile.abandon()).await;
+                    return Detached::Failed;
+                }
+                Detached::Started(Box::new(Launched {
+                    browser,
+                    handler,
+                    profile,
+                    detached: true,
+                }))
+            }
             Ok(None) => {
+                // Nothing was opened; a mark left only keeps the folder a while.
+                let _ = profile.opened();
                 tracing::warn!(
                     app = %app.display(),
                     "`ps` cannot run (inside another sandbox?), so the browser starts as our child, not through LaunchServices"
@@ -1285,6 +1418,32 @@ mod tests {
         assert!(!is_deck(DeckMode::Page, &deck).unwrap());
     }
 
+    /// A start through LaunchServices that failed at once (`open` erred)
+    /// leaves the child launch both attempts; one that ran to its deadline
+    /// takes one, so the child's 30 s still fit the 90 s an export waits.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn only_a_slow_launch_services_failure_costs_a_child_attempt() {
+        assert!(!spent_a_launch(Duration::from_millis(300)));
+        assert!(!spent_a_launch(Duration::from_secs(15)));
+        assert!(spent_a_launch(LAUNCH_SERVICES_TIMEOUT));
+        // What the worst case still leaves the page, either way.
+        for took in [
+            Duration::from_secs(15),
+            LAUNCH_SERVICES_TIMEOUT + Duration::from_secs(3),
+        ] {
+            let children = if spent_a_launch(took) {
+                LAUNCH_ATTEMPTS - 1
+            } else {
+                LAUNCH_ATTEMPTS
+            };
+            assert!(
+                took + LAUNCH_TIMEOUT * children + PAGE_MARGIN <= OPEN_TIMEOUT,
+                "{took:?}"
+            );
+        }
+    }
+
     /// A quarantined bundle never approved is not handed to LaunchServices,
     /// which would wait for that approval (`open` hung 90 s on the GitHub
     /// macOS runners, where Homebrew Cask leaves Chrome so). Nothing runs:
@@ -1361,6 +1520,10 @@ mod tests {
             panic!("LaunchServices did not start Chrome within the deadline");
         };
         assert!(launched.detached);
+        assert!(
+            !launched.profile.path().join(OPENING).exists(),
+            "a started browser's profile is still marked: a sweep would end it mid-render"
+        );
         let users = profile_users(launched.profile.path());
         let ppids: Vec<String> = users
             .iter()
@@ -1423,57 +1586,106 @@ mod tests {
         }
     }
 
-    /// A browser that started on an abandoned profile after its own
-    /// process gave up watching (it exited) is ended by the next render's
-    /// sweep; a profile in use and not abandoned is left alone.
+    /// A profile marked [`OPENING`] by `writer`, the mark `age` old.
+    #[cfg(unix)]
+    fn marked(tmp: &Path, name: &str, writer: u32, age: Duration) -> PathBuf {
+        let dir = tmp.join(format!("{PROFILE_PREFIX}{name}"));
+        std::fs::create_dir(&dir).unwrap();
+        let mark = dir.join(OPENING);
+        std::fs::write(&mark, writer.to_string()).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&mark)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - age)
+            .unwrap();
+        dir
+    }
+
+    /// A pid no process has now.
+    #[cfg(unix)]
+    fn exited_pid() -> u32 {
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        pid
+    }
+
+    /// What runs on a profile marked [`OPENING`] is a browser LaunchServices
+    /// started for a launch given up on, once the process that marked it is
+    /// gone (it quit, or was killed, while waiting for `open`) or the mark
+    /// is older than [`ABANDONED_WATCH`]: the next render's sweep ends it.
+    /// The folder goes only with an old mark: removed earlier, a browser
+    /// starting later would write it back unmarked. A launch still going
+    /// (its process alive, the mark new) and a profile in use are left alone.
     #[cfg(unix)]
     #[test]
-    fn the_sweep_ends_what_runs_on_an_abandoned_profile() {
+    fn the_sweep_ends_what_runs_on_a_profile_given_up_on() {
         if profile_users_checked(Path::new("/nowhere")).is_none() {
             return eprintln!("skipping: `ps` cannot run here");
         }
         let tmp = tempfile::tempdir().unwrap();
-        let abandoned = tmp.path().join(format!("{PROFILE_PREFIX}abandoned"));
+        let (ours, new, old) = (
+            std::process::id(),
+            Duration::ZERO,
+            ABANDONED_WATCH + Duration::from_secs(60),
+        );
+        let quit = marked(tmp.path(), "quit", exited_pid(), new);
+        let opening = marked(tmp.path(), "opening", ours, new);
+        let watched_out = marked(tmp.path(), "watched-out", ours, old);
+        let quit_long_ago = marked(tmp.path(), "quit-long-ago", exited_pid(), old);
+        // As #235 marked a profile given up on: no pid, so no process left.
+        let legacy = tmp.path().join(format!("{PROFILE_PREFIX}legacy"));
+        std::fs::create_dir(&legacy).unwrap();
+        std::fs::write(legacy.join("od-abandoned"), "").unwrap();
         let in_use = tmp.path().join(format!("{PROFILE_PREFIX}in-use"));
-        for dir in [&abandoned, &in_use] {
-            std::fs::create_dir(dir).unwrap();
-        }
-        std::fs::write(abandoned.join(ABANDONED), "").unwrap();
-        let mut late = Stand::on(&abandoned);
-        let mut current = Stand::on(&in_use);
+        std::fs::create_dir(&in_use).unwrap();
+        let all = [
+            &quit,
+            &opening,
+            &watched_out,
+            &quit_long_ago,
+            &legacy,
+            &in_use,
+        ];
+        let mut stands: Vec<Stand> = all.iter().map(|d| Stand::on(d)).collect();
         let until = std::time::Instant::now() + Duration::from_secs(5);
-        while profile_users(&abandoned).is_empty() && std::time::Instant::now() < until {
+        while all.iter().any(|d| profile_users(d).is_empty()) && std::time::Instant::now() < until {
             std::thread::sleep(Duration::from_millis(50));
         }
 
         sweep_stale_profiles(tmp.path());
 
-        assert!(late.killed(), "the late browser was left running");
-        assert!(!abandoned.exists(), "the abandoned profile was kept");
-        assert!(in_use.exists(), "a profile in use was removed");
-        assert!(
-            current.0.try_wait().unwrap().is_none(),
-            "a browser in use was killed"
-        );
+        let [quit_s, opening_s, watched_s, long_ago_s, legacy_s, in_use_s] = &mut stands[..] else {
+            unreachable!()
+        };
+        assert!(quit_s.killed(), "the browser of a launch that quit ran on");
+        assert!(quit.join(OPENING).exists(), "a new mark was removed");
+        assert!(watched_s.killed(), "the browser past the watch ran on");
+        assert!(!watched_out.exists(), "an old marked profile was kept");
+        assert!(long_ago_s.killed() && !quit_long_ago.exists());
+        assert!(legacy_s.killed(), "the browser on a #235 profile ran on");
+        assert!(legacy.exists(), "a new #235 mark was removed");
+        for (stand, dir) in [(opening_s, &opening), (in_use_s, &in_use)] {
+            assert!(
+                stand.0.try_wait().unwrap().is_none(),
+                "{} was killed",
+                dir.display()
+            );
+            assert!(dir.exists(), "{} was removed", dir.display());
+        }
     }
 
-    /// LaunchServices may start the browser after `open` was killed at the
-    /// deadline (its request stays queued): one that comes up then, on the
-    /// profile given up on, is ended too. The stand-in `open` hangs and
-    /// queues such a start 3 s later, past the 1 s deadline.
+    /// A stand-in `open` that hangs and queues a start on the profile it is
+    /// given 3 s later, as LaunchServices may after `open` is gone: as
+    /// (`open`, the file it writes the profile to, the file the late start
+    /// touches). The queued start carries the profile in no argument until
+    /// it `exec`s, so ending the profile before then cannot find it.
     #[cfg(target_os = "macos")]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_browser_that_launch_services_starts_late_is_ended() {
+    fn late_open(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
         use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let exe = dir.path().join("X.app/Contents/MacOS/X");
-        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
-        std::fs::write(&exe, "").unwrap();
-        launch_services::unquarantine(&dir.path().join("X.app"));
-        let (profile_file, late) = (dir.path().join("profile"), dir.path().join("late"));
-        let open = dir.path().join("open");
-        // The queued start carries the profile in no argument until it
-        // `exec`s, so ending the profile at the deadline cannot find it.
+        let (profile_file, late) = (dir.join("profile"), dir.join("late"));
+        let open = dir.join("open");
         std::fs::write(
             &open,
             format!(
@@ -1489,19 +1701,23 @@ exec sleep 60
         )
         .unwrap();
         std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (open, profile_file, late)
+    }
 
-        let started = std::time::Instant::now();
-        match Session::launch_detached(&open, Duration::from_secs(1), &exe, false).await {
-            Detached::Failed => {}
-            Detached::Skipped => return eprintln!("skipping: `ps` cannot run here"),
-            Detached::Started(_) => panic!("a hung `open` connected"),
-        }
-        assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "{:?}",
-            started.elapsed()
-        );
-        let profile = PathBuf::from(std::fs::read_to_string(&profile_file).unwrap());
+    /// An empty bundle `X.app` in `dir`, out of quarantine: its executable.
+    #[cfg(target_os = "macos")]
+    fn bundle(dir: &Path) -> PathBuf {
+        let exe = dir.join("X.app/Contents/MacOS/X");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, "").unwrap();
+        launch_services::unquarantine(&dir.join("X.app"));
+        exe
+    }
+
+    /// After the late start [`late_open`] queued came: whether a process
+    /// still runs on `profile` 5 s later. Kills it either way.
+    #[cfg(target_os = "macos")]
+    async fn late_start_left_running(late: &Path, profile: &Path) -> bool {
         let needle = format!("--user-data-dir={}", profile.display());
         let running = |needle: &str| {
             !std::process::Command::new("pgrep")
@@ -1524,9 +1740,78 @@ exec sleep 60
         let _ = std::process::Command::new("pkill")
             .args(["-9", "-f", "--", &needle])
             .status();
-        assert!(!left, "the browser that started late was left running");
+        left
+    }
+
+    /// LaunchServices may start the browser after `open` was killed at the
+    /// deadline (its request stays queued): one that comes up then, on the
+    /// profile given up on, is ended too. The stand-in `open` hangs past
+    /// the 1 s deadline.
+    #[cfg(target_os = "macos")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_browser_that_launch_services_starts_late_is_ended() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = bundle(dir.path());
+        let (open, profile_file, late) = late_open(dir.path());
+
+        let started = std::time::Instant::now();
+        match Session::launch_detached(&open, Duration::from_secs(1), &exe, false).await {
+            Detached::Failed => {}
+            Detached::Skipped => return eprintln!("skipping: `ps` cannot run here"),
+            Detached::Started(_) => panic!("a hung `open` connected"),
+        }
         assert!(
-            profile.join(ABANDONED).exists(),
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        let profile = PathBuf::from(std::fs::read_to_string(&profile_file).unwrap());
+        assert!(
+            !late_start_left_running(&late, &profile).await,
+            "the browser that started late was left running"
+        );
+        assert!(
+            profile.join(OPENING).exists(),
+            "the profile was not kept, marked, for the next sweep"
+        );
+        let _ = std::fs::remove_dir_all(&profile);
+    }
+
+    /// A render cancelled while it waits for `open` (a media task's Cancel,
+    /// an export whose client went away) drops the launch midway: what
+    /// LaunchServices starts on its profile afterwards is ended as well,
+    /// and the profile stays marked for the next sweep.
+    #[cfg(target_os = "macos")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_render_cancelled_while_launch_services_opens_ends_the_late_browser() {
+        if profile_users_checked(Path::new("/nowhere")).is_none() {
+            return eprintln!("skipping: `ps` cannot run here");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let exe = bundle(dir.path());
+        let (open, profile_file, late) = late_open(dir.path());
+
+        let mut launch = Box::pin(Session::launch_detached(
+            &open,
+            Duration::from_secs(20),
+            &exe,
+            false,
+        ));
+        // Cancelled once `open` runs, as a user would while it waits.
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while !std::fs::read_to_string(&profile_file).is_ok_and(|p| !p.is_empty()) {
+            assert!(std::time::Instant::now() < until, "`open` never ran");
+            let step = tokio::time::timeout(Duration::from_millis(50), &mut launch).await;
+            assert!(step.is_err(), "the launch ended before it was cancelled");
+        }
+        drop(launch);
+        let profile = PathBuf::from(std::fs::read_to_string(&profile_file).unwrap());
+        assert!(
+            !late_start_left_running(&late, &profile).await,
+            "the browser that started after the cancel was left running"
+        );
+        assert!(
+            profile.join(OPENING).exists(),
             "the profile was not kept, marked, for the next sweep"
         );
         let _ = std::fs::remove_dir_all(&profile);
