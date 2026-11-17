@@ -190,7 +190,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
   | Run | `POST /api/runs` → 202 `{runId…}` (idempotent on `clientRequestId`); `POST /api/chat` (creates a run and streams in the response); `GET /api/runs/:id/events` (SSE); `POST /api/runs/:id/cancel`; `POST /api/runs/:id/steer` |
   | Project events | `GET /api/projects/:id/events` (SSE: `ready`, `file-changed {path, kind: add/change/unlink}`, `reload-all`, `conversation-created`) |
   | Export | `POST .../export/{html,pdf,pdf-image,image,pptx}`, `GET .../archive` |
-  | Config | `GET/PUT /api/app-config`, `GET/PUT /api/media/config` |
+  | Config | `GET/PUT /api/app-config`, `POST /api/app-config/recent-dirs` (Contour: adds a recent working folder under the config lock), `GET/PUT /api/media/config` |
   | Active project | `POST/GET /api/active` |
 
 - **`POST /api/runs` body** (`ChatRequest`, main fields) [S `packages/contracts/src/api/chat.ts:116`]: agentId, message, projectId, conversationId, message ids (client-generated), clientRequestId, skillId, skillIds, designSystemId, attachments, commentAttachments, model, reasoning, sessionMode, locale.
