@@ -352,8 +352,9 @@ enum Detached {
     Started(Box<Launched>),
     /// Not tried: the browser is no bundle LaunchServices can open now.
     Skipped,
-    /// Tried and failed, which took up to [`LAUNCH_SERVICES_TIMEOUT`].
-    Failed,
+    /// Tried and failed, which took up to [`LAUNCH_SERVICES_TIMEOUT`];
+    /// with why, when known (the browser's own last line included).
+    Failed(Option<RenderError>),
 }
 
 /// A browser just started and connected to.
@@ -661,6 +662,19 @@ fn sweep_stale_profiles(tmp: &Path) {
 #[cfg(not(unix))]
 fn sweep_stale_profiles(_tmp: &Path) {}
 
+/// The child's error, with why LaunchServices failed first when the child's
+/// says nothing more: chromiumoxide 0.9 can lose a child's stderr when the
+/// child exits at once, and LaunchServices' error carries the browser's own
+/// last line (`od-stderr.log`).
+fn with_detached_reason(child: RenderError, detached: Option<RenderError>) -> RenderError {
+    match (child, detached) {
+        (RenderError::Unavailable(m), Some(first)) => {
+            RenderError::Unavailable(format!("{m}; through LaunchServices first: {first}"))
+        }
+        (child, _) => child,
+    }
+}
+
 /// Whether a failed start through LaunchServices that took `took` counts
 /// as one of the [`LAUNCH_ATTEMPTS`]: when what it left of [`OPEN_TIMEOUT`]
 /// cannot hold all of them and [`PAGE_MARGIN`]. `open` failing at once
@@ -712,6 +726,10 @@ impl Session {
         // A cold first start (Windows scanning a fresh profile) can miss the
         // launch timeout once; a second launch with a new profile is warm.
         let mut attempt = 1;
+        // Why LaunchServices failed: chromiumoxide can lose a child's stderr
+        // when the child exits at once, so the child's error may not say why.
+        #[allow(unused_mut)]
+        let mut detached_error: Option<RenderError> = None;
         #[cfg(target_os = "macos")]
         {
             let open = Path::new(launch_services::OPEN);
@@ -719,14 +737,21 @@ impl Session {
             match Self::launch_detached(open, LAUNCH_SERVICES_TIMEOUT, exe, no_sandbox).await {
                 Detached::Started(launched) => return Ok(*launched),
                 // It took a launch's time: the child launch left gets all of its own.
-                Detached::Failed if spent_a_launch(started.elapsed()) => attempt += 1,
-                Detached::Failed | Detached::Skipped => {}
+                Detached::Failed(why) => {
+                    if spent_a_launch(started.elapsed()) {
+                        attempt += 1;
+                    }
+                    detached_error = why;
+                }
+                Detached::Skipped => {}
             }
         }
         loop {
             match Self::launch_child(exe, no_sandbox).await {
                 Err(LaunchError::Timeout(_)) if attempt < LAUNCH_ATTEMPTS => attempt += 1,
-                Err(LaunchError::Timeout(e) | LaunchError::Other(e)) => return Err(e),
+                Err(LaunchError::Timeout(e) | LaunchError::Other(e)) => {
+                    return Err(with_detached_reason(e, detached_error));
+                }
                 Ok(launched) => return Ok(launched),
             }
         }
@@ -783,7 +808,7 @@ impl Session {
                     tracing::warn!(error = %e, "cannot clear the browser profile's mark; the browser starts as our child instead");
                     drop((browser, handler));
                     let _ = tokio::task::spawn_blocking(move || profile.abandon()).await;
-                    return Detached::Failed;
+                    return Detached::Failed(None);
                 }
                 Detached::Started(Box::new(Launched {
                     browser,
@@ -809,7 +834,7 @@ impl Session {
                 );
                 // Ends what LaunchServices started, or starts late (waits up to 3 s).
                 let _ = tokio::task::spawn_blocking(move || profile.abandon()).await;
-                Detached::Failed
+                Detached::Failed(Some(e))
             }
         }
     }
@@ -1374,6 +1399,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_child_that_says_nothing_keeps_why_launch_services_failed() {
+        let child = RenderError::Unavailable("cannot start x: stderr: BrowserStderr(\"\")".into());
+        let first = RenderError::Unavailable(
+            "cannot start x: it exited before opening DevTools (boom: no display)".into(),
+        );
+        let e = with_detached_reason(child, Some(first)).to_string();
+        assert!(e.starts_with("cannot start x"), "{e}");
+        assert!(e.contains("boom: no display"), "{e}");
+        let plain = with_detached_reason(RenderError::Unavailable("cannot start x".into()), None);
+        assert_eq!(plain.to_string(), "cannot start x");
+        let other = with_detached_reason(
+            RenderError::NotADeck,
+            Some(RenderError::Unavailable("y".into())),
+        );
+        assert!(matches!(other, RenderError::NotADeck));
+    }
+
+    #[test]
     fn file_urls_are_percent_encoded() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("a b#.html");
@@ -1756,7 +1799,7 @@ exec sleep 60
 
         let started = std::time::Instant::now();
         match Session::launch_detached(&open, Duration::from_secs(1), &exe, false).await {
-            Detached::Failed => {}
+            Detached::Failed(_) => {}
             Detached::Skipped => return eprintln!("skipping: `ps` cannot run here"),
             Detached::Started(_) => panic!("a hung `open` connected"),
         }

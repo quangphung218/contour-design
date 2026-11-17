@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS: when Chrome cannot start, the export error again says why (the browser's own message), even when the second start loses it.
+
 ## [0.2.0-beta.44] - 2026-11-17
 
 ### Fixed
