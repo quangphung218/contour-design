@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.44] - 2026-11-17
+
 ### Fixed
 
 - macOS: a Chrome that macOS starts late, after Contour gave up waiting for it (20 s) and started its own, no longer keeps running unseen in the background; it is ended when it comes up, or at the next export if Contour quit meanwhile. That fallback Chrome now always has its full 30 s to start, where it could be left about 7 s and fail with "started but did not show the page within 90 s".
@@ -1245,7 +1247,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.43...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.44...HEAD
+[0.2.0-beta.44]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.43...v0.2.0-beta.44
 [0.2.0-beta.43]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.42...v0.2.0-beta.43
 [0.2.0-beta.42]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.41...v0.2.0-beta.42
 [0.2.0-beta.41]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.40...v0.2.0-beta.41
