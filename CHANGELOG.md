@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS: a Chrome that macOS starts late, after Contour gave up waiting for it (20 s) and started its own, no longer keeps running unseen in the background; it is ended when it comes up, or at the next export if Contour quit meanwhile. That fallback Chrome now always has its full 30 s to start, where it could be left about 7 s and fail with "started but did not show the page within 90 s".
+
 ## [0.2.0-beta.43] - 2026-11-17
 
 ### Fixed
