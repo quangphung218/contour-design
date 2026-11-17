@@ -104,15 +104,32 @@ impl AppConfig {
     /// are compared key by key, a key `self` dropped is sent as `null`, an
     /// array that changed is sent whole. A window opened before another
     /// one changed something then sends back only what it changed itself,
-    /// even inside `agentModels` or `notifications` (QA-108).
+    /// even inside `agentModels` or `notifications` (QA-108). A changed
+    /// `byok` always carries its whole route (protocol, base URL, API
+    /// version).
     #[must_use]
     pub fn patch_since(&self, base: &Self) -> Value {
         let (Value::Object(next), Value::Object(base)) = (self.to_patch(), base.to_patch()) else {
             return self.to_patch();
         };
-        Value::Object(diff(&base, &next))
+        let mut out = diff(&base, &next);
+        // The provider's route is one block: sent by leaf, an unchanged
+        // protocol would be left out and a key typed here would land on
+        // the route another window stored since.
+        if let Some(Value::Object(sent)) = out.get_mut(BYOK_KEY) {
+            let route = next.get(BYOK_KEY).and_then(Value::as_object);
+            for key in BYOK_ROUTE {
+                let value = route.and_then(|r| r.get(key)).cloned();
+                sent.insert(key.to_owned(), value.unwrap_or(Value::Null));
+            }
+        }
+        Value::Object(out)
     }
 }
+
+const BYOK_KEY: &str = "byok";
+/// The `byok` fields that say where its key is sent.
+const BYOK_ROUTE: [&str; 3] = ["protocol", "baseUrl", "apiVersion"];
 
 /// The merge patch that turns `base` into `next`.
 fn diff(base: &Map<String, Value>, next: &Map<String, Value>) -> Map<String, Value> {
@@ -200,18 +217,59 @@ mod tests {
 
     #[test]
     fn patch_since_sends_new_keys_whole_and_nested_changes_by_leaf() {
-        let base = config(json!({"byok": {"baseUrl": "a", "model": "m", "hasApiKey": true}}));
+        let base = config(json!({"agentModels": {"claude": {"model": "opus"}}}));
         let mut next = base.clone();
         next.locale = Some("en".to_owned());
         next.extra.insert(
-            "byok".to_owned(),
-            json!({"baseUrl": "b", "model": "m", "hasApiKey": true}),
+            "agentModels".to_owned(),
+            json!({"claude": {"model": "sonnet"}}),
         );
         next.extra
             .insert("notifications".to_owned(), json!({"sound": false}));
         assert_eq!(
             next.patch_since(&base),
-            json!({"locale": "en", "byok": {"baseUrl": "b"}, "notifications": {"sound": false}})
+            json!({
+                "locale": "en",
+                "agentModels": {"claude": {"model": "sonnet"}},
+                "notifications": {"sound": false}
+            })
+        );
+    }
+
+    /// A window still showing Anthropic types a new key while another one
+    /// moved the provider to an OpenAI host: the key goes out with the
+    /// route this window shows, never alone.
+    #[test]
+    fn patch_since_sends_the_byok_route_as_one_block() {
+        let base = config(json!({"byok": {
+            "protocol": "anthropic", "model": "claude-x", "hasApiKey": true
+        }}));
+        let mut next = base.clone();
+        next.extra.insert(
+            "byok".to_owned(),
+            json!({"protocol": "anthropic", "baseUrl": null, "model": "claude-x",
+                   "apiKey": "sk-ant-NEW", "apiVersion": null}),
+        );
+        assert_eq!(
+            next.patch_since(&base)["byok"],
+            json!({"protocol": "anthropic", "baseUrl": null, "apiVersion": null,
+                   "apiKey": "sk-ant-NEW", "hasApiKey": null})
+        );
+        // Only the model changed: the route still goes with it.
+        let mut next = base.clone();
+        next.extra.insert(
+            "byok".to_owned(),
+            json!({"protocol": "anthropic", "model": "claude-y", "hasApiKey": true}),
+        );
+        assert_eq!(
+            next.patch_since(&base)["byok"],
+            json!({"protocol": "anthropic", "baseUrl": null, "apiVersion": null,
+                   "model": "claude-y"})
+        );
+        assert_eq!(
+            base.patch_since(&base),
+            json!({}),
+            "no byok change, no route"
         );
     }
 

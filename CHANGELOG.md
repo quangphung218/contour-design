@@ -11,7 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Settings saved in a second window or tab, opened before a change in the first, no longer put back what the first one changed (theme, permissions, language, the API provider as the agent, notifications, the default design system); each save now sends only what it changed. Clearing the default design system now also sticks after a reload.
-- A second window, opened before a change in the first, no longer puts back the model the first one picked for another agent, the API provider's model or other fields, or a recent working folder; a save now changes only the fields it edited inside these settings too.
+- A second window, opened before a change in the first, no longer puts back the model the first one picked for another agent, the API provider's model or other fields, or a recent working folder; a save now changes only the fields it edited inside these settings too. An API key typed in a window is saved with the provider and host that window shows, even when another window changed them since.
 
 ## [0.2.0-beta.45] - 2026-11-17
 

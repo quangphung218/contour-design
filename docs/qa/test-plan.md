@@ -887,6 +887,7 @@ of the settings are the same class).
 | SET-23 | Codex model picked in A; B saves its agent card | A ▸ Codex model; B ▸ Save | Codex model kept | P1 | auto (QA-108) |
 | SET-24 | Provider model saved in A; B saves a new base URL | A ▸ model ▸ Save; B ▸ base URL ▸ Save | A's model kept | P1 | auto (QA-108) |
 | SET-25 | Working folder picked in A; B picks another | A ▸ folder Y; B ▸ folder Z | Recent folders Z, Y, X | P2 | auto (QA-108) |
+| SET-26 | Provider moved to an OpenAI host in B; A, still on Anthropic, types a key | B ▸ custom OpenAI ▸ Save; A ▸ key ▸ Save | Key stored for Anthropic | P0 | auto (QA-108) |
 
 ## Not automated, and why
 

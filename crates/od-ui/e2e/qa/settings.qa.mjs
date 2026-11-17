@@ -421,4 +421,27 @@ test('SET-25', 'A working folder picked in one window stays among the recent fol
   assert.deepEqual(recent, [z, y, x], 'the second window dropped the folder the first one picked');
 }, { daemon: {} });
 
+test('SET-26', 'A key typed in a window still showing Anthropic is saved for Anthropic, not for the OpenAI host a second window picked since', async ({ d, api, newPage }) => {
+  await storeKeylessByok(d, { protocol: 'anthropic', model: 'claude-x', apiKey: 'sk-ant-OLD-1234' });
+  const [a, b] = [(await newPage()).page, (await newPage()).page];
+  for (const p of [a, b]) {
+    await p.goto(d.base + '/settings');
+    await p.getByTestId('byok-form').waitFor();
+  }
+  // B moves the provider to an OpenAI-compatible host with its own key.
+  await b.getByTestId('byok-preset').selectOption('custom');
+  await b.getByTestId('byok-protocol').selectOption('openai');
+  await b.getByTestId('byok-base-url').fill('http://127.0.0.1:9/v1');
+  await b.getByTestId('byok-key').fill('sk-corp-5678');
+  await b.getByTestId('byok-model').fill('gpt-x');
+  assert.equal(await savedStatus(b, () => b.getByTestId('byok-save').click()), 200);
+  // A still shows Anthropic and types a new Anthropic key.
+  await a.getByTestId('byok-key').fill('sk-ant-NEW-9012');
+  assert.equal(await savedStatus(a, () => a.getByTestId('byok-save').click()), 200);
+  const stored = JSON.parse(readFileSync(join(d.data, 'app-config.json'), 'utf8')).byok;
+  assert.equal(stored.apiKey, 'sk-ant-NEW-9012');
+  assert.equal(stored.protocol, 'anthropic', `the Anthropic key went to another route: ${stored.protocol} ${stored.baseUrl}`);
+  assert.equal(stored.baseUrl, undefined, `the Anthropic key went to ${stored.baseUrl}`);
+}, { daemon: {} });
+
 await run('settings');

@@ -153,6 +153,12 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
                     return Err(format!("byok.{key} must be a string"));
                 }
             }
+            // A key belongs to a route: sent alone, it would be merged
+            // into whatever route another window stored since (QA-108).
+            let sends_key = byok.get(API_KEY).is_some_and(Value::is_string);
+            if sends_key && !byok.contains_key("protocol") {
+                return Err("byok.apiKey needs byok.protocol".to_owned());
+            }
         }
         Some(other) => return Err(format!("byok must be an object, got {other}")),
     }
@@ -166,7 +172,19 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
 /// stays while the merged `byok` keeps the protocol and base URL it was
 /// saved with, unless the patch sends `apiKey` itself, so the UI can save
 /// the other fields without ever having seen it.
-fn merge_patch(config: &mut Map<String, Value>, patch: Map<String, Value>) {
+/// A `byok` patch that names `protocol` sets the whole route: a base URL
+/// or API version it leaves out is cleared.
+fn merge_patch(config: &mut Map<String, Value>, mut patch: Map<String, Value>) {
+    // The route is one block: a patch that names the protocol replaces
+    // the base URL and API version too, so it never lands on a host
+    // another window stored.
+    if let Some(Value::Object(byok)) = patch.get_mut(BYOK_KEY)
+        && byok.contains_key("protocol")
+    {
+        for key in BYOK_ROUTE {
+            byok.entry(key).or_insert(Value::Null);
+        }
+    }
     let byok_before = config.get(BYOK_KEY).cloned();
     let sends_key = patch
         .get(BYOK_KEY)
@@ -259,6 +277,8 @@ fn key_missing(byok: &Value) -> Option<&'static str> {
 
 const BYOK_KEY: &str = od_runtime::byok::APP_CONFIG_KEY;
 const API_KEY: &str = "apiKey";
+/// The `byok` fields that, with `protocol`, say where a key is sent.
+const BYOK_ROUTE: [&str; 2] = ["baseUrl", "apiVersion"];
 
 /// The config as the UI may see it: the BYOK key replaced by a hint.
 fn redacted(mut config: Map<String, Value>) -> Value {
@@ -748,6 +768,29 @@ mod tests {
         assert_eq!(moved["byok"][API_KEY], "sk-ant");
         let cleared = merged(json!({"byok": {"apiKey": null}}));
         assert_eq!(cleared["byok"].get(API_KEY), None);
+    }
+
+    /// A key sent without its protocol would join whatever route another
+    /// window stored (QA-108); a protocol sent without a base URL means
+    /// the provider's default host, not the stored one.
+    #[test]
+    fn the_byok_route_is_one_block() {
+        let key_alone = obj(json!({"byok": {"apiKey": "sk-ant-NEW", "baseUrl": null}}));
+        assert!(validate_patch(&key_alone).is_err());
+        assert!(validate_patch(&obj(json!({"byok": {"apiKey": null}}))).is_ok());
+        assert!(validate_patch(&obj(json!({"byok": {"model": "m"}}))).is_ok());
+        let mut c = obj(json!({"byok": {
+            "protocol": "openai", "baseUrl": "https://llm.corp.example/v1",
+            "apiVersion": "v", "apiKey": "sk-corp", "model": "gpt-x"
+        }}));
+        merge_patch(
+            &mut c,
+            obj(json!({"byok": {"protocol": "anthropic", "apiKey": "sk-ant-NEW"}})),
+        );
+        assert_eq!(
+            c["byok"],
+            json!({"protocol": "anthropic", "apiKey": "sk-ant-NEW", "model": "gpt-x"})
+        );
     }
 
     #[test]
