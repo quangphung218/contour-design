@@ -400,4 +400,112 @@ test('DR-02', 'A draft image left as uploaded is deleted on Leave', async ({ d, 
   assert.deepEqual(await listFiles(d, id), ['index.html']);
 });
 
+// ------------------------------------------------------------ names after beta.41 (§27b)
+
+// Two names over 200 bytes that differ only in their last letters, as two
+// screenshots saved by "Save page as" from one long page title.
+const LONG_A = `${'anh-chup-man-hinh-'.repeat(12)}-lan-1.png`;
+const LONG_B = `${'anh-chup-man-hinh-'.repeat(12)}-lan-2.png`;
+const nfc = (n) => n.normalize('NFC');
+
+test('UL-10', 'Files panel: two long names that differ only at the end, sent together: both kept under names of their own', async ({ d, newPage }) => {
+  const id = await createProject(d, 'Two long names', { 'index.html': CPAGE('Index') });
+  const { page } = await openStudio(newPage, d, id);
+  const answered = uploadAnswer(page, `/api/projects/${id}/upload`);
+  await page.getByTestId('upload-input').setInputFiles([png(LONG_A, Buffer.concat([PNG, Buffer.from('a')])), png(LONG_B, Buffer.concat([PNG, Buffer.from('bb')]))]);
+  assert.equal((await answered).status(), 200);
+  await until(() => pngsOnDisk(d, id).length === 2, 'both on disk');
+  const sizes = pngsOnDisk(d, id).map((n) => readFileSync(join(projectDir(d, id), n)).length).sort();
+  assert.deepEqual(sizes, [PNG.length + 1, PNG.length + 2], 'one file was written over the other');
+});
+
+test('UL-11', 'Files panel: mẫu.png sent decomposed (NFD, as macOS may send it) keeps its accents', async ({ d, newPage }) => {
+  const id = await createProject(d, 'NFD name', { 'index.html': CPAGE('Index') });
+  const { page } = await openStudio(newPage, d, id);
+  await page.getByTestId('upload-input').setInputFiles([png('mẫu.png'.normalize('NFD'))]);
+  await until(() => pngsOnDisk(d, id).length === 1, 'on disk');
+  const [name] = pngsOnDisk(d, id);
+  assert.equal(nfc(name), 'mẫu.png', `kept as ${JSON.stringify(name)}`);
+  assert.ok((await listFiles(d, id)).some((n) => nfc(n) === 'mẫu.png'), 'not listed as mẫu.png');
+});
+
+test('UL-12', 'Files panel: Ảnh.png and ảnh.png sent together: both kept, or refused naming both; never one lost', async ({ d, newPage }) => {
+  const id = await createProject(d, 'Case names', { 'index.html': CPAGE('Index') });
+  const { page } = await openStudio(newPage, d, id);
+  const answered = uploadAnswer(page, `/api/projects/${id}/upload`);
+  await page.getByTestId('upload-input').setInputFiles([png('Ảnh.png', Buffer.concat([PNG, Buffer.from('a')])), png('ảnh.png', Buffer.concat([PNG, Buffer.from('bb')]))]);
+  const res = await answered;
+  if (res.status() >= 400) {
+    const said = await alertSaying(page, /ảnh|Ảnh/i);
+    assert.deepEqual(pngsOnDisk(d, id), [], `refused (${said}), yet a file stays`);
+    return;
+  }
+  await until(() => pngsOnDisk(d, id).length >= 2, 'both on disk', 5000)
+    .catch(() => { throw new Error(`answered ${res.status()}, but the disk holds ${JSON.stringify(pngsOnDisk(d, id))}`); });
+});
+
+test('UL-13', 'Design system: two long names that differ only at the end: both kept, or refused naming both; never one lost', async ({ d, api, newPage }) => {
+  const id = await importSystem(api, 'Ds long');
+  const { page } = await openKit(newPage, d, id);
+  await page.getByTestId('ds-asset-input').setInputFiles([png(LONG_A, Buffer.concat([PNG, Buffer.from('a')])), png(LONG_B, Buffer.concat([PNG, Buffer.from('bb')]))]);
+  const notice = page.getByTestId('ds-notice');
+  await notice.waitFor();
+  const said = (await notice.textContent()).trim();
+  console.log(`      (said ${JSON.stringify(said.slice(0, 160))}; assets ${dsAssets(d, id).length})`);
+  if ((await notice.getAttribute('role')) === 'alert') {
+    assert.deepEqual(dsAssets(d, id), [], 'refused, yet an asset was added');
+    return;
+  }
+  assert.equal(dsAssets(d, id).length, 2, `"${said}", but the package keeps ${dsAssets(d, id).length}`);
+});
+
+/** Uploads `first`, then in a later upload `second`, to one design system; returns what is kept. */
+async function dsTwoUploads(page, d, id, first, second) {
+  const red = Buffer.concat([PNG, Buffer.from('red')]);
+  const blue = Buffer.concat([PNG, Buffer.from('blue!')]);
+  const notice = page.getByTestId('ds-notice');
+  await page.getByTestId('ds-asset-input').setInputFiles([png(first, red)]);
+  await until(() => dsAssets(d, id).length === 1, 'the first asset');
+  await notice.waitFor();
+  const answer = page.waitForResponse((r) => /\/assets/.test(new URL(r.url()).pathname) && r.request().method() === 'POST', { timeout: 15_000 });
+  await page.getByTestId('ds-asset-input').setInputFiles([png(second, blue)]);
+  const status = (await answer).status();
+  await page.waitForLoadState('networkidle').catch(() => {});
+  const said = (await notice.textContent()).trim();
+  const sizes = dsAssets(d, id).map((n) => readFileSync(join(dsDir(d, id), 'assets', n)).length).sort();
+  return { status, said, sizes, names: dsAssets(d, id), red, blue };
+}
+
+test('UL-14', 'Design system: 🎨.png uploaded, then 🖼.png in a later upload: both kept, or the second refused; the first never written over', async ({ d, api, newPage }) => {
+  const id = await importSystem(api, 'Ds emoji');
+  const { page } = await openKit(newPage, d, id);
+  const r = await dsTwoUploads(page, d, id, '🎨.png', '🖼.png');
+  console.log(`      (answered ${r.status}, said ${JSON.stringify(r.said)}; assets ${JSON.stringify(r.names)})`);
+  if (process.env.QA_SHOTS) await page.screenshot({ path: join(process.env.QA_SHOTS, 'UL-14-emoji-names.png') });
+  assert.ok(r.sizes.includes(r.red.length), `"${r.said}", but 🎨.png is gone: assets ${JSON.stringify(r.names)} hold only the second picture`);
+}, { knownBug: 'QA-109' });
+
+test('UL-15', 'Design system: "logo chính.png" uploaded, then "logo-chính.png" in a later upload: the first never written over', async ({ d, api, newPage }) => {
+  const id = await importSystem(api, 'Ds space');
+  const { page } = await openKit(newPage, d, id);
+  const r = await dsTwoUploads(page, d, id, 'logo chính.png', 'logo-chính.png');
+  console.log(`      (answered ${r.status}, said ${JSON.stringify(r.said)}; assets ${JSON.stringify(r.names)})`);
+  assert.ok(r.sizes.includes(r.red.length), `"${r.said}", but "logo chính.png" is gone: assets ${JSON.stringify(r.names)} hold only the second picture`);
+}, { knownBug: 'QA-109' });
+
+test('UL-16', 'Create a design system with attached files: màu and mẫu are both accepted; a.pdf and A.pdf are refused naming both', async ({ api }) => {
+  const b64 = Buffer.from('%PDF-1.4 qa').toString('base64');
+  const make = (names) => api('/api/design-systems/generate', {
+    method: 'POST',
+    body: { name: 'Nguồn', brief: 'qa', files: names.map((name) => ({ name, dataBase64: b64 })) },
+  });
+  const ok = await make(['Hướng dẫn màu.pdf', 'Hướng dẫn mẫu.pdf']);
+  assert.ok(ok.status < 300, `two Vietnamese names refused: ${ok.status} ${JSON.stringify(ok.body)}`);
+  const clash = await make(['a.pdf', 'A.pdf']);
+  assert.equal(clash.status, 400, JSON.stringify(clash.body));
+  const msg = JSON.stringify(clash.body);
+  assert.match(msg, /a\.pdf/);
+  assert.match(msg, /A\.pdf/);
+}, { daemon: {} });
+
 await run('uploads');
