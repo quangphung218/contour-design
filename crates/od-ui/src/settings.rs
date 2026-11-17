@@ -106,7 +106,8 @@ impl AppConfig {
     /// one changed something then sends back only what it changed itself,
     /// even inside `agentModels` or `notifications` (QA-108). A changed
     /// `byok` always carries its whole route (protocol, base URL, API
-    /// version).
+    /// version), and the route of `base` as `savedRoute`: the stored model
+    /// stays only while that is still the stored route.
     #[must_use]
     pub fn patch_since(&self, base: &Self) -> Value {
         let (Value::Object(next), Value::Object(base)) = (self.to_patch(), base.to_patch()) else {
@@ -116,20 +117,33 @@ impl AppConfig {
         // The provider's route is one block: sent by leaf, an unchanged
         // protocol would be left out and a key typed here would land on
         // the route another window stored since.
+        // With the route this window read, so the server can tell a model
+        // saved for that route from one another window saved for another.
         if let Some(Value::Object(sent)) = out.get_mut(BYOK_KEY) {
-            let route = next.get(BYOK_KEY).and_then(Value::as_object);
-            for key in BYOK_ROUTE {
-                let value = route.and_then(|r| r.get(key)).cloned();
-                sent.insert(key.to_owned(), value.unwrap_or(Value::Null));
-            }
+            sent.extend(route_of(&next));
+            sent.insert(
+                SAVED_ROUTE.to_owned(),
+                Value::Object(route_of(&base).collect()),
+            );
         }
         Value::Object(out)
     }
 }
 
+/// The `byok` route fields of `config`, `null` where unset.
+fn route_of(config: &Map<String, Value>) -> impl Iterator<Item = (String, Value)> + '_ {
+    let route = config.get(BYOK_KEY).and_then(Value::as_object);
+    BYOK_ROUTE.into_iter().map(move |key| {
+        let value = route.and_then(|r| r.get(key)).cloned();
+        (key.to_owned(), value.unwrap_or(Value::Null))
+    })
+}
+
 const BYOK_KEY: &str = "byok";
 /// The `byok` fields that say where its key is sent.
 const BYOK_ROUTE: [&str; 3] = ["protocol", "baseUrl", "apiVersion"];
+/// In a `byok` patch, the route the edited copy held (never stored).
+const SAVED_ROUTE: &str = "savedRoute";
 
 /// The merge patch that turns `base` into `next`.
 fn diff(base: &Map<String, Value>, next: &Map<String, Value>) -> Map<String, Value> {
@@ -250,10 +264,11 @@ mod tests {
             json!({"protocol": "anthropic", "baseUrl": null, "model": "claude-x",
                    "apiKey": "sk-ant-NEW", "apiVersion": null}),
         );
+        let seen = json!({"protocol": "anthropic", "baseUrl": null, "apiVersion": null});
         assert_eq!(
             next.patch_since(&base)["byok"],
             json!({"protocol": "anthropic", "baseUrl": null, "apiVersion": null,
-                   "apiKey": "sk-ant-NEW", "hasApiKey": null})
+                   "apiKey": "sk-ant-NEW", "hasApiKey": null, "savedRoute": seen})
         );
         // Only the model changed: the route still goes with it.
         let mut next = base.clone();
@@ -264,7 +279,20 @@ mod tests {
         assert_eq!(
             next.patch_since(&base)["byok"],
             json!({"protocol": "anthropic", "baseUrl": null, "apiVersion": null,
-                   "model": "claude-y"})
+                   "model": "claude-y", "savedRoute": seen})
+        );
+        // The window moves the host itself: savedRoute is the route it
+        // read, not the one it sends.
+        let mut next = base.clone();
+        next.extra.insert(
+            "byok".to_owned(),
+            json!({"protocol": "openai", "baseUrl": "http://gpu-box:11434/v1",
+                   "model": "claude-x", "hasApiKey": true}),
+        );
+        assert_eq!(
+            next.patch_since(&base)["byok"],
+            json!({"protocol": "openai", "baseUrl": "http://gpu-box:11434/v1",
+                   "apiVersion": null, "savedRoute": seen})
         );
         assert_eq!(
             base.patch_since(&base),

@@ -435,16 +435,6 @@ impl Chip {
     }
 }
 
-/// Recent working folders kept in settings (`recentLinkedDirs`).
-pub const RECENT_DIRS: usize = 5;
-
-/// Puts `dir` first in `list`, without duplicates, at most [`RECENT_DIRS`].
-pub fn push_recent_dir(list: &mut Vec<String>, dir: &str) {
-    list.retain(|d| d != dir);
-    list.insert(0, dir.to_owned());
-    list.truncate(RECENT_DIRS);
-}
-
 /// The next character count of a typewriter placeholder: types `target` in,
 /// holds, then deletes it. `step` is the frame number since the start;
 /// returns `None` once the cycle is over (next scenario).
@@ -919,17 +909,6 @@ mod tests {
         assert_eq!(typewriter("abc", 40), Some(3));
         assert_eq!(typewriter("abc", 50), Some(1));
         assert_eq!(typewriter("abc", 52), None);
-    }
-
-    #[test]
-    fn recent_dirs_dedupe_and_cap() {
-        let mut list: Vec<String> = (0..5).map(|i| format!("/d{i}")).collect();
-        push_recent_dir(&mut list, "/d3");
-        assert_eq!(list, ["/d3", "/d0", "/d1", "/d2", "/d4"]);
-        push_recent_dir(&mut list, "/new");
-        assert_eq!(list.len(), RECENT_DIRS);
-        assert_eq!(list[0], "/new");
-        assert!(!list.contains(&"/d4".to_owned()));
     }
 
     #[test]

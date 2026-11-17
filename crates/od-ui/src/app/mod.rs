@@ -73,11 +73,13 @@ mod versions;
 use crate::events::{AgentInfo, AgentsResponse};
 use crate::i18n::{self, Locale, T, t, tf};
 use crate::settings::{AppConfig, Theme};
+use crate::turns::{Turn, Turns};
 use icons::{Glyph, icon};
 use leptos::prelude::*;
 use leptos_router::components::{A, Route, Router, Routes};
 use leptos_router::hooks::{use_location, use_navigate};
 use leptos_router::path;
+use std::sync::Arc;
 use tasks::Tasks;
 
 /// App-wide state shared through context.
@@ -85,6 +87,9 @@ use tasks::Tasks;
 pub struct Shell {
     /// `None` until `/api/app-config` answered.
     pub config: RwSignal<Option<AppConfig>>,
+    /// Requests that read or write `config`, sent one at a time in call
+    /// order: an answer never replaces the copy after a later one did.
+    config_turns: StoredValue<Arc<Turns>>,
     /// Detected agents; `Err` when detection is unavailable.
     pub agents: RwSignal<Option<Result<Vec<AgentInfo>, String>>>,
     /// UI language; the whole app re-renders when it changes.
@@ -127,29 +132,65 @@ impl Shell {
     /// another one saved does not put the other window's values back
     /// (QA-108). The copy takes `next` before the answer: a second save
     /// made meanwhile is built from it and diffs against it, else it would
-    /// send nothing; a failed save reads the daemon's values back.
+    /// send nothing; a failed save reads the daemon's values back. The
+    /// `PUT` waits for the requests on `config` made before it.
     pub async fn save_config(self, next: AppConfig) -> Result<(), String> {
+        let turn = self.config_turn();
         let patch = self.config.with_untracked(|base| {
             next.patch_since(base.as_ref().unwrap_or(&AppConfig::default()))
         });
         self.config.set(Some(next));
+        turn.ready().await;
         let saved: AppConfig = match api::put("/api/app-config", &patch).await {
             Ok(saved) => saved,
             Err(e) => {
+                drop(turn);
                 self.reload_config().await;
                 return Err(api::failure(T::MdSaveFailed, &e));
             }
         };
         self.set_locale(locale_of(&saved));
-        self.config.set(Some(saved));
+        self.keep_config(&turn, saved);
         Ok(())
     }
 
     /// Re-reads settings after a route that writes them on its own (project
     /// locations), so the next [`Shell::save_config`] does not send back
-    /// the old values.
+    /// the old values. The `GET` waits for the requests on `config` made
+    /// before it, so it never answers with settings older than a save of
+    /// this window still on its way (QA-108).
     pub async fn reload_config(self) {
+        let turn = self.config_turn();
+        turn.ready().await;
         if let Ok(config) = api::get::<AppConfig>("/api/app-config").await {
+            self.keep_config(&turn, config);
+        }
+    }
+
+    /// Puts `dir` first among the recent working folders. The daemon adds
+    /// it under its config lock: a whole list sent from here would drop a
+    /// folder another window added meanwhile (QA-108).
+    pub async fn add_recent_dir(self, dir: &str) -> Result<(), String> {
+        let turn = self.config_turn();
+        turn.ready().await;
+        let body = serde_json::json!({ "path": dir });
+        let saved: AppConfig = api::post("/api/app-config/recent-dirs", &body)
+            .await
+            .map_err(|e| api::failure(T::MdSaveFailed, &e))?;
+        self.keep_config(&turn, saved);
+        Ok(())
+    }
+
+    /// A place in the queue of requests on `config`, taken when called.
+    fn config_turn(self) -> Turn {
+        self.config_turns.with_value(Turns::take)
+    }
+
+    /// The daemon's answer becomes the shared copy unless a request on it
+    /// was made after `turn`: that one's answer is newer, and until it
+    /// comes the copy holds the change it sends.
+    fn keep_config(self, turn: &Turn, config: AppConfig) {
+        if turn.is_last() {
             self.config.set(Some(config));
         }
     }
@@ -242,6 +283,7 @@ fn apply_theme(theme: Theme) {
 pub fn App() -> impl IntoView {
     let shell = Shell {
         config: RwSignal::new(None),
+        config_turns: StoredValue::new(Arc::default()),
         agents: RwSignal::new(None),
         locale: RwSignal::new(locale_of(&AppConfig::default())),
         palette: RwSignal::new(false),
@@ -259,12 +301,14 @@ pub fn App() -> impl IntoView {
     api::watch_gone(shell.gone);
     let tasks = Tasks::here();
     tasks::detached(async move {
+        let turn = shell.config_turn();
+        turn.ready().await;
         // A daemon without settings yet still gets a usable UI.
         let config = api::get::<AppConfig>("/api/app-config")
             .await
             .unwrap_or_default();
         shell.set_locale(locale_of(&config));
-        shell.config.set(Some(config));
+        shell.keep_config(&turn, config);
     });
     shell.reload_agents();
     Effect::new(move |_| {

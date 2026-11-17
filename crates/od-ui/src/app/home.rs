@@ -16,7 +16,7 @@ use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{
     ASPECTS, AUDIO_KINDS, Chip, HomeIntent, MediaOptions, RESOLUTIONS, chip_for_template,
-    push_recent_dir, scenarios_for, templates_for, typewriter,
+    scenarios_for, templates_for, typewriter,
 };
 use crate::mention::Candidate;
 use crate::settings::AppConfig;
@@ -983,22 +983,7 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>, tasks: Tasks) -> impl IntoView
                 typing.set(None);
             }
             dir.set(Some(canonical.clone()));
-            // A list is saved whole: read it as the daemon holds it now, or
-            // this window would drop a folder another one added (QA-108).
-            shell.reload_config().await;
-            if let Some(mut config) = shell.config.get_untracked() {
-                let mut list: Vec<String> = config
-                    .extra
-                    .get(RECENT_DIRS_KEY)
-                    .cloned()
-                    .and_then(|v| serde_json::from_value(v).ok())
-                    .unwrap_or_default();
-                push_recent_dir(&mut list, &canonical);
-                config
-                    .extra
-                    .insert(RECENT_DIRS_KEY.to_owned(), serde_json::json!(list));
-                let _ = shell.save_config(config).await;
-            }
+            let _ = shell.add_recent_dir(&canonical).await;
         });
     };
     let pick = move |_| {

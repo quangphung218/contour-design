@@ -389,6 +389,9 @@ try {
   assert.equal(await page.getByTestId('zoom-reset').textContent(), '100%');
 
   const palette = async (query) => {
+    // A command closes the palette on the next task: Cmd/Ctrl+K pressed
+    // before that would toggle the old one shut instead of opening one.
+    await until(async () => (await page.getByTestId('command-palette').count()) === 0, 'palette closed before reopening');
     await page.keyboard.press('Control+k');
     await page.getByTestId('command-palette').waitFor();
     await page.getByTestId('palette-input').fill(query);

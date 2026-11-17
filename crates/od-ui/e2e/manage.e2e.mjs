@@ -374,8 +374,9 @@ try {
   await formSaved;
   assert.equal((await api('/api/project-locations')).body.defaultId, 'default', 'form save kept the new default');
   // The same while the settings copy is still being read again after the
-  // location change (a slow reply, or a second window): the form sends
+  // location change (a slow reply, or a second window): the form keeps
   // the old default, and the daemon keeps the one the locations route set.
+  // The save goes after that read, never before its answer (QA-108).
   let slowRead = null;
   await page.route('**/api/app-config', async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
@@ -385,12 +386,15 @@ try {
   await loc.getByTestId('location-default').click();
   await until(async () => (await api('/api/project-locations')).body.defaultId !== 'default', 'default moved');
   await until(async () => slowRead !== null, 'settings read again');
+  const order = [];
+  page.on('request', (r) => { if (r.url().endsWith('/api/app-config')) order.push(r.method()); });
   const oldCopySaved = page.waitForResponse((r) => r.url().endsWith('/api/app-config') && r.request().method() === 'PUT');
-  await page.getByTestId('save-settings').click();
-  await oldCopySaved;
   const reread = page.waitForResponse((r) => r.url().endsWith('/api/app-config') && r.request().method() === 'GET');
+  await page.getByTestId('save-settings').click();
   slowRead();
   await reread;
+  await oldCopySaved;
+  assert.deepEqual(order.filter((m) => m === 'PUT'), ['PUT'], `the save was sent once: ${order}`);
   await page.unroute('**/api/app-config');
   assert.notEqual((await api('/api/project-locations')).body.defaultId, 'default', 'a save with the old copy kept the new default');
   await page.locator('[data-testid="location"]').first().getByTestId('location-default').click();

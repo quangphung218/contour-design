@@ -416,7 +416,9 @@ test('SET-25', 'A working folder picked in one window stays among the recent fol
   await b.getByTestId('plus-menu').click();
   await b.getByTestId('working-dir-pick').click();
   await b.getByTestId('working-dir-path').fill(z);
-  assert.equal(await savedStatus(b, () => b.getByTestId('working-dir-use').click()), 200);
+  const added = b.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/app-config/recent-dirs', { timeout: 5000 });
+  await b.getByTestId('working-dir-use').click();
+  assert.equal((await added).status(), 200);
   const recent = (await api('/api/app-config')).body.recentLinkedDirs;
   assert.deepEqual(recent, [z, y, x], 'the second window dropped the folder the first one picked');
 }, { daemon: {} });
@@ -442,6 +444,90 @@ test('SET-26', 'A key typed in a window still showing Anthropic is saved for Ant
   assert.equal(stored.apiKey, 'sk-ant-NEW-9012');
   assert.equal(stored.protocol, 'anthropic', `the Anthropic key went to another route: ${stored.protocol} ${stored.baseUrl}`);
   assert.equal(stored.baseUrl, undefined, `the Anthropic key went to ${stored.baseUrl}`);
+  // B's model was picked for its OpenAI host: the provider's default instead.
+  assert.equal(stored.model, undefined, `the model of the other route stayed: ${stored.model}`);
+}, { daemon: {} });
+
+test('SET-27', 'A project location added while a theme save is still on its way: the page never shows the old theme meanwhile', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('location').first().waitFor();
+  // Every value data-theme takes from here on.
+  await page.evaluate(() => {
+    window.__themes = [];
+    new MutationObserver(() => window.__themes.push(document.documentElement.getAttribute('data-theme')))
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  });
+  const bodies = await slowConfigPuts(page, 1500);
+  const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/app-config');
+  await page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
+  await until(async () => bodies.length === 1, 'theme save sent');
+  // Adding a location reads the settings again (reload_config) while the
+  // theme save is held: that read must not answer with the old theme.
+  const folder = realpathSync(mkdtempSync(join(tmpdir(), 'od-qa-loc-')));
+  const reread = page.waitForResponse((r) => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/app-config', { timeout: 10000 });
+  await page.getByTestId('location-path').fill(folder);
+  await page.getByTestId('location-add').click();
+  await saved;
+  await reread;
+  await until(async () => (await api('/api/project-locations')).body.locations.some((l) => l.path === folder), 'location added');
+  const themes = await page.evaluate(() => window.__themes);
+  assert.deepEqual([...new Set(themes)], ['dark'], `the page went back to the old theme meanwhile: ${JSON.stringify(themes)}`);
+  assert.equal((await api('/api/app-config')).body.theme, 'dark');
+}, { daemon: {} });
+
+test('SET-28', 'Sounds turned off, then Dark picked before that save answered: the page never shows the old theme meanwhile', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('save-settings').waitFor();
+  await page.evaluate(() => {
+    window.__themes = [];
+    new MutationObserver(() => window.__themes.push(document.documentElement.getAttribute('data-theme')))
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  });
+  const bodies = await slowConfigPuts(page, 1000);
+  let answered = 0;
+  page.on('response', (r) => { if (r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/app-config') answered += 1; });
+  await page.getByTestId('notify-sound').click();
+  await until(async () => bodies.length === 1, 'sound save sent');
+  await page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
+  // The sound save answers without Dark: that older answer is not shown.
+  await until(async () => bodies.length === 2, 'theme save sent');
+  await until(async () => answered === 2, 'both saves answered');
+  assert.equal((await api('/api/app-config')).body.theme, 'dark');
+  const themes = await page.evaluate(() => window.__themes);
+  assert.deepEqual([...new Set(themes)], ['dark'], `the page went back to the old theme meanwhile: ${JSON.stringify(themes)}`);
+}, { daemon: {} });
+
+test('SET-29', 'Dark picked, then sounds turned off while the first save is slow: the second save goes after it and the page stays dark', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('save-settings').waitFor();
+  await page.evaluate(() => {
+    window.__themes = [];
+    new MutationObserver(() => window.__themes.push(document.documentElement.getAttribute('data-theme')))
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  });
+  // The first PUT is held 1 s, any later one goes straight through: sent
+  // together, the second would reach the daemon first.
+  const bodies = [];
+  let answered = 0;
+  await page.route((u) => u.pathname === '/api/app-config', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    bodies.push(route.request().postDataJSON());
+    if (bodies.length === 1) await new Promise((r) => setTimeout(r, 1000));
+    await route.continue();
+  });
+  page.on('response', (r) => { if (r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/app-config') answered += 1; });
+  await page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
+  await until(async () => bodies.length === 1, 'theme save sent');
+  await page.getByTestId('notify-sound').click();
+  await until(async () => answered === 2, 'both saves answered');
+  const cfg = (await api('/api/app-config')).body;
+  assert.equal(cfg.theme, 'dark');
+  assert.equal(cfg.notifications?.soundEnabled, false);
+  const themes = await page.evaluate(() => window.__themes);
+  assert.deepEqual([...new Set(themes)], ['dark'], `the page went back to the old theme meanwhile: ${JSON.stringify(themes)}`);
 }, { daemon: {} });
 
 await run('settings');
