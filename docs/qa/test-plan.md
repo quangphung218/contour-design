@@ -15,7 +15,8 @@ pass on main before beta.34 (QA-093 to QA-095, §19 and §21 by hand) in
 [bugs-desktop-main34.md](bugs-desktop-main34.md); the pass on main after beta.36
 (QA-096 to QA-098, §22 and §23) in [bugs-main36.md](bugs-main36.md); the pass on main after
 beta.37 (QA-099 to QA-101, §24) in [bugs-main37.md](bugs-main37.md); the pass on main after
-#204–#209 (QA-102 on, §25) in [bugs-main39.md](bugs-main39.md).
+#204–#209 (QA-102 on, §25) in [bugs-main39.md](bugs-main39.md); the pass on main after
+beta.45 (QA-108 on, §27b, §28, §29) in [bugs-main46.md](bugs-main46.md).
 
 ## Priorities and status
 
@@ -829,6 +830,60 @@ or a revision folder made read-only.
 | DS-04 | Accept a revision (control) | Rebuild tokens; Accept | `tokens.css` rebuilt, the revision accepted | P0 | auto |
 | DR-01 | A draft image the user's program rewrote in place | Attach `shot.png`; overwrite it with other bytes of the same size, mtime kept (`cp -p`); Leave | `comments/shot.png` kept with the new bytes | P1 | auto |
 | DR-02 | A draft image untouched (control) | Attach; Leave | `comments/shot.png` deleted | P0 | auto |
+
+### 27b. Names after beta.41 (`uploads.qa.mjs`, UL-10 on)
+
+Goal: names the user gives keep meaning what they meant after #223–#225:
+two different names never end as one file without a word, Vietnamese
+letters sent decomposed keep their accents, and a refusal names both files.
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| UL-10 | Files panel: two long names that differ only at the end | Upload both together | Both kept under names of their own | P1 | auto |
+| UL-11 | Files panel: `mẫu.png` sent decomposed (NFD) | Upload | Kept as `mẫu.png`, accents intact | P1 | auto |
+| UL-12 | Files panel: `Ảnh.png` + `ảnh.png` together | Upload both | Both kept, or refused naming both; never one lost | P2 | auto |
+| UL-13 | Design system: two long names that differ only at the end | Kit ▸ upload both | Both kept, or refused naming both; never one lost | P1 | auto |
+| UL-14 | Design system: `🎨.png`, later `🖼.png` | Two uploads | Both kept, or the second refused; the first never written over | P1 | auto (QA-109) |
+| UL-15 | Design system: `logo chính.png`, later `logo-chính.png` | Two uploads | The first never written over | P1 | auto (QA-109) |
+| UL-16 | Create a design system with attached files | `Hướng dẫn màu.pdf` + `Hướng dẫn mẫu.pdf`; then `a.pdf` + `A.pdf` | First accepted; second refused naming both | P1 | auto |
+
+## 28. Export leaves no Chrome running, after beta.45 (`chrome.qa.mjs`)
+
+Goal: what #228–#238 changed holds for the user. Exports one after the
+other, or cancelled midway, give their files and leave no Chrome
+running; Media ▸ MP4 offers only motion projects. A leftover Chrome is
+found with `ps`: each daemon gets its own `TMPDIR`, so every process
+started with `--user-data-dir=<TMPDIR>/od-chrome-*` is the test's,
+whether the daemon or LaunchServices started it. Expected results from
+the changelog lines of beta.42–45 and spec.md (an export cancelled or
+finished uses no more resources).
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| CH-01 | Exports one after the other | Deck: PDF, PNG, PPTX, editable PPTX; film: MP4 | Each gives its file; no Chrome within 20 s of each; profile folders removed | P0 | auto |
+| CH-02 | Two PDF exports at once (two tabs) | Two POSTs together | Two PDFs; no Chrome after | P1 | auto |
+| CH-03 | MP4 export, tab closed midway | Export ▸ MP4; close the tab once Chrome runs | Chrome ends within 30 s; the next MP4 works | P1 | auto |
+| CH-04 | Media ▸ MP4 render, page reloaded midway | Render; reload | Chrome ends; no `media/hyperframes.mp4`; a PDF after works | P1 | auto |
+| CH-05 | `od export --format mp4` stopped with Ctrl+C | SIGINT once Chrome runs | CLI exits non-zero; Chrome ends; no half MP4 | P1 | auto |
+| CH-06 | Contour quits during an MP4 export | Stop the daemon once Chrome runs | No Chrome 30 s later, or the next export ends it | P1 | auto |
+| MP-01 | Media ▸ MP4 lists motion projects only | A page project and a film; render the film | Film offered, page not; `media/hyperframes.mp4` saved; no Chrome after | P0 | auto |
+| MP-02 | Media ▸ MP4 with no motion project | Only a page project | The tab says how to make one; no Render | P1 | auto |
+| MP-03 | A film rewritten into a page after the list loaded | Pick it; rewrite `index.html`; Render | "not a motion video", no renderer jargon | P2 | auto |
+| MP-04 | `od export --format mp4` of a page | Run the CLI | Non-zero exit, "not a motion video", code `NOT_A_COMPOSITION`, no file | P1 | auto |
+
+## 29. Settings saved from two windows (`settings.qa.mjs`, SET-11 on)
+
+Goal: a save changes only what that form shows. A second window (or tab)
+opened before a change elsewhere, then saving something else, does not put
+back what the first window changed (#227 kept project locations; the rest
+of the settings are the same class).
+
+| ID | Scenario | Steps | Expected | P | Status |
+|---|---|---|---|---|---|
+| SET-11 | Default location set in window A; window B saves permissions | Two windows; A ▸ Make default; B ▸ Ask first | Default stays A's | P1 | auto |
+| SET-12 | Dark picked in A; B saves permissions | A ▸ Dark; B ▸ Ask first | Theme stays dark | P1 | auto (QA-108) |
+| SET-13 | Tiếng Việt picked in A; B turns off sounds | A ▸ vi; B ▸ sound off | Language stays vi | P1 | auto |
+| SET-14 | API provider saved in A; B picks a theme | A ▸ API ▸ Ollama ▸ Save; B ▸ Dark | Provider and API mode kept | P1 | auto (QA-108) |
 
 ## Not automated, and why
 

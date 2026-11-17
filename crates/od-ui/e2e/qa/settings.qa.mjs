@@ -173,4 +173,84 @@ test('SET-10', 'Settings has one Save per thing to save: the agent card or the A
   await until(async () => (await api('/api/app-config')).body.theme === 'dark', `theme saved (was ${before})`, 5000);
 }, { daemon: {} });
 
+// ------------------------------------------------------------ two windows (§29)
+//
+// Every Settings save sends the whole copy of the settings the window read
+// when it opened (#227 kept only project locations out of it). A second
+// window (or tab) opened before a change, then saving something else,
+// must not put back what the first one changed.
+
+/** Two Settings windows, both open before either changes anything. */
+async function twoWindows(d, newPage) {
+  const a = await newPage();
+  const b = await newPage();
+  for (const p of [a, b]) {
+    await p.page.goto(d.base + '/settings');
+    await p.page.getByTestId('save-settings').waitFor();
+  }
+  return [a.page, b.page];
+}
+
+/** Window `page` picks "Ask first" (saves at once). */
+async function askFirst(page) {
+  await page.getByTestId('settings-nav-permissions').click();
+  const put = page.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/app-config', { timeout: 5000 });
+  await page.locator('input[name="permission"]').nth(1).check();
+  assert.equal((await put).status(), 200);
+}
+
+test('SET-11', 'A default project location set in one window stays when a second window, opened before, saves its permissions', async ({ d, api, newPage }) => {
+  const folder = mkdtempSync(join(tmpdir(), 'od-qa-loc-'));
+  const added = await api('/api/project-locations', { method: 'GET' });
+  const list = added.body.locations || [];
+  const put = await api('/api/project-locations', { method: 'PUT', body: { locations: [...list, { id: 'qa-work', name: 'Công việc', path: folder }], defaultId: added.body.defaultId } });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  const [a, b] = await twoWindows(d, newPage);
+  await a.locator('[data-testid="location"][data-location="qa-work"]').getByTestId('location-default').click();
+  await until(async () => (await api('/api/project-locations')).body.defaultId === 'qa-work', 'default moved');
+  await askFirst(b);
+  assert.equal((await api('/api/app-config')).body.agentPermissionMode, 'ask');
+  assert.equal((await api('/api/project-locations')).body.defaultId, 'qa-work', 'the second window put the old default back');
+}, { daemon: {} });
+
+test('SET-12', 'Dark theme picked in one window stays when a second window, opened before, saves its permissions', async ({ d, api, newPage }) => {
+  const [a, b] = await twoWindows(d, newPage);
+  await a.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
+  await until(async () => (await api('/api/app-config')).body.theme === 'dark', 'dark saved');
+  await askFirst(b);
+  const cfg = (await api('/api/app-config')).body;
+  assert.equal(cfg.agentPermissionMode, 'ask');
+  assert.equal(cfg.theme, 'dark', `the second window put the theme back to ${cfg.theme}`);
+}, { daemon: {}, knownBug: 'QA-108' });
+
+test('SET-13', 'Tiếng Việt picked in one window stays when a second window, opened before, turns off notification sounds', async ({ d, api, newPage }) => {
+  const [a, b] = await twoWindows(d, newPage);
+  await a.getByTestId('language').selectOption('vi');
+  await until(async () => (await api('/api/app-config')).body.locale === 'vi', 'vi saved');
+  const sound = b.getByTestId('notify-sound');
+  const put = b.waitForResponse((r) => r.request().method() === 'PUT' && new URL(r.url()).pathname === '/api/app-config', { timeout: 5000 });
+  await sound.click();
+  assert.equal((await put).status(), 200);
+  const cfg = (await api('/api/app-config')).body;
+  assert.ok(cfg.notifications, 'the notification change was not saved');
+  assert.equal(cfg.locale, 'vi', `the second window put the language back to ${cfg.locale}`);
+}, { daemon: {} });
+
+test('SET-14', 'An API provider saved in one window stays when a second window, opened before, picks a theme', async ({ d, api, newPage }) => {
+  const [a, b] = await twoWindows(d, newPage);
+  await a.getByTestId('mode-api').click();
+  await a.getByTestId('byok-form').waitFor();
+  const ollama = await a.locator('[data-testid="byok-preset"] option').evaluateAll((os) =>
+    os.find((o) => /ollama/i.test(o.textContent) && !/cloud/i.test(o.textContent))?.value);
+  await a.getByTestId('byok-preset').selectOption(ollama);
+  await a.getByTestId('byok-base-url').fill('http://gpu-box:11434/v1');
+  assert.equal(await savedStatus(a, () => a.getByTestId('byok-save').click()), 200);
+  await until(async () => (await api('/api/app-config')).body.byok?.baseUrl === 'http://gpu-box:11434/v1', 'provider saved');
+  assert.equal(await savedStatus(b, () => b.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click()), 200);
+  const cfg = (await api('/api/app-config')).body;
+  assert.equal(cfg.theme, 'dark');
+  assert.equal(cfg.byok?.baseUrl, 'http://gpu-box:11434/v1', `the second window dropped the provider: ${JSON.stringify(cfg.byok)}`);
+  assert.equal(cfg.agentId, 'byok', `the second window put the agent back to ${cfg.agentId}`);
+}, { daemon: {}, knownBug: 'QA-108' });
+
 await run('settings');
