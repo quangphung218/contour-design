@@ -182,14 +182,15 @@ pub fn SettingsPage() -> impl IntoView {
             );
             extra.insert("agentModels".to_owned(), Value::Object(per_agent));
         }
+        // Only the card's own fields: permissions, theme and language save
+        // on their own, and this form's copies of them may be older than
+        // what another window saved since (QA-108).
         let next = AppConfig {
             agent_id: agent.get_untracked(),
             model: model_value,
-            agent_permission_mode: permission.get_untracked(),
-            theme: theme.get_untracked(),
-            locale: Some(language.get_untracked().tag().to_owned()),
             onboarding_completed: true,
             extra,
+            ..base
         };
         tasks.spawn_then(shell.save_config(next), move |res| status.set(Some(res)));
     };
@@ -197,10 +198,14 @@ pub fn SettingsPage() -> impl IntoView {
     // agent card and the API provider form each have their own Save.
     let prefs_saved = RwSignal::new(None::<(&'static str, Result<(), String>)>);
     let save_prefs = move |section: &'static str| {
+        // Only the section that changed: the form's other fields may be
+        // older than what another window saved since (QA-108).
         let mut next: AppConfig = shell.config.get_untracked().unwrap_or_default();
-        next.agent_permission_mode = permission.get_untracked();
-        next.theme = theme.get_untracked();
-        next.locale = Some(language.get_untracked().tag().to_owned());
+        match section {
+            "permissions" => next.agent_permission_mode = permission.get_untracked(),
+            "appearance" => next.theme = theme.get_untracked(),
+            _ => next.locale = Some(language.get_untracked().tag().to_owned()),
+        }
         next.onboarding_completed = true;
         tasks.spawn_then(shell.save_config(next), move |res| {
             prefs_saved.set(Some((section, res)));

@@ -104,6 +104,10 @@ One file at a time (`run.sh` clears `test-results/qa` on each call).
 - **Same class**: every `save_config` caller (table above). A single
   window is safe: it updates its copy after each save.
 - **Test**: `settings.qa.mjs` SET-12, SET-14.
+- **Status**: fixed in #241: `save_config` sends only the keys that
+  differ from the window's copy (`null` for a dropped key), and the
+  Settings form's sections set only their own fields. SET-15 to SET-17
+  added.
 
 ## QA-109 🟠 A design system asset is written over by a later upload of another name
 
