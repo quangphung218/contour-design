@@ -487,10 +487,13 @@ impl Drop for Profile {
     }
 }
 
-/// Kills whatever runs on the abandoned profile at `path` now and every
+/// Kills whatever runs on the abandoned profile at `path` every
 /// [`ABANDONED_POLL`] for [`ABANDONED_WATCH`], on a thread of its own: a
 /// browser LaunchServices starts late. Past that, or once this process is
-/// gone, the next sweep (in any process) does it.
+/// gone, the next sweep (in any process) does it. The first check waits a
+/// poll: the child launch that follows a failed start runs meanwhile, and a
+/// `ps` beside it slowed it enough to lose what a browser exiting at once
+/// printed (chromiumoxide reads its stderr in a race with its exit).
 #[cfg(target_os = "macos")]
 fn watch_abandoned(path: PathBuf) {
     let watched = path.clone();
@@ -498,12 +501,9 @@ fn watch_abandoned(path: PathBuf) {
         .name("od-abandoned-profile".to_owned())
         .spawn(move || {
             let until = std::time::Instant::now() + ABANDONED_WATCH;
-            loop {
-                end_profile_users(&watched);
-                if std::time::Instant::now() >= until {
-                    return;
-                }
+            while std::time::Instant::now() < until {
                 std::thread::sleep(ABANDONED_POLL);
+                end_profile_users(&watched);
             }
         });
     if let Err(e) = watch {
