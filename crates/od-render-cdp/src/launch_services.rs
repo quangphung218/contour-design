@@ -27,7 +27,7 @@ use od_export::RenderError;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const OPEN: &str = "/usr/bin/open";
+pub(crate) const OPEN: &str = "/usr/bin/open";
 /// Gatekeeper's mark on what was downloaded: `<flags>;<time>;<agent>;<id>`.
 const QUARANTINE: &str = "com.apple.quarantine";
 /// Quarantine flag set once the user approved the app's first launch.
@@ -163,41 +163,20 @@ fn ws_url(port_file: &str) -> Option<String> {
     (port != 0 && path.starts_with('/')).then(|| format!("ws://127.0.0.1:{port}{path}"))
 }
 
-/// Starts `app` headless on `profile` and connects to it, all within
-/// `timeout` ([`LaunchError::Timeout`]: `open` itself can hang, see the
-/// module docs); a browser that exits first fails at once with what it
-/// printed. The caller's profile ends whatever was started when it drops.
+/// Starts `app` headless on `profile` through the `open` at `open`
+/// ([`OPEN`]; a stand-in in tests) and connects to it, all within `timeout`
+/// ([`LaunchError::Timeout`]: `open` itself can hang, see the module docs);
+/// a browser that exits first fails at once with what it printed. On
+/// failure the caller abandons the profile ([`super::Profile::abandon`]):
+/// LaunchServices may still start the browser after `open` was killed.
 ///
 /// `Ok(None)`, before starting anything: `ps` cannot run here, as inside
 /// `sandbox-exec` (how the maintainer's pre-merge check runs). A browser
 /// that is not our child can only be found, and ended, through `ps`; the
 /// caller starts it as its child instead. (`open` still works there; only
 /// its `--stderr` file is not created, so that is no sign of a launch.)
+#[allow(clippy::too_many_arguments)] // what Chrome needs, plus `open`
 pub(crate) async fn launch(
-    app: &Path,
-    exe: &Path,
-    profile: &Path,
-    tmp: Option<&Path>,
-    no_sandbox: bool,
-    timeout: Duration,
-    request_timeout: Duration,
-) -> Result<Option<(Browser, Handler)>, LaunchError> {
-    launch_with(
-        Path::new(OPEN),
-        app,
-        exe,
-        profile,
-        tmp,
-        no_sandbox,
-        timeout,
-        request_timeout,
-    )
-    .await
-}
-
-/// [`launch`] through the `open` at `open` (a stand-in in tests).
-#[allow(clippy::too_many_arguments)] // launch's own, plus `open`
-async fn launch_with(
     open: &Path,
     app: &Path,
     exe: &Path,
@@ -303,6 +282,22 @@ async fn last_line(stderr: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Removes Gatekeeper's quarantine from `path` and everything inside it,
+/// and checks none is left: a test's bundle must never make LaunchServices
+/// show "… Not Opened" on the screen of whoever runs the tests (a file this
+/// process writes can be quarantined when what runs it quarantines files).
+#[cfg(test)]
+pub(crate) fn unquarantine(path: &Path) {
+    let _ = xattr::remove(path, QUARANTINE);
+    let left = xattr::get(path, QUARANTINE).ok().flatten();
+    assert!(left.is_none(), "{} is still quarantined", path.display());
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+        for entry in std::fs::read_dir(path).unwrap() {
+            unquarantine(&entry.unwrap().path());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,6 +313,7 @@ mod tests {
         std::fs::write(&bare, "").unwrap();
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&exe, &link).unwrap();
+        unquarantine(&app);
 
         let app = std::fs::canonicalize(&app).unwrap();
         assert_eq!(app_bundle(&exe), Some(app.clone()));
@@ -380,15 +376,15 @@ mod tests {
     async fn an_open_that_hangs_times_out_and_is_killed() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
-        let marker = dir.path().join("hung-open-marker");
+        let running = dir.path().join("running");
         let open = dir.path().join("open");
+        // One process (`exec`), whose arguments keep ours: the profile in
+        // them is what finds it below. A comment would not reach `ps`.
         std::fs::write(
             &open,
             format!(
-                "#!/bin/sh
-exec sleep 60 # {}
-",
-                marker.display()
+                "#!/bin/sh\ntouch '{}'\nexec /usr/bin/perl -e 'sleep 60' -- \"$@\"\n",
+                running.display()
             ),
         )
         .unwrap();
@@ -398,7 +394,7 @@ exec sleep 60 # {}
         let exe = Path::new("/nowhere/X.app/Contents/MacOS/X");
 
         let started = Instant::now();
-        let res = launch_with(
+        let res = launch(
             &open,
             Path::new("/nowhere/X.app"),
             exe,
@@ -419,9 +415,11 @@ exec sleep 60 # {}
             }
         }
         assert!(took < Duration::from_secs(10), "took {took:?}");
+        assert!(running.exists(), "the stand-in `open` never ran");
+        let needle = profile.display().to_string();
         let gone = || {
             std::process::Command::new("pgrep")
-                .args(["-f", &marker.display().to_string()])
+                .args(["-f", &needle])
                 .output()
                 .unwrap()
                 .stdout
@@ -431,7 +429,32 @@ exec sleep 60 # {}
         while !gone() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(50));
         }
-        assert!(gone(), "the hung `open` was left running");
+        let left = !gone();
+        if left {
+            let _ = std::process::Command::new("pkill")
+                .args(["-9", "-f", &needle])
+                .status();
+        }
+        assert!(!left, "the hung `open` was left running");
+    }
+
+    /// What the test bundles rely on to show no dialog.
+    #[test]
+    fn unquarantine_clears_a_bundle_all_the_way_down() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Some Browser.app");
+        let exe = app.join("Contents/MacOS/Some Browser");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, "").unwrap();
+        let all = [&app, &app.join("Contents"), &exe];
+        for path in all {
+            xattr::set(path, QUARANTINE, b"0181;6af5c21a;Homebrew Cask;").unwrap();
+        }
+        unquarantine(&app);
+        for path in all {
+            assert_eq!(xattr::get(path, QUARANTINE).unwrap(), None, "{path:?}");
+        }
+        unquarantine(&app); // none left is fine too
     }
 
     #[test]

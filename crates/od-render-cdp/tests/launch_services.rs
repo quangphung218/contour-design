@@ -99,6 +99,7 @@ fn script(path: &Path, dir: &Path, body: &str) {
 /// [`script`] as the main executable of a bundle in `dir` with a name and
 /// bundle id of its own: LaunchServices picks an app by its identity, not
 /// its path, so `open -a` on one of two bundles alike may start the other.
+/// Not quarantined: unsigned, it would make Gatekeeper show a dialog.
 fn bundled(dir: &Path, body: &str) -> PathBuf {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     let name = format!(
@@ -123,6 +124,7 @@ fn bundled(dir: &Path, body: &str) -> PathBuf {
         ),
     )
     .unwrap();
+    common::unquarantine(&dir.join(format!("{name}.app")));
     exe
 }
 
@@ -247,7 +249,9 @@ fn launches(dir: &Path) -> Vec<String> {
 
 /// A bundled browser that exits at once fails within seconds, saying what
 /// it printed; one that never opens DevTools is ended and tried again as
-/// our child (twice). Either way LaunchServices goes first, once.
+/// our child. Either way LaunchServices goes first, once, and counts as a
+/// launch: one child launch follows it, with its whole 30 s well inside the
+/// 90 s an export waits. Without LaunchServices the child gets two.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
     if std::env::var(NO_SANDBOX_ENV).as_deref() == Ok("1") {
@@ -259,6 +263,14 @@ async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
     std::fs::write(&page, "<!doctype html><h1>x</h1>").unwrap();
 
     let ours = format!("ppid={}", std::process::id());
+    let (hung_limit, hung_children) = if launch_services() {
+        // 20 s through LaunchServices, then 30 s as our child, each ended
+        // within 3 s: 56 s at most.
+        (Duration::from_secs(62), 1)
+    } else {
+        // 2 × 30 s as our child.
+        (Duration::from_secs(75), 2)
+    };
     for (body, limit, children) in [
         (
             "echo 'boom: no display' >&2; exit 1",
@@ -266,9 +278,8 @@ async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
             1,
         ),
         // A shell loop, not `exec sleep`: it keeps the profile in its
-        // arguments, as a hung Chrome does. 20 s through LaunchServices,
-        // then 2 × 30 s as our child.
-        ("while :; do sleep 1; done", Duration::from_secs(88), 2),
+        // arguments, as a hung Chrome does.
+        ("while :; do sleep 1; done", hung_limit, hung_children),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let exe = bundled(dir.path(), body);
@@ -292,6 +303,7 @@ async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
         if body.contains("boom") {
             assert!(msg.contains("boom: no display"), "says why: {msg}");
         }
+        eprintln!("{body}: failed in {took:?}");
         let mut expected = vec![ours.clone(); children];
         if launch_services() {
             expected.insert(0, bundle_ppid());
