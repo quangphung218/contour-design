@@ -887,7 +887,10 @@ of the settings are the same class).
 | SET-23 | Codex model picked in A; B saves its agent card | A ▸ Codex model; B ▸ Save | Codex model kept | P1 | auto (QA-108) |
 | SET-24 | Provider model saved in A; B saves a new base URL | A ▸ model ▸ Save; B ▸ base URL ▸ Save | A's model kept | P1 | auto (QA-108) |
 | SET-25 | Working folder picked in A; B picks another | A ▸ folder Y; B ▸ folder Z | Recent folders Z, Y, X | P2 | auto (QA-108) |
-| SET-26 | Provider moved to an OpenAI host in B; A, still on Anthropic, types a key | B ▸ custom OpenAI ▸ Save; A ▸ key ▸ Save | Key stored for Anthropic | P0 | auto (QA-108) |
+| SET-26 | Provider moved to an OpenAI host in B; A, still on Anthropic, types a key | B ▸ custom OpenAI ▸ Save; A ▸ key ▸ Save | Key stored for Anthropic, without B's model | P0 | auto (QA-108) |
+| SET-27 | Project location added while a theme save is on its way | Theme ▸ Dark (slow save); Locations ▸ Add | Page stays dark throughout | P2 | auto (QA-108) |
+| SET-28 | Sounds off, then Dark picked before that save answered | Sound ▸ off (slow save); Theme ▸ Dark | Page stays dark throughout | P2 | auto (QA-108) |
+| SET-29 | Dark picked, then sounds off while the first save is slow | Theme ▸ Dark (slow save); Sound ▸ off | Second save sent after the first; page stays dark | P2 | auto (QA-108) |
 
 ## Not automated, and why
 

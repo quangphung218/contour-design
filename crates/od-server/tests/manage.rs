@@ -945,6 +945,52 @@ async fn a_settings_save_with_an_old_copy_keeps_the_locations() {
     );
 }
 
+/// Two windows add a working folder at the same moment: both stay among
+/// the recent folders, newest first, without duplicates (QA-108).
+#[tokio::test]
+async fn two_recent_folders_added_at_once_both_stay() {
+    let d = common::daemon().await;
+    let res = put(
+        &d,
+        "/api/app-config",
+        &json!({"recentLinkedDirs": ["/x"], "theme": "dark"}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    for round in 0..20 {
+        let (a, b) = (format!("/a{round}"), format!("/b{round}"));
+        let (body_a, body_b) = (json!({"path": a}), json!({"path": b}));
+        let (ra, rb) = tokio::join!(
+            d.post("/api/app-config/recent-dirs", &body_a),
+            d.post("/api/app-config/recent-dirs", &body_b)
+        );
+        assert_eq!((ra.status(), rb.status()), (StatusCode::OK, StatusCode::OK));
+        let recent = d.get_json("/api/app-config").await["recentLinkedDirs"].clone();
+        let recent: Vec<String> = serde_json::from_value(recent).unwrap();
+        assert!(
+            recent[..2].contains(&a) && recent[..2].contains(&b),
+            "round {round}: a folder was lost: {recent:?}"
+        );
+    }
+    let res = d
+        .post("/api/app-config/recent-dirs", &json!({"path": "/a19"}))
+        .await;
+    let cfg: Value = res.json().await.unwrap();
+    let recent: Vec<String> = serde_json::from_value(cfg["recentLinkedDirs"].clone()).unwrap();
+    assert_eq!(recent.len(), 5, "{recent:?}");
+    assert_eq!(recent[0], "/a19");
+    assert_eq!(
+        recent.iter().filter(|r| *r == "/a19").count(),
+        1,
+        "{recent:?}"
+    );
+    assert_eq!(cfg["theme"], "dark", "the answer is the whole config");
+    let res = d
+        .post("/api/app-config/recent-dirs", &json!({"path": "  "}))
+        .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
 #[tokio::test]
 async fn integrations_info_and_local_diagnostics() {
     let d = common::daemon().await;

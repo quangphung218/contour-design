@@ -7,10 +7,15 @@
 //!   replaced by `hasApiKey` and `apiKeyHint` (last four characters). A
 //!   `PUT` is a JSON Merge Patch (RFC 7396): nested objects merge, `null`
 //!   removes, arrays replace. A `byok` patch without `apiKey` keeps the
-//!   stored one while the protocol and base URL stay the same. A provider
+//!   stored one while the protocol and base URL stay the same; the stored
+//!   `model` likewise, unless `byok.savedRoute` (the route the window read)
+//!   is still the stored one. A provider
 //!   on a public host saved with no key (sent or kept) is refused with 400.
 //!   Keys another route owns (project locations) are left out of a `PUT`:
 //!   only that route writes them.
+//! - `POST /api/app-config/recent-dirs {path}`: puts a working folder first
+//!   in `recentLinkedDirs` under the config lock, so two windows adding one
+//!   each keep both (QA-108). Answers the config like `PUT`.
 //! - `POST /api/import/folder`: a project pointing at an existing folder.
 //! - Everything else that is not `/api/*`: the static `od-ui` bundle, with
 //!   `index.html` as the SPA fallback.
@@ -56,6 +61,7 @@ pub fn routes_with_dist(dist: PathBuf) -> Router<AppState> {
     let dist = Arc::new(dist);
     Router::new()
         .route("/api/app-config", get(get_config).put(put_config))
+        .route("/api/app-config/recent-dirs", post(add_recent_dir_route))
         .route("/api/import/folder", post(import_folder_route))
         .fallback(move |req: Request| serve_static(Arc::clone(&dist), req))
 }
@@ -145,7 +151,10 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
                     "byok.protocol must be anthropic, openai or azure, got {p}"
                 ));
             }
-            for key in [API_KEY, "baseUrl", "model", "apiVersion"] {
+            if byok.get(SAVED_ROUTE).is_some_and(|v| !v.is_object()) {
+                return Err(format!("byok.{SAVED_ROUTE} must be an object"));
+            }
+            for key in [API_KEY, "baseUrl", MODEL, "apiVersion"] {
                 if byok
                     .get(key)
                     .is_some_and(|v| !v.is_string() && !v.is_null())
@@ -173,29 +182,46 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
 /// saved with, unless the patch sends `apiKey` itself, so the UI can save
 /// the other fields without ever having seen it.
 /// A `byok` patch that names `protocol` sets the whole route: a base URL
-/// or API version it leaves out is cleared.
+/// or API version it leaves out is cleared. A `byok` patch without `model`
+/// that moves the route clears the stored model too, unless its
+/// `savedRoute` is the stored route: the window then moved the provider
+/// itself and keeps the model, which another window may have saved for
+/// that same provider (QA-108).
 fn merge_patch(config: &mut Map<String, Value>, mut patch: Map<String, Value>) {
-    // The route is one block: a patch that names the protocol replaces
-    // the base URL and API version too, so it never lands on a host
-    // another window stored.
-    if let Some(Value::Object(byok)) = patch.get_mut(BYOK_KEY)
-        && byok.contains_key("protocol")
-    {
-        for key in BYOK_ROUTE {
-            byok.entry(key).or_insert(Value::Null);
+    let mut saved_route = None;
+    if let Some(Value::Object(byok)) = patch.get_mut(BYOK_KEY) {
+        saved_route = byok.remove(SAVED_ROUTE);
+        // The route is one block: a patch that names the protocol replaces
+        // the base URL and API version too, so it never lands on a host
+        // another window stored.
+        if byok.contains_key("protocol") {
+            for key in BYOK_ROUTE {
+                byok.entry(key).or_insert(Value::Null);
+            }
         }
     }
     let byok_before = config.get(BYOK_KEY).cloned();
-    let sends_key = patch
-        .get(BYOK_KEY)
-        .and_then(Value::as_object)
-        .is_some_and(|b| b.contains_key(API_KEY));
+    let sent = |key: &str| {
+        patch
+            .get(BYOK_KEY)
+            .and_then(Value::as_object)
+            .is_some_and(|b| b.contains_key(key))
+    };
+    let (sends_key, sends_model) = (sent(API_KEY), sent(MODEL));
+    // The stored model was picked for a route this window never saw: it
+    // goes with that route. Without `savedRoute` any move counts.
+    let model_is_foreign = saved_route
+        .is_none_or(|seen| !same_route(&seen, byok_before.as_ref().unwrap_or(&Value::Null)));
     merge_object(config, patch);
-    if !sends_key
-        && byok_moved(byok_before.as_ref(), config.get(BYOK_KEY))
+    if byok_moved(byok_before.as_ref(), config.get(BYOK_KEY))
         && let Some(Value::Object(byok)) = config.get_mut(BYOK_KEY)
     {
-        byok.remove(API_KEY);
+        if !sends_key {
+            byok.remove(API_KEY);
+        }
+        if !sends_model && model_is_foreign {
+            byok.remove(MODEL);
+        }
     }
 }
 
@@ -277,6 +303,10 @@ fn key_missing(byok: &Value) -> Option<&'static str> {
 
 const BYOK_KEY: &str = od_runtime::byok::APP_CONFIG_KEY;
 const API_KEY: &str = "apiKey";
+const MODEL: &str = "model";
+/// In a `byok` patch, the route (`protocol`, `baseUrl`, `apiVersion`) the
+/// window read before its edit. Never stored.
+const SAVED_ROUTE: &str = "savedRoute";
 /// The `byok` fields that, with `protocol`, say where a key is sent.
 const BYOK_ROUTE: [&str; 2] = ["baseUrl", "apiVersion"];
 
@@ -421,6 +451,51 @@ async fn put_config(
             Ok(config)
         })
         .await?;
+    Ok(ApiJson(redacted(config)))
+}
+
+/// Settings key of the recent working folders (the original's name).
+const RECENT_DIRS_KEY: &str = "recentLinkedDirs";
+/// How many recent working folders are kept.
+const RECENT_DIRS: usize = 5;
+
+/// Puts `dir` first in `list`, without duplicates, at most [`RECENT_DIRS`].
+fn push_recent_dir(list: &mut Vec<Value>, dir: &str) {
+    list.retain(|d| d.as_str() != Some(dir));
+    list.insert(0, Value::String(dir.to_owned()));
+    list.truncate(RECENT_DIRS);
+}
+
+/// Adds `dir` to the recent working folders in one read-modify-write under
+/// [`CONFIG_LOCK`]; returns the stored config.
+fn add_recent_dir(store: &Store, dir: &str) -> Result<Map<String, Value>, StoreError> {
+    let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let path = config_path(store);
+    let mut config = read_config(&path)?;
+    let mut list = match config.remove(RECENT_DIRS_KEY) {
+        Some(Value::Array(list)) => list,
+        _ => Vec::new(),
+    };
+    push_recent_dir(&mut list, dir);
+    config.insert(RECENT_DIRS_KEY.to_owned(), Value::Array(list));
+    write_atomic(&path, &serde_json::to_vec_pretty(&config)?)?;
+    Ok(config)
+}
+
+#[derive(Debug, Deserialize)]
+struct RecentDirRequest {
+    path: String,
+}
+
+async fn add_recent_dir_route(
+    State(state): State<AppState>,
+    ApiJson(req): ApiJson<RecentDirRequest>,
+) -> ApiResult<ApiJson<Value>> {
+    let dir = req.path.trim().to_owned();
+    if dir.is_empty() {
+        return Err(ApiErr::bad_request("path must not be empty"));
+    }
+    let config = state.blocking(move |s| add_recent_dir(s, &dir)).await?;
     Ok(ApiJson(redacted(config)))
 }
 
@@ -763,7 +838,11 @@ mod tests {
         );
         let moved = merged(json!({"byok": {"baseUrl": "https://b.example/v1"}}));
         assert_eq!(moved["byok"].get(API_KEY), None, "{moved}");
-        assert_eq!(moved["byok"]["model"], "m1");
+        assert_eq!(
+            moved["byok"].get(MODEL),
+            None,
+            "the model goes with its route"
+        );
         let moved = merged(json!({"byok": {"protocol": "anthropic", "apiKey": "sk-ant"}}));
         assert_eq!(moved["byok"][API_KEY], "sk-ant");
         let cleared = merged(json!({"byok": {"apiKey": null}}));
@@ -789,8 +868,74 @@ mod tests {
         );
         assert_eq!(
             c["byok"],
-            json!({"protocol": "anthropic", "apiKey": "sk-ant-NEW", "model": "gpt-x"})
+            json!({"protocol": "anthropic", "apiKey": "sk-ant-NEW"})
         );
+    }
+
+    /// The stored model belongs to the stored route. A window that read
+    /// that route and moves the host itself keeps the model (another
+    /// window may have saved it for this provider, SET-24); a window that
+    /// read another route, or says nothing, does not carry it over to its
+    /// own route (SET-26). A model the patch sends always wins.
+    #[test]
+    fn the_byok_model_follows_its_route() {
+        let stored = json!({"byok": {
+            "protocol": "openai", "baseUrl": "http://localhost:11434/v1", "model": "qwen3"
+        }});
+        let merged = |patch: Value| {
+            let mut c = obj(stored.clone());
+            merge_patch(&mut c, obj(patch));
+            c["byok"].clone()
+        };
+        let seen_here = json!({"protocol": "openai", "baseUrl": "http://localhost:11434/v1/"});
+        let moved_here = merged(json!({"byok": {
+            "protocol": "openai", "baseUrl": "http://gpu-box:11434/v1", "savedRoute": seen_here
+        }}));
+        assert_eq!(
+            moved_here,
+            json!({"protocol": "openai", "baseUrl": "http://gpu-box:11434/v1", "model": "qwen3"}),
+            "savedRoute is never stored"
+        );
+        let seen_elsewhere = json!({"protocol": "anthropic", "baseUrl": null, "apiVersion": null});
+        let stale = merged(json!({"byok": {
+            "protocol": "anthropic", "apiKey": "sk-ant", "savedRoute": seen_elsewhere
+        }}));
+        assert_eq!(stale, json!({"protocol": "anthropic", "apiKey": "sk-ant"}));
+        let picked = merged(json!({"byok": {
+            "protocol": "anthropic", "model": "claude-x", "savedRoute": seen_elsewhere
+        }}));
+        assert_eq!(picked["model"], "claude-x");
+        // A patch that keeps the stored route keeps the model either way.
+        let same = merged(json!({"byok": {"apiVersion": "v", "savedRoute": seen_elsewhere}}));
+        assert_eq!(same["model"], "qwen3");
+        assert!(validate_patch(&obj(json!({"byok": {"savedRoute": "x"}}))).is_err());
+        assert!(validate_patch(&obj(json!({"byok": {"savedRoute": seen_here}}))).is_ok());
+    }
+
+    #[test]
+    fn a_recent_dir_goes_first_once() {
+        let mut list = vec![
+            json!("/a"),
+            json!("/b"),
+            json!("/c"),
+            json!("/d"),
+            json!("/e"),
+        ];
+        push_recent_dir(&mut list, "/c");
+        assert_eq!(
+            list,
+            [
+                json!("/c"),
+                json!("/a"),
+                json!("/b"),
+                json!("/d"),
+                json!("/e")
+            ]
+        );
+        push_recent_dir(&mut list, "/new");
+        assert_eq!(list.len(), RECENT_DIRS);
+        assert_eq!(list[0], "/new");
+        assert!(!list.contains(&json!("/e")));
     }
 
     #[test]
