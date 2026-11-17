@@ -56,6 +56,18 @@ impl Prefs {
     }
 }
 
+/// The stored fields of `next` that differ from `base`. Defaults this
+/// window never stored are left out: sent, they would undo what another
+/// window saved (QA-108).
+fn changed_fields(base: &Prefs, next: &Prefs) -> serde_json::Map<String, Value> {
+    let (Value::Object(base), Value::Object(next)) = (base.to_value(), next.to_value()) else {
+        return serde_json::Map::new();
+    };
+    next.into_iter()
+        .filter(|(k, v)| base.get(k) != Some(v))
+        .collect()
+}
+
 fn prefs(shell: Shell) -> Prefs {
     shell.config.with_untracked(|c| {
         Prefs::from_config(c.as_ref().and_then(|c| c.extra.get("notifications")))
@@ -199,12 +211,12 @@ pub fn NotificationSettings() -> impl IntoView {
     let permission = RwSignal::new(web_sys::Notification::permission());
     let state = RwSignal::new(None::<Result<(), String>>);
     let tasks = Tasks::here();
-    // Each control changes only its own field, of the settings as the
-    // daemon holds them now: `notifications` is saved as one object, and
-    // another window may have changed its other fields since this one read
-    // them (QA-108). Edits still being saved are applied again on top: the
-    // daemon may not have the previous one yet. The task holds its own
-    // `Rc`, as it goes on after the screen is gone.
+    // Each control changes only its own field: the save sends only the
+    // fields that differ from this window's copy, so another window's
+    // changes to the others stay (QA-108). Edits still being saved are
+    // applied again on top when an answer comes back: an earlier answer
+    // does not have them yet. The task holds its own `Rc`, as it goes on
+    // after the screen is gone.
     let pending = StoredValue::new_local(Rc::<RefCell<Vec<Edit>>>::default());
     let with_pending = move |pending: &RefCell<Vec<Edit>>| {
         let mut next = prefs(shell);
@@ -218,12 +230,18 @@ pub fn NotificationSettings() -> impl IntoView {
         let pending = pending.get_value();
         pending.borrow_mut().push(edit.clone());
         let work = async move {
-            shell.reload_config().await;
-            let next = with_pending(&pending);
             let mut config = shell.config.get_untracked().unwrap_or_default();
+            let fields = changed_fields(&prefs(shell), &with_pending(&pending));
+            let mut stored = config
+                .extra
+                .get("notifications")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            stored.extend(fields);
             config
                 .extra
-                .insert("notifications".to_owned(), next.to_value());
+                .insert("notifications".to_owned(), Value::Object(stored));
             let res = shell.save_config(config).await;
             pending.borrow_mut().retain(|e| !Rc::ptr_eq(e, &edit));
             (pending, res)
@@ -334,5 +352,19 @@ mod tests {
             ("ding", "thud")
         );
         assert_eq!(Prefs::from_config(Some(&p.to_value())), p);
+    }
+
+    /// Nothing stored yet: picking a failure sound must not send the
+    /// default "sound on", which would undo another window's "off".
+    #[test]
+    fn only_the_edited_field_is_sent() {
+        let base = Prefs::from_config(None);
+        let mut next = base.clone();
+        next.failure_sound = "thud".to_owned();
+        assert_eq!(
+            Value::Object(changed_fields(&base, &next)),
+            json!({"failureSound": "thud"})
+        );
+        assert!(changed_fields(&base, &base).is_empty());
     }
 }

@@ -183,7 +183,7 @@ try {
   // No endpoint, nothing to save (and the daemon refuses it too).
   await page.getByTestId('byok-base-url').fill('');
   assert.equal(await page.getByTestId('byok-save').isDisabled(), true);
-  const noBase = await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ byok: { protocol: 'azure', apiKey: 'k' } }) });
+  const noBase = await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ byok: { protocol: 'azure', apiKey: 'k', baseUrl: null } }) });
   assert.equal(noBase.status, 400);
   await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ byok: null, agentId: 'claude' }) });
   results.byokAzure = 'ok';

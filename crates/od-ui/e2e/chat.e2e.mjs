@@ -160,8 +160,9 @@ try {
   await page.getByTestId('working-dir-path').fill(join(work, 'site'));
   await page.getByTestId('working-dir-use').click();
   await page.getByTestId('working-dir-chip').getByText('site').waitFor();
-  const config = await api('/api/app-config');
-  assert.deepEqual(config.recentLinkedDirs, [join(work, 'site')]);
+  // Saved after the chip shows: the list is read from the daemon first.
+  await until(async () => (await api('/api/app-config')).recentLinkedDirs?.length > 0, 'recent folder saved');
+  assert.deepEqual((await api('/api/app-config')).recentLinkedDirs, [join(work, 'site')]);
   await page.keyboard.press('Escape');
   await page.getByTestId('plus-menu').click();
   await page.getByTestId('working-dir-recent').waitFor();
