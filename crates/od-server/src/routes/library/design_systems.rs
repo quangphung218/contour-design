@@ -52,7 +52,7 @@ use od_runtime::env::{RunEnv, agent_env};
 use od_runtime::{LaunchSpec, McpLaunch, PermissionMode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Component, PathBuf};
 use std::sync::Arc;
 
@@ -789,13 +789,96 @@ fn is_asset_file(name: &str) -> bool {
     ASSET_EXTENSIONS.iter().any(|e| lower.ends_with(e))
 }
 
-/// The name a new asset is kept under (see [`kept_name`]), and whether it
-/// was shortened to fit the disk.
-fn safe_asset_name(raw: &str) -> Option<(String, bool)> {
-    let clean = kept_name(raw)?;
-    let base = raw.rsplit(['/', '\\']).next()?.trim();
-    let shortened = clean != od_store::paths::sanitize_name(base);
-    is_asset_file(&clean).then_some((clean, shortened))
+/// The name a new asset is kept under (see [`kept_name`]).
+fn safe_asset_name(raw: &str) -> Option<String> {
+    kept_name(raw).filter(|clean| is_asset_file(clean))
+}
+
+/// The name a file was sent as: its last segment, as [`kept_name`] reads it.
+fn sent_name(raw: &str) -> &str {
+    raw.rsplit(['/', '\\']).next().unwrap_or(raw).trim()
+}
+
+/// The names assets were sent as, where the cleaning changed them:
+/// `{"_.png": "🎨.png", "logo-chính.png": "logo chính.png"}`. An asset not
+/// in it was sent as the name it has. In the package folder, not
+/// `assets/` (which holds assets only), and hidden, so not archived or
+/// copied (QA-109).
+const SENT_NAMES: &str = ".sent-names.json";
+
+/// One upload or delete of assets at a time: each reads [`SENT_NAMES`],
+/// picks names and writes it back.
+static ASSET_WRITES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// [`SENT_NAMES`] of package folder `dir`; empty when missing,
+/// unreadable or a link (never followed out of the package).
+fn read_sent_names(dir: &std::path::Path) -> BTreeMap<String, String> {
+    let path = dir.join(SENT_NAMES);
+    std::fs::symlink_metadata(&path)
+        .is_ok_and(|m| m.is_file())
+        .then(|| std::fs::read(&path).ok())
+        .flatten()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+/// Writes [`SENT_NAMES`] whole (a new file renamed over it: a link
+/// planted there is replaced, not followed).
+async fn write_sent_names(
+    dir: &std::path::Path,
+    names: &BTreeMap<String, String>,
+) -> std::io::Result<()> {
+    let path = dir.join(SENT_NAMES);
+    if names.is_empty() {
+        return match tokio::fs::remove_file(&path).await {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
+            _ => Ok(()),
+        };
+    }
+    let tmp = dir.join(format!(
+        "{SENT_NAMES}.{}.tmp",
+        uuid::Uuid::new_v4().simple()
+    ));
+    let bytes = serde_json::to_vec_pretty(names).map_err(std::io::Error::other)?;
+    let written = async {
+        use tokio::io::AsyncWriteExt as _;
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .await?;
+        file.write_all(&bytes).await?;
+        file.flush().await?;
+        tokio::fs::rename(&tmp, &path).await
+    }
+    .await;
+    if written.is_err() {
+        let _ = tokio::fs::remove_file(&tmp).await;
+    }
+    written
+}
+
+/// The asset a file sent as `sent` replaces: the one sent under that name
+/// before (NFC, any case), as [`SENT_NAMES`] records it, else the one
+/// named so on disk. `None`: it is a new asset, even when its cleaned name
+/// is taken (`🖼.png` is not `🎨.png`, though both clean to `_.png`).
+fn replaced_asset(
+    assets: &std::path::Path,
+    sent_names: &BTreeMap<String, String>,
+    sent: &str,
+) -> Option<String> {
+    let key = same_file_key(sent);
+    let mut on_disk: Vec<String> = std::fs::read_dir(assets)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| existing_asset_name(n).is_some())
+        .collect();
+    on_disk.sort();
+    on_disk
+        .into_iter()
+        .find(|n| same_file_key(sent_names.get(n).map_or(n.as_str(), String::as_str)) == key)
 }
 
 /// An asset already in the package, named as it is on disk: one segment,
@@ -809,8 +892,8 @@ fn existing_asset_name(name: &str) -> Option<&str> {
     .then_some(name)
 }
 
-/// Candidate names for a shortened asset: its own, then `stem-1.ext`…
-fn shortened_candidates(name: &str) -> impl Iterator<Item = String> + '_ {
+/// Candidate names for a new asset: its own, then `stem-1.ext`…
+fn candidate_names(name: &str) -> impl Iterator<Item = String> + '_ {
     let (stem, ext) = name.rsplit_once('.').map_or((name, ""), |(s, e)| (s, e));
     (0..10_000).map(move |i| {
         if i == 0 {
@@ -821,6 +904,14 @@ fn shortened_candidates(name: &str) -> impl Iterator<Item = String> + '_ {
             format!("{stem}-{i}.{ext}")
         }
     })
+}
+
+/// Where one file of an upload goes.
+enum Target {
+    /// Over this asset, sent under the same name before.
+    Replace(String, PathBuf),
+    /// A new asset: its cleaned name, or the first free `stem-N.ext`.
+    New(String),
 }
 
 pub async fn upload_assets(
@@ -840,7 +931,7 @@ pub async fn upload_assets(
         let Some(raw) = field.file_name().map(str::to_owned) else {
             continue;
         };
-        let (name, shortened) = safe_asset_name(&raw).ok_or_else(|| {
+        let name = safe_asset_name(&raw).ok_or_else(|| {
             ApiErr::bad_request(format!("{raw}: only images (PNG, JPG, SVG…) and fonts"))
         })?;
         let bytes = field
@@ -852,8 +943,8 @@ pub async fn upload_assets(
         }
         // Its path checked here too (a link planted at it): refused before
         // any of the batch is written.
-        let path = inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?;
-        parts.push((raw, name, shortened, path, bytes));
+        inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?;
+        parts.push((raw, name, bytes));
     }
     if parts.is_empty() {
         return Err(ApiErr::bad_request("no files in upload"));
@@ -861,32 +952,59 @@ pub async fn upload_assets(
     refuse_same_name(
         parts
             .iter()
-            .map(|(raw, name, ..)| (raw.as_str(), name.as_str())),
+            .map(|(raw, name, _)| (raw.as_str(), name.as_str())),
     )?;
-    // A name as sent replaces the asset of that name; a shortened one
-    // never does: two long names alike up to the cut are two files, so it
-    // takes the first free `stem-N.ext`, none of the batch's other names.
-    let batch: Vec<String> = parts.iter().map(|(_, n, ..)| same_file_key(n)).collect();
-    tokio::fs::create_dir_all(inside(&e.dir, ASSETS_DIR)?)
+    let assets = inside(&e.dir, ASSETS_DIR)?;
+    tokio::fs::create_dir_all(&assets)
         .await
         .map_err(ApiErr::io)?;
-    // A write that fails half way keeps those before it: they replace
-    // assets of the same name, so Try again writes them over, adding none.
+    let _writes = ASSET_WRITES.lock().await;
+    // A file replaces only the asset sent under its name before; any
+    // other takes the first free `stem-N.ext`, never a name of the batch's
+    // other files: `🖼.png` after `🎨.png` (both `_.png`), `logo-chính.png`
+    // after `logo chính.png`, two long names alike up to the cut (QA-109).
+    let mut sent_names = read_sent_names(&e.dir);
+    let mut targets = Vec::with_capacity(parts.len());
+    for (raw, name, _) in &parts {
+        targets.push(match replaced_asset(&assets, &sent_names, sent_name(raw)) {
+            Some(old) => {
+                let path = inside(&e.dir, &format!("{ASSETS_DIR}/{old}"))?;
+                Target::Replace(old, path)
+            }
+            None => Target::New(name.clone()),
+        });
+    }
+    let batch: Vec<String> = parts.iter().map(|(_, n, _)| same_file_key(n)).collect();
+    // A write that fails half way keeps those before it, and their sent
+    // names: Try again replaces them, adding none.
     let mut saved = Vec::with_capacity(parts.len());
-    for (_, name, shortened, path, bytes) in parts {
-        let name = if shortened {
-            write_new_asset(&e.dir, &name, &batch, &bytes).await?
-        } else {
-            tokio::fs::write(path, &bytes).await.map_err(ApiErr::io)?;
-            name
+    for ((raw, _, bytes), target) in parts.into_iter().zip(targets) {
+        let name = match target {
+            Target::Replace(name, path) => {
+                tokio::fs::write(path, &bytes).await.map_err(ApiErr::io)?;
+                name
+            }
+            Target::New(name) => {
+                let name = write_new_asset(&e.dir, &name, &batch, &bytes).await?;
+                let sent = sent_name(&raw);
+                if sent == name {
+                    sent_names.remove(&name);
+                } else {
+                    sent_names.insert(name.clone(), sent.to_owned());
+                }
+                write_sent_names(&e.dir, &sent_names)
+                    .await
+                    .map_err(ApiErr::io)?;
+                name
+            }
         };
         saved.push(json!({ "name": name, "kind": asset_kind(&name), "size": bytes.len() }));
     }
     Ok(Json(json!({ "assets": saved })))
 }
 
-/// Writes a shortened asset under the first of its candidate names free
-/// on disk and not another file's of the batch, never over a file.
+/// Writes a new asset under the first of its candidate names free on
+/// disk and not another file's of the batch, never over a file.
 async fn write_new_asset(
     dir: &std::path::Path,
     name: &str,
@@ -895,7 +1013,7 @@ async fn write_new_asset(
 ) -> ApiResult<String> {
     use tokio::io::AsyncWriteExt as _;
     let own = same_file_key(name);
-    for candidate in shortened_candidates(name) {
+    for candidate in candidate_names(name) {
         let key = same_file_key(&candidate);
         if key != own && batch.contains(&key) {
             continue;
@@ -934,9 +1052,18 @@ pub async fn delete_asset(
 ) -> ApiResult<Json<Value>> {
     let e = editable(&state, &id)?;
     let name = existing_asset_name(&name).ok_or_else(|| ApiErr::bad_request("invalid asset"))?;
+    let _writes = ASSET_WRITES.lock().await;
     tokio::fs::remove_file(inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?)
         .await
         .map_err(|_| ApiErr::not_found("asset not found"))?;
+    // Its sent name goes with it: a file put there after (the agent's) was
+    // not sent as that. The asset is gone either way.
+    let mut sent_names = read_sent_names(&e.dir);
+    if sent_names.remove(name).is_some()
+        && let Err(err) = write_sent_names(&e.dir, &sent_names).await
+    {
+        tracing::warn!(error = %err, "the sent name of a deleted asset kept");
+    }
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -1369,7 +1496,7 @@ mod tests {
     use super::*;
 
     fn new_asset(raw: &str) -> Option<String> {
-        safe_asset_name(raw).map(|(n, _)| n)
+        safe_asset_name(raw)
     }
 
     #[test]
@@ -1388,7 +1515,7 @@ mod tests {
 
     /// QA-107: Vietnamese names keep their letters, so `màu.png` and
     /// `mẫu.png` stay two assets; a name too long for the disk is
-    /// shortened (QA-106) and says so; two files one name in a batch,
+    /// shortened (QA-106); two files one name in a batch,
     /// NFC or NFD, any case, are refused.
     #[test]
     fn asset_names_keep_their_letters_and_never_collide_unseen() {
@@ -1396,11 +1523,10 @@ mod tests {
         let mau2 = new_asset("mẫu.png").unwrap();
         assert_eq!((mau.as_str(), mau2.as_str()), ("màu.png", "mẫu.png"));
         assert_eq!(
-            safe_asset_name("logo chính.PNG"),
-            Some(("logo-chính.PNG".to_owned(), false))
+            new_asset("logo chính.PNG").as_deref(),
+            Some("logo-chính.PNG")
         );
-        let (long, shortened) = safe_asset_name(&format!("{}.png", "ảnh-".repeat(100))).unwrap();
-        assert!(shortened);
+        let long = new_asset(&format!("{}.png", "ảnh-".repeat(100))).unwrap();
         assert!(long.len() <= od_store::paths::MAX_UPLOAD_NAME_BYTES && long.ends_with(".png"));
         assert!(refuse_same_name([("màu.png", mau.as_str()), ("mẫu.png", mau2.as_str())]).is_ok());
         let err =
@@ -1417,6 +1543,32 @@ mod tests {
         assert!(refuse_same_name([("MẪU.png", "MẪU.png"), (nfd, nfd)]).is_err());
     }
 
+    /// QA-109: the sent names are read and written in the package only: a
+    /// link planted at the file (an agent editing the package) is neither
+    /// read through nor written through, only replaced.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn sent_names_never_go_through_a_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (pkg, outside) = (tmp.path().join("pkg"), tmp.path().join("outside.json"));
+        std::fs::create_dir(&pkg).unwrap();
+        std::fs::write(&outside, br#"{"_.png": "secret.png"}"#).unwrap();
+        std::os::unix::fs::symlink(&outside, pkg.join(SENT_NAMES)).unwrap();
+        assert!(read_sent_names(&pkg).is_empty(), "read through a link");
+        let names = BTreeMap::from([("_.png".to_owned(), "🎨.png".to_owned())]);
+        write_sent_names(&pkg, &names).await.unwrap();
+        assert_eq!(
+            std::fs::read(&outside).unwrap(),
+            br#"{"_.png": "secret.png"}"#,
+            "written through a link"
+        );
+        assert_eq!(read_sent_names(&pkg), names);
+        write_sent_names(&pkg, &BTreeMap::new()).await.unwrap();
+        assert!(!pkg.join(SENT_NAMES).exists());
+        let left: Vec<_> = std::fs::read_dir(&pkg).unwrap().collect();
+        assert!(left.is_empty(), "a temporary file left");
+    }
+
     /// An asset already on disk is named as it is, never cleaned or
     /// shortened again: a 220-byte name kept whole stays itself.
     #[test]
@@ -1428,7 +1580,7 @@ mod tests {
         assert_eq!(existing_asset_name("a/b.png"), None);
         assert_eq!(existing_asset_name("a\\b.png"), None);
         assert_eq!(existing_asset_name("run.sh"), None);
-        let c: Vec<String> = shortened_candidates("a.png").take(3).collect();
+        let c: Vec<String> = candidate_names("a.png").take(3).collect();
         assert_eq!(c, ["a.png", "a-1.png", "a-2.png"]);
     }
 

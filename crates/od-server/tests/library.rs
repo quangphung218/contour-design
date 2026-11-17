@@ -1450,6 +1450,118 @@ async fn design_system_kit_import_copy_and_revisions() {
     assert_eq!(s, 403);
 }
 
+/// QA-109: an asset is replaced only by a file sent under its very name
+/// (NFC, any case); a name the cleaning changed (`🖼.png` → `_.png`,
+/// `logo chính.png` → `logo-chính.png`) takes a free `stem-N.ext`.
+#[tokio::test]
+async fn design_system_asset_replaced_only_by_its_own_name() {
+    let d = daemon().await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/design-systems/airbnb/copy",
+        Some(json!({ "name": "Names" })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let id = v["id"].as_str().unwrap().to_owned();
+    let url = format!("/api/design-systems/{id}/assets");
+    let assets = d.data.join("design-systems/names/assets");
+    let send = |name: &'static str, bytes: &'static [u8]| {
+        let (d, url) = (&d, url.as_str());
+        async move {
+            let (s, v) = upload(d, url, &[(name, bytes)]).await;
+            assert_eq!(s, 200, "{name}: {v}");
+            v["assets"][0]["name"].as_str().unwrap().to_owned()
+        }
+    };
+    let on_disk = || {
+        let mut names: Vec<String> = std::fs::read_dir(&assets)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    let read = |n: &str| std::fs::read(assets.join(n)).unwrap();
+
+    // Emoji: both cleaned to `_.png`; the second takes `_-1.png`.
+    assert_eq!(send("🎨.png", b"red").await, "_.png");
+    assert_eq!(send("🖼.png", b"blue!").await, "_-1.png");
+    assert_eq!(read("_.png"), b"red", "🎨.png written over");
+    assert_eq!(read("_-1.png"), b"blue!");
+    // A space cleaned to `-`: not the asset already named `logo-chính.png`.
+    assert_eq!(send("logo-chính.png", b"one").await, "logo-chính.png");
+    assert_eq!(send("logo chính.png", b"two!").await, "logo-chính-1.png");
+    assert_eq!(
+        read("logo-chính.png"),
+        b"one",
+        "logo-chính.png written over"
+    );
+    // The other way round (UL-15): the cleaned one first, then a file
+    // sent under the name the first is kept as.
+    assert_eq!(send("tên mới.png", b"a").await, "tên-mới.png");
+    assert_eq!(send("tên-mới.png", b"bb").await, "tên-mới-1.png");
+    assert_eq!(read("tên-mới.png"), b"a", "tên mới.png written over");
+    // A file sent again under the name it was sent as replaces it, NFD or
+    // another case too, under the name on disk.
+    assert_eq!(send("Mẫu.png", b"old").await, "Mẫu.png");
+    assert_eq!(send("ma\u{302}\u{303}u.PNG", b"new!").await, "Mẫu.png");
+    assert_eq!(read("Mẫu.png"), b"new!", "Mẫu.png not replaced");
+    assert_eq!(send("🎨.png", b"RED").await, "_.png");
+    assert_eq!(read("_.png"), b"RED", "🎨.png not replaced");
+    assert_eq!(send("logo-chính.png", b"three").await, "logo-chính.png");
+    assert_eq!(send("logo chính.png", b"four!").await, "logo-chính-1.png");
+    assert_eq!(read("logo-chính.png"), b"three");
+    assert_eq!(read("tên-mới-1.png"), b"bb");
+    assert_eq!(read("_-1.png"), b"blue!");
+    assert_eq!(
+        on_disk(),
+        [
+            "Mẫu.png",
+            "_-1.png",
+            "_.png",
+            "logo-chính-1.png",
+            "logo-chính.png",
+            "tên-mới-1.png",
+            "tên-mới.png",
+        ],
+        "an extra or a lost asset"
+    );
+    // Deleted, its sent name goes too: a file put there after (the
+    // agent's) is not what `logo chính.png` was sent as.
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{id}/assets/logo-chính-1.png/delete"),
+        None,
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    std::fs::write(assets.join("logo-chính-1.png"), b"agent").unwrap();
+    assert_eq!(send("logo chính.png", b"five").await, "logo-chính-2.png");
+    assert_eq!(
+        read("logo-chính-1.png"),
+        b"agent",
+        "the agent's file written over"
+    );
+    // The sent names are kept beside `assets/`, which holds assets only:
+    // the kit lists what is on disk there, nothing more.
+    assert!(
+        d.data
+            .join("design-systems/names/.sent-names.json")
+            .is_file()
+    );
+    let kit = d.get_json(&format!("/api/design-systems/{id}/kit")).await;
+    let listed: Vec<&str> = kit["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(listed, on_disk(), "the kit lists another asset");
+}
+
 #[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn design_system_from_sources() {

@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Design system ▸ Kit: an uploaded asset whose name cleans to one already in the kit (`🎨.png` then `🖼.png`, both `_.png`; `logo chính.png` then `logo-chính.png`) is kept as a new asset (`_-1.png`) instead of replacing the first while saying "Uploaded.". A file sent again under the name it was first sent as still replaces it.
+
 ## [0.2.0-beta.45] - 2026-11-17
 
 ### Fixed
