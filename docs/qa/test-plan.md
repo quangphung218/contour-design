@@ -884,6 +884,9 @@ of the settings are the same class).
 | SET-12 | Dark picked in A; B saves permissions | A ▸ Dark; B ▸ Ask first | Theme stays dark | P1 | auto (QA-108) |
 | SET-13 | Tiếng Việt picked in A; B turns off sounds | A ▸ vi; B ▸ sound off | Language stays vi | P1 | auto |
 | SET-14 | API provider saved in A; B picks a theme | A ▸ API ▸ Ollama ▸ Save; B ▸ Dark | Provider and API mode kept | P1 | auto (QA-108) |
+| SET-23 | Codex model picked in A; B saves its agent card | A ▸ Codex model; B ▸ Save | Codex model kept | P1 | auto (QA-108) |
+| SET-24 | Provider model saved in A; B saves a new base URL | A ▸ model ▸ Save; B ▸ base URL ▸ Save | A's model kept | P1 | auto (QA-108) |
+| SET-25 | Working folder picked in A; B picks another | A ▸ folder Y; B ▸ folder Z | Recent folders Z, Y, X | P2 | auto (QA-108) |
 
 ## Not automated, and why
 
