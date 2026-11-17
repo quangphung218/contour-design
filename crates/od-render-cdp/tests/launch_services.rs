@@ -249,9 +249,10 @@ fn launches(dir: &Path) -> Vec<String> {
 
 /// A bundled browser that exits at once fails within seconds, saying what
 /// it printed; one that never opens DevTools is ended and tried again as
-/// our child. Either way LaunchServices goes first, once, and counts as a
-/// launch: one child launch follows it, with its whole 30 s well inside the
-/// 90 s an export waits. Without LaunchServices the child gets two.
+/// our child. Either way LaunchServices goes first, once; when it ran to
+/// its deadline it counts as a launch: one child launch follows it, with
+/// its whole 30 s well inside the 90 s an export waits. Without
+/// LaunchServices the child gets two.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_bundled_browser_that_cannot_start_fails_fast_and_is_ended() {
     if std::env::var(NO_SANDBOX_ENV).as_deref() == Ok("1") {

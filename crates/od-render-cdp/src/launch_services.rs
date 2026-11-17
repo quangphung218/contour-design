@@ -166,9 +166,11 @@ fn ws_url(port_file: &str) -> Option<String> {
 /// Starts `app` headless on `profile` through the `open` at `open`
 /// ([`OPEN`]; a stand-in in tests) and connects to it, all within `timeout`
 /// ([`LaunchError::Timeout`]: `open` itself can hang, see the module docs);
-/// a browser that exits first fails at once with what it printed. On
-/// failure the caller abandons the profile ([`super::Profile::abandon`]):
-/// LaunchServices may still start the browser after `open` was killed.
+/// a browser that exits first fails at once with what it printed. The
+/// caller marks the profile before this ([`super::Profile::mark_opening`])
+/// and abandons it on failure ([`super::Profile::abandon`]): LaunchServices
+/// may still start the browser after `open` was killed, or after this
+/// future was dropped.
 ///
 /// `Ok(None)`, before starting anything: `ps` cannot run here, as inside
 /// `sandbox-exec` (how the maintainer's pre-merge check runs). A browser

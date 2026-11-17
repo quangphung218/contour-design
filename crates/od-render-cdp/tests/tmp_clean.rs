@@ -1,6 +1,11 @@
 //! Rendering leaves nothing in TMPDIR: the browser profile (`od-chrome-*`)
 //! goes with the browser, also when a render fails after Chrome started or
-//! its future is dropped midway.
+//! its future is dropped midway. One exception, on macOS: a render dropped
+//! while LaunchServices starts its browser keeps that profile, marked
+//! `od-opening` and with nothing running on it, for a later sweep (a
+//! browser starting late would write a removed one back unmarked). A
+//! browser that comes up on it after the process quit is ended by the next
+//! render, which the outer test runs as a second process.
 //!
 //! The outer test runs this binary again with `TMPDIR` pointed at a fresh
 //! folder (the inner test does the renders), then counts what is left.
@@ -61,13 +66,28 @@ fn renders_leave_tmpdir_empty() {
         )
         .unwrap();
     }
-    let status = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["inner_renders", "--exact", "--nocapture"])
-        .env("TMPDIR", &private)
-        .env(INNER, "1")
-        .status()
-        .unwrap();
-    assert!(status.success(), "the renders failed");
+    let _reap = Reap(private.clone());
+    let inner = |what: &str| {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["inner_renders", "--exact", "--nocapture"])
+            .env("TMPDIR", &private)
+            .env(INNER, what)
+            .status()
+            .unwrap();
+        assert!(status.success(), "the {what} render(s) failed");
+    };
+    inner("renders");
+    // A browser LaunchServices starts late for the dropped render comes up
+    // after its process quit, in a second or two: the next render runs once
+    // it has (or after 10 s, when none came).
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while cfg!(target_os = "macos")
+        && marked(&private).iter().any(|p| users(p) == 0)
+        && std::time::Instant::now() < until
+    {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    inner("next");
     // Chrome's helpers may still be on their way out.
     let expected: &[&str] = if cfg!(unix) {
         &["od-chrome-live01"]
@@ -78,8 +98,11 @@ fn renders_leave_tmpdir_empty() {
     for _ in 0..50 {
         left = std::fs::read_dir(&private)
             .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .map(|e| e.unwrap().path())
+            .filter(|p| !(cfg!(target_os = "macos") && given_up_while_opening(p)))
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
+        left.sort();
         if left == expected {
             break;
         }
@@ -88,11 +111,61 @@ fn renders_leave_tmpdir_empty() {
     assert_eq!(left, expected, "left in TMPDIR");
 }
 
+/// A profile kept because its render was dropped while LaunchServices
+/// started the browser: marked, and nothing runs on it.
+fn given_up_while_opening(profile: &std::path::Path) -> bool {
+    if !profile.join("od-opening").exists() {
+        return false;
+    }
+    assert_eq!(
+        users(profile),
+        0,
+        "a browser still runs on {}",
+        profile.display()
+    );
+    true
+}
+
+/// Kills, when dropped, whatever still runs on a profile in the test's own
+/// temp dir: a failed run leaves no browser behind once that dir is gone.
+struct Reap(std::path::PathBuf);
+
+impl Drop for Reap {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("pkill")
+            .args(["-9", "-f", "--"])
+            .arg(format!("--user-data-dir={}", self.0.display()))
+            .status();
+    }
+}
+
+/// The `od-opening` profiles in `tmp`.
+fn marked(tmp: &std::path::Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(tmp)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.join("od-opening").exists())
+        .collect()
+}
+
+/// How many processes run with `profile` as their profile.
+fn users(profile: &std::path::Path) -> usize {
+    let needle = format!("--user-data-dir={}", profile.display());
+    let ps = std::process::Command::new("ps")
+        .args(["-A", "-ww", "-o", "args="])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&ps.stdout)
+        .lines()
+        .filter(|l| l.contains(&needle))
+        .count()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn inner_renders() {
-    if std::env::var_os(INNER).is_none() {
+    let Some(inner) = std::env::var_os(INNER) else {
         return;
-    }
+    };
     let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
     let dir = tempfile::tempdir().unwrap();
     let page = dir.path().join("page.html");
@@ -103,6 +176,9 @@ async fn inner_renders() {
         .capture_page(&target, od_export::CaptureOptions::default())
         .await;
     assert!(shot.is_ok(), "{shot:?}");
+    if inner == "next" {
+        return; // the next render after the process below quit
+    }
     // Fails after Chrome started: the page file is gone.
     let missing = RenderTarget::new(dir.path().join("missing.html"));
     assert!(renderer.print_pdf(&missing, DeckMode::Auto).await.is_err());
