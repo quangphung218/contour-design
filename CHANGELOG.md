@@ -12,6 +12,7 @@ All notable changes to Contour are recorded here. The format follows
 
 - An API key saved in a window that still shows the provider another window has since replaced no longer keeps that other provider's model; the provider's default model is used until one is picked. A host changed in the window that shows the provider still keeps the model.
 - Two windows picking a working folder at the same moment both keep their folder among the recent ones.
+- Design system ▸ Set default, clicked again or while another save of the window is still on its way, is kept when the panel is closed right after; it no longer showed as saved and came back after a restart. A working folder picked just before leaving Home is kept among the recent ones.
 - Settings no longer flash back to an older value (the theme, for one) while a save from the same window is still on its way and another save or a project location change follows it.
 
 ## [0.2.0-beta.47] - 2026-11-18

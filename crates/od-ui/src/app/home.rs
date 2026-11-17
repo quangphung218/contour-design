@@ -11,7 +11,7 @@ use super::ds_create::CreateFlow;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::query_param;
-use super::tasks::{Tasks, live};
+use super::tasks::{Tasks, detached, live};
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{
@@ -983,7 +983,10 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>, tasks: Tasks) -> impl IntoView
                 typing.set(None);
             }
             dir.set(Some(canonical.clone()));
-            let _ = shell.add_recent_dir(&canonical).await;
+            // Detached: leaving Home right after the pick still records it.
+            detached(async move {
+                let _ = shell.add_recent_dir(&canonical).await;
+            });
         });
     };
     let pick = move |_| {
