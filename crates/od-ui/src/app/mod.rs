@@ -122,8 +122,15 @@ impl Shell {
     }
 
     /// Saves settings and updates the shared copy with what the daemon kept.
+    /// `next` is the shared copy with the caller's change; only the keys
+    /// that differ from that copy are sent, so a window opened before
+    /// another one saved does not put the other window's values back
+    /// (QA-108).
     pub async fn save_config(self, next: AppConfig) -> Result<(), String> {
-        let saved: AppConfig = api::put("/api/app-config", &next.to_patch())
+        let patch = self.config.with_untracked(|base| {
+            next.patch_since(base.as_ref().unwrap_or(&AppConfig::default()))
+        });
+        let saved: AppConfig = api::put("/api/app-config", &patch)
             .await
             .map_err(|e| api::failure(T::MdSaveFailed, &e))?;
         self.set_locale(locale_of(&saved));

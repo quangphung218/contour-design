@@ -175,10 +175,9 @@ test('SET-10', 'Settings has one Save per thing to save: the agent card or the A
 
 // ------------------------------------------------------------ two windows (§29)
 //
-// Every Settings save sends the whole copy of the settings the window read
-// when it opened (#227 kept only project locations out of it). A second
-// window (or tab) opened before a change, then saving something else,
-// must not put back what the first one changed.
+// A second window (or tab) opened before a change, then saving something
+// else, must not put back what the first one changed: each save sends only
+// the keys it changed (QA-108).
 
 /** Two Settings windows, both open before either changes anything. */
 async function twoWindows(d, newPage) {
@@ -221,7 +220,7 @@ test('SET-12', 'Dark theme picked in one window stays when a second window, open
   const cfg = (await api('/api/app-config')).body;
   assert.equal(cfg.agentPermissionMode, 'ask');
   assert.equal(cfg.theme, 'dark', `the second window put the theme back to ${cfg.theme}`);
-}, { daemon: {}, knownBug: 'QA-108' });
+}, { daemon: {} });
 
 test('SET-13', 'Tiếng Việt picked in one window stays when a second window, opened before, turns off notification sounds', async ({ d, api, newPage }) => {
   const [a, b] = await twoWindows(d, newPage);
@@ -251,6 +250,51 @@ test('SET-14', 'An API provider saved in one window stays when a second window, 
   assert.equal(cfg.theme, 'dark');
   assert.equal(cfg.byok?.baseUrl, 'http://gpu-box:11434/v1', `the second window dropped the provider: ${JSON.stringify(cfg.byok)}`);
   assert.equal(cfg.agentId, 'byok', `the second window put the agent back to ${cfg.agentId}`);
-}, { daemon: {}, knownBug: 'QA-108' });
+}, { daemon: {} });
+
+test('SET-15', 'Dark theme picked in one window stays when a second window, opened before, saves its permissions, its agent and then its language', async ({ d, api, newPage }) => {
+  const [a, b] = await twoWindows(d, newPage);
+  await a.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click();
+  await until(async () => (await api('/api/app-config')).body.theme === 'dark', 'dark saved');
+  await askFirst(b);
+  // B's next saves start from what the daemon sent back after the first,
+  // while B's form still shows the theme it read when it opened (a new
+  // language re-renders the form, so it comes last).
+  assert.equal(await savedStatus(b, () => b.getByTestId('save-settings').click()), 200);
+  assert.equal((await api('/api/app-config')).body.theme, 'dark', 'the agent Save put the theme back');
+  assert.equal(await savedStatus(b, () => b.getByTestId('language').selectOption('vi')), 200);
+  const cfg = (await api('/api/app-config')).body;
+  assert.equal(cfg.agentPermissionMode, 'ask');
+  assert.equal(cfg.locale, 'vi');
+  assert.equal(cfg.theme, 'dark', `the second window's second save put the theme back to ${cfg.theme}`);
+}, { daemon: {} });
+
+test('SET-16', 'Tiếng Việt picked in one window stays when a second window, opened before, picks a theme and saves its agent', async ({ d, api, newPage }) => {
+  const [a, b] = await twoWindows(d, newPage);
+  await a.getByTestId('language').selectOption('vi');
+  await until(async () => (await api('/api/app-config')).body.locale === 'vi', 'vi saved');
+  assert.equal(await savedStatus(b, () => b.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click()), 200);
+  assert.equal((await api('/api/app-config')).body.locale, 'vi', 'the theme save put the language back');
+  assert.equal(await savedStatus(b, () => b.getByTestId('save-settings').click()), 200);
+  const cfg = (await api('/api/app-config')).body;
+  assert.equal(cfg.theme, 'dark');
+  assert.equal(cfg.locale, 'vi', `the agent Save put the language back to ${cfg.locale}`);
+}, { daemon: {} });
+
+test('SET-17', 'Clearing the default design system on its page sticks after a reload', async ({ d, api, newPage }) => {
+  const id = (await api('/api/design-systems')).body.designSystems.find((s) => s.source !== 'user').id;
+  const config = (await api('/api/app-config')).body;
+  assert.equal((await api('/api/app-config', { method: 'PUT', body: { ...config, designSystemId: id } })).status, 200);
+  const { page } = await newPage();
+  await page.goto(`${d.base}/design-systems?id=${encodeURIComponent(id)}`);
+  const star = page.getByTestId('ds-detail').getByTestId('ds-default');
+  await until(async () => (await star.getAttribute('aria-pressed', { timeout: 200 })) === 'true', 'shown as the default');
+  assert.equal(await savedStatus(page, () => star.click()), 200);
+  // The window's copy drops the key; the daemon only forgets it when the
+  // save sends `null`.
+  assert.equal((await api('/api/app-config')).body.designSystemId, undefined, 'the default design system is still stored');
+  await page.reload();
+  await until(async () => (await star.getAttribute('aria-pressed', { timeout: 200 })) === 'false', 'not the default after a reload');
+}, { daemon: {} });
 
 await run('settings');
