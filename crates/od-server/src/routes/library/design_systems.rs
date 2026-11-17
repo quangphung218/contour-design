@@ -876,9 +876,25 @@ fn replaced_asset(
         .filter(|n| existing_asset_name(n).is_some())
         .collect();
     on_disk.sort();
+    let sent_as = |n: &String| {
+        sent_names
+            .get(n)
+            .map_or(n.as_str(), String::as_str)
+            .to_owned()
+    };
+    // The closest match first: on a disk that tells `Logo.png` from
+    // `logo.png` (Linux), sending `logo.png` replaces `logo.png`, not the
+    // first name that only folds to it.
+    let nfc = |n: &str| {
+        use unicode_normalization::UnicodeNormalization as _;
+        n.nfc().collect::<String>()
+    };
     on_disk
-        .into_iter()
-        .find(|n| same_file_key(sent_names.get(n).map_or(n.as_str(), String::as_str)) == key)
+        .iter()
+        .find(|n| sent_as(n) == sent)
+        .or_else(|| on_disk.iter().find(|n| nfc(&sent_as(n)) == nfc(sent)))
+        .or_else(|| on_disk.iter().find(|n| same_file_key(&sent_as(n)) == key))
+        .cloned()
 }
 
 /// An asset already in the package, named as it is on disk: one segment,
@@ -1544,6 +1560,33 @@ mod tests {
         let nfd = "ma\u{302}\u{303}u.png";
         assert!(refuse_same_name([("mẫu.png", "mẫu.png"), (nfd, nfd)]).is_err());
         assert!(refuse_same_name([("MẪU.png", "MẪU.png"), (nfd, nfd)]).is_err());
+    }
+
+    /// Where the disk keeps `Logo.png` and `logo.png` apart, a name sent
+    /// again replaces itself, not the first name that only folds to it.
+    #[test]
+    fn the_closest_name_is_the_one_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Logo.png"), b"a").unwrap();
+        let none = BTreeMap::new();
+        // Folding still finds `Logo.png` when it is the only candidate.
+        assert_eq!(
+            replaced_asset(dir.path(), &none, "logo.png").as_deref(),
+            Some("Logo.png")
+        );
+        std::fs::write(dir.path().join("logo.png"), b"b").unwrap();
+        let both = std::fs::read_dir(dir.path()).unwrap().count() == 2;
+        if both {
+            // A case-sensitive disk (Linux CI): the exact name wins.
+            assert_eq!(
+                replaced_asset(dir.path(), &none, "logo.png").as_deref(),
+                Some("logo.png")
+            );
+            assert_eq!(
+                replaced_asset(dir.path(), &none, "Logo.png").as_deref(),
+                Some("Logo.png")
+            );
+        }
     }
 
     /// QA-109: the sent names are read and written in the package only: a
