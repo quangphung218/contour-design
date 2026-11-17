@@ -1562,6 +1562,147 @@ async fn design_system_asset_replaced_only_by_its_own_name() {
     assert_eq!(listed, on_disk(), "the kit lists another asset");
 }
 
+/// Copies an editable design system named `name`; returns its id and its
+/// `assets/` folder.
+async fn ds_copy(d: &Daemon, from: &str, name: &str) -> (String, PathBuf) {
+    let (s, v) = call(
+        d,
+        "POST",
+        &format!("/api/design-systems/{from}/copy"),
+        Some(json!({ "name": name })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let id = v["id"].as_str().unwrap().to_owned();
+    let folder = id.trim_start_matches("user:").to_owned();
+    (
+        id,
+        d.data.join("design-systems").join(folder).join("assets"),
+    )
+}
+
+/// Uploads one asset; returns the name it is kept under.
+async fn ds_send(d: &Daemon, id: &str, name: &str, bytes: &[u8]) -> String {
+    let (s, v) = upload(
+        d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[(name, bytes)],
+    )
+    .await;
+    assert_eq!(s, 200, "{name}: {v}");
+    v["assets"][0]["name"].as_str().unwrap().to_owned()
+}
+
+/// QA-109 (review): the sent names go with a copy and with the archive,
+/// so a copy keeps the first of `logo chính.png` and `logo-chính.png`;
+/// an asset with no sent name recorded (uploaded before them, or put
+/// there by the agent) is replaced by a file sent under its own name.
+#[tokio::test]
+async fn design_system_sent_names_go_with_copies_and_archives() {
+    let d = daemon().await;
+    let (id, assets) = ds_copy(&d, "airbnb", "Sent").await;
+    assert_eq!(
+        ds_send(&d, &id, "logo chính.png", b"first").await,
+        "logo-chính.png"
+    );
+    // Copied: `logo-chính.png` sent to the copy is a new asset there.
+    let (twin, twin_assets) = ds_copy(&d, &id, "Twin").await;
+    assert_eq!(
+        ds_send(&d, &twin, "logo-chính.png", b"second").await,
+        "logo-chính-1.png"
+    );
+    assert_eq!(
+        std::fs::read(twin_assets.join("logo-chính.png")).unwrap(),
+        b"first"
+    );
+    assert_eq!(
+        ds_send(&d, &twin, "logo chính.png", b"third").await,
+        "logo-chính.png"
+    );
+    // Archived: the sent names are in the ZIP, at the package's top.
+    let zip = d
+        .http
+        .get(format!("{}/api/design-systems/{id}/archive", d.base))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(zip.to_vec())).unwrap();
+    let mut kept = String::new();
+    std::io::Read::read_to_string(
+        &mut zip.by_name("sent/.sent-names.json").unwrap(),
+        &mut kept,
+    )
+    .unwrap();
+    let kept: Value = serde_json::from_str(&kept).unwrap();
+    assert_eq!(kept, json!({ "logo-chính.png": "logo chính.png" }));
+    // No sent name recorded: the name on disk is the one it was sent as.
+    std::fs::write(assets.join("old logo.png"), b"before").unwrap();
+    assert_eq!(
+        ds_send(&d, &id, "old logo.png", b"after").await,
+        "old logo.png"
+    );
+    assert_eq!(
+        std::fs::read(assets.join("old logo.png")).unwrap(),
+        b"after"
+    );
+}
+
+/// QA-109 (review): an asset whose sent name cannot be recorded is not
+/// kept, so Try again replaces nothing it should not and adds no `-1`.
+#[cfg(unix)]
+#[tokio::test]
+async fn design_system_asset_not_kept_without_its_sent_name() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let d = daemon().await;
+    let (id, assets) = ds_copy(&d, "airbnb", "Locked").await;
+    std::fs::create_dir_all(&assets).unwrap();
+    let package = assets.parent().unwrap().to_owned();
+    let mode = |m| std::fs::set_permissions(&package, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o555);
+    if std::fs::write(package.join("probe"), b"").is_ok() {
+        // Root writes anyway: nothing to test.
+        let _ = std::fs::remove_file(package.join("probe"));
+        mode(0o755);
+        return;
+    }
+    let (s, v) = upload(
+        &d,
+        &format!("/api/design-systems/{id}/assets"),
+        &[("a b.png", b"x")],
+    )
+    .await;
+    mode(0o755);
+    assert_ne!(s, 200, "{v}");
+    assert!(!assets.join("a-b.png").exists(), "kept with no sent name");
+    assert_eq!(ds_send(&d, &id, "a b.png", b"y").await, "a-b.png");
+}
+
+/// QA-109 (review): uploads at the same time each keep their sent name;
+/// none is lost to another's write of the record.
+#[tokio::test]
+async fn design_system_uploads_at_once_keep_every_sent_name() {
+    let d = daemon().await;
+    let (id, assets) = ds_copy(&d, "airbnb", "Busy").await;
+    let names: Vec<String> = (0..24).map(|i| format!("pic {i}.png")).collect();
+    let sent =
+        futures_util::future::join_all(names.iter().map(|n| ds_send(&d, &id, n, b"one"))).await;
+    for (n, kept) in names.iter().zip(&sent) {
+        assert_eq!(kept, &n.replace(' ', "-"));
+    }
+    for n in &names {
+        assert_eq!(
+            ds_send(&d, &id, n, b"two!").await,
+            n.replace(' ', "-"),
+            "{n}: its sent name lost"
+        );
+    }
+    let count = std::fs::read_dir(&assets).unwrap().count();
+    assert_eq!(count, names.len(), "an asset added again");
+}
+
 #[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn design_system_from_sources() {

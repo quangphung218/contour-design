@@ -650,6 +650,9 @@ pub async fn copy(
             .unwrap_or_default();
         copy_dir(&e.dir, &dest, u64::MAX)?;
         let _ = std::fs::remove_dir_all(dest.join(REVISIONS_DIR));
+        // `copy_dir` leaves hidden files; the sent names go too, or the
+        // copy's `logo-chính.png` would take `logo chính.png`'s (QA-109).
+        write_sent_names(&dest, &read_sent_names(&e.dir)).map_err(ApiErr::io)?;
         // The manifest names its folder; keep it valid for the new one.
         let manifest_path = dest.join("manifest.json");
         if let Some(mut m) = std::fs::read_to_string(&manifest_path)
@@ -679,7 +682,8 @@ pub async fn copy(
     Ok(Json(json!({ "id": new_id })))
 }
 
-/// Package files for the archive: everything visible except revisions.
+/// Package files for the archive: everything visible except revisions,
+/// and the assets' sent names ([`SENT_NAMES`]).
 fn package_files(dir: &std::path::Path) -> Vec<(String, PathBuf)> {
     fn walk(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<(String, PathBuf)>) {
         let Ok(rd) = std::fs::read_dir(dir) else {
@@ -689,7 +693,7 @@ fn package_files(dir: &std::path::Path) -> Vec<(String, PathBuf)> {
         entries.sort_by_key(std::fs::DirEntry::file_name);
         for e in entries {
             let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
+            if name.starts_with('.') && !(dir == base && name == SENT_NAMES) {
                 continue;
             }
             let path = e.path();
@@ -802,8 +806,8 @@ fn sent_name(raw: &str) -> &str {
 /// The names assets were sent as, where the cleaning changed them:
 /// `{"_.png": "🎨.png", "logo-chính.png": "logo chính.png"}`. An asset not
 /// in it was sent as the name it has. In the package folder, not
-/// `assets/` (which holds assets only), and hidden, so not archived or
-/// copied (QA-109).
+/// `assets/` (which holds assets only); hidden, yet copied and archived
+/// with the package (QA-109).
 const SENT_NAMES: &str = ".sent-names.json";
 
 /// One upload or delete of assets at a time: each reads [`SENT_NAMES`],
@@ -823,14 +827,16 @@ fn read_sent_names(dir: &std::path::Path) -> BTreeMap<String, String> {
 }
 
 /// Writes [`SENT_NAMES`] whole (a new file renamed over it: a link
-/// planted there is replaced, not followed).
-async fn write_sent_names(
+/// planted there is replaced, not followed). A few hundred bytes, so
+/// written in place from async code too.
+fn write_sent_names(
     dir: &std::path::Path,
     names: &BTreeMap<String, String>,
 ) -> std::io::Result<()> {
+    use std::io::Write as _;
     let path = dir.join(SENT_NAMES);
     if names.is_empty() {
-        return match tokio::fs::remove_file(&path).await {
+        return match std::fs::remove_file(&path) {
             Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
             _ => Ok(()),
         };
@@ -840,20 +846,14 @@ async fn write_sent_names(
         uuid::Uuid::new_v4().simple()
     ));
     let bytes = serde_json::to_vec_pretty(names).map_err(std::io::Error::other)?;
-    let written = async {
-        use tokio::io::AsyncWriteExt as _;
-        let mut file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)
-            .await?;
-        file.write_all(&bytes).await?;
-        file.flush().await?;
-        tokio::fs::rename(&tmp, &path).await
-    }
-    .await;
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .and_then(|mut file| file.write_all(&bytes))
+        .and_then(|()| std::fs::rename(&tmp, &path));
     if written.is_err() {
-        let _ = tokio::fs::remove_file(&tmp).await;
+        let _ = std::fs::remove_file(&tmp);
     }
     written
 }
@@ -987,14 +987,17 @@ pub async fn upload_assets(
             Target::New(name) => {
                 let name = write_new_asset(&e.dir, &name, &batch, &bytes).await?;
                 let sent = sent_name(&raw);
-                if sent == name {
-                    sent_names.remove(&name);
+                let changed = if sent == name {
+                    sent_names.remove(&name).is_some()
                 } else {
-                    sent_names.insert(name.clone(), sent.to_owned());
+                    sent_names.insert(name.clone(), sent.to_owned()).as_deref() != Some(sent)
+                };
+                // Not kept without its sent name: Try again would add a
+                // `stem-1` copy, or let a cleaned name replace it.
+                if changed && let Err(err) = write_sent_names(&e.dir, &sent_names) {
+                    let _ = tokio::fs::remove_file(assets.join(&name)).await;
+                    return Err(ApiErr::io(err));
                 }
-                write_sent_names(&e.dir, &sent_names)
-                    .await
-                    .map_err(ApiErr::io)?;
                 name
             }
         };
@@ -1060,7 +1063,7 @@ pub async fn delete_asset(
     // not sent as that. The asset is gone either way.
     let mut sent_names = read_sent_names(&e.dir);
     if sent_names.remove(name).is_some()
-        && let Err(err) = write_sent_names(&e.dir, &sent_names).await
+        && let Err(err) = write_sent_names(&e.dir, &sent_names)
     {
         tracing::warn!(error = %err, "the sent name of a deleted asset kept");
     }
@@ -1547,8 +1550,8 @@ mod tests {
     /// link planted at the file (an agent editing the package) is neither
     /// read through nor written through, only replaced.
     #[cfg(unix)]
-    #[tokio::test]
-    async fn sent_names_never_go_through_a_link() {
+    #[test]
+    fn sent_names_never_go_through_a_link() {
         let tmp = tempfile::tempdir().unwrap();
         let (pkg, outside) = (tmp.path().join("pkg"), tmp.path().join("outside.json"));
         std::fs::create_dir(&pkg).unwrap();
@@ -1556,14 +1559,14 @@ mod tests {
         std::os::unix::fs::symlink(&outside, pkg.join(SENT_NAMES)).unwrap();
         assert!(read_sent_names(&pkg).is_empty(), "read through a link");
         let names = BTreeMap::from([("_.png".to_owned(), "🎨.png".to_owned())]);
-        write_sent_names(&pkg, &names).await.unwrap();
+        write_sent_names(&pkg, &names).unwrap();
         assert_eq!(
             std::fs::read(&outside).unwrap(),
             br#"{"_.png": "secret.png"}"#,
             "written through a link"
         );
         assert_eq!(read_sent_names(&pkg), names);
-        write_sent_names(&pkg, &BTreeMap::new()).await.unwrap();
+        write_sent_names(&pkg, &BTreeMap::new()).unwrap();
         assert!(!pkg.join(SENT_NAMES).exists());
         let left: Vec<_> = std::fs::read_dir(&pkg).unwrap().collect();
         assert!(left.is_empty(), "a temporary file left");
