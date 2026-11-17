@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.46] - 2026-11-18
+
 ### Fixed
 
 - Design system ▸ Kit: an uploaded asset whose name cleans to one already in the kit (`🎨.png` then `🖼.png`, both `_.png`; `logo chính.png` then `logo-chính.png`) is kept as a new asset (`_-1.png`) instead of replacing the first while saying "Uploaded.". A file sent again under the name it was first sent as still replaces it, in a copy of the design system and in its archive too. Assets uploaded before this version count as sent under the name they have on disk: `logo-chính.png` sent to a kit that already holds one replaces it, even if that one was sent as `logo chính.png`.
@@ -1258,7 +1260,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.45...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.46...HEAD
+[0.2.0-beta.46]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.45...v0.2.0-beta.46
 [0.2.0-beta.45]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.44...v0.2.0-beta.45
 [0.2.0-beta.44]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.43...v0.2.0-beta.44
 [0.2.0-beta.43]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.42...v0.2.0-beta.43
