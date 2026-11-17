@@ -13,6 +13,11 @@ yanked = "deny"
 # Each ignore names the only path that pulls the crate in. Drop it once
 # Tauri moves to a fixed version (cargo update -p <crate> && make deny).
 ignore = [
+    # chrono: flagged unmaintained 17/11 (no vulnerability). od-automation
+    # (schedules, with chrono-tz) and od-server use it directly, and rmcp
+    # pulls it in too, so dropping it means moving both crates to jiff.
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, not vulnerable; move od-automation/od-server to jiff (backlog)" },
+    { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, not vulnerable; goes with chrono (jiff has time zones)" },
     # quick-xml 0.38 via plist (Tauri): parses the app's own Info.plist and
     # bundle metadata, never user input. Fixed in quick-xml 0.41.
     { id = "RUSTSEC-2026-0194", reason = "quick-xml via plist/Tauri, trusted build-time input only" },
