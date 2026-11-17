@@ -983,6 +983,9 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>, tasks: Tasks) -> impl IntoView
                 typing.set(None);
             }
             dir.set(Some(canonical.clone()));
+            // A list is saved whole: read it as the daemon holds it now, or
+            // this window would drop a folder another one added (QA-108).
+            shell.reload_config().await;
             if let Some(mut config) = shell.config.get_untracked() {
                 let mut list: Vec<String> = config
                     .extra

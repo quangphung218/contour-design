@@ -3,7 +3,7 @@
 // wrong: a folder that does not exist, a base URL that is not a URL.
 
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync, symlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, run, until, MOCK_AGENTS } from './lib.mjs';
@@ -371,6 +371,54 @@ test('SET-22', 'Sounds turned back on elsewhere stay on when this window, which 
   const n = (await api('/api/app-config')).body.notifications;
   assert.equal(n.failureSound, 'thud');
   assert.equal(n.soundEnabled, true, 'an edit already saved was applied again');
+}, { daemon: {} });
+
+test('SET-23', 'A model picked for Codex in another window stays when this window, opened before, saves its agent card', async ({ d, api, newPage }) => {
+  const seed = (await api('/api/app-config')).body;
+  assert.equal((await api('/api/app-config', { method: 'PUT', body: { ...seed, agentId: 'claude', agentModels: { claude: { model: 'opus' } } } })).status, 200);
+  const { page: b } = await newPage();
+  await b.goto(d.base + '/settings');
+  await b.getByTestId('save-settings').waitFor();
+  // Window A (the composer there) picks a model for Codex.
+  assert.equal((await api('/api/app-config', { method: 'PUT', body: { agentModels: { codex: { model: 'gpt-5.5', reasoning: 'high' } } } })).status, 200);
+  assert.equal(await savedStatus(b, () => b.getByTestId('save-settings').click()), 200);
+  const am = (await api('/api/app-config')).body.agentModels;
+  assert.equal(am?.codex?.model, 'gpt-5.5', `the second window dropped the Codex model: ${JSON.stringify(am)}`);
+  assert.equal(am?.codex?.reasoning, 'high');
+}, { daemon: {} });
+
+test('SET-24', 'A provider model saved in one window stays when a second window, opened before, saves a new base URL', async ({ d, api, newPage }) => {
+  await storeKeylessByok(d, { protocol: 'openai', baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' });
+  // The API provider is the agent: Settings shows its form, no agent card.
+  const [a, b] = [(await newPage()).page, (await newPage()).page];
+  for (const p of [a, b]) {
+    await p.goto(d.base + '/settings');
+    await p.getByTestId('byok-form').waitFor();
+  }
+  await a.getByTestId('byok-model').fill('qwen3');
+  assert.equal(await savedStatus(a, () => a.getByTestId('byok-save').click()), 200);
+  // B's form still shows llama3.1; it only moves the host.
+  await b.getByTestId('byok-base-url').fill('http://gpu-box:11434/v1');
+  assert.equal(await savedStatus(b, () => b.getByTestId('byok-save').click()), 200);
+  const byok = (await api('/api/app-config')).body.byok;
+  assert.equal(byok?.baseUrl, 'http://gpu-box:11434/v1');
+  assert.equal(byok?.model, 'qwen3', `the second window put the old model back: ${JSON.stringify(byok)}`);
+}, { daemon: {} });
+
+test('SET-25', 'A working folder picked in one window stays among the recent folders when a second window, opened before, picks another', async ({ d, api, newPage }) => {
+  const [x, y, z] = [0, 1, 2].map(() => realpathSync(mkdtempSync(join(tmpdir(), 'od-qa-recent-'))));
+  assert.equal((await api('/api/app-config', { method: 'PUT', body: { recentLinkedDirs: [x] } })).status, 200);
+  const { page: b } = await newPage();
+  await b.goto(d.base + '/');
+  await b.getByTestId('plus-menu').waitFor();
+  // Window A (here the API) picks Y.
+  assert.equal((await api('/api/app-config', { method: 'PUT', body: { recentLinkedDirs: [y, x] } })).status, 200);
+  await b.getByTestId('plus-menu').click();
+  await b.getByTestId('working-dir-pick').click();
+  await b.getByTestId('working-dir-path').fill(z);
+  assert.equal(await savedStatus(b, () => b.getByTestId('working-dir-use').click()), 200);
+  const recent = (await api('/api/app-config')).body.recentLinkedDirs;
+  assert.deepEqual(recent, [z, y, x], 'the second window dropped the folder the first one picked');
 }, { daemon: {} });
 
 await run('settings');

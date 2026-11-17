@@ -99,28 +99,44 @@ impl AppConfig {
         v
     }
 
-    /// `PUT` body holding only the keys that differ from `base`, the copy
-    /// `self` was edited from: a key `self` dropped is sent as `null`. A
-    /// window opened before another one changed something then sends back
-    /// only what it changed itself (QA-108).
+    /// `PUT` body holding only the leaves that differ from `base`, the copy
+    /// `self` was edited from, as a JSON Merge Patch (RFC 7396): objects
+    /// are compared key by key, a key `self` dropped is sent as `null`, an
+    /// array that changed is sent whole. A window opened before another
+    /// one changed something then sends back only what it changed itself,
+    /// even inside `agentModels` or `notifications` (QA-108).
     #[must_use]
     pub fn patch_since(&self, base: &Self) -> Value {
         let (Value::Object(next), Value::Object(base)) = (self.to_patch(), base.to_patch()) else {
             return self.to_patch();
         };
-        let mut out = Map::new();
-        for (key, value) in &next {
-            if base.get(key) != Some(value) {
+        Value::Object(diff(&base, &next))
+    }
+}
+
+/// The merge patch that turns `base` into `next`.
+fn diff(base: &Map<String, Value>, next: &Map<String, Value>) -> Map<String, Value> {
+    let mut out = Map::new();
+    for (key, value) in next {
+        match (base.get(key), value) {
+            (Some(Value::Object(b)), Value::Object(n)) => {
+                let inner = diff(b, n);
+                if !inner.is_empty() {
+                    out.insert(key.clone(), Value::Object(inner));
+                }
+            }
+            (Some(b), n) if b == n => {}
+            _ => {
                 out.insert(key.clone(), value.clone());
             }
         }
-        for key in base.keys() {
-            if !next.contains_key(key) {
-                out.insert(key.clone(), Value::Null);
-            }
-        }
-        Value::Object(out)
     }
+    for key in base.keys() {
+        if !next.contains_key(key) {
+            out.insert(key.clone(), Value::Null);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -183,17 +199,55 @@ mod tests {
     }
 
     #[test]
-    fn patch_since_sends_new_and_nested_changes_whole() {
-        let base = config(json!({"byok": {"baseUrl": "a", "hasApiKey": true}}));
+    fn patch_since_sends_new_keys_whole_and_nested_changes_by_leaf() {
+        let base = config(json!({"byok": {"baseUrl": "a", "model": "m", "hasApiKey": true}}));
         let mut next = base.clone();
         next.locale = Some("en".to_owned());
-        next.extra
-            .insert("byok".to_owned(), json!({"baseUrl": "b"}));
+        next.extra.insert(
+            "byok".to_owned(),
+            json!({"baseUrl": "b", "model": "m", "hasApiKey": true}),
+        );
         next.extra
             .insert("notifications".to_owned(), json!({"sound": false}));
         assert_eq!(
             next.patch_since(&base),
             json!({"locale": "en", "byok": {"baseUrl": "b"}, "notifications": {"sound": false}})
+        );
+    }
+
+    /// A window that read `agentModels` before another one added Codex
+    /// sends only its own agent's change, so the server keeps Codex.
+    #[test]
+    fn patch_since_sends_only_the_changed_leaves_of_an_object() {
+        let base = config(json!({
+            "agentModels": {"claude": {"model": "opus", "reasoning": "high"}},
+            "notifications": {"soundEnabled": true, "failureSound": "buzz"}
+        }));
+        let mut next = base.clone();
+        next.extra.insert(
+            "agentModels".to_owned(),
+            json!({"claude": {"model": "sonnet"}}),
+        );
+        next.extra.insert(
+            "notifications".to_owned(),
+            json!({"soundEnabled": true, "failureSound": "buzz"}),
+        );
+        assert_eq!(
+            next.patch_since(&base),
+            json!({"agentModels": {"claude": {"model": "sonnet", "reasoning": null}}})
+        );
+    }
+
+    #[test]
+    fn patch_since_sends_a_changed_array_whole() {
+        let base = config(json!({"recentDirs": ["/a", "/b"], "byok": {"x": 1}}));
+        let mut next = base.clone();
+        next.extra
+            .insert("recentDirs".to_owned(), json!(["/c", "/a", "/b"]));
+        next.extra.insert("byok".to_owned(), json!("odd"));
+        assert_eq!(
+            next.patch_since(&base),
+            json!({"recentDirs": ["/c", "/a", "/b"], "byok": "odd"})
         );
     }
 }

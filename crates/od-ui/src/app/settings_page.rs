@@ -798,8 +798,8 @@ fn ProjectLocations() -> impl IntoView {
     let put = move |list: Vec<Value>, default: String| {
         let custom: Vec<Value> = list.into_iter().filter(|l| l["id"] != "default").collect();
         let body = json!({ "locations": custom, "defaultId": default });
-        // The settings copy is read again even if the page is left, or the
-        // next save would send the old locations back.
+        // The settings copy is read again even if the page is left, so it
+        // shows the locations this route stored.
         let work = async move {
             let res = api::put::<_, Value>("/api/project-locations", &body).await;
             if res.is_ok() {
