@@ -483,7 +483,7 @@ test('UL-14', 'Design system: 🎨.png uploaded, then 🖼.png in a later upload
   console.log(`      (answered ${r.status}, said ${JSON.stringify(r.said)}; assets ${JSON.stringify(r.names)})`);
   if (process.env.QA_SHOTS) await page.screenshot({ path: join(process.env.QA_SHOTS, 'UL-14-emoji-names.png') });
   assert.ok(r.sizes.includes(r.red.length), `"${r.said}", but 🎨.png is gone: assets ${JSON.stringify(r.names)} hold only the second picture`);
-}, { knownBug: 'QA-109' });
+});
 
 test('UL-15', 'Design system: "logo chính.png" uploaded, then "logo-chính.png" in a later upload: the first never written over', async ({ d, api, newPage }) => {
   const id = await importSystem(api, 'Ds space');
@@ -491,7 +491,7 @@ test('UL-15', 'Design system: "logo chính.png" uploaded, then "logo-chính.png"
   const r = await dsTwoUploads(page, d, id, 'logo chính.png', 'logo-chính.png');
   console.log(`      (answered ${r.status}, said ${JSON.stringify(r.said)}; assets ${JSON.stringify(r.names)})`);
   assert.ok(r.sizes.includes(r.red.length), `"${r.said}", but "logo chính.png" is gone: assets ${JSON.stringify(r.names)} hold only the second picture`);
-}, { knownBug: 'QA-109' });
+});
 
 test('UL-16', 'Create a design system with attached files: màu and mẫu are both accepted; a.pdf and A.pdf are refused naming both', async ({ api }) => {
   const b64 = Buffer.from('%PDF-1.4 qa').toString('base64');

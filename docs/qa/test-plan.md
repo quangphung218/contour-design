@@ -843,7 +843,7 @@ letters sent decomposed keep their accents, and a refusal names both files.
 | UL-11 | Files panel: `mẫu.png` sent decomposed (NFD) | Upload | Kept as `mẫu.png`, accents intact | P1 | auto |
 | UL-12 | Files panel: `Ảnh.png` + `ảnh.png` together | Upload both | Both kept, or refused naming both; never one lost | P2 | auto |
 | UL-13 | Design system: two long names that differ only at the end | Kit ▸ upload both | Both kept, or refused naming both; never one lost | P1 | auto |
-| UL-14 | Design system: `🎨.png`, later `🖼.png` | Two uploads | Both kept, or the second refused; the first never written over | P1 | auto (QA-109) |
+| UL-14 | Design system: `🎨.png`, later `🖼.png` | Two uploads | Both kept (`_.png`, `_-1.png`), or the second refused; the first never written over; `🎨.png` sent again replaces `_.png` | P1 | auto (QA-109) |
 | UL-15 | Design system: `logo chính.png`, later `logo-chính.png` | Two uploads | The first never written over | P1 | auto (QA-109) |
 | UL-16 | Create a design system with attached files | `Hướng dẫn màu.pdf` + `Hướng dẫn mẫu.pdf`; then `a.pdf` + `A.pdf` | First accepted; second refused naming both | P1 | auto |
 
