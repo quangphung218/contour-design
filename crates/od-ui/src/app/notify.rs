@@ -10,7 +10,9 @@ use crate::i18n::{T, t};
 use leptos::prelude::*;
 use od_contracts::{RunStatus, RunsResponse};
 use serde_json::{Value, json};
+use std::cell::RefCell;
 use std::collections::BTreeSet;
+use std::rc::Rc;
 use std::time::Duration;
 
 const POLL: Duration = Duration::from_secs(3);
@@ -186,6 +188,9 @@ pub fn RunWatcher() -> impl IntoView {
     }
 }
 
+/// One control's change to the notification settings.
+type Edit = Rc<dyn Fn(&mut Prefs)>;
+
 /// The Settings section.
 #[component]
 pub fn NotificationSettings() -> impl IntoView {
@@ -194,13 +199,39 @@ pub fn NotificationSettings() -> impl IntoView {
     let permission = RwSignal::new(web_sys::Notification::permission());
     let state = RwSignal::new(None::<Result<(), String>>);
     let tasks = Tasks::here();
-    let save = move |next: Prefs| {
-        current.set(next.clone());
-        let mut config = shell.config.get_untracked().unwrap_or_default();
-        config
-            .extra
-            .insert("notifications".to_owned(), next.to_value());
-        tasks.spawn_then(shell.save_config(config), move |res| state.set(Some(res)));
+    // Each control changes only its own field, of the settings as the
+    // daemon holds them now: `notifications` is saved as one object, and
+    // another window may have changed its other fields since this one read
+    // them (QA-108). Edits still being saved are applied again on top: the
+    // daemon may not have the previous one yet. The task holds its own
+    // `Rc`, as it goes on after the screen is gone.
+    let pending = StoredValue::new_local(Rc::<RefCell<Vec<Edit>>>::default());
+    let with_pending = move |pending: &RefCell<Vec<Edit>>| {
+        let mut next = prefs(shell);
+        for e in pending.borrow().iter() {
+            e(&mut next);
+        }
+        next
+    };
+    let save = move |edit: Edit| {
+        current.update(|p| edit(p));
+        let pending = pending.get_value();
+        pending.borrow_mut().push(edit.clone());
+        let work = async move {
+            shell.reload_config().await;
+            let next = with_pending(&pending);
+            let mut config = shell.config.get_untracked().unwrap_or_default();
+            config
+                .extra
+                .insert("notifications".to_owned(), next.to_value());
+            let res = shell.save_config(config).await;
+            pending.borrow_mut().retain(|e| !Rc::ptr_eq(e, &edit));
+            (pending, res)
+        };
+        tasks.spawn_then(work, move |(pending, res)| {
+            current.set(with_pending(&pending));
+            state.set(Some(res));
+        });
     };
     let ask = move || {
         if let Ok(p) = web_sys::Notification::request_permission() {
@@ -226,10 +257,11 @@ pub fn NotificationSettings() -> impl IntoView {
                              put: fn(&mut Prefs, String)| {
         view! {
             <select class="small select-auto" data-testid=testid aria-label=label on:change=live(move |ev| {
+                let value = event_target_value(&ev);
                 let mut next = current.get_untracked();
-                put(&mut next, event_target_value(&ev));
+                put(&mut next, value.clone());
                 play(&get(&next));
-                save(next);
+                save(Rc::new(move |p| put(p, value.clone())));
             })>
                 {list.iter().map(|s| {
                     let s = *s;
@@ -243,7 +275,7 @@ pub fn NotificationSettings() -> impl IntoView {
             <div class="row wrap">
                 <label class="switch grow">
                     <input type="checkbox" data-testid="notify-sound" prop:checked=move || current.with(|c| c.sound)
-                        on:change=live(move |ev| { let mut n = current.get_untracked(); n.sound = event_target_checked(&ev); save(n); })/>
+                        on:change=live(move |ev| { let on = event_target_checked(&ev); save(Rc::new(move |p| p.sound = on)); })/>
                     <span>{icon(Glyph::Sound)}{t(T::CompletionSound)}</span>
                 </label>
                 // Each label wraps with its select, never apart (QA-052).
@@ -260,9 +292,7 @@ pub fn NotificationSettings() -> impl IntoView {
                 <input type="checkbox" data-testid="notify-desktop" prop:checked=move || current.with(|c| c.desktop)
                     on:change=live(move |ev| {
                         let on = event_target_checked(&ev);
-                        let mut n = current.get_untracked();
-                        n.desktop = on;
-                        save(n);
+                        save(Rc::new(move |p| p.desktop = on));
                         if on { ask(); }
                     })/>
                 <span>{icon(Glyph::Bell)}{t(T::DesktopNotification)}</span>

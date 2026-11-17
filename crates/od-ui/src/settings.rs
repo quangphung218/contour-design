@@ -98,6 +98,29 @@ impl AppConfig {
         }
         v
     }
+
+    /// `PUT` body holding only the keys that differ from `base`, the copy
+    /// `self` was edited from: a key `self` dropped is sent as `null`. A
+    /// window opened before another one changed something then sends back
+    /// only what it changed itself (QA-108).
+    #[must_use]
+    pub fn patch_since(&self, base: &Self) -> Value {
+        let (Value::Object(next), Value::Object(base)) = (self.to_patch(), base.to_patch()) else {
+            return self.to_patch();
+        };
+        let mut out = Map::new();
+        for (key, value) in &next {
+            if base.get(key) != Some(value) {
+                out.insert(key.clone(), value.clone());
+            }
+        }
+        for key in base.keys() {
+            if !next.contains_key(key) {
+                out.insert(key.clone(), Value::Null);
+            }
+        }
+        Value::Object(out)
+    }
 }
 
 #[cfg(test)]
@@ -116,5 +139,61 @@ mod tests {
         assert_eq!(patch["future"], 1);
         assert_eq!(patch["model"], Value::Null);
         assert_eq!(patch["agentPermissionMode"], "auto");
+    }
+
+    fn config(v: Value) -> AppConfig {
+        serde_json::from_value(v).unwrap_or_default()
+    }
+
+    #[test]
+    fn patch_since_sends_only_changed_keys() {
+        let base = config(json!({"agentId": "byok", "theme": "dark", "locale": "vi", "future": 1}));
+        let mut next = base.clone();
+        next.agent_permission_mode = PermissionMode::Ask;
+        assert_eq!(
+            next.patch_since(&base),
+            json!({"agentPermissionMode": "ask"})
+        );
+        assert_eq!(base.patch_since(&base), json!({}));
+    }
+
+    #[test]
+    fn patch_since_sends_a_return_to_the_default() {
+        let base = config(json!({"theme": "dark", "agentPermissionMode": "ask", "model": "opus"}));
+        let mut next = base.clone();
+        next.theme = Theme::System;
+        next.agent_permission_mode = PermissionMode::Auto;
+        next.model = None;
+        assert_eq!(
+            next.patch_since(&base),
+            json!({"theme": "system", "agentPermissionMode": "auto", "model": null})
+        );
+    }
+
+    #[test]
+    fn patch_since_clears_dropped_keys() {
+        let base = config(json!({"locale": "vi", "designSystemId": "ds-1", "future": 1}));
+        let mut next = base.clone();
+        next.locale = None;
+        next.extra.remove(DEFAULT_DESIGN_SYSTEM_KEY);
+        assert_eq!(
+            next.patch_since(&base),
+            json!({"locale": null, "designSystemId": null})
+        );
+    }
+
+    #[test]
+    fn patch_since_sends_new_and_nested_changes_whole() {
+        let base = config(json!({"byok": {"baseUrl": "a", "hasApiKey": true}}));
+        let mut next = base.clone();
+        next.locale = Some("en".to_owned());
+        next.extra
+            .insert("byok".to_owned(), json!({"baseUrl": "b"}));
+        next.extra
+            .insert("notifications".to_owned(), json!({"sound": false}));
+        assert_eq!(
+            next.patch_since(&base),
+            json!({"locale": "en", "byok": {"baseUrl": "b"}, "notifications": {"sound": false}})
+        );
     }
 }
