@@ -598,12 +598,14 @@ impl Session {
         // launch timeout once; a second launch with a new profile is warm.
         let mut attempt = 1;
         #[cfg(target_os = "macos")]
-        let open = Path::new(launch_services::OPEN);
-        match Self::launch_detached(open, LAUNCH_SERVICES_TIMEOUT, exe, no_sandbox).await {
-            Detached::Started(launched) => return Ok(*launched),
-            Detached::Skipped => {}
-            // It took a launch's time: the child launch left gets all of its own.
-            Detached::Failed => attempt += 1,
+        {
+            let open = Path::new(launch_services::OPEN);
+            match Self::launch_detached(open, LAUNCH_SERVICES_TIMEOUT, exe, no_sandbox).await {
+                Detached::Started(launched) => return Ok(*launched),
+                Detached::Skipped => {}
+                // It took a launch's time: the child launch left gets all of its own.
+                Detached::Failed => attempt += 1,
+            }
         }
         loop {
             match Self::launch_child(exe, no_sandbox).await {
