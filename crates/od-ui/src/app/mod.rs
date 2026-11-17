@@ -125,14 +125,21 @@ impl Shell {
     /// `next` is the shared copy with the caller's change; only the keys
     /// that differ from that copy are sent, so a window opened before
     /// another one saved does not put the other window's values back
-    /// (QA-108).
+    /// (QA-108). The copy takes `next` before the answer: a second save
+    /// made meanwhile is built from it and diffs against it, else it would
+    /// send nothing; a failed save reads the daemon's values back.
     pub async fn save_config(self, next: AppConfig) -> Result<(), String> {
         let patch = self.config.with_untracked(|base| {
             next.patch_since(base.as_ref().unwrap_or(&AppConfig::default()))
         });
-        let saved: AppConfig = api::put("/api/app-config", &patch)
-            .await
-            .map_err(|e| api::failure(T::MdSaveFailed, &e))?;
+        self.config.set(Some(next));
+        let saved: AppConfig = match api::put("/api/app-config", &patch).await {
+            Ok(saved) => saved,
+            Err(e) => {
+                self.reload_config().await;
+                return Err(api::failure(T::MdSaveFailed, &e));
+            }
+        };
         self.set_locale(locale_of(&saved));
         self.config.set(Some(saved));
         Ok(())

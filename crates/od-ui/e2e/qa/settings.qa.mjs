@@ -297,4 +297,80 @@ test('SET-17', 'Clearing the default design system on its page sticks after a re
   await until(async () => (await star.getAttribute('aria-pressed', { timeout: 200 })) === 'false', 'not the default after a reload');
 }, { daemon: {} });
 
+/** Every PUT /api/app-config of `page`, held `delay` ms; returns the bodies sent. */
+async function slowConfigPuts(page, delay) {
+  const bodies = [];
+  await page.route((u) => u.pathname === '/api/app-config', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    bodies.push(route.request().postDataJSON());
+    await new Promise((r) => setTimeout(r, delay));
+    await route.continue();
+  });
+  return bodies;
+}
+
+test('SET-18', 'Dark then System picked before the first save answered: System is kept', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('save-settings').waitFor();
+  const bodies = await slowConfigPuts(page, 400);
+  const seg = (re) => page.locator('#settings-appearance .seg').filter({ hasText: re }).first();
+  await seg(/dark/i).click();
+  await seg(/system/i).click();
+  await until(async () => bodies.length === 2, 'two saves sent');
+  assert.deepEqual(bodies[1], { theme: 'system' }, `the second save sent ${JSON.stringify(bodies[1])}`);
+  await until(async () => (await api('/api/app-config')).body.theme === 'system', `theme kept as system, sent ${JSON.stringify(bodies)}`);
+}, { daemon: {} });
+
+test('SET-19', 'A theme save the daemon refuses puts the page back to the stored theme', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('save-settings').waitFor();
+  await page.route((u) => u.pathname === '/api/app-config', (route) => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":{"message":"disk full"}}' })
+    : route.continue());
+  assert.equal(await savedStatus(page, () => page.locator('#settings-appearance .seg').filter({ hasText: /dark/i }).first().click()), 500);
+  await until(async () => (await page.locator('html').getAttribute('data-theme')) === null, 'page back to the system theme');
+  assert.notEqual((await api('/api/app-config')).body.theme, 'dark');
+}, { daemon: {} });
+
+test('SET-20', 'Sounds turned off in one window stay off when a second window, opened before, picks another failure sound', async ({ d, api, newPage }) => {
+  const [a, b] = await twoWindows(d, newPage);
+  assert.equal(await savedStatus(a, () => a.getByTestId('notify-sound').click()), 200);
+  assert.equal((await api('/api/app-config')).body.notifications?.soundEnabled, false);
+  assert.equal(await savedStatus(b, () => b.getByTestId('notify-failure-sound').selectOption('thud')), 200);
+  const n = (await api('/api/app-config')).body.notifications;
+  assert.equal(n?.failureSound, 'thud');
+  assert.equal(n?.soundEnabled, false, `the second window turned sounds back on: ${JSON.stringify(n)}`);
+}, { daemon: {} });
+
+test('SET-21', 'Sounds turned off, then another failure sound picked before the first save answered: both are kept', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('save-settings').waitFor();
+  const bodies = await slowConfigPuts(page, 400);
+  await page.getByTestId('notify-sound').click();
+  await page.getByTestId('notify-failure-sound').selectOption('thud');
+  await until(async () => bodies.length === 2, 'two saves sent');
+  await until(async () => (await api('/api/app-config')).body.notifications?.failureSound === 'thud', 'failure sound saved');
+  // Both saves answered: the page shows what it saved.
+  await until(async () => (await page.getByTestId('notify-sound').isChecked()) === false, 'sound shown off');
+  const n = (await api('/api/app-config')).body.notifications;
+  assert.equal(n.soundEnabled, false, `the second save turned sounds back on: ${JSON.stringify(bodies)}`);
+}, { daemon: {} });
+
+test('SET-22', 'Sounds turned back on elsewhere stay on when this window, which turned them off earlier, picks another failure sound', async ({ d, api, newPage }) => {
+  const { page } = await newPage();
+  await page.goto(d.base + '/settings');
+  await page.getByTestId('save-settings').waitFor();
+  assert.equal(await savedStatus(page, () => page.getByTestId('notify-sound').click()), 200);
+  // Another window (here the API) turns them on again.
+  const cfg = (await api('/api/app-config')).body;
+  assert.equal((await api('/api/app-config', { method: 'PUT', body: { notifications: { ...cfg.notifications, soundEnabled: true } } })).status, 200);
+  assert.equal(await savedStatus(page, () => page.getByTestId('notify-failure-sound').selectOption('thud')), 200);
+  const n = (await api('/api/app-config')).body.notifications;
+  assert.equal(n.failureSound, 'thud');
+  assert.equal(n.soundEnabled, true, 'an edit already saved was applied again');
+}, { daemon: {} });
+
 await run('settings');
