@@ -99,6 +99,7 @@ fn script(path: &Path, dir: &Path, body: &str) {
 /// [`script`] as the main executable of a bundle in `dir` with a name and
 /// bundle id of its own: LaunchServices picks an app by its identity, not
 /// its path, so `open -a` on one of two bundles alike may start the other.
+/// Not quarantined: unsigned, it would make Gatekeeper show a dialog.
 fn bundled(dir: &Path, body: &str) -> PathBuf {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     let name = format!(
@@ -123,6 +124,7 @@ fn bundled(dir: &Path, body: &str) -> PathBuf {
         ),
     )
     .unwrap();
+    common::unquarantine(&dir.join(format!("{name}.app")));
     exe
 }
 

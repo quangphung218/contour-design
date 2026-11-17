@@ -225,7 +225,33 @@ fn fake_app(dir: &std::path::Path, marker: &std::path::Path) -> std::path::PathB
     let exe = app.join("Contents/MacOS/Fake");
     std::fs::write(&exe, format!("#!/bin/sh\ndate > '{}'\n", marker.display())).unwrap();
     std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+    unquarantine(&app);
     app
+}
+
+/// Removes Gatekeeper's quarantine from the bundle at `app` and everything
+/// in it, and checks none is left: a file this test process writes can be
+/// quarantined, and should the bundle ever be opened, an unsigned one would
+/// show "… Not Opened" on the screen of whoever runs the tests.
+#[cfg(unix)]
+fn unquarantine(app: &std::path::Path) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let _ = std::process::Command::new("/usr/bin/xattr")
+        .args(["-dr", "com.apple.quarantine"])
+        .arg(app)
+        .status();
+    let listed = std::process::Command::new("/usr/bin/xattr")
+        .arg("-lr")
+        .arg(app)
+        .output()
+        .unwrap();
+    let listed = String::from_utf8_lossy(&listed.stdout);
+    assert!(
+        !listed.contains("com.apple.quarantine"),
+        "still quarantined: {listed}"
+    );
 }
 
 #[cfg(unix)]

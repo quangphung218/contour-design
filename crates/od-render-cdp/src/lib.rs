@@ -345,7 +345,7 @@ struct Session {
 /// How a start through LaunchServices went ([`Session::launch_detached`]).
 #[cfg(target_os = "macos")]
 enum Detached {
-    Started(Launched),
+    Started(Box<Launched>),
     /// Not tried: the browser is no bundle LaunchServices can open now.
     Skipped,
     /// Tried and failed, which took up to [`LAUNCH_SERVICES_TIMEOUT`].
@@ -600,7 +600,7 @@ impl Session {
         #[cfg(target_os = "macos")]
         let open = Path::new(launch_services::OPEN);
         match Self::launch_detached(open, LAUNCH_SERVICES_TIMEOUT, exe, no_sandbox).await {
-            Detached::Started(launched) => return Ok(launched),
+            Detached::Started(launched) => return Ok(*launched),
             Detached::Skipped => {}
             // It took a launch's time: the child launch left gets all of its own.
             Detached::Failed => attempt += 1,
@@ -653,12 +653,12 @@ impl Session {
         )
         .await
         {
-            Ok(Some((browser, handler))) => Detached::Started(Launched {
+            Ok(Some((browser, handler))) => Detached::Started(Box::new(Launched {
                 browser,
                 handler,
                 profile,
                 detached: true,
-            }),
+            })),
             Ok(None) => {
                 tracing::warn!(
                     app = %app.display(),
@@ -1449,7 +1449,10 @@ mod tests {
         assert!(late.killed(), "the late browser was left running");
         assert!(!abandoned.exists(), "the abandoned profile was kept");
         assert!(in_use.exists(), "a profile in use was removed");
-        assert!(current.0.try_wait().unwrap().is_none(), "a browser in use was killed");
+        assert!(
+            current.0.try_wait().unwrap().is_none(),
+            "a browser in use was killed"
+        );
     }
 
     /// LaunchServices may start the browser after `open` was killed at the
@@ -1464,6 +1467,7 @@ mod tests {
         let exe = dir.path().join("X.app/Contents/MacOS/X");
         std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
         std::fs::write(&exe, "").unwrap();
+        launch_services::unquarantine(&dir.path().join("X.app"));
         let (profile_file, late) = (dir.path().join("profile"), dir.path().join("late"));
         let open = dir.path().join("open");
         // The queued start carries the profile in no argument until it
@@ -1490,7 +1494,11 @@ exec sleep 60
             Detached::Skipped => return eprintln!("skipping: `ps` cannot run here"),
             Detached::Started(_) => panic!("a hung `open` connected"),
         }
-        assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
         let profile = PathBuf::from(std::fs::read_to_string(&profile_file).unwrap());
         let needle = format!("--user-data-dir={}", profile.display());
         let running = |needle: &str| {

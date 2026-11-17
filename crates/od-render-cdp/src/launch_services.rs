@@ -282,6 +282,22 @@ async fn last_line(stderr: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Removes Gatekeeper's quarantine from `path` and everything inside it,
+/// and checks none is left: a test's bundle must never make LaunchServices
+/// show "… Not Opened" on the screen of whoever runs the tests (a file this
+/// process writes can be quarantined when what runs it quarantines files).
+#[cfg(test)]
+pub(crate) fn unquarantine(path: &Path) {
+    let _ = xattr::remove(path, QUARANTINE);
+    let left = xattr::get(path, QUARANTINE).ok().flatten();
+    assert!(left.is_none(), "{} is still quarantined", path.display());
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+        for entry in std::fs::read_dir(path).unwrap() {
+            unquarantine(&entry.unwrap().path());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,6 +313,7 @@ mod tests {
         std::fs::write(&bare, "").unwrap();
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&exe, &link).unwrap();
+        unquarantine(&app);
 
         let app = std::fs::canonicalize(&app).unwrap();
         assert_eq!(app_bundle(&exe), Some(app.clone()));
@@ -419,6 +436,25 @@ mod tests {
                 .status();
         }
         assert!(!left, "the hung `open` was left running");
+    }
+
+    /// What the test bundles rely on to show no dialog.
+    #[test]
+    fn unquarantine_clears_a_bundle_all_the_way_down() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Some Browser.app");
+        let exe = app.join("Contents/MacOS/Some Browser");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, "").unwrap();
+        let all = [&app, &app.join("Contents"), &exe];
+        for path in all {
+            xattr::set(path, QUARANTINE, b"0181;6af5c21a;Homebrew Cask;").unwrap();
+        }
+        unquarantine(&app);
+        for path in all {
+            assert_eq!(xattr::get(path, QUARANTINE).unwrap(), None, "{path:?}");
+        }
+        unquarantine(&app); // none left is fine too
     }
 
     #[test]
