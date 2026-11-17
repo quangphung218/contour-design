@@ -22,8 +22,8 @@ pub const DEFAULT_ID: &str = "default";
 const LOCATIONS_KEY: &str = "projectLocations";
 const DEFAULT_KEY: &str = "defaultProjectLocationId";
 /// The app-config keys only this route writes: `PUT /api/app-config`
-/// drops them, as a settings save sends a copy read before the last
-/// location change.
+/// drops them, so no settings save can change the locations without the
+/// checks this route makes.
 pub const CONFIG_KEYS: [&str; 2] = [LOCATIONS_KEY, DEFAULT_KEY];
 const MAX_LOCATIONS: usize = 20;
 

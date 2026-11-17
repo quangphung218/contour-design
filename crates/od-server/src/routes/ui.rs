@@ -4,12 +4,13 @@
 //!   `agentPermissionMode`, theme, onboarding, `byok`), a JSON object in
 //!   `<data>/app-config.json`, written with mode `0600` because it holds
 //!   the BYOK API key. Responses never carry the key: `byok.apiKey` is
-//!   replaced by `hasApiKey` and `apiKeyHint` (last four characters), and a
-//!   `byok` patch without `apiKey` keeps the stored one while the protocol
-//!   and base URL stay the same. A provider on a public host saved with
-//!   no key (sent or kept) is refused with 400. Keys another route owns
-//!   (project locations) are left out of a `PUT`: the UI sends its whole
-//!   copy, which may predate that route's last write.
+//!   replaced by `hasApiKey` and `apiKeyHint` (last four characters). A
+//!   `PUT` is a JSON Merge Patch (RFC 7396): nested objects merge, `null`
+//!   removes, arrays replace. A `byok` patch without `apiKey` keeps the
+//!   stored one while the protocol and base URL stay the same. A provider
+//!   on a public host saved with no key (sent or kept) is refused with 400.
+//!   Keys another route owns (project locations) are left out of a `PUT`:
+//!   only that route writes them.
 //! - `POST /api/import/folder`: a project pointing at an existing folder.
 //! - Everything else that is not `/api/*`: the static `od-ui` bundle, with
 //!   `index.html` as the SPA fallback.
@@ -152,42 +153,72 @@ fn validate_patch(patch: &Map<String, Value>) -> Result<(), String> {
                     return Err(format!("byok.{key} must be a string"));
                 }
             }
-            let azure = byok.get("protocol").and_then(Value::as_str)
-                == Some(od_runtime::byok::ByokProtocol::Azure.name());
-            let no_base = byok
-                .get("baseUrl")
-                .and_then(Value::as_str)
-                .is_none_or(|b| b.trim().is_empty());
-            if azure && no_base {
-                return Err(od_runtime::byok::AZURE_NEEDS_BASE.to_owned());
-            }
         }
         Some(other) => return Err(format!("byok must be an object, got {other}")),
     }
     Ok(())
 }
 
-/// Shallow merge: `null` removes a key, anything else replaces it. A
-/// `byok` object without `apiKey` keeps the stored key, so the UI can save
-/// the other fields without ever having seen it, but only while the
-/// protocol and base URL stay the ones it was saved with.
+/// JSON Merge Patch (RFC 7396): an object merges into an object key by
+/// key, `null` removes a key at any depth, anything else (arrays included)
+/// replaces. A window then sends only the leaves it changed and keeps what
+/// another window saved in the same object (QA-108). The stored BYOK key
+/// stays while the merged `byok` keeps the protocol and base URL it was
+/// saved with, unless the patch sends `apiKey` itself, so the UI can save
+/// the other fields without ever having seen it.
 fn merge_patch(config: &mut Map<String, Value>, patch: Map<String, Value>) {
-    for (key, mut value) in patch {
-        if value.is_null() {
-            config.remove(&key);
-            continue;
-        }
-        if key == BYOK_KEY {
-            let stored = config.get(BYOK_KEY).filter(|b| same_route(b, &value));
-            let stored = stored.and_then(|b| b.get(API_KEY)).cloned();
-            if let (Some(obj), Some(stored)) = (value.as_object_mut(), stored)
-                && !obj.contains_key(API_KEY)
-            {
-                obj.insert(API_KEY.to_owned(), stored);
+    let byok_before = config.get(BYOK_KEY).cloned();
+    let sends_key = patch
+        .get(BYOK_KEY)
+        .and_then(Value::as_object)
+        .is_some_and(|b| b.contains_key(API_KEY));
+    merge_object(config, patch);
+    if !sends_key
+        && byok_moved(byok_before.as_ref(), config.get(BYOK_KEY))
+        && let Some(Value::Object(byok)) = config.get_mut(BYOK_KEY)
+    {
+        byok.remove(API_KEY);
+    }
+}
+
+/// RFC 7396 merge of `patch` into `target`.
+fn merge_object(target: &mut Map<String, Value>, patch: Map<String, Value>) {
+    for (key, value) in patch {
+        match value {
+            Value::Null => {
+                target.remove(&key);
+            }
+            Value::Object(inner) => {
+                let slot = target.entry(key).or_insert(Value::Null);
+                if !slot.is_object() {
+                    *slot = Value::Object(Map::new());
+                }
+                if let Value::Object(slot) = slot {
+                    merge_object(slot, inner);
+                }
+            }
+            other => {
+                target.insert(key, other);
             }
         }
-        config.insert(key, value);
     }
+}
+
+/// `byok` after a merge sends a key to another place than before it (or
+/// is new): a stored key must not follow it.
+fn byok_moved(before: Option<&Value>, after: Option<&Value>) -> bool {
+    after.is_some_and(|a| !before.is_some_and(|b| same_route(b, a)))
+}
+
+/// An Azure `byok` without the resource endpoint it must call.
+fn azure_without_base(byok: &Value) -> bool {
+    let azure = byok.get("protocol").and_then(Value::as_str)
+        == Some(od_runtime::byok::ByokProtocol::Azure.name());
+    let no_base = byok
+        .get("baseUrl")
+        .and_then(Value::as_str)
+        .is_none_or(|b| b.trim().is_empty());
+    azure && no_base
 }
 
 /// Whether two `byok` objects send a key to the same place.
@@ -315,10 +346,9 @@ async fn put_config(
             let _guard = CONFIG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
             let path = config_path(s);
             let mut config = read_config(&path)?;
-            // Only a patch that moves BYOK to another route is checked: the
-            // UI sends the whole config on every save, theme included, and
-            // a provider stored before this rule must not block those
-            // (QA-018). And only while BYOK is the agent picked: a stale
+            // Only a patch that moves BYOK to another route is checked: a
+            // provider stored before this rule must not block saving the
+            // theme or the provider's model (QA-018). And only while BYOK is the agent picked: a stale
             // provider sent along with a local agent is never called, but
             // picking BYOK later is checked too.
             let is_byok = |c: &Map<String, Value>| {
@@ -329,12 +359,17 @@ async fn put_config(
                 |c: &Map<String, Value>| c.get("onboardingCompleted") == Some(&Value::Bool(true));
             let was_done = done(&config);
             let design_system_before = config.get("designSystemId").cloned();
-            let moves_byok = patch
-                .get(BYOK_KEY)
-                .filter(|b| b.is_object())
-                .is_some_and(|b| !config.get(BYOK_KEY).is_some_and(|s| same_route(s, b)));
+            let byok_before = config.get(BYOK_KEY).cloned();
+            let touches_byok = patch.get(BYOK_KEY).is_some_and(Value::is_object);
             merge_patch(&mut config, patch);
-            // After the merge: a patch without `apiKey` may keep the stored one.
+            // After the merge: a patch may send only some fields, and one
+            // without `apiKey` may keep the stored key.
+            let moves_byok = touches_byok && byok_moved(byok_before.as_ref(), config.get(BYOK_KEY));
+            if touches_byok && config.get(BYOK_KEY).is_some_and(azure_without_base) {
+                return Err(StoreError::BadRequest(
+                    od_runtime::byok::AZURE_NEEDS_BASE.to_owned(),
+                ));
+            }
             let picked = is_byok(&config);
             if let Some(provider) = config
                 .get(BYOK_KEY)
@@ -630,6 +665,103 @@ mod tests {
             Value::Object(c),
             json!({"agentId": "claude", "theme": "dark"})
         );
+    }
+
+    /// A window that changed one agent's model keeps the entry another
+    /// window saved for a second agent (QA-108).
+    #[test]
+    fn merge_is_recursive_for_objects() {
+        let mut c = obj(json!({
+            "agentModels": {
+                "claude": {"model": "opus", "reasoning": "high"},
+                "codex": {"model": "gpt-5.5"}
+            },
+            "notifications": {"soundEnabled": false, "failureSound": "buzz"},
+            "theme": "dark"
+        }));
+        merge_patch(
+            &mut c,
+            obj(json!({
+                "agentModels": {"claude": {"model": "sonnet", "reasoning": null}},
+                "notifications": {"failureSound": "thud"}
+            })),
+        );
+        assert_eq!(
+            Value::Object(c),
+            json!({
+                "agentModels": {
+                    "claude": {"model": "sonnet"},
+                    "codex": {"model": "gpt-5.5"}
+                },
+                "notifications": {"soundEnabled": false, "failureSound": "thud"},
+                "theme": "dark"
+            })
+        );
+    }
+
+    #[test]
+    fn merge_replaces_arrays_and_non_objects() {
+        let mut c = obj(json!({"recentDirs": ["/a", "/b"], "byok": "odd", "x": {"y": 1}}));
+        merge_patch(
+            &mut c,
+            obj(json!({
+                "recentDirs": ["/c"],
+                "byok": {"protocol": "openai", "model": null},
+                "x": 2,
+                "new": {"a": {"b": null, "c": 1}}
+            })),
+        );
+        assert_eq!(
+            Value::Object(c),
+            json!({
+                "recentDirs": ["/c"],
+                "byok": {"protocol": "openai"},
+                "x": 2,
+                "new": {"a": {"c": 1}}
+            })
+        );
+    }
+
+    /// The stored key stays on the route it was saved for: a model-only
+    /// patch keeps it, a patch that moves the provider drops it, and a
+    /// patch that sends a key (or `null`) decides itself.
+    #[test]
+    fn merge_keeps_the_byok_key_only_on_its_route() {
+        let stored = json!({"byok": {
+            "protocol": "openai", "baseUrl": "https://a.example/v1",
+            "apiKey": "sk-1", "model": "m1", "apiVersion": "v"
+        }});
+        let merged = |patch: Value| {
+            let mut c = obj(stored.clone());
+            merge_patch(&mut c, obj(patch));
+            Value::Object(c)
+        };
+        assert_eq!(
+            merged(json!({"byok": {"model": "m2"}}))["byok"],
+            json!({"protocol": "openai", "baseUrl": "https://a.example/v1",
+                   "apiKey": "sk-1", "model": "m2", "apiVersion": "v"})
+        );
+        let moved = merged(json!({"byok": {"baseUrl": "https://b.example/v1"}}));
+        assert_eq!(moved["byok"].get(API_KEY), None, "{moved}");
+        assert_eq!(moved["byok"]["model"], "m1");
+        let moved = merged(json!({"byok": {"protocol": "anthropic", "apiKey": "sk-ant"}}));
+        assert_eq!(moved["byok"][API_KEY], "sk-ant");
+        let cleared = merged(json!({"byok": {"apiKey": null}}));
+        assert_eq!(cleared["byok"].get(API_KEY), None);
+    }
+
+    #[test]
+    fn an_azure_byok_needs_its_endpoint_after_the_merge() {
+        let azure = json!({"protocol": "azure", "baseUrl": "https://r.openai.azure.com"});
+        assert!(!azure_without_base(&azure));
+        let mut c = obj(json!({"byok": azure}));
+        merge_patch(&mut c, obj(json!({"byok": {"model": "design"}})));
+        assert!(
+            !azure_without_base(&c["byok"]),
+            "a model-only patch keeps the endpoint"
+        );
+        merge_patch(&mut c, obj(json!({"byok": {"baseUrl": null}})));
+        assert!(azure_without_base(&c["byok"]));
     }
 
     /// The Linux packages put the binary in `/usr/bin` and the bundle in

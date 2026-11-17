@@ -89,8 +89,8 @@ async fn byok_key_is_stored_0600_and_never_returned() {
     assert_eq!(status, 200, "{body}");
 }
 
-/// The UI sends the whole config on every save: a keyless provider stored
-/// before the key rule must not block a theme save (QA-018).
+/// Older UIs send the whole config on every save: a keyless provider
+/// stored before the key rule must not block a theme save (QA-018).
 #[tokio::test]
 async fn a_whole_config_save_that_keeps_the_byok_route_goes_through() {
     let d = daemon().await;
@@ -107,6 +107,36 @@ async fn a_whole_config_save_that_keeps_the_byok_route_goes_through() {
         assert_eq!(status, 200, "{body}");
         assert_eq!(body["theme"], "dark");
     }
+}
+
+/// A patch merges into `byok` (QA-108): the UI sends only the fields a
+/// window changed. Changing the model of a keyless provider stored before
+/// the key rule keeps its route, so it is not refused; emptying an Azure
+/// endpoint leaves the merged provider without one, so it is.
+#[tokio::test]
+async fn a_byok_patch_is_checked_after_the_merge() {
+    let d = daemon().await;
+    let path = d.data.join("app-config.json");
+    let anthropic =
+        json!({"protocol": "anthropic", "baseUrl": "https://api.anthropic.com", "model": "a"});
+    let config = json!({"byok": anthropic, "agentId": "byok"});
+    std::fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+    let (status, body) = put_config(&d, &json!({"byok": {"model": "b"}})).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["byok"]["protocol"], "anthropic");
+    assert_eq!(body["byok"]["model"], "b");
+
+    let azure =
+        json!({"protocol": "azure", "baseUrl": "https://r.openai.azure.com", "apiKey": "az-1"});
+    let (status, body) = put_config(&d, &json!({"byok": azure, "agentId": "claude"})).await;
+    assert_eq!(status, 200, "{body}");
+    let (status, body) = put_config(&d, &json!({"byok": {"model": "design"}})).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["byok"]["hasApiKey"], true, "{body}");
+    let (status, body) = put_config(&d, &json!({"byok": {"baseUrl": null}})).await;
+    assert_eq!(status, 400, "{body}");
+    let stored: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(stored["byok"]["baseUrl"], "https://r.openai.azure.com");
 }
 
 /// A saved BYOK key belongs to the protocol and base URL it was saved with:
@@ -137,7 +167,8 @@ async fn a_new_byok_protocol_or_base_url_drops_the_saved_key() {
 
     assert!(save(json!({"protocol": "openai", "baseUrl": a, "apiKey": "sk-a-1234"})).await);
     assert!(!save(json!({"protocol": "anthropic", "baseUrl": a})).await);
-    assert!(save(json!({"protocol": "anthropic", "apiKey": "sk-ant-5678"})).await);
+    // A patch merges (QA-108): `null` moves back to the default host.
+    assert!(save(json!({"protocol": "anthropic", "baseUrl": null, "apiKey": "sk-ant-5678"})).await);
     assert!(!save(json!({"protocol": "anthropic", "baseUrl": a})).await);
     // A new route with its own key keeps that key.
     assert!(
