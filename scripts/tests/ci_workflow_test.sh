@@ -75,6 +75,8 @@ ruby -ryaml -e '
   puts "jobs not gated by changes: #{gated.join(",")}"
   caches = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("Swatinem/rust-cache") }
   puts "caches: #{caches.size}, saved from main only: #{caches.all? { |s| s.dig("with", "save-if") == "${{ github.ref == \x27refs/heads/main\x27 }}" }}"
+  saves = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("actions/cache/save") }
+  puts "cache saves: #{saves.size}, from main only: #{saves.all? { |s| s["if"].to_s.include?("github.ref == \x27refs/heads/main\x27") }}"
   e2e = jobs["e2e"]
   puts "e2e retries: #{e2e["env"]["OD_E2E_RETRIES"]}"
   tests = jobs["test"]["steps"].map { |s| s["run"].to_s }
@@ -83,6 +85,7 @@ ruby -ryaml -e '
 check "CI result waits for every other job, even after a failure" 'grep -qx "result needs all: true" "$work/out" && grep -qx "result if: always()" "$work/out"'
 check "every job but changes and CI result is picked by changes" 'grep -qx "jobs not gated by changes: " "$work/out"'
 check "every Rust cache is saved from main only" 'grep -qE "^caches: [1-9][0-9]*, saved from main only: true$" "$work/out"'
+check "apt package caches are saved from main only" 'grep -qE "^cache saves: [1-9][0-9]*, from main only: true$" "$work/out"'
 check "e2e runs a failed scenario once more" 'grep -qx "e2e retries: 1" "$work/out"'
 check "the test job runs nextest and the doc tests" 'grep -qx "nextest: true doc tests: true" "$work/out"'
 

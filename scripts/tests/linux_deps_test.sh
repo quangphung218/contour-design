@@ -49,6 +49,22 @@ check "an extra package goes into the one install, under the step limit" '[ $rc 
 rm -rf "$work"
 
 setup
+cat > "$work/bin/chown" <<SH
+#!/usr/bin/env bash
+echo "chown \$*" >> "$work/calls"
+SH
+chmod +x "$work/bin/chown"
+PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_ARCHIVES="$work/debs" "$script" > "$work/out" 2>&1
+rc=$?
+check "APT_ARCHIVES: every call keeps its .deb files there, autoclean, owned by the user after" '[ $rc -eq 0 ] && ! grep "^apt-get" "$work/calls" | grep -vq "Dir::Cache::Archives=$work/debs" && grep -q "^chown -R $(id -u):$(id -g) $work/debs$" "$work/calls" && grep -q "^apt-get .* autoclean$" "$work/calls" && [ -d "$work/debs" ] && [ ! -e "$work/debs/partial" ]'
+rm -rf "$work"
+
+setup
+PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 "$script" > "$work/out" 2>&1
+check "without APT_ARCHIVES apt keeps its own cache" '! grep -q "Dir::Cache::Archives" "$work/calls"'
+rm -rf "$work"
+
+setup
 PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 FAIL_UPDATES=9 "$script" > "$work/out" 2>&1
 rc=$?
 check "three failed tries stop the script" '[ $rc -ne 0 ] && [ "$(grep -c "apt-get .* update" "$work/calls")" -eq 3 ] && ! grep -q "apt-get .* install" "$work/calls"'

@@ -400,7 +400,10 @@ the release). See [release.md](release.md).
   try; the test job installs ffmpeg through it too), the e2e job's ffmpeg
   (5 minutes), Playwright's `--with-deps` (15 minutes). On 18/11 a mirror
   at 47 kB/s held 3 of 6 test jobs for 13 minutes in an apt call that had
-  no limit. cargo and rustup retry their own downloads. Tests are never retried, except the single e2e
+  no limit. The lint and test jobs also keep the downloaded `.deb` files
+  (`APT_ARCHIVES`, an `apt-<job>-<ISO week>` cache saved from `main` once a
+  week), so apt fetches only the package lists and what changed since.
+  cargo and rustup retry their own downloads. Tests are never retried, except the single e2e
   retry above.
 
 Actions are pinned to commit SHAs, permissions are read-only, and a newer
