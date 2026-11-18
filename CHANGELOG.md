@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.50] - 2026-11-19
+
 ### Fixed
 
 - macOS: the app in the `.dmg` and in the update is now signed ad-hoc with its resources sealed, not only linker-signed, so macOS keeps "Allow" for Documents and other privacy prompts instead of asking on every agent run. macOS still asks once after each update, as each version is a new app to it. An agent test that times out on a Mac now says macOS may be waiting on a permission dialog, instead of advising to update the agent. Troubleshooting is titled with the current Gatekeeper wording ("“Contour” Not Opened").
@@ -1288,7 +1290,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.49...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.50...HEAD
+[0.2.0-beta.50]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.49...v0.2.0-beta.50
 [0.2.0-beta.49]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.48...v0.2.0-beta.49
 [0.2.0-beta.48]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.47...v0.2.0-beta.48
 [0.2.0-beta.47]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.46...v0.2.0-beta.47
