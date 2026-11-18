@@ -1,0 +1,23 @@
+# QA-110 evidence: beta.47, tea-shop-landing (real Claude Code run)
+
+## pdffonts tea-shop-landing.pdf (Export > PDF): fonts embedded, by family
+  47 .SFNS-Regular
+   3 IowanOldStyle-Italic
+   5 IowanOldStyle-Roman
+
+## The page asks for Instrument Serif (exported HTML, lines 3, 7, 9)
+3:<head><script type="application/json" id="od-standalone-manifest">{"externalDependencies":["https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap"]}</script>
+7:<link rel="preconnect" href="https://fonts.googleapis.com">
+9:<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+
+## Daemon log during the PDF and PNG exports
+2026-11-18T01:50:37.639441Z  WARN od_render_cdp: render blocked a request url=https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap
+2026-11-18T01:51:39.506703Z  WARN od_render_cdp: render blocked a request url=https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap
+2026-11-18T01:51:40.863166Z  WARN od_render_cdp: render blocked a request url=https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap
+2026-11-18T01:53:15.838797Z  WARN od_render_cdp: render blocked a request url=https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap
+2026-11-18T01:53:25.058692Z  WARN od_render_cdp: render blocked a request url=https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap
+2026-11-18T01:53:36.740813Z  WARN od_render_cdp: render blocked a request url=https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap
+2026-11-18T01:53:37.839903Z  WARN od_render_cdp: render blocked a request url=https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap
+
+## Browser console in the Studio (preview iframe)
+Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap' violates the following Content Security Policy directive: "style-src 'self' 'unsafe-inline'". The action has been blocked.
