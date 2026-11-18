@@ -288,7 +288,12 @@ jobs:
       # Signing and notarisation are optional, and so is the updater key
       # (Contour.app.tar.gz and its .sig for Update now). The secrets reach
       # only this step's environment; empty ones are unset so Tauri builds
-      # without them, and nothing is printed.
+      # without them, and nothing is printed. Without a Developer ID the
+      # app is signed ad-hoc (identity "-"): Tauri signs the binary and the
+      # .app before it makes the .dmg and the updater archive, so both hold
+      # the same sealed app and the updater signature covers the final
+      # archive. A linker-only signature leaves macOS unable to keep a
+      # privacy grant: Documents was asked on every agent run (QA-112).
       - name: Tauri bundle
         working-directory: apps/desktop
         shell: bash
@@ -306,8 +311,9 @@ jobs:
           notarising=(APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID)
           all_set() { for name in "$@"; do [ -n "${!name}" ] || return 1; done; }
           if ! all_set "${signing[@]}"; then
-            echo "::warning::macOS signing secrets are not set; building an unsigned bundle (docs/release.md, Signing)"
+            echo "::warning::macOS signing secrets are not set; signing ad-hoc, not notarised (docs/release.md, Signing)"
             unset "${signing[@]}" "${notarising[@]}"
+            export APPLE_SIGNING_IDENTITY=-
           elif ! all_set "${notarising[@]}"; then
             echo "::warning::notarisation secrets are not set; the bundle is signed but not notarised"
             unset "${notarising[@]}"
@@ -348,6 +354,15 @@ jobs:
           done
           ls -l dist-release
           test -n "$(ls dist-release)"
+      # The .app inside each shipped file, as a user gets it: the .dmg
+      # mounted and the updater archive unpacked, both sealed (QA-112).
+      - name: Sealed signature
+        run: |
+          files=(dist-release/*.dmg)
+          if compgen -G 'dist-release/*.app.tar.gz' > /dev/null; then
+            files+=(dist-release/*.app.tar.gz)
+          fi
+          scripts/macos-signature.sh "${files[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bundle-macos-universal
