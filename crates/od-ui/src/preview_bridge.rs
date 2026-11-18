@@ -282,6 +282,12 @@ pub enum BridgeMsg {
         key: Option<String>,
         href: String,
     },
+    /// Web fonts the preview CSP blocked, so far (QA-110).
+    #[serde(rename = "od:fonts-blocked")]
+    FontsBlocked {
+        #[serde(default)]
+        urls: Vec<String>,
+    },
     #[serde(other)]
     Other,
 }
@@ -479,6 +485,14 @@ mod tests {
         };
         assert_eq!(p.tag, "body");
         assert_eq!(p.rect.height, 4.0);
+        assert_eq!(
+            BridgeMsg::decode(
+                r#"{"type":"od:fonts-blocked","urls":["https://fonts.googleapis.com/css2?family=X"]}"#
+            ),
+            Some(BridgeMsg::FontsBlocked {
+                urls: vec!["https://fonts.googleapis.com/css2?family=X".into()]
+            })
+        );
         assert_eq!(
             BridgeMsg::decode(r#"{"type":"od:size","width":1}"#),
             Some(BridgeMsg::Other)

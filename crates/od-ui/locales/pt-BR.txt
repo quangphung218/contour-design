@@ -1598,6 +1598,7 @@ FirstArtifactBody = Edite e anote direto na prévia e exporte quando estiver sat
 FirstArtifactDismiss = Entendi
 RetryWaitsForLink = Aguardando a conexão com o Contour
 WorkspaceRecovering = Conexão com o Contour interrompida. Reconectando automaticamente…
+WebFontsBlocked = Fontes da web não carregam no Contour, então a pré-visualização, o PDF e o PNG usam uma fonte substituta; a exportação HTML carrega a original. Para que fiquem iguais, peça ao agente para usar fontes do sistema.
 ToolManualEdit = Editar elemento
 ManualEditHint = Clique em um elemento da prévia ou escolha uma camada e altere. Cada mudança é salva como versão.
 CommentsTab = Todos os comentários

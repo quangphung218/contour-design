@@ -122,6 +122,26 @@ try {
   // A brand-named system carries the trademark note in the picker too.
   assert.match(await page.locator('[data-testid="design-system"] option[value="airbnb"]').getAttribute('title'), /Not affiliated with or endorsed by Airbnb/);
   assert.equal(await page.locator('[data-testid="design-system"] option[value="minimal"]').getAttribute('title'), null);
+  // QA-111: at 1440 (and this test's 1360) the two pickers show their whole
+  // name, with the composer's controls still on one row.
+  const pickerFit = (id) => page.getByTestId(id).evaluate((e) => {
+    const cs = getComputedStyle(e);
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const text = e.options[e.selectedIndex].text;
+    const room = e.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return { text, need: Math.ceil(ctx.measureText(text).width), room: Math.floor(room) };
+  });
+  const barRows = () => page.locator('.composer-bar > :visible').evaluateAll((els) => new Set(els.map((e) => { const r = e.getBoundingClientRect(); return Math.round((r.top + r.bottom) / 2 / 16); })).size);
+  for (const width of [1440, 1360]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const id of ['design-system', 'template']) {
+      const fit = await pickerFit(id);
+      assert.ok(fit.need <= fit.room, `${width}: ${id} "${fit.text}" needs ${fit.need}px, has ${fit.room}px`);
+    }
+    assert.equal(await barRows(), 1, `${width}: composer controls on one row`);
+  }
+  await page.setViewportSize({ width: 1360, height: 860 });
   results.pickers = {
     designSystems: (await page.locator('[data-testid="design-system"] option').count()) - 1,
     prototypeTemplates: (await page.locator('[data-testid="template"] option').count()) - 1,

@@ -1597,6 +1597,7 @@ FirstArtifactBody = 可直接在预览中编辑和批注，满意后再导出。
 FirstArtifactDismiss = 知道了
 RetryWaitsForLink = 正在等待与 Contour 的连接
 WorkspaceRecovering = 与 Contour 的连接已中断，正在自动重连…
+WebFontsBlocked = Contour 中不会加载网络字体，因此预览、PDF 和 PNG 使用替代字体；导出的 HTML 会加载原字体。若要保持一致，请让 agent 改用系统字体。
 ToolManualEdit = 编辑元素
 ManualEditHint = 在预览中点击元素或选择图层，然后修改。每次修改都会存为一个版本。
 CommentsTab = 全部评论

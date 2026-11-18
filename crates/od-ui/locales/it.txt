@@ -1599,6 +1599,7 @@ FirstArtifactBody = Modificalo e annotalo direttamente nell'anteprima, poi espor
 FirstArtifactDismiss = Ho capito
 RetryWaitsForLink = In attesa della connessione a Contour
 WorkspaceRecovering = Connessione a Contour interrotta. Riconnessione automatica…
+WebFontsBlocked = I font web non vengono caricati in Contour, quindi anteprima, PDF e PNG usano un font sostitutivo; l'esportazione HTML carica l'originale. Per farli coincidere, chiedi all'agente di usare i font di sistema.
 ToolManualEdit = Modifica elemento
 ManualEditHint = Clicca un elemento nell'anteprima o scegli un livello, poi modificalo. Ogni modifica è salvata come versione.
 CommentsTab = Tutti i commenti

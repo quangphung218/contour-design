@@ -4,8 +4,8 @@
 // undo/redo and the guard that refuses an undo over a newer change), the
 // Comments tab (list, images on a comment, anchor moved and lost, resolve,
 // images sent with the next message), the reload guard against a page that
-// names its own edit-key ids, and the workspace recovery tip while
-// the daemon is down. Every request leaving loopback is blocked and fails
+// names its own edit-key ids, the web-fonts notice (QA-110), and the
+// workspace recovery tip while the daemon is down. Every request leaving loopback is blocked and fails
 // the test. Light and dark screenshots of the new screens go to
 // OD_E2E_SHOTS (default test-results/c1).
 //
@@ -145,6 +145,44 @@ try {
     await until(async () => Number(await badge.getAttribute('data-count')) > 0, 'the Lint button of the page switched to');
     assert.match(await badge.getAttribute('class'), /p0/, 'b.html\'s emoji icon, not index.html\'s clean result');
     results.lintOnOpen = 'shown on opening and on switching, no turn';
+  }
+
+  // 0b. QA-110: a page that links web fonts says, above the preview, that
+  // the preview, PDF and PNG use a substitute font; a page without them,
+  // the code view and a rewrite that drops the fonts say nothing.
+  {
+    const fp = (await (await fetch(`${BASE}/api/projects`, json({ name: 'Web fonts' }))).json()).project.id;
+    const put = (name, content) => fetch(`${BASE}/api/projects/${fp}/files`, json({ name, content, overwrite: true }));
+    const fontsPage = (title, link) => `<!doctype html><html lang="en"><head><title>${title}</title>${link}
+<style>h1 { font-family: 'Instrument Serif', Georgia, serif; }</style></head><body><h1 id="${title}">${title}</h1></body></html>`;
+    const google = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&display=swap">';
+    await put('index.html', fontsPage('fonts', google));
+    await put('plain.html', fontsPage('plain', ''));
+    const notice = page.getByTestId('fonts-blocked');
+    const fileRow = (path) => page.locator(`[data-testid="file-row"][data-path="${path}"]`);
+    await page.goto(`${BASE}/projects/${fp}`);
+    await frame.locator('#fonts').waitFor();
+    await notice.waitFor();
+    assert.match(await notice.textContent(), /preview, PDF and PNG use a substitute font/);
+    assert.equal(await notice.getAttribute('role'), 'status');
+    await shot('fonts-blocked');
+    await fileRow('plain.html').click();
+    await frame.locator('#plain').waitFor();
+    await until(async () => (await notice.count()) === 0, 'no notice on a page without web fonts');
+    await stays(async () => (await notice.count()) === 0, 'plain page stays without the notice');
+    await fileRow('index.html').click();
+    await frame.locator('#fonts').waitFor();
+    await notice.waitFor();
+    await page.getByTestId('view-code').click();
+    await until(async () => (await notice.count()) === 0, 'no notice over the code view');
+    await page.getByTestId('view-preview').click();
+    await notice.waitFor();
+    // The agent rewrites the page without the link: the reload drops it.
+    await put('index.html', fontsPage('fonts', '').replace('<h1 id="fonts">fonts', '<h1 id="fonts">fonts v2'));
+    await frame.locator('#fonts', { hasText: 'fonts v2' }).waitFor();
+    await until(async () => (await notice.count()) === 0, 'notice gone after the fonts are dropped');
+    await stays(async () => (await notice.count()) === 0, 'rewritten page stays without the notice');
+    results.webFonts = 'notice on the page that links them, not on others, the code view or a rewrite without them';
   }
 
   // 1. First artifact hint: a new project's first run writes a page; the
