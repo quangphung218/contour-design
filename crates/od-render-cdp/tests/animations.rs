@@ -24,7 +24,8 @@ const LEDE: [u8; 3] = [30, 30, 230];
 /// and lower), delayed so a capture taken at once sees it fully hidden; a
 /// lede faded in by a transition that a script starts once the title's
 /// animation ends (so only after the title is finished); and a
-/// spinner that never ends.
+/// spinner that never ends. The page also has a headline rising in inside
+/// an open shadow root, and one inside a frame.
 const ENTRANCE_CSS: &str = r"
 @keyframes rise { from { opacity: 0; transform: translateY(400px); } }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -53,6 +54,12 @@ html,body{{margin:0;background:#fff}}
 {ENTRANCE_CSS}
 </style>{START_LEDE}</head><body>
 <h1 class="title">Quarterly results</h1><p class="lede">Revenue up</p><div class="spinner"></div>
+<x-hero style="position:absolute;left:100px;top:600px"></x-hero>
+<script>customElements.define('x-hero', class extends HTMLElement {{
+  constructor() {{ super(); this.attachShadow({{ mode: 'open' }}).innerHTML =
+    '<style>@keyframes rise {{ from {{ opacity: 0; transform: translateY(400px); }} }} h2 {{ margin: 0; font: 48px sans-serif; animation: rise 2s .5s both; }}</style><h2>Shadow headline</h2>'; }}
+}});</script>
+<iframe style="position:absolute;left:100px;top:700px;width:700px;height:200px;border:0" srcdoc="<style>@keyframes rise {{ from {{ opacity: 0; transform: translateY(400px); }} }} h2 {{ margin: 0; font: 48px sans-serif; animation: rise 2s .5s both; }}</style><h2>Framed headline</h2>"></iframe>
 </body></html>"#,
         t = hex(TITLE),
         l = hex(LEDE),
@@ -129,6 +136,10 @@ async fn exports_wait_for_entrance_animations() {
     let text = pdf_text(&pdf);
     assert!(text.contains("Quarterly results"), "PDF text: {text:?}");
     assert!(text.contains("Revenue up"), "PDF text: {text:?}");
+    // Inside an open shadow root and a frame, which
+    // `document.getAnimations()` does not list.
+    assert!(text.contains("Shadow headline"), "PDF text: {text:?}");
+    assert!(text.contains("Framed headline"), "PDF text: {text:?}");
     for format in [
         od_export::ImageFormat::Png,
         od_export::ImageFormat::Jpeg,

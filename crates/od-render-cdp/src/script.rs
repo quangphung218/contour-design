@@ -32,12 +32,35 @@ pub enum Animations {
 /// (CSS, Web Animations) and pauses the infinite ones where they are, then
 /// waits two frames; again while that started new ones (a transition set
 /// off by an `animationend` or by a script on load), up to 5 rounds.
-/// Animations a script draws itself frame by frame are not seen.
+/// `document.getAnimations()` leaves out shadow trees and frames, so the
+/// animations are gathered from the document, every open shadow root and
+/// every frame whose document can be read, at any depth. Closed shadow
+/// roots cannot be reached, and animations a script draws itself frame by
+/// frame are not seen.
 fn finish_animations_fn() -> &'static str {
-    r"async function odFinishAnimations() {
+    r"function odAllAnimations() {
+    const out = [];
+    const seen = new Set();
+    const visit = (root) => {
+      if (!root || seen.has(root)) return;
+      seen.add(root);
+      try { if (root.getAnimations) out.push(...root.getAnimations()); } catch (_) {}
+      let els = [];
+      try { els = root.querySelectorAll('*'); } catch (_) {}
+      for (const el of els) {
+        if (el.shadowRoot) visit(el.shadowRoot);
+        if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+          try { visit(el.contentDocument); } catch (_) {}
+        }
+      }
+    };
+    visit(document);
+    return out;
+  }
+  async function odFinishAnimations() {
     for (let round = 0; round < 5; round++) {
       let ended = 0;
-      for (const a of document.getAnimations ? document.getAnimations() : []) {
+      for (const a of odAllAnimations()) {
         try {
           const end = a.effect && a.effect.getComputedTiming ? a.effect.getComputedTiming().endTime : Infinity;
           if (Number.isFinite(end)) {
@@ -86,8 +109,9 @@ pub fn settle(animations: Animations) -> String {
 const ACTIVE_CLASSES: &str = r#"["active", "is-active", "current", "present"]"#;
 
 /// Shows exactly slide `i`, pinned to the top-left `w`×`h` box, then ends
-/// the animations that showing it started and waits two frames. Ancestors lose transforms (they would capture `position:
-/// fixed`), and the deck's own "active" classes move to slide `i`.
+/// the animations that showing it started and waits two frames. Ancestors
+/// lose transforms (they would capture `position: fixed`), and the deck's
+/// own "active" classes move to slide `i`.
 pub fn show_slide(i: usize, w: u32, h: u32) -> String {
     let css = format!(
         "{hide} {{ display: none !important; }} \
