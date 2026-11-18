@@ -117,6 +117,9 @@ expect "a bump plus a dependency version in Cargo.toml is code" "$ALL"
 change version-no-changelog; bump; git -C "$repo" checkout -q "$root" -- CHANGELOG.md; commit
 expect "a bump without its CHANGELOG section is code" "$ALL"
 
+change version-no-section; bump; printf '# Changelog\n\n## [Unreleased]\n\n- A fix.\n' > "$repo/CHANGELOG.md"; commit
+expect "a bump whose CHANGELOG lacks the new section is code" "$ALL"
+
 change version-code; bump; printf 'pub fn a() { }\n' > "$repo/crates/od-server/src/lib.rs"; commit
 expect "a bump plus code is code" "$ALL"
 
@@ -166,6 +169,7 @@ expect "no change is docs" "kind=docs windows=false chrome=false"
 change any; printf 'pub fn a() { }\n' > "$repo/crates/od-server/src/lib.rs"; commit
 expect "an empty base runs everything" "$ALL" ""
 expect "an all-zero base (new branch) runs everything" "$ALL" 0000000000000000000000000000000000000000
+if grep -q "^no base commit" "$why"; then echo "ok   an all-zero base is read as no base"; else echo "FAIL an all-zero base is read as no base: $(cat "$why")"; failures=$((failures + 1)); fi
 expect "a base missing from the clone runs everything" "$ALL" 1234567890abcdef1234567890abcdef12345678
 
 [ "$failures" -eq 0 ] || { echo "ci-changes: $failures check(s) failed" >&2; exit 1; }

@@ -108,8 +108,7 @@ version_only() {
       return 1
     fi
   fi
-  # CHANGELOG.md: changed, with the new version's section.
-  printf '%s\n' "$files" | grep -qx CHANGELOG.md || { why "not version-only: CHANGELOG.md unchanged"; return 1; }
+  # CHANGELOG.md: with the new version's section.
   show "$head" CHANGELOG.md head.md || return 1
   grep -qF "## [$new]" "$work/head.md" || { why "not version-only: CHANGELOG.md has no [$new] section"; return 1; }
   why "version-only: $old -> $new"
