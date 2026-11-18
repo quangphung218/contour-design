@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Installs the Debian/Ubuntu packages Tauri 2 needs to build the desktop app
 # (and that `cargo build --workspace` needs, since od-desktop is a member).
-# Usage: scripts/linux-deps.sh   (CI runs it; locally it asks for sudo)
+# Usage: scripts/linux-deps.sh [PACKAGE…]   (CI runs it; locally it asks
+# for sudo). Extra packages (CI: ffmpeg) go into the same install, under
+# the same limits.
 #
 # Each apt-get call gets at most APT_STEP_SECONDS (default 600) and three
 # tries: on 02/11 a stalled mirror held the v0.2.0-beta.15 release job here
@@ -29,4 +31,4 @@ apt_get() {
 }
 
 apt_get update
-apt_get install -y --no-install-recommends "${packages[@]}"
+apt_get install -y --no-install-recommends "${packages[@]}" "$@"

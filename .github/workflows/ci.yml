@@ -210,18 +210,16 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
             /opt/hostedtoolcache/CodeQL
           df -h /
-      - name: Linux packages
-        if: runner.os == 'Linux'
-        run: scripts/linux-deps.sh
       # The MP4 export tests need ffmpeg and ffprobe, and fail without them.
+      # On Linux it joins the Tauri packages: one apt install, with the
+      # step limit and tries of linux-deps.sh.
+      - name: Linux packages and ffmpeg
+        if: runner.os == 'Linux'
+        run: scripts/linux-deps.sh ffmpeg
       - name: ffmpeg
-        run: |
-          if [ "$RUNNER_OS" = macOS ]; then
-            scripts/ci-retry.sh brew install ffmpeg
-          else
-            scripts/ci-retry.sh sudo apt-get install -y --no-install-recommends ffmpeg
-          fi
-          ffmpeg -version | head -n1
+        if: runner.os == 'macOS'
+        run: scripts/ci-retry.sh brew install ffmpeg
+      - run: ffmpeg -version | head -n1
       - run: make ui-dist test-scripts
       # nextest runs the test binaries side by side (cargo test runs them
       # one after another); .config/nextest.toml keeps the watcher tests
@@ -386,12 +384,14 @@ jobs:
         working-directory: crates/od-ui/e2e
         run: |
           ../../../scripts/ci-retry.sh npm ci --no-audit --no-fund
-          ../../../scripts/ci-retry.sh npx playwright install --with-deps chromium webkit
+          # --with-deps runs apt-get: a slow mirror gets 15 minutes a try.
+          ../../../scripts/ci-retry.sh timeout 900 npx playwright install --with-deps chromium webkit
       # motion.e2e.mjs renders an MP4 and checks it with ffprobe.
+      # A slow mirror (47 kB/s on 18/11) gets 5 minutes a try.
       - name: ffmpeg
         run: |
-          scripts/ci-retry.sh sudo apt-get update
-          scripts/ci-retry.sh sudo apt-get install -y --no-install-recommends ffmpeg
+          scripts/ci-retry.sh sudo timeout 300 apt-get update
+          scripts/ci-retry.sh sudo timeout 300 apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version | head -n1
       - run: make e2e
       # Scenarios that failed and then passed alone (run.sh writes

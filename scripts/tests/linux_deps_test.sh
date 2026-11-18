@@ -43,6 +43,12 @@ check "every call has network and lock timeouts" '! grep "^apt-get" "$work/calls
 rm -rf "$work"
 
 setup
+PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 "$script" ffmpeg > "$work/out" 2>&1
+rc=$?
+check "an extra package goes into the one install, under the step limit" '[ $rc -eq 0 ] && grep "apt-get .* install" "$work/calls" | grep -q " libssl-dev .* ffmpeg$" && [ "$(grep -c "apt-get .* install" "$work/calls")" -eq 1 ]'
+rm -rf "$work"
+
+setup
 PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 FAIL_UPDATES=9 "$script" > "$work/out" 2>&1
 rc=$?
 check "three failed tries stop the script" '[ $rc -ne 0 ] && [ "$(grep -c "apt-get .* update" "$work/calls")" -eq 3 ] && ! grep -q "apt-get .* install" "$work/calls"'
