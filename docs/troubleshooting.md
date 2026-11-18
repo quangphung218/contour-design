@@ -281,9 +281,12 @@ Install the Playwright browser: `cd crates/od-ui/e2e && npx playwright install c
 
 ## macOS
 
-### "Contour is damaged and can't be opened" / "unidentified developer"
+### "“Contour” Not Opened" / "Apple could not verify “Contour” is free of malware"
 
-The download is not signed. On macOS 15 and later, open the app once, then
+Older macOS versions word it "Contour is damaged and can't be opened" or
+"unidentified developer". The download is signed ad-hoc, not with an Apple
+Developer ID, so Gatekeeper stops it the first time. The dialog offers
+**Move to Trash** and **Done**: click **Done**. On macOS 15 and later, then
 System Settings ▸ Privacy & Security ▸ **Open Anyway** and open it again
 (Control-click ▸ Open no longer works there). On macOS 14 and earlier,
 Control-click the app ▸ Open the first time. On any version:
