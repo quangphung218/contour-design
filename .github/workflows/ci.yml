@@ -163,8 +163,24 @@ jobs:
       - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: trunk
+      # Downloaded .deb files (scripts/linux-deps.sh, APT_ARCHIVES): restored
+      # every run, saved from main once a week.
+      - name: apt cache key
+        id: apt
+        run: echo "key=apt-${{ github.job }}-$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: apt-cache
+        with:
+          path: ~/.cache/apt-archives
+          key: ${{ steps.apt.outputs.key }}
+          restore-keys: apt-${{ github.job }}-
       - name: Linux packages
-        run: scripts/linux-deps.sh
+        run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/apt-archives
+          key: ${{ steps.apt.outputs.key }}
       - run: make lint
       # THIRD-PARTY-LICENSES must match Cargo.lock (`make licenses`). The
       # NOTICE modified-files part needs an open-design checkout and is
@@ -210,18 +226,34 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
             /opt/hostedtoolcache/CodeQL
           df -h /
-      - name: Linux packages
-        if: runner.os == 'Linux'
-        run: scripts/linux-deps.sh
       # The MP4 export tests need ffmpeg and ffprobe, and fail without them.
+      # On Linux it joins the Tauri packages: one apt install, with the
+      # step limit and tries of linux-deps.sh.
+      # Downloaded .deb files (scripts/linux-deps.sh, APT_ARCHIVES): restored
+      # every run, saved from main once a week.
+      - name: apt cache key
+        id: apt
+        if: runner.os == 'Linux'
+        run: echo "key=apt-${{ github.job }}-$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: apt-cache
+        if: runner.os == 'Linux'
+        with:
+          path: ~/.cache/apt-archives
+          key: ${{ steps.apt.outputs.key }}
+          restore-keys: apt-${{ github.job }}-
+      - name: Linux packages and ffmpeg
+        if: runner.os == 'Linux'
+        run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh ffmpeg
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: runner.os == 'Linux' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/apt-archives
+          key: ${{ steps.apt.outputs.key }}
       - name: ffmpeg
-        run: |
-          if [ "$RUNNER_OS" = macOS ]; then
-            scripts/ci-retry.sh brew install ffmpeg
-          else
-            scripts/ci-retry.sh sudo apt-get install -y --no-install-recommends ffmpeg
-          fi
-          ffmpeg -version | head -n1
+        if: runner.os == 'macOS'
+        run: scripts/ci-retry.sh brew install ffmpeg
+      - run: ffmpeg -version | head -n1
       - run: make ui-dist test-scripts
       # nextest runs the test binaries side by side (cargo test runs them
       # one after another); .config/nextest.toml keeps the watcher tests
@@ -386,12 +418,14 @@ jobs:
         working-directory: crates/od-ui/e2e
         run: |
           ../../../scripts/ci-retry.sh npm ci --no-audit --no-fund
-          ../../../scripts/ci-retry.sh npx playwright install --with-deps chromium webkit
+          # --with-deps runs apt-get: a slow mirror gets 15 minutes a try.
+          ../../../scripts/ci-retry.sh timeout 900 npx playwright install --with-deps chromium webkit
       # motion.e2e.mjs renders an MP4 and checks it with ffprobe.
+      # A slow mirror (47 kB/s on 18/11) gets 5 minutes a try.
       - name: ffmpeg
         run: |
-          scripts/ci-retry.sh sudo apt-get update
-          scripts/ci-retry.sh sudo apt-get install -y --no-install-recommends ffmpeg
+          scripts/ci-retry.sh sudo timeout 300 apt-get update
+          scripts/ci-retry.sh sudo timeout 300 apt-get install -y --no-install-recommends ffmpeg
           ffmpeg -version | head -n1
       - run: make e2e
       # Scenarios that failed and then passed alone (run.sh writes

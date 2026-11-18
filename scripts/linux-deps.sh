@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 # Installs the Debian/Ubuntu packages Tauri 2 needs to build the desktop app
 # (and that `cargo build --workspace` needs, since od-desktop is a member).
-# Usage: scripts/linux-deps.sh   (CI runs it; locally it asks for sudo)
+# Usage: scripts/linux-deps.sh [PACKAGE…]   (CI runs it; locally it asks
+# for sudo). Extra packages (CI: ffmpeg) go into the same install, under
+# the same limits.
 #
 # Each apt-get call gets at most APT_STEP_SECONDS (default 600) and three
 # tries: on 02/11 a stalled mirror held the v0.2.0-beta.15 release job here
 # for its full 90 minutes.
+#
+# APT_ARCHIVES=DIR keeps the downloaded .deb files in DIR (CI caches it):
+# a package already there is not downloaded again. On 18/11 a mirror at
+# 47 kB/s held 7 of 12 Linux CI jobs for 9 to 22 minutes in apt.
 set -euo pipefail
 packages=(
   libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
@@ -13,13 +19,19 @@ packages=(
   build-essential pkg-config patchelf file
 )
 step_seconds="${APT_STEP_SECONDS:-600}"
+archives=()
+if [ -n "${APT_ARCHIVES:-}" ]; then
+  mkdir -p "$APT_ARCHIVES/partial"
+  archives=(-o "Dir::Cache::Archives=$APT_ARCHIVES")
+fi
 
 apt_get() {
   local try
   for try in 1 2 3; do
     if sudo timeout "$step_seconds" apt-get \
       -o Acquire::Retries=3 -o Acquire::http::Timeout=30 \
-      -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120 "$@"; then
+      -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120 \
+      ${archives[@]+"${archives[@]}"} "$@"; then
       return 0
     fi
     echo "linux-deps: apt-get $1 failed or timed out (try $try of 3)" >&2
@@ -29,4 +41,11 @@ apt_get() {
 }
 
 apt_get update
-apt_get install -y --no-install-recommends "${packages[@]}"
+apt_get install -y --no-install-recommends "${packages[@]}" "$@"
+if [ -n "${APT_ARCHIVES:-}" ]; then
+  # Drop versions the mirror no longer has, so the folder does not grow.
+  apt_get autoclean
+  # apt ran as root; the cache step reads and later restores the folder.
+  sudo rm -rf "$APT_ARCHIVES/partial" "$APT_ARCHIVES/lock"
+  sudo chown -R "$(id -u):$(id -g)" "$APT_ARCHIVES"
+fi
