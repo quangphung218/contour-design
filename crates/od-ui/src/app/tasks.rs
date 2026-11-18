@@ -653,6 +653,9 @@ mod tests {
             "tasks.{}(async move {{\n    x().await;\n    {}(async move {{ shell.{}d).await; }});\n}});",
             "spawn", "detached", SAVES[1]
         );
-        assert!(saves_in_spawn("c.rs", &nested).is_empty(), "a detached save inside");
+        assert!(
+            saves_in_spawn("c.rs", &nested).is_empty(),
+            "a detached save inside"
+        );
     }
 }
