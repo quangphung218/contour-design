@@ -1592,6 +1592,7 @@ FirstArtifactBody = แก้ไขและทำหมายเหตุใน
 FirstArtifactDismiss = รับทราบ
 RetryWaitsForLink = กำลังรอการเชื่อมต่อกับ Contour
 WorkspaceRecovering = การเชื่อมต่อกับ Contour ขัดข้อง กำลังเชื่อมต่อใหม่อัตโนมัติ…
+WebFontsBlocked = Contour ไม่โหลดเว็บฟอนต์ พรีวิว PDF และ PNG จึงใช้ฟอนต์ทดแทน ส่วนไฟล์ HTML ที่ส่งออกจะโหลดฟอนต์ต้นฉบับ หากต้องการให้ตรงกัน ให้ขอให้เอเจนต์ใช้ฟอนต์ของระบบ
 ToolManualEdit = แก้ไของค์ประกอบ
 ManualEditHint = คลิกองค์ประกอบในพรีวิวหรือเลือกเลเยอร์ แล้วแก้ไข ทุกการแก้ไขจะบันทึกเป็นเวอร์ชัน
 CommentsTab = ความคิดเห็นทั้งหมด

@@ -1599,6 +1599,7 @@ FirstArtifactBody = Modifiez-le et annotez-le directement dans l'aperçu, puis e
 FirstArtifactDismiss = Compris
 RetryWaitsForLink = En attente de la connexion à Contour
 WorkspaceRecovering = Connexion à Contour interrompue. Reconnexion automatique…
+WebFontsBlocked = Les polices web ne se chargent pas dans Contour : l'aperçu, le PDF et le PNG utilisent une police de remplacement, et l'export HTML charge l'originale. Pour qu'ils correspondent, demandez à l'agent d'utiliser des polices système.
 ToolManualEdit = Modifier l’élément
 ManualEditHint = Cliquez sur un élément dans l'aperçu ou choisissez un calque, puis modifiez-le. Chaque changement est enregistré comme version.
 CommentsTab = Tous les commentaires

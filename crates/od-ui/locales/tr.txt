@@ -1597,6 +1597,7 @@ FirstArtifactBody = Önizlemede doğrudan düzenleyin ve not ekleyin, memnun kal
 FirstArtifactDismiss = Anladım
 RetryWaitsForLink = Contour bağlantısı bekleniyor
 WorkspaceRecovering = Contour bağlantısı kesildi. Otomatik olarak yeniden bağlanılıyor…
+WebFontsBlocked = Web yazı tipleri Contour'da yüklenmez; bu yüzden önizleme, PDF ve PNG yedek bir yazı tipi kullanır, HTML dışa aktarımı ise orijinali yükler. Aynı görünmeleri için ajandan sistem yazı tiplerini kullanmasını isteyin.
 ToolManualEdit = Öğeyi düzenle
 ManualEditHint = Önizlemede bir öğeye tıklayın veya katman seçip değiştirin. Her değişiklik bir sürüm olarak kaydedilir.
 CommentsTab = Tüm yorumlar

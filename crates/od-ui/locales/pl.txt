@@ -1598,6 +1598,7 @@ FirstArtifactBody = Edytuj i komentuj go w podglądzie, a gdy będzie dobry, wye
 FirstArtifactDismiss = Rozumiem
 RetryWaitsForLink = Czekam na połączenie z Contour
 WorkspaceRecovering = Połączenie z Contour przerwane. Łączenie ponowne nastąpi automatycznie…
+WebFontsBlocked = Czcionki internetowe nie ładują się w Contour, więc podgląd, PDF i PNG używają czcionki zastępczej; eksport HTML ładuje oryginalną. Aby wyglądały tak samo, poproś agenta o czcionki systemowe.
 ToolManualEdit = Edytuj element
 ManualEditHint = Kliknij element w podglądzie albo wybierz warstwę i zmień go. Każda zmiana zapisuje się jako wersja.
 CommentsTab = Wszystkie komentarze

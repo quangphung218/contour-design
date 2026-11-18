@@ -524,6 +524,64 @@ async function runEngine(name) {
   }
 }
 
+// QA-110: web fonts the preview CSP blocks reach the host as
+// od:fonts-blocked, in both engines (WebKit is the macOS app's WKWebView).
+// The frame gets the preview's CSP (od-preview `RAW_CSP`): a font
+// service's stylesheet by <link> and by @import, and a font file, are
+// reported; a CDN stylesheet, script and image, also blocked, are not
+// fonts.
+const PREVIEW_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals; default-src 'self' data: blob:; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'self'";
+const FONT_URLS = [
+  'https://fonts.googleapis.com/css2?family=Instrument+Serif',
+  'https://fonts.bunny.net/css?family=lato',
+  'https://cdn.example.com/brand.woff2',
+  'https://rsms.me/inter/inter.css',
+  'https://cdn.jsdelivr.net/npm/@fontsource/inter/index.css',
+];
+const fontsFrame = (withFonts) => `<!doctype html><html><head><script data-od-key="K">${bridge}</script>
+${withFonts ? `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="${FONT_URLS[0]}">
+<link rel="stylesheet" href="${FONT_URLS[3]}">
+<link rel="stylesheet" href="${FONT_URLS[4]}">
+<style>@import url('${FONT_URLS[1]}');
+@font-face { font-family: Brand; src: url(${FONT_URLS[2]}) format('woff2'); }
+h1 { font-family: Brand, serif; }</style>` : '<style>h1 { font-family: Georgia, serif; }</style>'}
+<link rel="stylesheet" href="https://cdn.example.com/grid.css">
+<script src="https://cdn.example.com/lib.js"></script></head>
+<body><h1 id="h">Tea</h1><img src="https://images.example.com/a.png" alt=""></body></html>`;
+const fontsHost = (frame) => `<!doctype html><html><body>
+<script>window.blocked = []; addEventListener('message', (e) => { if (e.data && e.data.type === 'od:fonts-blocked') blocked.push(e.data.urls); });</script>
+<iframe id="f" sandbox="${sandbox}" src="http://fonts.test/${frame}"></iframe></body></html>`;
+
+async function runFonts(name) {
+  const browser = await { chromium, webkit }[name].launch();
+  try {
+    const context = await browser.newContext();
+    await context.route('**/*', (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname !== 'fonts.test') return route.abort();
+      if (url.pathname.startsWith('/host-')) return route.fulfill({ contentType: 'text/html', body: fontsHost(url.pathname.slice(6)) });
+      return route.fulfill({ contentType: 'text/html', headers: { 'content-security-policy': PREVIEW_CSP }, body: fontsFrame(url.pathname === '/with.html') });
+    });
+    const page = await context.newPage();
+    const got = {};
+    for (const frame of ['with.html', 'without.html']) {
+      await page.goto(`http://fonts.test/host-${frame}`);
+      await page.frameLocator('#f').locator('#h').waitFor();
+      if (frame === 'with.html') {
+        await page.waitForFunction((n) => (blocked.at(-1) || []).length >= n, FONT_URLS.length, { timeout: 10000 }).catch(() => {});
+      } else {
+        await page.frameLocator('#f').locator('#h').evaluate(() => document.fonts.ready);
+        await sleep(500);
+      }
+      got[frame] = await page.evaluate(() => (window.blocked.at(-1) || []).slice().sort());
+    }
+    return got;
+  } finally {
+    await browser.close();
+  }
+}
+
 const results = {};
 try {
   // The press table alone, in node, before the browsers.
@@ -533,6 +591,7 @@ try {
   for (const name of engines) {
     assert.ok(name === 'chromium' || name === 'webkit', `unknown engine ${name}`);
     results[name] = await runEngine(name);
+    results[name].fonts = await runFonts(name);
   }
   for (const name of engines) {
     const wrong = cases.filter(([id, want, , only]) => (!only || only.includes(name)) && JSON.stringify(results[name][id]) !== JSON.stringify(want));
@@ -544,6 +603,7 @@ try {
     assert.deepEqual(results[name].atLoad, [], `${name} opened while loading`);
     assert.equal(results[name].frameName, true, `${name} nested frame lost its name`);
     assert.deepEqual(results[name].syncLoads, [1, true], `${name} the page read the bridge's copy back from srcdoc`);
+    assert.deepEqual(results[name].fonts, { 'with.html': [...FONT_URLS].sort(), 'without.html': [] }, `${name} blocked web fonts`);
   }
   console.log(`[e2e:bridge] PASS ${JSON.stringify(results)}`);
 } catch (e) {

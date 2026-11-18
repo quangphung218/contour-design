@@ -39,6 +39,14 @@ const COMMENT_IDENTITY_EDIT_DIRECTIVE: &str = legacy!("COMMENT_IDENTITY_EDIT_DIR
 const SEP: &str = "\n\n---\n\n";
 const LOCALE_EXEMPT_TERMS: &str = "Keep brand names, code, and technical identifiers as-is, and honor an explicit user request for a different output language.";
 
+/// Contour's own rule (QA-110): the preview, PDF and PNG load nothing from
+/// the network (decisions: no outbound network), so a linked web font
+/// never shows there while the exported HTML loads it. It comes after the
+/// design system, skill and plugin blocks, which may link one.
+const SYSTEM_FONTS_ONLY: &str = "## Fonts: system fonts only
+
+The preview and the PDF and PNG exports load nothing from the network, so a web font (Google Fonts, Adobe Fonts, any `<link>`, `@import` or `@font-face` URL on another host such as fonts.googleapis.com) never loads there and a substitute font shows instead. Do not link web fonts, even when a skill, template or design system above names one. Use system font stacks: `-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif`; `'Iowan Old Style', Charter, Georgia, serif`; `ui-monospace, Menlo, monospace`. A named font may lead the stack when a system fallback follows it. A font file inside the project folder, loaded by `@font-face` with a relative `url()`, does load.";
+
 /// Longest single transcript message (characters); the tail is cut.
 pub const TRANSCRIPT_MESSAGE_MAX_CHARS: usize = 24_000;
 
@@ -273,6 +281,9 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     }
     if !ask && ds.is_some() {
         p.push(ACTIVE_DS_VISUAL_DIRECTION_OVERRIDE.to_owned());
+    }
+    if !ask {
+        p.push(format!("{SEP}{SYSTEM_FONTS_ONLY}"));
     }
     p.push(FILESYSTEM_HANDOFF_OVERRIDE.to_owned());
     if !ask {
@@ -769,6 +780,42 @@ mod tests {
         // Deck project without a deck skill seed gets the framework.
         assert!(pos(&text, "## Semantic output file names") < text.len());
         assert!(text.contains(DECK_FRAMEWORK_DIRECTIVE.trim()));
+    }
+
+    /// QA-110: the preview, PDF and PNG load no web font, so the agent is
+    /// told to use system fonts, after the design system and skill blocks
+    /// that may link one, in every mode that writes files.
+    #[test]
+    fn fonts_rule_follows_the_blocks_that_may_link_a_web_font() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("systems/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("DESIGN.md"), "# Acme\n\nHeadlines in Fraunces.").unwrap();
+        let list = crate::design_systems::list_design_systems(
+            &tmp.path().join("systems"),
+            crate::design_systems::ListOptions::BUILT_IN,
+        );
+        let rule = "## Fonts: system fonts only";
+        for mode in [SessionMode::Design, SessionMode::Plan] {
+            let text = compose_instructions(&PromptInput {
+                session_mode: mode,
+                design_system: list.first(),
+                ..PromptInput::default()
+            });
+            assert_eq!(text.matches(rule).count(), 1, "{mode:?}");
+            assert!(pos(&text, "## Active design system") < pos(&text, rule));
+            let handoff = "This run uses OpenDesign's filesystem execution profile.";
+            assert!(pos(&text, rule) < pos(&text, handoff));
+            let block = &text[pos(&text, rule)..pos(&text, handoff)];
+            for needle in ["fonts.googleapis.com", "system-ui", "@font-face"] {
+                assert!(block.contains(needle), "{needle} in {block}");
+            }
+        }
+        let ask = compose_instructions(&PromptInput {
+            session_mode: SessionMode::Chat,
+            ..PromptInput::default()
+        });
+        assert!(!ask.contains(rule), "Ask mode writes no file");
     }
 
     #[test]

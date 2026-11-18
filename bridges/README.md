@@ -42,6 +42,7 @@ window, so a page cannot drive itself through the protocol.
 | `od:snapshot-result` | `requestId`, `width`, `height`, `format`, `dataUrl` (or `error`, `rasterError`) | After `od:snapshot` |
 | `od:size` | `width`, `height` | Content size changed |
 | `od:located` | `items`: `[{id, rect, text}]` (`rect` null when the selector matches nothing; `text` as `od:select` prints it) | After `od:locate`, scroll, resize |
+| `od:fonts-blocked` | `urls`: the blocked web fonts so far, first 10 | The preview CSP blocked a font file, or a stylesheet from a font service (`<link>`, `@import`); once per new URL |
 | `od:redirect-loop-blocked` | `hops` | The page reloaded itself more than 15 times, each < 1 s apart |
 | `od:inspect-result` | `key`, `selector`, `tag`, `text`, `rect`, `styles` (computed), `overrides`, `textOnly`; or `key`, `selector`, `missing: true` | After `od:inspect`, `od:inspect-set`, `od:inspect-reset` |
 | `od:inspect-replay-skipped` | `items`: `[{selector, prop}]` | Overrides `od:inspect-replay` left out; the host drops them |

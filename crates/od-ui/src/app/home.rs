@@ -11,7 +11,7 @@ use super::ds_create::CreateFlow;
 use super::icons::{Glyph, icon};
 use super::lazy_frame::LazyFrame;
 use super::lib_ui::query_param;
-use super::tasks::{Tasks, live};
+use super::tasks::{Tasks, detached, live};
 use super::{Shell, api};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::{
@@ -477,7 +477,11 @@ pub fn Home() -> impl IntoView {
                                 // The full name (the select may cut it), then the
                                 // trademark note of a brand-named system.
                                 title=move || {
-                                    let id = design_system.get()?;
+                                    // None picked: its label, cut at 1440 in
+                                    // Vietnamese, in full on hover.
+                                    let Some(id) = design_system.get() else {
+                                        return Some(t(T::NoneOption).to_owned());
+                                    };
                                     systems.with(|l| {
                                         let s = l.as_ref()?.iter().find(|s| s.id == id)?;
                                         let name = format!("{} · {}", crate::i18n::rebrand(&s.title), s.category);
@@ -983,7 +987,10 @@ fn WorkingDirItems(dir: RwSignal<Option<String>>, tasks: Tasks) -> impl IntoView
                 typing.set(None);
             }
             dir.set(Some(canonical.clone()));
-            let _ = shell.add_recent_dir(&canonical).await;
+            // Detached: leaving Home right after the pick still records it.
+            detached(async move {
+                let _ = shell.add_recent_dir(&canonical).await;
+            });
         });
     };
     let pick = move |_| {

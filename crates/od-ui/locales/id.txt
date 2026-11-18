@@ -1592,6 +1592,7 @@ FirstArtifactBody = Edit dan beri anotasi langsung di pratinjau, lalu ekspor saa
 FirstArtifactDismiss = Mengerti
 RetryWaitsForLink = Menunggu koneksi ke Contour
 WorkspaceRecovering = Koneksi ke Contour terputus. Menyambung ulang otomatis…
+WebFontsBlocked = Font web tidak dimuat di Contour, jadi pratinjau, PDF, dan PNG memakai font pengganti; ekspor HTML memuat font aslinya. Agar sama, minta agen memakai font sistem.
 ToolManualEdit = Edit elemen
 ManualEditHint = Klik elemen di pratinjau atau pilih layer, lalu ubah. Setiap perubahan disimpan sebagai versi.
 CommentsTab = Semua komentar

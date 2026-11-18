@@ -1598,6 +1598,7 @@ FirstArtifactBody = プレビュー上で直接編集・注釈でき、満足し
 FirstArtifactDismiss = OK
 RetryWaitsForLink = Contour への再接続を待っています
 WorkspaceRecovering = Contour との接続が切れました。自動で再接続しています…
+WebFontsBlocked = Contour ではウェブフォントを読み込まないため、プレビュー・PDF・PNG は代替フォントで表示されます。HTML エクスポートは元のフォントを読み込みます。揃えるには、エージェントにシステムフォントを使うよう依頼してください。
 ToolManualEdit = 要素を編集
 ManualEditHint = プレビューの要素かレイヤーを選んで変更します。変更はバージョンとして保存されます。
 CommentsTab = すべてのコメント

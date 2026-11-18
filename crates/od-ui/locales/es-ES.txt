@@ -1599,6 +1599,7 @@ FirstArtifactBody = Edítalo y anótalo en la vista previa y expórtalo cuando t
 FirstArtifactDismiss = Entendido
 RetryWaitsForLink = Esperando la conexión con Contour
 WorkspaceRecovering = Conexión con Contour interrumpida. Reconectando automáticamente…
+WebFontsBlocked = Las fuentes web no se cargan en Contour, así que la vista previa, el PDF y el PNG usan una fuente sustituta; la exportación HTML carga la original. Para que coincidan, pide al agente que use fuentes del sistema.
 ToolManualEdit = Editar elemento
 ManualEditHint = Haz clic en un elemento de la vista previa o elige una capa y cámbialo. Cada cambio se guarda como versión.
 CommentsTab = Todos los comentarios

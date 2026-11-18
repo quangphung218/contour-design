@@ -738,16 +738,16 @@ fn DsDetail(
                 next.extra
                     .insert(DEFAULT_DESIGN_SYSTEM_KEY.to_owned(), json!(id));
             }
-            detail.spawn(async move {
-                match shell.save_config(next).await {
-                    Ok(()) => say(Ok(if is_default {
-                        t(T::DefaultCleared)
-                    } else {
-                        t(T::DefaultSet)
-                    }
-                    .to_owned())),
-                    Err(e) => say(Err(e)),
+            // `spawn_then`: the save goes out even when the panel closes
+            // while an earlier save of this window is still waiting.
+            detail.spawn_then(shell.save_config(next), move |res| match res {
+                Ok(()) => say(Ok(if is_default {
+                    t(T::DefaultCleared)
+                } else {
+                    t(T::DefaultSet)
                 }
+                .to_owned())),
+                Err(e) => say(Err(e)),
             });
         }
     };

@@ -1592,6 +1592,7 @@ FirstArtifactBody = عدّله وعلّق عليه مباشرة في المعا�
 FirstArtifactDismiss = حسنًا
 RetryWaitsForLink = بانتظار الاتصال بـ Contour
 WorkspaceRecovering = انقطع الاتصال بـ Contour. جارٍ إعادة الاتصال تلقائيًا…
+WebFontsBlocked = لا تُحمَّل خطوط الويب في Contour، لذا تستخدم المعاينة وملفات PDF وPNG خطًا بديلًا؛ أما تصدير HTML فيحمّل الخط الأصلي. لتتطابق، اطلب من الوكيل استخدام خطوط النظام.
 ToolManualEdit = تعديل العنصر
 ManualEditHint = انقر عنصرًا في المعاينة أو اختر طبقة ثم غيّره. يُحفظ كل تغيير كإصدار.
 CommentsTab = كل التعليقات
