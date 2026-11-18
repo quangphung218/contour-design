@@ -249,7 +249,10 @@ when it ends; a failing scenario fails the run and its log is printed again
 at the end. `c4-depth` checks its 18 languages `OD_E2E_C4_TABS` at a time
 (default 4). `run.sh <script>…` runs only those scripts, one after another.
 `OD_E2E_SKIP_BUILD=1` reuses the UI bundle, `od` and the npm packages built
-by an earlier run. A scenario that dies, or `run.sh` stopped, leaves no
+by an earlier run. `OD_E2E_SHARD=K/N` runs every Nth scenario starting with
+the Kth (CI splits the suite in two); `OD_E2E_RETRIES=1` runs a failed
+scenario once more on its own and lists it in `test-results/logs/flaky.txt`
+when it passes then. A scenario that dies, or `run.sh` stopped, leaves no
 daemon behind: each scenario runs in a process group of its own, ended with
 it (`make e2e-qa`, `e2e/qa/run.sh`, likewise; `QA_SKIP_BUILD=1` there).
 
@@ -389,6 +392,9 @@ the release). See [release.md](release.md).
   saved by a pull request or a tag serves only that ref; those filled the
   10 GB repository cache and pushed `main`'s out, so pull requests built
   from cold.
+- e2e runs in two shards side by side (`OD_E2E_SHARD=1/2`, `2/2`: every
+  other scenario of the longest-first list); in one job it was the longest
+  job of a pull request (13–16 minutes).
 - e2e: a scenario that fails runs once more, alone (`OD_E2E_RETRIES=1`).
   One that passes then is flaky: a warning, a "flaky" section in the job
   summary, and `flaky-row:` lines in the log for

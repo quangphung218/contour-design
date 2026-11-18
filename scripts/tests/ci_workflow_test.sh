@@ -79,6 +79,7 @@ ruby -ryaml -e '
   puts "cache saves: #{saves.size}, from main only: #{saves.all? { |s| s["if"].to_s.include?("github.ref == \x27refs/heads/main\x27") }}"
   e2e = jobs["e2e"]
   puts "e2e retries: #{e2e["env"]["OD_E2E_RETRIES"]}"
+  puts "e2e shards: #{e2e["strategy"]["matrix"]["shard"].join(",")} env: #{e2e["env"]["OD_E2E_SHARD"]}"
   tests = jobs["test"]["steps"].map { |s| s["run"].to_s }
   puts "nextest: #{tests.any? { |r| r.include?("cargo nextest run --workspace") }} doc tests: #{tests.any? { |r| r.include?("cargo test --workspace --doc") }}"
 ' "$ci" > "$work/out" 2>&1
@@ -87,6 +88,7 @@ check "every job but changes and CI result is picked by changes" 'grep -qx "jobs
 check "every Rust cache is saved from main only" 'grep -qE "^caches: [1-9][0-9]*, saved from main only: true$" "$work/out"'
 check "apt package caches are saved from main only" 'grep -qE "^cache saves: [1-9][0-9]*, from main only: true$" "$work/out"'
 check "e2e runs a failed scenario once more" 'grep -qx "e2e retries: 1" "$work/out"'
+check "e2e runs in two shards that together cover the list" 'grep -qx "e2e shards: 1,2 env: \${{ matrix.shard }}/2" "$work/out"'
 check "the test job runs nextest and the doc tests" 'grep -qx "nextest: true doc tests: true" "$work/out"'
 
 # rust-cache hashes CARGO_* and RUST* variables into its key: one more at
