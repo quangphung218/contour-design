@@ -122,6 +122,8 @@ try {
   // A brand-named system carries the trademark note in the picker too.
   assert.match(await page.locator('[data-testid="design-system"] option[value="airbnb"]').getAttribute('title'), /Not affiliated with or endorsed by Airbnb/);
   assert.equal(await page.locator('[data-testid="design-system"] option[value="minimal"]').getAttribute('title'), null);
+  // Nothing picked yet: the picker still says its whole label on hover.
+  assert.equal(await page.locator('[data-testid="design-system"]').getAttribute('title'), 'No design system');
   // QA-111: at 1440 (and this test's 1360) the two pickers show their whole
   // name, with the composer's controls still on one row.
   const pickerFit = (id) => page.getByTestId(id).evaluate((e) => {

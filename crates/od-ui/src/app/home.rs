@@ -477,7 +477,11 @@ pub fn Home() -> impl IntoView {
                                 // The full name (the select may cut it), then the
                                 // trademark note of a brand-named system.
                                 title=move || {
-                                    let id = design_system.get()?;
+                                    // None picked: its label, cut at 1440 in
+                                    // Vietnamese, in full on hover.
+                                    let Some(id) = design_system.get() else {
+                                        return Some(t(T::NoneOption).to_owned());
+                                    };
                                     systems.with(|l| {
                                         let s = l.as_ref()?.iter().find(|s| s.id == id)?;
                                         let name = format!("{} · {}", crate::i18n::rebrand(&s.title), s.category);
