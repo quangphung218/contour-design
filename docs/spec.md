@@ -555,7 +555,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
 | Inspect | Set, reset, replay, extract style overrides |
 | Palette, tweaks, edit | Recolour, show the parameter panel, edit text |
 | Snapshot | Capture **without a real screenshot**: clone the DOM, copy computed styles, draw via SVG foreignObject |
-| Export-capture | Wait for fonts, images and 2 animation frames; walk each slide |
+| Export-capture | Wait for fonts, images and 2 animation frames; end finite animations and transitions, pause infinite ones (again after showing each slide; films leave them playing); walk each slide |
 | Guard | Anti redirect loop (always on), block focus stealing, Web Storage shim, measure content size |
 
 **Live reload** [S `project-watchers.ts`, `providers/project-events.ts`]:

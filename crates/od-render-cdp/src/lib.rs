@@ -954,9 +954,10 @@ impl Session {
         Ok(result.value().cloned().unwrap_or(Value::Null))
     }
 
-    /// Waits for fonts, images and two frames; reports slides and size.
-    async fn settle(&self) -> RenderResult<PageInfo> {
-        let v = self.eval(&script::settle()).await?;
+    /// Waits for fonts, images and two frames, finishing or leaving
+    /// `animations`; reports slides and size.
+    async fn settle(&self, animations: script::Animations) -> RenderResult<PageInfo> {
+        let v = self.eval(&script::settle(animations)).await?;
         let num = |k: &str| v.get(k).and_then(Value::as_u64).unwrap_or(0);
         let clamp = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
         Ok(PageInfo {
@@ -1139,7 +1140,7 @@ impl CdpRenderer {
     async fn slides(&self, target: &RenderTarget, mode: DeckMode) -> RenderResult<Slides> {
         let mut s = self.open(target).await?;
         let result = async {
-            let info = s.settle().await?;
+            let info = s.settle(script::Animations::Finish).await?;
             if is_deck(mode, &info)? {
                 s.fit_to_slides(&info).await?;
                 let mut images = Vec::with_capacity(info.slides);
@@ -1184,7 +1185,7 @@ impl CdpRenderer {
     async fn pdf(&self, target: &RenderTarget, mode: DeckMode) -> RenderResult<Vec<u8>> {
         let mut s = self.open(target).await?;
         let result = async {
-            let info = s.settle().await?;
+            let info = s.settle(script::Animations::Finish).await?;
             let params = if is_deck(mode, &info)? {
                 s.fit_to_slides(&info).await?;
                 s.eval(&script::print_slides(s.width, s.height)).await?;
@@ -1218,7 +1219,7 @@ impl CdpRenderer {
     ) -> RenderResult<Vec<u8>> {
         let s = self.open(target).await?;
         let result = async {
-            let info = s.settle().await?;
+            let info = s.settle(script::Animations::Finish).await?;
             let height = if options.full_page {
                 info.scroll_height.clamp(1, MAX_PAGE_HEIGHT)
             } else {
@@ -1255,7 +1256,7 @@ impl CdpRenderer {
             .map_err(|e| RenderError::Failed(format!("{}: {e}", out_dir.display())))?;
         let s = self.open(target).await?;
         let result = tokio::time::timeout(FRAME_CAPTURE_TIMEOUT, async {
-            s.settle().await?;
+            s.settle(script::Animations::Play).await?;
             let meta = s.eval(&script::frame_ready(options.require_timeline)).await?;
             if options.require_timeline && meta.get("rootTimeline") != Some(&Value::Bool(true)) {
                 let id = meta.get("rootId").and_then(Value::as_str).unwrap_or("main");
@@ -1317,7 +1318,7 @@ impl CdpRenderer {
         let mut s = self.open(target).await?;
         let result =
             async {
-                let info = s.settle().await?;
+                let info = s.settle(script::Animations::Finish).await?;
                 is_deck(DeckMode::Deck, &info)?;
                 s.fit_to_slides(&info).await?;
                 let mut out = Vec::with_capacity(info.slides);
@@ -1343,7 +1344,7 @@ impl CdpRenderer {
     pub async fn evaluate(&self, target: &RenderTarget, js: &str) -> RenderResult<Value> {
         let s = self.open(target).await?;
         let result = async {
-            s.settle().await?;
+            s.settle(script::Animations::Finish).await?;
             s.eval(js).await
         }
         .await;

@@ -77,7 +77,7 @@ xattr -dr com.apple.quarantine /Applications/Contour.app
 Or without Terminal: on **macOS 15 and later**, open Contour once, then go
 to **System Settings ▸ Privacy & Security ▸ Open Anyway** and open it
 again; on macOS 13.3 to 14, Control-click the app ▸ **Open**. Step by step:
-[getting started](docs/getting-started.md#open-an-unsigned-build-on-macos).
+[getting started](docs/getting-started.md#open-a-build-without-developer-id-on-macos).
 
 ### Build from source
 
