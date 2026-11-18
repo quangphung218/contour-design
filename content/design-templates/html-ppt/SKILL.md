@@ -53,7 +53,7 @@ All pages share a token-based design system in `assets/base.css`.
 npx skills add https://github.com/lewislulu/html-ppt-skill
 ```
 
-One command, no build. Pure static HTML/CSS/JS with only CDN webfonts.
+One command, no build. Pure static HTML/CSS/JS with system font stacks.
 
 ## What the skill gives you
 
@@ -210,7 +210,7 @@ html-ppt/
 ├── references/              (detailed catalogs, load as needed)
 ├── assets/
 │   ├── base.css             (tokens + primitives — do not edit per deck)
-│   ├── fonts.css            (webfont imports)
+│   ├── fonts.css            (system font notes)
 │   ├── runtime.js           (keyboard + presenter + overview + theme cycle)
 │   ├── themes/*.css         (36 token overrides, one per theme)
 │   └── animations/

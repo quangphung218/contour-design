@@ -73,8 +73,8 @@ fills, dashed borders, slight rotations.
      "next step", "page-1", or "needs review".
 4. **Write** a single HTML document:
    - `<!doctype html>` through `</html>`, CSS inline.
-   - Use the system's available "Caveat", "Patrick Hand", or "Architects
-     Daughter" fonts via Google Fonts; otherwise fall back to italic serif.
+   - Use system font stacks: "Caveat", "Patrick Hand", or "Architects
+     Daughter" when installed, then fall back to italic serif.
    - Slight rotations everywhere (`transform: rotate(-0.6deg)`) to break
      the grid and feel hand-drawn.
    - `data-od-id` on header, tabs, sidebar, KPIs, chart, bar-chart,

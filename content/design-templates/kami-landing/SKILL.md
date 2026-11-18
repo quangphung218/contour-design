@@ -69,7 +69,7 @@ parameters:
       resolves per-glyph fallback automatically.
 outputs:
   - path: <out>/index.html
-    description: Self-contained HTML, kami CSS inlined, zero JS, zero external dependencies beyond Google Fonts.
+    description: Self-contained HTML, kami CSS inlined, zero JS, zero external dependencies; use system font stacks.
 capabilities_required:
   - file-write
 example_prompt: |

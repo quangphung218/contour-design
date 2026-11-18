@@ -68,8 +68,9 @@ scribbly) but keep the connectors and annotations loose and informal.
 4. **Write** a single HTML document:
    - `<!doctype html>` through `</html>`, CSS inline, no external JS, no
      external images (CSS/SVG placeholders only).
-   - Use Inter / system-ui for the board and IBM Plex Mono for labels via
-     Google Fonts; a light marker font is allowed for annotations only.
+   - Use system font stacks: Inter / system-ui for the board and IBM Plex
+     Mono / monospace for labels; a light marker font (ending in `cursive`)
+     is allowed for annotations only.
    - Defined dark device-frame borders, medium-grey content blocks on white
      screens, and a single accent color for arrows and annotations so the
      board reads clearly even as a small thumbnail.

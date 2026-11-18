@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A design started from a bundled template (27 skill templates such as the article, card, deck, poster and résumé examples, and the Urdu design system) no longer links Google Fonts, so the preview shows no blocked-font notice and the exported HTML uses the same system fonts as the preview, PDF and PNG. Chinese text falls back to PingFang SC, Hiragino Sans GB or Microsoft YaHei (Songti SC or SimSun for serif), Urdu to Jameel Noori Nastaleeq.
+
 ## [0.2.0-beta.48] - 2026-11-18
 
 ### Fixed

@@ -87,7 +87,7 @@ od:
       required: false
     - name: display_font_url
       type: string
-      description: "Display font name with spaces encoded as '+' (e.g., 'Syne', 'DM+Sans'). Used in Google Fonts URL."
+      description: "Display font name with spaces encoded as '+' (e.g., 'Syne', 'DM+Sans'). Not used: the template links no web font."
       required: true
     - name: display_font_css
       type: string
@@ -95,7 +95,7 @@ od:
       required: true
     - name: body_font_url
       type: string
-      description: "Body font name with spaces encoded as '+' (e.g., 'DM+Sans', 'IBM+Plex+Serif'). Used in Google Fonts URL."
+      description: "Body font name with spaces encoded as '+' (e.g., 'DM+Sans', 'IBM+Plex+Serif'). Not used: the template links no web font."
       required: true
     - name: body_font_css
       type: string
@@ -126,7 +126,7 @@ Pre-launch pages are your first handshake with future users. This skill builds a
    - **HTML tokens** (`{{LOGO_MARK}}`): If using text initials, HTML-escape them by default. If using inline SVG, you must strictly sanitize it using an allowlist: strip `<script>` tags, event handlers (`on*`), `<foreignObject>`, external refs (`href`, `xlink:href`, `url()`), and any disallowed attributes/elements before insertion. If the SVG cannot be safely sanitized, fallback to escaped text initials. Never emit raw, unsanitized arbitrary HTML. Ensure any SVG scales cleanly within its container.
    - **Color expression tokens** (`{{BG_EXPRESSION}}`, `{{FG_EXPRESSION}}`, `{{ACCENT_EXPRESSION}}`, `{{DECO_EXPRESSION}}`, `{{STRIPE_EXPRESSION}}`, `{{SUCCESS_EXPRESSION}}`, `{{BORDER_EXPRESSION}}`, `{{BTN_LABEL_EXPRESSION}}`, `{{TICKER_BG_EXPRESSION}}`, `{{TICKER_FG_EXPRESSION}}`, `{{DECO_STROKE_EXPRESSION}}`, `{{LOGO_SHADOW_EXPRESSION}}`, `{{LOGO_FG_EXPRESSION}}`): Must strictly adhere to an explicit color grammar (`#hex`, `rgb`/`rgba`, `hsl`/`hsla`, `oklch`, or `color-mix()` using only local variables). Hard reject any input containing `;`, `{}`, `<`, `>`, comments (`/*`), `@`, `url(`, or external refs to prevent CSS injection. Do not wrap in `#` or add extra quotes. Examples: `rgba(196, 169, 154, 0.38)`, `color-mix(in srgb, var(--fg) 38%, transparent)`, `#FDE8DF`. Insert as-is into `:root` CSS variables. Derive `--success` from DESIGN.md if present; otherwise use the allowed fallback `#2D6A4F` only.
    - **Font name tokens** (`{{DISPLAY_FONT_CSS}}`, `{{BODY_FONT_CSS}}`): These are CSS font-family values, already quoted if they contain spaces (e.g., `'DM Sans'`, `Syne`). Insert as-is into `--font-display` and `--font-body` declarations; do NOT add extra quotes.
-   - **Font URL tokens** (`{{DISPLAY_FONT_URL}}`, `{{BODY_FONT_URL}}`): Spaces must be encoded as `+` for the Google Fonts URL (e.g., `DM+Sans`, `IBM+Plex+Serif`). Validate the URL is well-formed before insertion.
+   - **No font links:** do not add a Google Fonts `<link>` or `@import`. Use system font stacks: end `--font-display` and `--font-body` with a system fallback (`serif`, `sans-serif` or `monospace`).
 3. **Verify token mapping rules** — All color tokens are now in CSS variables:
    - `--bg` = `{{BG_EXPRESSION}}` (e.g., `#FDE8DF`)
    - `--fg` = `{{FG_EXPRESSION}}` (e.g., `#1A1410`)
