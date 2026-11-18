@@ -61,6 +61,7 @@ Goal: a first-time user reaches Home with a working agent or API key.
 | ONB-12 | Installed but not signed in | Mock `claude` fails every prompt until signed in | Open `/onboarding`; sign in; Check again | The failed test shows "Then open a new Terminal window and run claude to sign in."; after Check again the test passes and Continue is on | P1 | auto |
 | ONB-13 | Installed agent fails its test, not a sign-in issue | Mock `claude` rejects every prompt | Open `/onboarding` at 1440×900 | Claude stays a card; Codex install card and the API key path are shown; no sign-in hint, no brand step; Continue is off; the test result and "Claude Code did not pass its test…" sit under the Claude card, above the install cards, inside the first 900 px | P1 | auto |
 | ONB-14 | Brand extraction uses the tested agent | Broken mock `claude`, working mock `codex` | Pick Codex; wait for its test; enter a website; Extract | The extraction request names `codex` as its agent | P2 | auto |
+| ONB-15 | Agent test timeout on a Mac names the permission dialog (QA-112) | `/api/test/connection` answers a 45 s timeout | Open onboarding with a Mac user agent, then a Linux one | Mac: the line and the lead point at the macOS permission dialog and Check again; Linux: "Update it" as before | P2 | auto |
 
 ## 2. Create a project from Home (`home.qa.mjs`)
 

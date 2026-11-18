@@ -19,9 +19,25 @@ pub enum TestState {
     Failed(String),
 }
 
-/// One line describing a test result, as the original's copy.
+/// The page runs on a Mac (the daemon is on the same machine).
+pub(crate) fn on_mac() -> bool {
+    web_sys::window()
+        .and_then(|w| w.navigator().user_agent().ok())
+        .is_some_and(|ua| ua.contains("Mac OS"))
+}
+
+/// Whether `v` is an agent test that timed out on a Mac: there the usual
+/// cause is a macOS permission dialog the agent waits on (QA-112), not the
+/// agent itself.
 #[must_use]
-pub fn describe_test(v: &Value) -> (bool, String) {
+pub fn agent_timed_out_on_mac(v: &Value, mac: bool) -> bool {
+    mac && v["kind"] == "timeout" && !v["agentName"].as_str().unwrap_or_default().is_empty()
+}
+
+/// One line describing a test result, as the original's copy. `mac`: the
+/// page runs on a Mac.
+#[must_use]
+pub fn describe_test(v: &Value, mac: bool) -> (bool, String) {
     let ms = v["latencyMs"].as_u64().unwrap_or(0).to_string();
     let sample = v["sample"].as_str().unwrap_or_default();
     let detail = v["detail"].as_str().unwrap_or_default();
@@ -41,6 +57,7 @@ pub fn describe_test(v: &Value) -> (bool, String) {
         "not_found_model" => tf(T::TestNotFoundModel, &[model]),
         "invalid_base_url" => tf(T::TestInvalidBaseUrl, &[detail]),
         "rate_limited" => t(T::TestRateLimited).to_owned(),
+        "timeout" if agent_timed_out_on_mac(v, mac) => tf(T::TestTimeoutMac, &[&ms]),
         "timeout" => tf(T::TestTimeout, &[&ms]),
         "agent_not_installed" => tf(T::TestAgentMissing, &[name]),
         "agent_spawn_failed" => tf(T::TestAgentSpawn, &[name, detail]),
@@ -57,7 +74,7 @@ pub fn TestResultLine(state: RwSignal<Option<TestState>>, testid: &'static str) 
             {move || state.get().map(|s| match s {
                 TestState::Running => view! { <span class="muted"><span class="spinner"></span>{t(T::TestRunning)}</span> }.into_any(),
                 TestState::Done(v) => {
-                    let (ok, text) = describe_test(&v);
+                    let (ok, text) = describe_test(&v, on_mac());
                     view! {
                         <span class=if ok { "ok-text" } else { "error-text" } data-ok=ok.to_string()>
                             {icon(if ok { Glyph::CheckCircle } else { Glyph::Warning })}{text}
@@ -346,5 +363,33 @@ pub fn ByokForm(#[prop(optional, into)] on_saved: Option<Callback<()>>) -> impl 
                     disabled=move || key_missing() || (azure() && base_url.with(|b| b.trim().is_empty()))>{t(T::SaveProvider)}</button>
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_timeout_on_a_mac_names_the_permission_dialog() {
+        let agent = json!({ "ok": false, "kind": "timeout", "latencyMs": 45_002, "agentName": "Claude Code" });
+        assert_eq!(
+            describe_test(&agent, true),
+            (false, tf(T::TestTimeoutMac, &["45002"]))
+        );
+        assert_eq!(
+            describe_test(&agent, false),
+            (false, tf(T::TestTimeout, &["45002"]))
+        );
+        // An API key test has no agent and no dialog to wait on.
+        let byok = json!({ "ok": false, "kind": "timeout", "latencyMs": 30_000 });
+        assert_eq!(
+            describe_test(&byok, true),
+            (false, tf(T::TestTimeout, &["30000"]))
+        );
+        assert!(!agent_timed_out_on_mac(
+            &json!({ "ok": false, "kind": "unknown", "agentName": "Codex" }),
+            true
+        ));
     }
 }

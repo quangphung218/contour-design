@@ -12,11 +12,11 @@ Releases are published on the repository's
 
 | Platform | File | Notes |
 |---|---|---|
-| macOS 13.3 or later (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Open the `.dmg` and drag Contour to Applications. Unsigned builds need one extra step the first time: see [Open an unsigned build on macOS](#open-an-unsigned-build-on-macos). |
+| macOS 13.3 or later (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Open the `.dmg` and drag Contour to Applications. Builds without an Apple Developer ID need one extra step the first time: see [Open a build without Developer ID on macOS](#open-a-build-without-developer-id-on-macos). |
 | Ubuntu 22.04 LTS or 24.04 LTS (x64) | `Contour_<version>_amd64.deb` or `Contour_<version>_amd64.AppImage` | `sudo apt install ./Contour_<version>_amd64.deb`, or run the AppImage. See [Install on Ubuntu](#install-on-ubuntu). Other x64 distributions with WebKitGTK 4.1 are best effort. |
 | Windows 10 or 11 (x64) | `Contour_<version>_x64_en-US.msi` | Double-click it; the installer is unsigned, so SmartScreen asks once. See [Install on Windows](#install-on-windows). |
 
-#### Open an unsigned build on macOS
+#### Open a build without Developer ID on macOS
 
 A build without a signing certificate is stopped by macOS the first time
 ("Apple could not verify Contour…"). Allow it once; later launches open

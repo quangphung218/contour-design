@@ -453,6 +453,7 @@ messages! {
     TestInvalidBaseUrl => "Base URL is not usable: {0}", "Base URL không dùng được: {0}";
     TestRateLimited => "Rate limited. Try again in a moment.", "Bị giới hạn tần suất. Thử lại sau ít phút.";
     TestTimeout => "Test timed out after {0} ms.", "Hết giờ kiểm tra sau {0} ms.";
+    TestTimeoutMac => "Test timed out after {0} ms. macOS may be waiting on a permission dialog for Contour.", "Hết giờ kiểm tra sau {0} ms. Có thể macOS đang chờ trả lời hộp thoại xin quyền cho Contour.";
     TestAgentMissing => "{0} is not installed or not in PATH.", "{0} chưa cài hoặc không có trong PATH.";
     TestAgentSpawn => "Could not start {0}: {1}.", "Không chạy được {0}: {1}.";
     TestUnknown => "Test failed: {0}", "Kiểm tra lỗi: {0}";
@@ -738,6 +739,7 @@ messages! {
     SignInAfterInstall => "Then open a new Terminal window and run {0} to sign in.", "Sau đó mở cửa sổ Terminal mới và chạy {0} để đăng nhập.";
     StillNoAgent => "Still no agent found. Open a new Terminal window and run {0} or {1}.", "Vẫn chưa thấy agent nào. Mở cửa sổ Terminal mới và chạy {0} hoặc {1}.";
     AgentTestFailedLead => "{0} did not pass its test. Update it, or install one of these instead.", "{0} chưa qua bài test. Cập nhật nó, hoặc cài một agent dưới đây.";
+    AgentTestTimeoutLeadMac => "Allow Contour in the macOS dialog, then Check again. Or install one of these instead.", "Cho phép Contour trong hộp thoại của macOS, rồi bấm Kiểm tra lại. Hoặc cài một agent dưới đây.";
     AgentsNoneHintWindows => "No coding agent found yet. Install one from its guide below, or use an API key.", "Chưa có coding agent nào. Cài theo hướng dẫn bên dưới, hoặc dùng API key.";
     ClaudeAccount => "Needs a Claude Pro, Max, Team or Enterprise plan, or a Console account.", "Cần gói Claude Pro, Max, Team hoặc Enterprise, hoặc tài khoản Console.";
     CodexAccount => "Needs a ChatGPT plan or an OpenAI API key.", "Cần gói ChatGPT hoặc API key của OpenAI.";

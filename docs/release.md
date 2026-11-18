@@ -96,11 +96,21 @@ while the release is still a draft; a published release is never rewritten
 
 ## Signing and notarisation (macOS)
 
-Optional. Without these secrets the workflow builds an **unsigned** bundle,
-prints a warning and carries on. Users then allow it once: System Settings ▸
-Privacy & Security ▸ Open Anyway on macOS 15 and later, Control-click ▸ Open
-on macOS 14 and earlier, or `xattr -dr com.apple.quarantine
+Optional. Without these secrets the workflow signs the bundle **ad-hoc**
+(`APPLE_SIGNING_IDENTITY=-`), prints a warning and carries on. Gatekeeper
+still blocks it: users allow it once with System Settings ▸ Privacy &
+Security ▸ Open Anyway on macOS 15 and later, Control-click ▸ Open on
+macOS 14 and earlier, or `xattr -dr com.apple.quarantine
 /Applications/Contour.app` (see getting-started.md).
+
+The ad-hoc signature seals the whole `.app` (resources and `Info.plist`),
+so macOS can keep a privacy grant such as Documents access. A linker-only
+signature, what `cargo` leaves on the binary, cannot: macOS asked for
+Documents on every agent run (QA-112). Each version has a new code hash, so
+macOS asks once again after each update. The "Sealed signature" step fails
+the release unless the `.app` inside the `.dmg` and inside the updater
+archive passes `scripts/macos-signature.sh` (`codesign --verify --deep
+--strict` and sealed resources); run it on a local build the same way.
 
 Add them under Settings ▸ Secrets and variables ▸ Actions:
 
@@ -118,7 +128,8 @@ notarised and stapled by the Tauri CLI. The values reach only the
 environment of the "Tauri bundle" step (never `GITHUB_ENV` or other steps)
 and are never printed.
 
-To sign a local build, export the same variables before `make dmg`.
+To sign a local build, export the same variables before `make dmg`; for
+an ad-hoc one, `APPLE_SIGNING_IDENTITY=- make dmg`.
 
 ## Updater signing
 

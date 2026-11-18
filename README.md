@@ -66,8 +66,9 @@ release has a `SHA256SUMS` file.
 | Ubuntu 22.04 LTS or later (x64) | `Contour_<version>_amd64.deb` or `.AppImage` | `sudo apt install ./Contour_<version>_amd64.deb` ([details](docs/getting-started.md#install-on-ubuntu)) |
 | Windows 10 and 11 (x64) | `Contour_<version>_x64_en-US.msi` | SmartScreen asks once: **More info ▸ Run anyway** ([details](docs/getting-started.md#install-on-windows)) |
 
-**macOS: open an unsigned build.** Drag Contour to Applications, then run
-this once in Terminal:
+**macOS: "“Contour” Not Opened".** The build has no Apple Developer ID, so
+the first launch says "Apple could not verify “Contour” is free of
+malware…". Drag Contour to Applications, then run this once in Terminal:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Contour.app
@@ -76,7 +77,7 @@ xattr -dr com.apple.quarantine /Applications/Contour.app
 Or without Terminal: on **macOS 15 and later**, open Contour once, then go
 to **System Settings ▸ Privacy & Security ▸ Open Anyway** and open it
 again; on macOS 13.3 to 14, Control-click the app ▸ **Open**. Step by step:
-[getting started](docs/getting-started.md#open-an-unsigned-build-on-macos).
+[getting started](docs/getting-started.md#open-a-build-without-developer-id-on-macos).
 
 ### Build from source
 

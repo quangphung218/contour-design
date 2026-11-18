@@ -57,7 +57,9 @@ step "bundle/Tauri bundle" "$work/bundle.sh"
 bundle() { (cd "$work" && env WORK="$work" RUNNER_TEMP="$work" PATH="$work/bin:$PATH" TAURI_CLI_VERSION=0 "$@" bash "$work/macos-bundle.sh") >"$work/out" 2>&1; }
 empty="APPLE_CERTIFICATE= APPLE_CERTIFICATE_PASSWORD= APPLE_SIGNING_IDENTITY= APPLE_ID= APPLE_PASSWORD= APPLE_TEAM_ID="
 bundle RUNNER_OS=macOS $empty
-check "no secrets: unsigned build, warning, no empty APPLE_* passed on" '[ ! -s "$work/npx-env" ] && grep -q "::warning::macOS signing secrets are not set" "$work/out"'
+check "no secrets: ad-hoc signing (identity -), warning, no empty APPLE_* passed on" '[ "$(cat "$work/npx-env")" = "APPLE_SIGNING_IDENTITY=-" ] && grep -q "::warning::macOS signing secrets are not set; signing ad-hoc" "$work/out"'
+bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c
+check "part of the signing secrets: ad-hoc, the certificate not passed on" '[ "$(cat "$work/npx-env")" = "APPLE_SIGNING_IDENTITY=-" ]'
 bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p APPLE_SIGNING_IDENTITY=i
 check "signing only: certificate passed on, notarisation unset" '[ "$(cut -d= -f1 "$work/npx-env" | LC_ALL=C sort | tr "\n" " ")" = "APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY " ] && grep -q "not notarised" "$work/out" && ! grep -qE "=(c|p|i)$" "$work/out"'
 bundle RUNNER_OS=macOS $empty APPLE_CERTIFICATE=c APPLE_CERTIFICATE_PASSWORD=p APPLE_SIGNING_IDENTITY=i APPLE_ID=a APPLE_PASSWORD=w APPLE_TEAM_ID=t TAURI_SIGNING_PRIVATE_KEY=k3y
@@ -111,6 +113,117 @@ touch "$work/lc/out/appimage/C.AppImage" "$work/lc/out/appimage/C.AppImage.sig" 
 sed -i.bak 's|\${{ matrix.out }}|out|' "$work/collect.sh"
 (cd "$work/lc" && bash "$work/collect.sh") >"$work/out" 2>&1; rc=$?
 check "Linux: the AppImage, its .sig and the .deb" '[ $rc -eq 0 ] && [ "$(ls "$work/lc/dist-release" | tr "\n" " ")" = "C.AppImage C.AppImage.sig C.deb " ]'
+
+# The sealed signature check (scripts/macos-signature.sh, QA-112). Fake
+# codesign: an app's Contents/fake-sig says what it is (sealed, linker: not
+# even --verify passes, linker-verifies: --verify passes but -dv shows the
+# linker's signature only). Fake hdiutil: a .dmg file holds the folder it
+# "mounts".
+signature_check="$here/../macos-signature.sh"
+mkdir -p "$work/sigbin"
+cat > "$work/sigbin/codesign" <<'SH'
+#!/bin/sh
+for a; do app="$a"; done
+state="$(cat "$app/Contents/fake-sig" 2>/dev/null)"
+case "$1" in
+  --verify) [ "$state" = sealed ] || [ "$state" = linker-verifies ] || { echo "$app: code object is not signed at all" >&2; exit 1; } ;;
+  -dv)
+    if [ "$state" = sealed ]; then printf 'Signature=adhoc\nSealed Resources version=2 rules=13 files=3\n' >&2
+    else printf 'CodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSealed Resources=none\n' >&2; fi ;;
+esac
+SH
+cat > "$work/sigbin/hdiutil" <<'SH'
+#!/bin/sh
+echo "hdiutil $1" >> "$WORK/hdiutil-calls"
+case "$1" in
+  attach)
+    while [ $# -gt 1 ]; do [ "$1" = -mountpoint ] && mnt="$2"; shift; done
+    cp -R "$(cat "$1")/." "$mnt/" ;;
+esac
+SH
+chmod +x "$work/sigbin/codesign" "$work/sigbin/hdiutil"
+# fake_app <dir> <state>: dir/Contour.app marked with that state.
+fake_app() { mkdir -p "$1/Contour.app/Contents/MacOS" && printf '%s' "$2" > "$1/Contour.app/Contents/fake-sig"; }
+# fake_dmg <file> <state|none>; fake_tar <file> <state>.
+# Their contents are built in $work/fix, not next to them.
+fake_dmg() { local d="$work/fix/${1##*/}"; rm -rf "$d" && mkdir -p "$d" && { [ "$2" = none ] || fake_app "$d" "$2"; } && printf '%s' "$d" > "$1"; }
+fake_tar() { local d="$work/fix/${1##*/}"; rm -rf "$d" && mkdir -p "$d" && fake_app "$d" "$2" && tar -czf "$1" -C "$d" Contour.app; }
+sig() { rm -f "$work/hdiutil-calls"; (cd "$work" && env WORK="$work" PATH="$work/sigbin:$PATH" bash "$signature_check" "$@") >"$work/out" 2>&1; }
+mkdir -p "$work/sig"
+fake_dmg "$work/sig/C.dmg" sealed; fake_tar "$work/sig/C.app.tar.gz" sealed
+sig "$work/sig/C.dmg" "$work/sig/C.app.tar.gz"; rc=$?
+check "sealed .app in the .dmg and the updater archive: passes" '[ $rc -eq 0 ] && grep -q "^ok   C.dmg ▸ Contour.app: Signature=adhoc Sealed Resources version=2" "$work/out" && grep -q "^ok   C.app.tar.gz ▸ Contour.app" "$work/out"'
+check "the .dmg is mounted read-only and detached again" 'grep -q -- "-readonly" <<< "$(grep -n attach "$signature_check")" && [ "$(tr "\n" " " < "$work/hdiutil-calls")" = "hdiutil attach hdiutil detach " ]'
+fake_dmg "$work/sig/C.dmg" linker
+sig "$work/sig/C.dmg" "$work/sig/C.app.tar.gz"; rc=$?
+check "linker-only .app in the .dmg (--verify fails): fails" '[ $rc -ne 0 ] && grep -q "::error::C.dmg ▸ Contour.app: codesign --verify --deep --strict failed" "$work/out" && grep -q "not signed at all" "$work/out" && grep -q "hdiutil detach" "$work/hdiutil-calls"'
+fake_dmg "$work/sig/C.dmg" sealed; fake_tar "$work/sig/C.app.tar.gz" linker-verifies
+sig "$work/sig/C.dmg" "$work/sig/C.app.tar.gz"; rc=$?
+check "--verify passes but no sealed resources: fails" '[ $rc -ne 0 ] && grep -q "::error::C.app.tar.gz ▸ Contour.app: the signature is the linker.s only" "$work/out" && grep -q "Sealed Resources=none" "$work/out"'
+fake_dmg "$work/sig/C.dmg" none
+sig "$work/sig/C.dmg"; rc=$?
+check "a .dmg with no .app: fails" '[ $rc -ne 0 ] && grep -q "::error::C.dmg: no .app inside" "$work/out"'
+sig "$work/sig/missing.dmg" "$work/sig/missing.app.tar.gz"; rc=$?
+check "missing files: fail" '[ $rc -ne 0 ] && [ "$(grep -c "not found" "$work/out")" = 2 ]'
+sig; rc=$?
+check "no file given: fails" '[ $rc -ne 0 ]'
+sig "$work/sig/C.zip"; rc=$?
+check "an unknown file type: fails" '[ $rc -ne 0 ] && grep -q "not a .dmg" "$work/out"'
+
+# The workflow step checks what is shipped: the .dmg, and the updater
+# archive when there is one.
+step "macos-universal/Sealed signature" "$work/sealed.sh"
+sealed_step() {
+  rm -rf "$work/ss" && mkdir -p "$work/ss/dist-release" && ln -s "$here/.." "$work/ss/scripts"
+  for f in "$@"; do
+    case "$f" in
+      *.dmg) fake_dmg "$work/ss/dist-release/$f" sealed ;;
+      *.tar.gz) fake_tar "$work/ss/dist-release/$f" sealed ;;
+      *) touch "$work/ss/dist-release/$f" ;;
+    esac
+  done
+  (cd "$work/ss" && env WORK="$work" PATH="$work/sigbin:$PATH" bash "$work/sealed.sh") >"$work/out" 2>&1
+}
+sealed_step Contour_9.9.9_universal.dmg Contour_9.9.9_universal.app.tar.gz Contour_9.9.9_universal.app.tar.gz.sig; rc=$?
+check "Sealed signature step: the .dmg and the updater archive" '[ $rc -eq 0 ] && [ "$(grep -c "^ok   " "$work/out")" = 2 ]'
+sealed_step Contour_9.9.9_universal.dmg; rc=$?
+check "Sealed signature step without the updater key: the .dmg" '[ $rc -eq 0 ] && [ "$(grep -c "^ok   " "$work/out")" = 1 ]'
+sealed_step Contour_9.9.9_universal.app.tar.gz; rc=$?
+check "Sealed signature step with no .dmg: fails" '[ $rc -ne 0 ]'
+ruby -ryaml -e '
+  steps = YAML.load_file(ARGV[0])["jobs"]["macos-universal"]["steps"]
+  at = ->(&f) { steps.index(&f) or abort("missing step") }
+  bundle = at.() { |s| s["name"] == "Tauri bundle" }
+  collect = at.() { |s| s["name"] == "Collect files" }
+  sealed = at.() { |s| s["name"] == "Sealed signature" }
+  upload = at.() { |s| s["uses"].to_s.start_with?("actions/upload-artifact") }
+  puts(bundle < collect && collect < sealed && sealed < upload)' "$workflow" > "$work/order" 2>&1
+check "Sealed signature runs on the collected files, before they are uploaded" 'grep -qx true "$work/order"'
+
+# On macOS, the real codesign and hdiutil: a linker-signed app (what cargo
+# leaves) fails, the same app signed ad-hoc as Tauri does passes in a real
+# .dmg and .app.tar.gz, and a resource changed after signing fails.
+if [ "$(uname)" = Darwin ] && command -v cc > /dev/null; then
+  real="$work/real" && mkdir -p "$real/src/Contour.app/Contents/MacOS" "$real/src/Contour.app/Contents/Resources"
+  printf 'int main(void) { return 0; }\n' > "$real/main.c"
+  cc -o "$real/src/Contour.app/Contents/MacOS/od-desktop" "$real/main.c"
+  printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleExecutable</key><string>od-desktop</string><key>CFBundleIdentifier</key><string>dev.contour.test</string></dict></plist>\n' > "$real/src/Contour.app/Contents/Info.plist"
+  echo ui > "$real/src/Contour.app/Contents/Resources/index.html"
+  realsig() { (cd "$work" && bash "$signature_check" "$@") >"$work/out" 2>&1; }
+  realsig "$real/src/Contour.app"; rc=$?
+  check "macOS: a linker-signed .app fails" '[ $rc -ne 0 ] && grep -q "::error::" "$work/out"'
+  codesign --force -s - --options runtime "$real/src/Contour.app/Contents/MacOS/od-desktop" 2>/dev/null
+  codesign --force -s - --options runtime "$real/src/Contour.app" 2>/dev/null
+  hdiutil create -quiet -fs HFS+ -volname Contour -srcfolder "$real/src" -ov -format UDZO "$real/C.dmg"
+  tar -czf "$real/C.app.tar.gz" -C "$real/src" Contour.app
+  realsig "$real/C.dmg" "$real/C.app.tar.gz"; rc=$?
+  check "macOS: the ad-hoc signed .app passes in a real .dmg and .app.tar.gz" '[ $rc -eq 0 ] && [ "$(grep -c "^ok   .*Signature=adhoc Sealed Resources version=2" "$work/out")" = 2 ]'
+  echo changed > "$real/src/Contour.app/Contents/Resources/index.html"
+  realsig "$real/src/Contour.app"; rc=$?
+  check "macOS: a resource changed after signing fails" '[ $rc -ne 0 ] && grep -q "codesign --verify --deep --strict failed" "$work/out"'
+else
+  echo "skip real codesign checks (macOS only)"
+fi
 
 # The draft's files: latest.json from the .sig files, in SHA256SUMS.
 step "Checksums and notes" "$work/sums.sh"

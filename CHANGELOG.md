@@ -10,6 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- macOS: the app in the `.dmg` and in the update is now signed ad-hoc with its resources sealed, not only linker-signed, so macOS keeps "Allow" for Documents and other privacy prompts instead of asking on every agent run. macOS still asks once after each update, as each version is a new app to it. An agent test that times out on a Mac now says macOS may be waiting on a permission dialog, instead of advising to update the agent. Troubleshooting is titled with the current Gatekeeper wording ("“Contour” Not Opened").
 - PDF, PNG, JPEG, WebP and PPTX exports show the page as it looks once its entrance animations end. A headline that faded or slid in was missing from the PDF and faded in the PNG; each slide of a deck is now taken after its own animations too, and so are animations inside web components (open shadow roots) and frames. Animations that never end are held still. MP4 films still play CSS animations frame by frame.
 
 ## [0.2.0-beta.49] - 2026-11-18

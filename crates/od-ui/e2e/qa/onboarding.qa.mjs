@@ -392,4 +392,30 @@ test('ONB-14', 'Brand extraction runs the agent the user picked and tested, not 
   assert.equal((await request).postDataJSON().agentId, 'codex');
 }, brokenAndCodex);
 
+// QA-112: on a Mac a test that times out is most often an agent waiting on a
+// macOS permission dialog (Documents), so the advice points at the dialog,
+// not at updating the agent. Elsewhere the advice stays. The daemon's answer
+// is the one a 45 s timeout gives.
+test('ONB-15', 'An agent test that times out on a Mac points at the macOS permission dialog', async ({ d, newPage }) => {
+  const timedOut = { ok: false, kind: 'timeout', latencyMs: 45_002, agentName: 'Claude Code', detail: 'no answer within 45000 ms' };
+  const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+  const linux = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+  const lines = async (userAgent) => {
+    const { page } = await newPage({ userAgent });
+    await page.route('**/api/test/connection', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(timedOut) }));
+    await page.goto(d.base + '/onboarding');
+    await page.locator('[data-agent="claude"].active').waitFor();
+    await page.locator('[data-testid="onboarding-test"] [data-ok="false"]').waitFor();
+    const lead = page.getByTestId('onboarding-test-lead');
+    await lead.waitFor();
+    return [await page.getByTestId('onboarding-test').innerText(), await lead.innerText()];
+  };
+  const [macLine, macLead] = await lines(mac);
+  assert.equal(macLine.trim(), 'Test timed out after 45002 ms. macOS may be waiting on a permission dialog for Contour.');
+  assert.equal(macLead, 'Allow Contour in the macOS dialog, then Check again. Or install one of these instead.');
+  const [linuxLine, linuxLead] = await lines(linux);
+  assert.equal(linuxLine.trim(), 'Test timed out after 45002 ms.');
+  assert.equal(linuxLead, 'Claude Code did not pass its test. Update it, or install one of these instead.');
+}, fresh);
+
 await run('onboarding', { onboarded: false });
