@@ -17,7 +17,8 @@ pass on main before beta.34 (QA-093 to QA-095, §19 and §21 by hand) in
 beta.37 (QA-099 to QA-101, §24) in [bugs-main37.md](bugs-main37.md); the pass on main after
 #204–#209 (QA-102 on, §25) in [bugs-main39.md](bugs-main39.md); the pass on main after
 beta.45 (QA-108 on, §27b, §28, §29) in [bugs-main46.md](bugs-main46.md); the first-run pass on
-the released beta.47 (QA-110 on, §30) in [first-run-beta47.md](first-run-beta47.md).
+the released beta.47 (QA-110 on, §30) in [first-run-beta47.md](first-run-beta47.md); its native
+macOS part on beta.49 (QA-112 on) in [first-run-beta49-native.md](first-run-beta49-native.md).
 
 ## Priorities and status
 
