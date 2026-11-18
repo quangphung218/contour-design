@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.49] - 2026-11-18
+
 ### Fixed
 
 - A design started from a bundled template (27 skill templates such as the article, card, deck, poster and résumé examples, and the Urdu design system) no longer links Google Fonts, so the preview shows no blocked-font notice and the exported HTML uses the same system fonts as the preview, PDF and PNG. Chinese text falls back to PingFang SC, Hiragino Sans GB or Microsoft YaHei (Songti SC or SimSun for serif), Urdu to Jameel Noori Nastaleeq.
@@ -1281,7 +1283,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.48...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.49...HEAD
+[0.2.0-beta.49]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.48...v0.2.0-beta.49
 [0.2.0-beta.48]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.47...v0.2.0-beta.48
 [0.2.0-beta.47]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.46...v0.2.0-beta.47
 [0.2.0-beta.46]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.45...v0.2.0-beta.46
