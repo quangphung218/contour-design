@@ -52,6 +52,8 @@ printf '# Changelog\n\n## [Unreleased]\n\n- A fix.\n\n## [0.2.0-beta.1] - 2026-1
 printf '{\n  "productName": "Contour"\n}\n' > "$repo/apps/desktop/tauri.conf.json"
 printf 'pub fn a() {}\n' > "$repo/crates/od-server/src/lib.rs"
 printf '#[cfg(windows)]\npub fn w() {}\n' > "$repo/crates/od-server/src/win.rs"
+printf 'pub fn exe() -> &str { if cfg!(windows) { "a.exe" } else { "a" } }\n' > "$repo/crates/od-server/src/macro.rs"
+printf '#[cfg_attr(unix, allow(dead_code))]\npub fn u() {}\n' > "$repo/crates/od-server/src/attr.rs"
 printf 'pub fn r() {}\n' > "$repo/crates/od-render-cdp/src/lib.rs"
 printf 'pub fn ui() {}\n' > "$repo/crates/od-ui/src/lib.rs"
 printf '# Docs\n' > "$repo/docs/a.md"
@@ -125,7 +127,7 @@ expect "a bump plus code is code" "$ALL"
 
 change version-tauri; bump
 printf '{\n  "productName": "Contour",\n  "version": "0.2.0-beta.2"\n}\n' > "$repo/apps/desktop/tauri.conf.json"; commit
-expect "a version line in tauri.conf.json is version-only" "kind=version windows=false chrome=false"
+expect "a version line in tauri.conf.json is code (make version never writes it)" "$ALL"
 
 change version-tauri-more; bump; printf '{\n  "productName": "Contour 2"\n}\n' > "$repo/apps/desktop/tauri.conf.json"; commit
 expect "another tauri.conf.json change is code" "$ALL"
@@ -147,6 +149,18 @@ expect "a Rust file without a platform cfg runs no Windows tests" "$NONE_CODE"
 
 change cfg; printf '#[cfg(windows)]\npub fn w() { }\n' > "$repo/crates/od-server/src/win.rs"; commit
 expect "a Rust file with a platform cfg runs the Windows tests" "kind=code windows=true chrome=false"
+
+change cfg-macro; printf 'pub fn exe() -> &str { if cfg!(windows) { "b.exe" } else { "b" } }\n' > "$repo/crates/od-server/src/macro.rs"; commit
+expect "a Rust file branching with cfg!(windows) runs the Windows tests" "kind=code windows=true chrome=false"
+
+change cfg-attr; printf '#[cfg_attr(unix, allow(dead_code))]\npub fn u() { }\n' > "$repo/crates/od-server/src/attr.rs"; commit
+expect "a Rust file with cfg_attr(unix, …) runs the Windows tests" "kind=code windows=true chrome=false"
+
+change non-ascii; mkdir -p "$repo/apps/desktop/src"; printf 'x\n' > "$repo/apps/desktop/src/thử.rs"; commit
+expect "a file name outside ASCII under apps/desktop runs the Windows tests" "kind=code windows=true chrome=false"
+
+change non-ascii-docs; printf '# Ghi chú\n' > "$repo/docs/ghi-chú.md"; commit
+expect "a docs file name outside ASCII is docs" "kind=docs windows=false chrome=false"
 
 change cfg-removed; printf 'pub fn w() {}\n' > "$repo/crates/od-server/src/win.rs"; commit
 expect "removing a platform cfg runs the Windows tests" "kind=code windows=true chrome=false"

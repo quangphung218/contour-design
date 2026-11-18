@@ -27,5 +27,19 @@ expect "a workspace Cargo.toml selects every crate" "*" Cargo.toml
 expect "a crate's own Cargo.toml selects that crate" "od-cli od-export od-render-cdp od-server" crates/od-export/Cargo.toml
 expect "a prefix of a crate name is not that crate" "" crates/od-ui-extra/x.rs
 
+# make quick reads the file names with core.quotepath=off: a name outside
+# ASCII reaches the selection as it is.
+work="$(mktemp -d)"
+git -C "$work" init -q
+printf 'x\n' > "$work/thử.rs"
+listed="$(git -C "$work" -c core.quotepath=off ls-files --others --exclude-standard)"
+rm -rf "$work"
+expect "a file name outside ASCII selects its crate" "od-job od-mcp-client od-runtime od-term" "crates/od-job/src/$listed"
+if grep -q 'git -c core.quotepath=off diff' "$script" && grep -q 'git -c core.quotepath=off ls-files' "$script"; then
+  echo "ok   quick.sh lists changed files with core.quotepath=off"
+else
+  echo "FAIL quick.sh lists changed files with core.quotepath=off"; failures=$((failures + 1))
+fi
+
 [ "$failures" -eq 0 ] || { echo "quick: $failures check(s) failed" >&2; exit 1; }
 echo "quick: all checks passed"

@@ -62,7 +62,9 @@ base_ref="${QUICK_BASE:-origin/main}"
 base="$(git merge-base "$base_ref" HEAD)" || { echo "quick: no merge base with $base_ref (git fetch origin?)" >&2; exit 2; }
 files=()
 while IFS= read -r f; do [ -z "$f" ] || files+=("$f"); done < <(
-  { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u)
+  # core.quotepath=off: names outside ASCII as they are, not quoted.
+  { git -c core.quotepath=off diff --name-only "$base"
+    git -c core.quotepath=off ls-files --others --exclude-standard; } | sort -u)
 
 started=$(date +%s)
 echo "quick: ${#files[@]} file(s) changed since $base_ref"

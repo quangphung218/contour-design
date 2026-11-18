@@ -5,8 +5,10 @@
 #   kind=version   only what `make version` writes (scripts/version.sh): the
 #                  [workspace.package] version in Cargo.toml, the same
 #                  version of the workspace packages in Cargo.lock, a
-#                  CHANGELOG.md with the new section, a "version" line in
-#                  apps/desktop/tauri.conf.json; docs may change beside them.
+#                  CHANGELOG.md with the new section; docs may change beside
+#                  them. Nothing else: version.sh never writes
+#                  apps/desktop/tauri.conf.json (it refuses a "version"
+#                  there), so a change to it is code.
 #                  The tag build runs every test before the release.
 #   kind=code      anything else: lint, Linux tests, e2e, cargo-deny
 #   windows=true   also the Windows tests (see WINDOWS below)
@@ -28,7 +30,9 @@ DOCS_READ_BY_CODE='^(content|crates|apps|bridges)/'
 # PTY, the desktop shell), and this classifier with its workflow. Any Rust
 # file that branches on the platform is added below.
 WINDOWS='^(apps/desktop/|crates/od-job/|crates/od-term/|crates/od-runtime/src/(detect|login_path|process|engine)\.rs$|Cargo\.(toml|lock)$|\.cargo/|rust-toolchain|(.*/)?build\.rs$|\.config/nextest\.toml$|\.github/workflows/ci\.yml$|scripts/ci-changes\.sh$)'
-PLATFORM_CFG='cfg\(.*(windows|unix)|target_os *= *"windows"'
+# `#[cfg(…)]`, `cfg!(…)` and `#[cfg_attr(…)]` naming windows or unix, and
+# `target_os` / `target_family` = "windows".
+PLATFORM_CFG='cfg(!|_attr)?\(.*(windows|unix)|target_(os|family) *= *"windows"'
 # Chrome on macOS: how a render starts Chrome (od-render-cdp), the exports
 # that use it (od-cli), a dependency change (chromiumoxide), the workflow.
 CHROME='^(crates/od-(render-cdp|cli)/|Cargo\.lock$|\.github/workflows/ci\.yml$|scripts/ci-changes\.sh$)'
@@ -46,7 +50,9 @@ everything() {
 git cat-file -e "$base^{commit}" 2>/dev/null || everything "base $base is not in this clone"
 git cat-file -e "$head^{commit}" 2>/dev/null || everything "head $head is not in this clone"
 
-files="$(git diff --name-only --no-renames "$base" "$head")"
+# core.quotepath=off: names outside ASCII (`thử.rs`) as they are, not
+# quoted and escaped, so the patterns below match them.
+files="$(git -c core.quotepath=off diff --name-only --no-renames "$base" "$head")"
 if [ -z "$files" ]; then
   why "docs: no file changed"
   out kind=docs windows=false chrome=false
@@ -70,7 +76,7 @@ version_only() {
   local f old new
   while IFS= read -r f; do
     case "$f" in
-      Cargo.toml | Cargo.lock | CHANGELOG.md | apps/desktop/tauri.conf.json) ;;
+      Cargo.toml | Cargo.lock | CHANGELOG.md) ;;
       *) is_docs "$f" || { why "not version-only: $f changed"; return 1; } ;;
     esac
   done <<< "$files"
@@ -98,15 +104,6 @@ version_only() {
       /^source = / { src = 1 }
       END { flush() }' "$work/base.lock" > "$work/want.lock"
     cmp -s "$work/want.lock" "$work/head.lock" || { why "not version-only: Cargo.lock changed beyond the workspace version"; return 1; }
-  fi
-  # tauri.conf.json: equal once "version" lines are left out.
-  if printf '%s\n' "$files" | grep -qx apps/desktop/tauri.conf.json; then
-    show "$base" apps/desktop/tauri.conf.json base.json && show "$head" apps/desktop/tauri.conf.json head.json || return 1
-    # Trailing commas go too: adding the last key adds one before it.
-    if ! cmp -s <(grep -v '^ *"version":' "$work/base.json" | sed 's/,$//') <(grep -v '^ *"version":' "$work/head.json" | sed 's/,$//'); then
-      why "not version-only: tauri.conf.json changed beyond \"version\""
-      return 1
-    fi
   fi
   # CHANGELOG.md: with the new version's section.
   show "$head" CHANGELOG.md head.md || return 1

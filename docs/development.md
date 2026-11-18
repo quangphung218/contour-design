@@ -346,7 +346,7 @@ Which paths pull in which job, and why:
 | Paths | Pull in | Why |
 |---|---|---|
 | `apps/desktop/**`, `crates/od-job/**`, `crates/od-term/**`, `crates/od-runtime/src/{detect,login_path,process,engine}.rs` | Windows tests | what the Windows job is for: the desktop shell, the Job Object, the PTY, agent lookup through `.cmd` shims and the registry Path |
-| any `.rs` file with `cfg(windows)`, `cfg(unix)`, `cfg(not(windows))` or `target_os = "windows"`, before or after the change | Windows tests | code that branches on the platform; Linux builds only one branch |
+| any `.rs` file with `#[cfg(…)]`, `cfg!(…)` or `#[cfg_attr(…)]` naming `windows` or `unix` (`not(windows)` too), or `target_os` / `target_family = "windows"`, before or after the change | Windows tests | code that branches on the platform; Linux builds only one branch |
 | `Cargo.toml`, `Cargo.lock`, `.cargo/**`, `rust-toolchain*`, any `build.rs`, `.config/nextest.toml` | Windows tests | the build itself |
 | `crates/od-render-cdp/**`, `crates/od-cli/**`, `Cargo.lock` | Chrome on macOS | how a render starts Chrome (LaunchServices exists only on macOS), the exports that use it, dependency bumps (chromiumoxide) |
 | `.github/workflows/ci.yml`, `scripts/ci-changes.sh` | both | the plan itself |
@@ -355,9 +355,10 @@ Which paths pull in which job, and why:
 A version bump is version-only when the diff holds nothing but: the
 `[workspace.package]` version in `Cargo.toml`, the same old → new version
 of the workspace packages in `Cargo.lock`, `CHANGELOG.md` with the new
-version's section, a `"version"` line in `apps/desktop/tauri.conf.json`,
-and docs. One byte more (a dependency, an edition, another file) and it
-runs as code. The tag build tests the release in full.
+version's section, and docs. One byte more (a dependency, an edition,
+another file, `apps/desktop/tauri.conf.json`, which `make version` never
+writes) and it runs as code. File names outside ASCII are read as they
+are (`core.quotepath=off`). The tag build tests the release in full.
 
 ### Full tier: nightly and release
 
