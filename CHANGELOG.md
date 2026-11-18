@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.48] - 2026-11-18
+
 ### Fixed
 
 - The agent is told to use system fonts, not web fonts: the preview, PDF and PNG load nothing from the network, so a linked web font (Google Fonts, for one) showed there as a substitute while the exported HTML loaded it. A page that still links web fonts now says so above the preview. This also covers Inter from rsms.me and `@fontsource` packages on jsDelivr or unpkg.
@@ -1275,7 +1277,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.47...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.48...HEAD
+[0.2.0-beta.48]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.47...v0.2.0-beta.48
 [0.2.0-beta.47]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.46...v0.2.0-beta.47
 [0.2.0-beta.46]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.45...v0.2.0-beta.46
 [0.2.0-beta.45]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.44...v0.2.0-beta.45
