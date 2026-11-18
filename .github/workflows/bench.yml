@@ -1,0 +1,68 @@
+# Throwaway: times the Linux test job three ways (not for merge).
+name: Bench test job
+
+on:
+  push:
+    branches: [quangphung218/ci-bench]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "4"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  test:
+    name: ${{ matrix.variant }} try ${{ matrix.try }}
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, nextest, sccache-nextest]
+        try: [1, 2]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-unknown-unknown
+      - if: matrix.variant != 'sccache-nextest'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          prefix-key: bench1-${{ matrix.variant }}-${{ matrix.try }}
+      - if: matrix.variant == 'sccache-nextest'
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - if: matrix.variant == 'sccache-nextest'
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          echo "SCCACHE_GHA_VERSION=bench1-${{ matrix.try }}" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: trunk,cargo-nextest
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL
+      - name: Linux packages
+        run: scripts/linux-deps.sh
+      - name: ffmpeg
+        run: sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: UI bundle
+        run: make ui-dist
+      - name: tests (cargo test)
+        if: matrix.variant == 'baseline'
+        run: cargo test --workspace
+      - name: tests (nextest)
+        if: matrix.variant != 'baseline'
+        run: cargo nextest run --workspace --no-fail-fast
+      - if: matrix.variant == 'sccache-nextest'
+        run: sccache --show-stats
