@@ -396,9 +396,9 @@ the release). See [release.md](release.md).
   `test-results/logs/<name>.try1.log` in the uploaded artifact.
 - Setup steps that download (apt, brew, choco, npm, Playwright browsers)
   go through `scripts/ci-retry.sh`: three tries, 15 s and 30 s apart.
-  `scripts/linux-deps.sh` retries apt itself; cargo and rustup downloads
-  retry through `CARGO_NET_RETRY` and `RUSTUP_MAX_RETRIES`. Tests are never
-  retried, except the single e2e retry above.
+  `scripts/linux-deps.sh` retries apt itself; cargo and rustup retry
+  their own downloads. Tests are never retried, except the single e2e
+  retry above.
 
 Actions are pinned to commit SHAs, permissions are read-only, and a newer
 push cancels the running workflow for the same branch. Dependabot opens at

@@ -52,9 +52,9 @@ env:
   CARGO_INCREMENTAL: "0"
   CARGO_BUILD_JOBS: "4"
   RUST_BACKTRACE: "1"
-  # Downloads by cargo and rustup try again instead of failing the job.
-  CARGO_NET_RETRY: "10"
-  RUSTUP_MAX_RETRIES: "10"
+  # No new CARGO_* or RUST* variable here: rust-cache hashes them into its
+  # key, and a new one leaves every job without main's cache. cargo and
+  # rustup try a failed download again by themselves.
 
 jobs:
   changes:

@@ -86,6 +86,12 @@ check "every Rust cache is saved from main only" 'grep -qE "^caches: [1-9][0-9]*
 check "e2e runs a failed scenario once more" 'grep -qx "e2e retries: 1" "$work/out"'
 check "the test job runs nextest and the doc tests" 'grep -qx "nextest: true doc tests: true" "$work/out"'
 
+# rust-cache hashes CARGO_* and RUST* variables into its key: one more at
+# the workflow level and no job finds main's cache (they were these four
+# when main last saved).
+ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["env"].keys.grep(/\A(CARGO|RUST)/).sort.join(",")' "$ci" > "$work/out" 2>&1
+check "the workflow env keeps the rust-cache key" 'grep -qx "CARGO_BUILD_JOBS,CARGO_INCREMENTAL,CARGO_TERM_COLOR,RUST_BACKTRACE" "$work/out"'
+
 # nightly.yml: the full tier on main, red when it fails, and never writes.
 ruby -ryaml -e '
   wf = YAML.load_file(ARGV[0])
