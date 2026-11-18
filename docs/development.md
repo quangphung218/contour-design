@@ -370,9 +370,11 @@ the run summary; nothing is opened or posted elsewhere. A manual
 "Run workflow" of CI runs the same set.
 
 `release.yml` calls `ci.yml` twice on the tagged commit: `only: release`
-(every job but Windows; the draft release waits for it) and
-`only: windows` (the Windows tests and build; best effort, it never blocks
-the release). See [release.md](release.md).
+(every test, the Windows tests included; the draft release waits for it,
+so no release goes out with a red test on any OS) and `only: windows` (the
+Windows build of every target; best effort, it never blocks the release).
+On pull requests the Windows tests run only for the paths above, and
+nightly reports them red; the tag is where they block. See [release.md](release.md).
 
 ### Other workflows
 

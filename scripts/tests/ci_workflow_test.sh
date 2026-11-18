@@ -45,9 +45,9 @@ check "a manual run runs every job" 'want "kind=code lint=true test-os=$ALL_OS e
 plan push full
 check "only=full (nightly) runs every job" 'want "kind=code lint=true test-os=$ALL_OS e2e=true deny=true windows-test=true windows-build=true chrome=true rc=0"'
 plan push release
-check "only=release (tag) runs every job but Windows" 'want "kind=code lint=true test-os=$ALL_OS e2e=true deny=true windows-test=false windows-build=false chrome=true rc=0"'
+check "only=release (tag) runs every test, the Windows tests included" 'want "kind=code lint=true test-os=$ALL_OS e2e=true deny=true windows-test=true windows-build=false chrome=true rc=0"'
 plan push windows
-check "only=windows runs the Windows tests and build" 'want "kind=code lint=false test-os=[] e2e=false deny=false windows-test=true windows-build=true chrome=false rc=0"'
+check "only=windows runs the Windows build only" 'want "kind=code lint=false test-os=[] e2e=false deny=false windows-test=false windows-build=true chrome=false rc=0"'
 plan push macos
 check "an unknown only fails the plan" 'grep -q "rc=1" "$work/out" && grep -q "::error::unknown only" "$work/log"'
 

@@ -13,9 +13,9 @@
 # Everything (`only: full`): a manual dispatch and nightly.yml run every job
 # on every OS: Linux, macOS and Windows tests, the Chrome tests on macOS,
 # the Windows build. release.yml calls this workflow twice for a tag:
-# `only: release` (every job but Windows; the draft release waits for it)
-# and `only: windows` (the Windows tests and build; best effort, never
-# blocks). Docs links, script tests, actionlint and commit messages live in
+# `only: release` (every test, the Windows tests included; the draft
+# release waits for it, so no release goes out with Windows red) and
+# `only: windows` (the Windows build only; best effort, never blocks). Docs links, script tests, actionlint and commit messages live in
 # docs.yml. `make ci` runs the checks locally and is the main gate on macOS.
 #
 # Rust caches are saved from main only (pushes, nightly): a cache saved by
@@ -31,7 +31,7 @@ on:
   workflow_call:
     inputs:
       only:
-        description: "Called by nightly.yml and release.yml: full (every job), release (every job but Windows) or windows (Windows tests and build)"
+        description: "Called by nightly.yml and release.yml: full (every job), release (every test, Windows included; no Windows build) or windows (the Windows build)"
         type: string
         default: ""
       ref:
@@ -95,9 +95,10 @@ jobs:
               lint=true linux=true macos=true e2e=true deny=true
               windows_test=true windows_build=true chrome=true ;;
             release)
-              lint=true linux=true macos=true e2e=true deny=true chrome=true ;;
+              lint=true linux=true macos=true e2e=true deny=true chrome=true
+              windows_test=true ;;
             windows)
-              windows_test=true windows_build=true ;;
+              windows_build=true ;;
             changes)
               if [ "$EVENT" = pull_request ]; then
                 base="$(git rev-parse HEAD^1)"

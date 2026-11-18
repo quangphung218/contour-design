@@ -156,7 +156,8 @@ release ""; rc=$?
 check "no release yet: a draft is created" '[ $rc -eq 0 ] && grep -q "release create v9.9.9 .*--draft" "$work/gh-calls"'
 
 # The bundles start without waiting for any tests; the draft release waits
-# for the tests (below) and never for the Windows tests and build.
+# for the tests (below, the Windows tests included) and never for the
+# Windows build.
 ruby -ryaml -e '
   jobs = YAML.load_file(ARGV[0])["jobs"]
   call = ->(name) { j = jobs[name] or abort("no job #{name}"); "#{j["uses"]} only=#{(j["with"] || {})["only"]}" }
@@ -169,7 +170,7 @@ ruby -ryaml -e '
   puts "waits for windows: #{waiting.join(",")}"' "$workflow" > "$work/gates" 2>&1
 check "bundles start after the version check, not after the tests" 'grep -qx "bundle needs: check,ui" "$work/gates" && grep -qx "macos-binary needs: check" "$work/gates" && grep -qx "ui needs: check" "$work/gates"'
 check "the tests come from ci.yml with only=release" 'grep -qx "tests: ./.github/workflows/ci.yml only=release" "$work/gates"'
-check "the Windows tests and build run from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
+check "the Windows build runs from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
 check "no job waits for the Windows build" 'grep -qx "waits for windows: " "$work/gates"'
 
 # The draft release waits for the Linux smoke test of the bundle just built.
