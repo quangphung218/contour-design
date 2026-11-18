@@ -16,7 +16,8 @@ pass on main before beta.34 (QA-093 to QA-095, §19 and §21 by hand) in
 (QA-096 to QA-098, §22 and §23) in [bugs-main36.md](bugs-main36.md); the pass on main after
 beta.37 (QA-099 to QA-101, §24) in [bugs-main37.md](bugs-main37.md); the pass on main after
 #204–#209 (QA-102 on, §25) in [bugs-main39.md](bugs-main39.md); the pass on main after
-beta.45 (QA-108 on, §27b, §28, §29) in [bugs-main46.md](bugs-main46.md).
+beta.45 (QA-108 on, §27b, §28, §29) in [bugs-main46.md](bugs-main46.md); the first-run pass on
+the released beta.47 (QA-110 on, §30) in [first-run-beta47.md](first-run-beta47.md).
 
 ## Priorities and status
 
@@ -891,6 +892,18 @@ of the settings are the same class).
 | SET-27 | Project location added while a theme save is on its way | Theme ▸ Dark (slow save); Locations ▸ Add | Page stays dark throughout | P2 | auto (QA-108) |
 | SET-28 | Sounds off, then Dark picked before that save answered | Sound ▸ off (slow save); Theme ▸ Dark | Page stays dark throughout | P2 | auto (QA-108) |
 | SET-29 | Dark picked, then sounds off while the first save is slow | Theme ▸ Dark (slow save); Sound ▸ off | Second save sent after the first; page stays dark | P2 | auto (QA-108) |
+
+## 30. A new user's first design, end to end (`firstrun.qa.mjs`)
+
+Goal: a developer who already has an agent CLI gets from first launch to
+an exported page through the UI alone, no API shortcut. The manual pass on
+the released beta.47 with the real Claude Code is
+[first-run-beta47.md](first-run-beta47.md).
+
+| ID | Scenario | Precondition | Steps | Expected | P | Status |
+|---|---|---|---|---|---|---|
+| FR-01 | First launch to three exported files | Empty data folder, mock `claude` on PATH | Onboarding (agent picked and tested) ▸ Continue ▸ brief + Enter ▸ one change in the chat ▸ Export HTML, PDF, Image ▸ PNG | Studio opens on Enter; preview shows v1 then v2 by itself; HTML holds v2; PDF starts `%PDF-`; PNG has the PNG signature; no page error, no request off the machine | P0 | auto (PDF and PNG only with Chrome) |
+| FR-02 | A page linking a Google font | Real agent, default prompt | Brief ▸ Export PDF | The PDF uses the font the page asks for, or the user is told it does not | P1 | manual (QA-110, decision pending) |
 
 ## Not automated, and why
 
