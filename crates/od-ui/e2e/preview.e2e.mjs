@@ -479,8 +479,13 @@ try {
   await page.getByTestId('comment-reselect').waitFor();
   assert.equal(await page.getByTestId('comment-note').inputValue(), 'On draft.html only');
   assert.ok(await page.getByTestId('comment-add').isDisabled(), 'no comment on an element gone');
-  await frame.locator('#next').click();
-  await page.getByTestId('comment-reselect').waitFor({ state: 'detached' });
+  // Picked again as soon as the reloaded page takes the click: right after
+  // the reload its comment mode may not be listening yet (as for the
+  // first pick above).
+  await until(async () => {
+    await frame.locator('#next').click({ timeout: 2000 });
+    return (await page.getByTestId('comment-reselect').count()) === 0;
+  }, 'the element picked again');
   assert.equal(await page.getByTestId('comment-note').inputValue(), 'On draft.html only', 'kept over the new pick');
   await page.getByTestId('comment-add').click();
   await page.getByTestId('comment-draft').waitFor({ state: 'detached' });
