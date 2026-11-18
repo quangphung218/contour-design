@@ -16,18 +16,81 @@ fn slides_fn() -> String {
     )
 }
 
-/// Fonts, images (5 s budget) and two animation frames; then
+/// What [`settle`] does with the page's animations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Animations {
+    /// Still exports (PDF, images, slides, layouts): show the page as it
+    /// looks once its entrance animations end (QA-113).
+    Finish,
+    /// Films: leave them running; frames seek them one by one. A finished
+    /// animation with fill `none` leaves `document.getAnimations()`, so a
+    /// seek would no longer reach it and the film would not move.
+    Play,
+}
+
+/// `async function` that ends every finite animation and transition
+/// (CSS, Web Animations) and pauses the infinite ones where they are, then
+/// waits two frames; again while that started new ones (a transition set
+/// off by an `animationend` or by a script on load), up to 5 rounds.
+/// `document.getAnimations()` leaves out shadow trees and frames, so the
+/// animations are gathered from the document, every open shadow root and
+/// every frame whose document can be read, at any depth. Closed shadow
+/// roots cannot be reached, and animations a script draws itself frame by
+/// frame are not seen.
+fn finish_animations_fn() -> &'static str {
+    r"function odAllAnimations() {
+    const out = [];
+    const seen = new Set();
+    const visit = (root) => {
+      if (!root || seen.has(root)) return;
+      seen.add(root);
+      try { if (root.getAnimations) out.push(...root.getAnimations()); } catch (_) {}
+      let els = [];
+      try { els = root.querySelectorAll('*'); } catch (_) {}
+      for (const el of els) {
+        if (el.shadowRoot) visit(el.shadowRoot);
+        if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+          try { visit(el.contentDocument); } catch (_) {}
+        }
+      }
+    };
+    visit(document);
+    return out;
+  }
+  async function odFinishAnimations() {
+    for (let round = 0; round < 5; round++) {
+      let ended = 0;
+      for (const a of odAllAnimations()) {
+        try {
+          const end = a.effect && a.effect.getComputedTiming ? a.effect.getComputedTiming().endTime : Infinity;
+          if (Number.isFinite(end)) {
+            if (a.playState !== 'finished') { a.finish(); ended++; }
+          } else if (a.playState !== 'paused') {
+            a.pause();
+          }
+        } catch (_) {}
+      }
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      if (!ended) break;
+    }
+  }"
+}
+
+/// Fonts, images (5 s budget), then the page's `animations` (finished or
+/// left running) and two animation frames; then
 /// `{slides, w, h, scrollHeight}` with the first measurable slide's size.
-pub fn settle() -> String {
+pub fn settle(animations: Animations) -> String {
     format!(
         r#"(async () => {{
   {slides}
+  {finish}
   const budget = new Promise((r) => setTimeout(r, 5000));
   const fonts = document.fonts ? document.fonts.ready.catch(() => {{}}) : Promise.resolve();
   const images = Promise.all(Array.from(document.images).map((img) =>
     img.complete ? null : new Promise((r) => {{ img.addEventListener('load', r); img.addEventListener('error', r); }})));
   await Promise.race([Promise.all([fonts, images]), budget]);
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  if ({finish_now}) await odFinishAnimations();
   const slides = odSlides();
   let w = 0, h = 0;
   for (const s of slides) {{
@@ -37,15 +100,18 @@ pub fn settle() -> String {
   const scrollHeight = Math.max(doc ? doc.scrollHeight : 0, document.body ? document.body.scrollHeight : 0);
   return {{ slides: slides.length, w, h, scrollHeight }};
 }})()"#,
-        slides = slides_fn()
+        slides = slides_fn(),
+        finish = finish_animations_fn(),
+        finish_now = animations == Animations::Finish,
     )
 }
 
 const ACTIVE_CLASSES: &str = r#"["active", "is-active", "current", "present"]"#;
 
-/// Shows exactly slide `i`, pinned to the top-left `w`×`h` box, then waits
-/// two frames. Ancestors lose transforms (they would capture `position:
-/// fixed`), and the deck's own "active" classes move to slide `i`.
+/// Shows exactly slide `i`, pinned to the top-left `w`×`h` box, then ends
+/// the animations that showing it started and waits two frames. Ancestors
+/// lose transforms (they would capture `position: fixed`), and the deck's
+/// own "active" classes move to slide `i`.
 pub fn show_slide(i: usize, w: u32, h: u32) -> String {
     let css = format!(
         "{hide} {{ display: none !important; }} \
@@ -57,8 +123,9 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
         hide = HIDE_CHROME_SELECTOR
     );
     format!(
-        r#"(() => {{
+        r#"(async () => {{
   {slides}
+  {finish}
   const slides = odSlides();
   let style = document.getElementById('od-capture-style');
   if (!style) {{
@@ -84,9 +151,11 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
     }}
     if (getComputedStyle(slide).display === 'none') slide.style.setProperty('display', 'block', 'important');
   }}
-  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))));
+  await odFinishAnimations();
+  return true;
 }})()"#,
         slides = slides_fn(),
+        finish = finish_animations_fn(),
         css = js_str(&css),
         active = ACTIVE_CLASSES,
     )
@@ -94,7 +163,8 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
 
 /// Lays every slide out as one `w`×`h` print page: siblings that hold no
 /// slide are hidden, ancestors stop clipping, the last slide has no break
-/// after it (no trailing blank page).
+/// after it (no trailing blank page). Slides that were hidden start their
+/// animations when shown, so those are ended too.
 pub fn print_slides(w: u32, h: u32) -> String {
     let css = format!(
         "{hide} {{ display: none !important; }} \
@@ -108,8 +178,9 @@ pub fn print_slides(w: u32, h: u32) -> String {
         hide = HIDE_CHROME_SELECTOR
     );
     format!(
-        r#"(() => {{
+        r#"(async () => {{
   {slides}
+  {finish}
   const slides = odSlides();
   const style = document.createElement('style');
   style.textContent = {css};
@@ -131,9 +202,11 @@ pub fn print_slides(w: u32, h: u32) -> String {
       }}
     }}
   }});
+  await odFinishAnimations();
   return slides.length;
 }})()"#,
         slides = slides_fn(),
+        finish = finish_animations_fn(),
         css = js_str(&css),
     )
 }

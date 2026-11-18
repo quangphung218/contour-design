@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- PDF, PNG, JPEG, WebP and PPTX exports show the page as it looks once its entrance animations end. A headline that faded or slid in was missing from the PDF and faded in the PNG; each slide of a deck is now taken after its own animations too, and so are animations inside web components (open shadow roots) and frames. Animations that never end are held still. MP4 films still play CSS animations frame by frame.
+
 ## [0.2.0-beta.49] - 2026-11-18
 
 ### Fixed
