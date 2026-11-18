@@ -1,6 +1,6 @@
 # Flaky e2e scenarios
 
-Scenarios that failed on CI and then passed when run again on their own.
+Scenarios that failed on CI and then passed when run again alone.
 CI runs a failed scenario once more (`OD_E2E_RETRIES=1`,
 [development.md](../development.md#speed-and-stability)); one that passes
 then does not fail the run, so it is recorded here instead. A scenario
