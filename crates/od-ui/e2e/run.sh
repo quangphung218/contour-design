@@ -11,6 +11,8 @@
 #                        (CI sets it). One that passes then is flaky: listed
 #                        in test-results/logs/flaky.txt, and the run passes.
 #                        0 (the default) or 1; never more.
+#   OD_E2E_SHARD=K/N     run only every Nth scenario of the list, starting
+#                        with the Kth (CI runs 1/2 and 2/2 side by side).
 # A scenario that dies before it stops its daemon (an uncaught error, run.sh
 # itself stopped) leaves no `od daemon start` behind: each scenario runs in
 # a process group of its own, ended when the scenario ends and on exit.
@@ -113,6 +115,19 @@ if [ -n "${OD_E2E_SCENARIOS:-}" ]; then
   specs=()
   while IFS= read -r line; do [ -z "$line" ] || specs+=("$line"); done <<< "$OD_E2E_SCENARIOS"
 fi
+# A shard: the list is longest first, so every Nth spec gives each shard
+# about the same time.
+if [ -n "${OD_E2E_SHARD:-}" ]; then
+  [[ "$OD_E2E_SHARD" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ] ||
+    { echo "OD_E2E_SHARD must be K/N with 1 <= K <= N, not '$OD_E2E_SHARD'" >&2; exit 2; }
+  shard_k="${BASH_REMATCH[1]}" shard_n="${BASH_REMATCH[2]}"
+  all=("${specs[@]}")
+  specs=()
+  for i in "${!all[@]}"; do
+    [ $((i % shard_n)) -ne $((shard_k - 1)) ] || specs+=("${all[$i]}")
+  done
+  [ "${#specs[@]}" -gt 0 ] || { echo "e2e: shard $OD_E2E_SHARD has no scenario" >&2; exit 0; }
+fi
 retries="${OD_E2E_RETRIES:-0}"
 [[ "$retries" =~ ^[01]$ ]] || { echo "OD_E2E_RETRIES must be 0 or 1, not '$retries'" >&2; exit 2; }
 
@@ -169,7 +184,7 @@ reap() {
   done
 }
 
-echo "e2e: ${#specs[@]} scenarios, $jobs_max at a time; logs in $logs"
+echo "e2e: ${#specs[@]} scenarios${OD_E2E_SHARD:+ (shard $OD_E2E_SHARD)}, $jobs_max at a time; logs in $logs"
 for spec in "${specs[@]}"; do
   while [ "${#pids[@]}" -ge "$jobs_max" ]; do reap; done
   start "${spec%% *}" "${spec#* }"

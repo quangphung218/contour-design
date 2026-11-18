@@ -155,5 +155,19 @@ suite flip fine; rc=$?
 OD_E2E_RETRIES=2 suite fine; rc=$?
 [ "$rc" = 2 ] || fail "OD_E2E_RETRIES=2 must be refused (exit 2), got $rc"
 
+# 7. OD_E2E_SHARD=K/N: every Nth scenario from the Kth; together the
+# shards run each scenario once.
+counted one "console.log('PASS');"
+counted two "console.log('PASS');"
+counted three "console.log('PASS');"
+OD_E2E_SHARD=1/2 suite one two three; rc=$?
+[ "$rc" = 0 ] && [ "$(runs one)$(runs two)$(runs three)" = 101 ] || fail "shard 1/2 should run one and three: rc $rc, runs $(runs one)$(runs two)$(runs three)"
+OD_E2E_SHARD=2/2 suite one two three; rc=$?
+[ "$rc" = 0 ] && [ "$(runs one)$(runs two)$(runs three)" = 010 ] || fail "shard 2/2 should run two: rc $rc, runs $(runs one)$(runs two)$(runs three)"
+OD_E2E_SHARD=3/2 suite one; rc=$?
+[ "$rc" = 2 ] || fail "OD_E2E_SHARD=3/2 must be refused (exit 2), got $rc"
+OD_E2E_SHARD=x suite one; rc=$?
+[ "$rc" = 2 ] || fail "OD_E2E_SHARD=x must be refused (exit 2), got $rc"
+
 [ "$failures" -eq 0 ] || { echo "e2e cleanup: $failures check(s) failed" >&2; exit 1; }
 echo "e2e cleanup: all checks passed"
