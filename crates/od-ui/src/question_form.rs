@@ -9,7 +9,7 @@
 //! </question-form>
 //! ```
 //!
-//! `<ask-question>` is accepted as an alias. Answers go back as the next user
+//! `<ask-question>` is accepted as an alias too. Answers go back as the next user
 //! message, starting with `[form answers — <id>]` so the agent recognises
 //! them (same shape as the original app).
 
