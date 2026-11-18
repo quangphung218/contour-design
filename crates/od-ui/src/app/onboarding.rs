@@ -5,7 +5,7 @@
 
 use super::Shell;
 use super::api;
-use super::byok_form::{ByokForm, TestResultLine, TestState};
+use super::byok_form::{ByokForm, TestResultLine, TestState, agent_timed_out_on_mac, on_mac};
 use super::icons::{Glyph, icon};
 use super::tasks::Tasks;
 use crate::events::AgentInfo;
@@ -130,9 +130,17 @@ pub fn Onboarding() -> impl IntoView {
         _ => false,
     };
     // An installed agent failed: say why the install cards appeared under it.
+    // A timeout on a Mac is most often a macOS permission dialog the agent
+    // waits on (QA-112): updating the agent would not help.
+    let mac = on_mac();
     let failed_lead = move || {
         if !test_failed() || no_agent() {
             return None;
+        }
+        if test.with(|s| matches!(s, Some(TestState::Done(v)) if agent_timed_out_on_mac(v, mac))) {
+            return Some(view! {
+                <p class="agent-test-lead small" data-testid="onboarding-test-lead">{t(T::AgentTestTimeoutLeadMac)}</p>
+            }.into_any());
         }
         let id = picked.get()?;
         let name = shell.agents.with(|a| match a {
@@ -141,7 +149,7 @@ pub fn Onboarding() -> impl IntoView {
         })?;
         Some(view! {
             <p class="agent-test-lead small" data-testid="onboarding-test-lead">{tf(T::AgentTestFailedLead, &[&name])}</p>
-        })
+        }.into_any())
     };
     // No agent works yet: none installed, or the picked one failed its
     // test. The ways forward (install cards, API key) stay in view.
