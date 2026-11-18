@@ -54,9 +54,31 @@ cat > "$work/bin/chown" <<SH
 echo "chown \$*" >> "$work/calls"
 SH
 chmod +x "$work/bin/chown"
-PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_ARCHIVES="$work/debs" "$script" > "$work/out" 2>&1
+PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_ARCHIVES="$work/debs" GITHUB_OUTPUT="$work/output" "$script" > "$work/out" 2>&1
 rc=$?
-check "APT_ARCHIVES: every call keeps its .deb files there, autoclean, owned by the user after" '[ $rc -eq 0 ] && ! grep "^apt-get" "$work/calls" | grep -vq "Dir::Cache::Archives=$work/debs" && grep -q "^chown -R $(id -u):$(id -g) $work/debs$" "$work/calls" && grep -q "^apt-get .* autoclean$" "$work/calls" && [ -d "$work/debs" ] && [ ! -e "$work/debs/partial" ]'
+check "APT_ARCHIVES: every call keeps its .deb files there, autoclean, owned by the user after" '[ $rc -eq 0 ] && ! grep "^apt-get" "$work/calls" | grep -vq "Dir::Cache::Archives=$work/debs" && grep -q "^chown -R $(id -u):$(id -g) $work/debs$" "$work/calls" && grep -q "^apt-get .* autoclean$" "$work/calls"'
+check "APT_ARCHIVES: nothing downloaded, archives-changed=false" '[ "$(cat "$work/output")" = archives-changed=false ]'
+rm -rf "$work"
+
+# A download cut by the limit: the fake apt-get writes a .deb, then fails
+# every install; the folder is handed back and reported changed anyway.
+setup
+cat > "$work/bin/apt-get" <<SH
+#!/usr/bin/env bash
+echo "apt-get \$*" >> "$work/calls"
+if [[ " \$* " == *" install "* ]]; then
+  echo half > "$work/debs/partial/big.deb"
+  exit 100
+fi
+SH
+cat > "$work/bin/chown" <<SH
+#!/usr/bin/env bash
+echo "chown \$*" >> "$work/calls"
+SH
+chmod +x "$work/bin/"*
+PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_ARCHIVES="$work/debs" GITHUB_OUTPUT="$work/output" "$script" > "$work/out" 2>&1
+rc=$?
+check "APT_ARCHIVES: a failed install still hands the folder back, changed" '[ $rc -ne 0 ] && grep -q "^chown -R" "$work/calls" && [ "$(cat "$work/output")" = archives-changed=true ] && [ -f "$work/debs/partial/big.deb" ]'
 rm -rf "$work"
 
 setup

@@ -109,6 +109,11 @@ check "nightly reads only (no issue, no comment)" 'grep -qx "permissions: {\"con
 check "nightly reports even when CI failed" 'grep -qx "report needs ci always: true" "$work/out"'
 check "nightly opens no issue" '! grep -qiE "gh issue|issues:" "$workflows/nightly.yml"'
 
+# `timeout` stops only its own child: around `npx playwright install
+# --with-deps` it left the `sudo apt-get` that Playwright starts holding
+# the dpkg lock, and every later try failed on it.
+check "no time limit around Playwright's apt-get" '! grep -E "timeout [0-9]+ npx playwright" "$ci"'
+
 # Every action is pinned to a full commit SHA.
 grep -hE '^\s*-?\s*uses:' "$workflows"/*.yml | grep -vE 'uses: \./' | grep -vE '@[0-9a-f]{40}( |$)' > "$work/out"
 check "every action is pinned to a commit SHA" '[ ! -s "$work/out" ]'
