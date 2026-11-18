@@ -397,12 +397,16 @@ the release). See [release.md](release.md).
 - Setup steps that download (apt, brew, choco, npm, Playwright browsers)
   go through `scripts/ci-retry.sh`: three tries, 15 s and 30 s apart.
   Every apt call has a time limit: `scripts/linux-deps.sh` (10 minutes a
-  try; the test job installs ffmpeg through it too), the e2e job's ffmpeg
-  (5 minutes), Playwright's `--with-deps` (15 minutes). On 18/11 a mirror
+  try; the test job installs ffmpeg through it too) and the e2e job's
+  ffmpeg (5 minutes, waiting for the dpkg lock). Playwright's
+  `--with-deps` has none: it runs `sudo apt-get` itself, which `timeout`
+  cannot stop, and the apt-get left running held the dpkg lock. On 18/11 a mirror
   at 47 kB/s held 3 of 6 test jobs for 13 minutes in an apt call that had
   no limit. The lint and test jobs also keep the downloaded `.deb` files
-  (`APT_ARCHIVES`, an `apt-<job>-<ISO week>` cache saved from `main` once a
-  week), so apt fetches only the package lists and what changed since.
+  (`APT_ARCHIVES`): every run restores the newest `apt-<job>-…` cache, and
+  `main` saves a new one when apt changed the folder, also after apt gave
+  up, so the next run goes on from there instead of from zero. apt then
+  fetches only the package lists and what changed since.
   cargo and rustup retry their own downloads. Tests are never retried, except the single e2e
   retry above.
 
