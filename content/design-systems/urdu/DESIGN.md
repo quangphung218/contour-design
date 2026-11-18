@@ -87,19 +87,15 @@ Urdu typography is the foundational layer. The system enforces **Bilingual Harmo
 #### Urdu Script (Primary)
 
 ```css
-font-family: "Noto Nastaliq Urdu", "Mehr Nastaliq", "URW Chancery", serif;
+font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Mehr Nastaliq", "URW Chancery", serif;
 ```
 
 **Font Selection Rationale:**
-- **Noto Nastaliq Urdu** (Google Fonts): Professionally maintained, open-source, optimized for modern screens. Heavy weight (700) gives proper authority.
+- **Noto Nastaliq Urdu** (open source, used when installed locally): Professionally maintained, open-source, optimized for modern screens. Heavy weight (700) gives proper authority.
 - **Mehr Nastaliq**: Pakistani-developed alternative; excellent Urdu-specific kerning.
-- **URW Chancery** (system fallback): Hand-drawn serif; graceful degradation when web fonts fail.
+- **URW Chancery** (system fallback): Hand-drawn serif; last resort when no Nastaliq font is installed.
 
-**Import (add to `<head>`):**
-```html
-<link rel="preload" href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" as="style">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
-```
+**Loading:** Do not link a web font. Studio blocks web fonts in preview, PDF and PNG, so use the system font stack above; each family applies when it is installed.
 
 #### Latin Script (Secondary)
 
@@ -767,9 +763,6 @@ Here's a complete, production-ready example:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Urdu Modern - Quick Start</title>
   
-  <!-- Google Fonts: Noto Nastaliq Urdu -->
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
-  
   <style>
     :root {
       /* Colors */
@@ -781,7 +774,7 @@ Here's a complete, production-ready example:
       --color-border: #E2E8F0;
       
       /* Typography */
-      --font-urdu: "Noto Nastaliq Urdu", serif;
+      --font-urdu: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", serif;
       --font-latin: "Inter", "Segoe UI", sans-serif;
       
       /* Spacing */
@@ -972,7 +965,7 @@ language: Urdu (ur) + English
 rtl_primary: true
 fonts:
   - name: Noto Nastaliq Urdu
-    url: https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700
+    url: system
   - name: Inter
     url: system
 primary_color: "#0F595E"

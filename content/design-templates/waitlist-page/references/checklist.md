@@ -35,7 +35,7 @@
 
 ## P2 — Nice-to-have polish
 
-- [ ] Google Fonts loaded with `display=swap` to avoid FOIT
+- [ ] Font stacks end in a system fallback; no web font link
 - [ ] Form inputs have matching `autocomplete` attributes (`given-name`, `email`)
 - [ ] Subtle micro-animation on button hover (scale or opacity only — no layout shift)
 - [ ] Decoration zone does not cover or overlap the form at any viewport width

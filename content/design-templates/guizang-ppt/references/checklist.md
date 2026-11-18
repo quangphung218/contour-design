@@ -110,7 +110,7 @@ In the CSS, `.frame-img img` already presets `object-position:top`, so only the 
 - Body, descriptions, pipeline step names → **sans-serif** (Noto Sans SC + Inter)
 - Metadata, code, labels → **monospace** (IBM Plex Mono + JetBrains Mono)
 
-All fonts are loaded via Google Fonts CDN, already preset in the template.
+Fonts come from system stacks in the template; do not link a web font.
 
 ### 4b. Do not pin images to the bottom with `align-self:end`
 

@@ -80,7 +80,8 @@ Pick **one** accent animation per slide. Everything else should be calm.
 
 ## 7. Chinese + English decks
 
-- Fonts are already imported in `fonts.css` (Noto Sans SC + Noto Serif SC).
+- Fonts come from the system: the stacks in `base.css` end in system fonts
+  and a generic family. Do not link a web font.
 - Use `lang="zh-CN"` on `<html>`.
 - For bilingual titles, stack lines: `<h1 class="h1">主标题<br><span class="dim">English subtitle</span></h1>`.
 - Keep English subtitles in a lighter weight (300) and dim color to avoid

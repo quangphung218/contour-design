@@ -446,6 +446,60 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Files whose Google Fonts URL is data, not a font the page loads:
+/// brand-extract's `googleFontsUrl` describes the brand it extracted.
+const GOOGLE_FONTS_ALLOWED: &[&str] = &["skills/brand-extract/SKILL.md"];
+
+/// Studio blocks web fonts in preview, PDF and PNG, and the agent copies
+/// whatever a template links, so a Google Fonts `<link>` or `@import` in a
+/// bundled page or in a DESIGN.md snippet shows the blocked-font notice and
+/// makes the HTML export render a different font from the preview.
+#[test]
+fn no_bundled_page_loads_google_fonts() {
+    let root = content_root();
+    let mut hits = Vec::new();
+    let mut allowed_seen = Vec::new();
+    let mut checked = 0;
+    for kind in ["skills", "design-systems", "design-templates"] {
+        for path in walk(&root.join(kind)) {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !["html", "css", "md"].contains(&ext) {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            checked += 1;
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let found = ["fonts.googleapis.com", "fonts.gstatic.com"]
+                .iter()
+                .any(|host| text.contains(host));
+            if !found {
+                continue;
+            }
+            if GOOGLE_FONTS_ALLOWED.contains(&rel.as_str()) {
+                allowed_seen.push(rel);
+            } else {
+                hits.push(rel);
+            }
+        }
+    }
+    hits.sort();
+    assert!(checked >= 1000, "only {checked} files checked");
+    assert!(
+        hits.is_empty(),
+        "{} files load Google Fonts; use a system font stack: {hits:#?}",
+        hits.len()
+    );
+    allowed_seen.sort();
+    assert_eq!(
+        allowed_seen, GOOGLE_FONTS_ALLOWED,
+        "an allowlist entry no longer names Google Fonts; drop it"
+    );
+}
+
 /// English text of an i18n map.
 fn en(map: Option<&BTreeMap<String, String>>) -> Option<&str> {
     map.and_then(|m| m.get("en")).map(String::as_str)
