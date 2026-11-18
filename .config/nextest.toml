@@ -1,0 +1,19 @@
+# cargo-nextest (CI's test job, `make quick`). nextest runs each test in a
+# process of its own, all binaries at once; `cargo test` still works as before.
+
+[profile.default]
+# Print a test that runs past a minute (it keeps running).
+slow-timeout = { period = "60s" }
+
+[profile.ci]
+fail-fast = false
+slow-timeout = { period = "60s" }
+
+# crates/od-preview/tests/watch.rs times a file watcher and serialises its
+# tests with a mutex, which separate processes no longer share.
+[test-groups]
+watcher = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(od-preview) & binary(watch)'
+test-group = 'watcher'

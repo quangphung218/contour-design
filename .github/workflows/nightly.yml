@@ -1,0 +1,50 @@
+# Every night, the full tier on main (ci.yml, `only: full`): lint, the
+# Linux, macOS and Windows tests, e2e, cargo-deny, the Chrome tests on
+# macOS and the Windows build. Pull requests run only the jobs their change
+# needs; this catches what that leaves out (a Windows break outside the
+# files ci-changes.sh watches, a test that fails on macOS only).
+# A red night shows on the Actions tab and in the run's summary (the `CI
+# result` table names each job); nothing is opened or posted anywhere else.
+name: Nightly
+
+on:
+  schedule:
+    # 19:00 UTC, 02:00 in Vietnam: no pull request is waiting for runners.
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: full CI
+    uses: ./.github/workflows/ci.yml
+    with:
+      only: full
+
+  report:
+    name: nightly result
+    needs: ci
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Result
+        env:
+          RESULT: ${{ needs.ci.result }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "## Nightly on main: $RESULT"
+            echo
+            echo "Commit $GITHUB_SHA. Each job's result is in the \"CI result\" table above."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$RESULT" != success ]; then
+            echo "::error::nightly CI on main is $RESULT ($RUN): see the CI result table in the summary"
+            exit 1
+          fi

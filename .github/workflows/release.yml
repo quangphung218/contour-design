@@ -46,23 +46,26 @@ jobs:
           fi
           scripts/release-notes.sh "$TAG" > /dev/null
 
-  # The macOS tests (ci.yml): pull requests run on Linux only, so a release
-  # is where macOS is tested on CI. The bundles build alongside them; the
-  # draft release waits for them, so a failure still stops the release.
-  macos-tests:
-    name: macOS tests
+  # Every test but Windows (ci.yml, `only: release`): lint, the Linux and
+  # macOS tests, e2e, cargo-deny, the Chrome tests on macOS. Pull requests
+  # run only the jobs their change needs and a version bump runs none, so
+  # the tag is where all of them run on the released commit. The bundles
+  # build alongside; the draft release waits for these, so a failure still
+  # stops the release.
+  tests:
+    name: tests
     needs: check
     uses: ./.github/workflows/ci.yml
     with:
-      only: macos
+      only: release
       # `env` is not available here.
       ref: ${{ github.event.inputs.tag || github.ref_name }}
 
-  # The Windows compile check runs too, but nothing waits for it: Windows is
-  # best effort (README, Known limitations), like its bundle below. A failure
-  # still shows on the run.
+  # The Windows tests and compile check run too, but nothing waits for
+  # them: Windows is best effort (README, Known limitations), like its
+  # bundle below. A failure still shows on the run.
   windows-build:
-    name: Windows build (does not block)
+    name: Windows tests and build (does not block)
     needs: check
     uses: ./.github/workflows/ci.yml
     with:
@@ -373,10 +376,10 @@ jobs:
       artifact: bundle-windows-x64
       ref: ${{ github.event.inputs.tag || github.ref_name }}
 
-  # Waits for every gate: the macOS tests, every bundle and both smoke tests.
+  # Waits for every gate: the tests, every bundle and both smoke tests.
   release:
     name: draft GitHub Release
-    needs: [macos-tests, bundle, macos-universal, linux-smoke, windows-smoke]
+    needs: [tests, bundle, macos-universal, linux-smoke, windows-smoke]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
