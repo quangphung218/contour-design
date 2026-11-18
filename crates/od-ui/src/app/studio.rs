@@ -349,6 +349,8 @@ pub struct StudioCtx {
     /// What the exporters accept for the previewed page (`od:export-fit`);
     /// `None` until its bridge says.
     pub export_fit: RwSignal<Option<pb::ExportFit>>,
+    /// Web fonts the preview blocked on the page shown (QA-110).
+    pub fonts_blocked: RwSignal<Vec<String>>,
     pub notes: RwSignal<Vec<String>>,
     pub show_notes: RwSignal<bool>,
     pub presenting: RwSignal<bool>,
@@ -1499,6 +1501,7 @@ impl StudioCtx {
                 }
             }
             (Source::Main, BridgeMsg::ExportFit(fit)) => self.export_fit.set(Some(fit)),
+            (Source::Main, BridgeMsg::FontsBlocked { urls }) => self.fonts_blocked.set(urls),
             (Source::Main, BridgeMsg::Esc) => self.presenting.set(false),
             (Source::Main, BridgeMsg::Select(picked)) => {
                 if self.comment_mode.get_untracked() {
@@ -1878,6 +1881,7 @@ pub fn Studio() -> impl IntoView {
         frame_ready: RwSignal::new(0),
         deck: RwSignal::new(None),
         export_fit: RwSignal::new(None),
+        fonts_blocked: RwSignal::new(Vec::new()),
         notes: RwSignal::new(Vec::new()),
         show_notes: RwSignal::new(false),
         presenting: RwSignal::new(false),
@@ -2303,6 +2307,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
         src.with(|_| ());
         ctx.deck.set(None);
         ctx.export_fit.set(None);
+        ctx.fonts_blocked.set(Vec::new());
     });
     // The file shown, not its content: a reload of the same file (the
     // agent or the watcher wrote it) keeps what the user is typing over
@@ -2549,6 +2554,12 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                 <ToolHints ctx=ctx/>
             </Show>
             {move || ctx.comment_mode.get().then(|| view! { <p class="mode-hint">{icon(Glyph::Comment)}{t(T::CommentModeOn)}</p> })}
+            // The live page links web fonts the preview blocked (QA-110).
+            <Show when=move || {
+                ctx.fonts_blocked.with(|f| !f.is_empty()) && is_html() && !ctx.is_viewing() && !ctx.show_code.get()
+            }>
+                <p class="mode-hint fonts-hint" role="status" data-testid="fonts-blocked">{icon(Glyph::Info)}{t(T::WebFontsBlocked)}</p>
+            </Show>
             <div class="preview-body">
                 <ThumbRail ctx=ctx src=src/>
                 <div class="preview-stage" node_ref=stage>

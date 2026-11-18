@@ -1592,6 +1592,7 @@ FirstArtifactBody = Szerkeszd és jegyzeteld közvetlenül az előnézetben, maj
 FirstArtifactDismiss = Értem
 RetryWaitsForLink = Várakozás a Contour-kapcsolatra
 WorkspaceRecovering = Megszakadt a kapcsolat a Contour-tel. Automatikus újracsatlakozás…
+WebFontsBlocked = A webes betűtípusok nem töltődnek be a Contourban, ezért az előnézet, a PDF és a PNG helyettesítő betűtípust használ; a HTML-export az eredetit tölti be. Az egyezéshez kérd meg az ügynököt, hogy rendszerbetűtípust használjon.
 ToolManualEdit = Elem szerkesztése
 ManualEditHint = Kattints egy elemre az előnézetben, vagy válassz réteget, majd módosítsd. Minden módosítás új verzióként mentődik.
 CommentsTab = Összes megjegyzés

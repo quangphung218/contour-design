@@ -122,6 +122,39 @@
   }, GAP_MS + 50);
 
   // ---------------------------------------------------------------------
+  // Web fonts the preview CSP blocked (QA-110). The preview loads nothing
+  // from the network, so a linked web font shows as a substitute here and
+  // in the PDF and PNG, while the exported HTML loads it: the host says
+  // so. Counted: a blocked font file (`font-src`), or a blocked stylesheet
+  // from a font service (`<link>` or `@import`). Other blocked files (a
+  // CDN script, an image) are not fonts and are left out. Listening here,
+  // before any author markup, catches the page's own `<head>` links.
+  // ---------------------------------------------------------------------
+  var FONT_HOST = /font|typekit|typography/i;
+  var MAX_BLOCKED_FONTS = 10;
+  var blockedFonts = [];
+  function blockedFont(e) {
+    var url = String(e.blockedURI || '');
+    if (!/^https?:/i.test(url)) return null;
+    var directive = String(e.effectiveDirective || e.violatedDirective || '');
+    if (directive.indexOf('font-src') === 0) return url;
+    if (directive.indexOf('style-src') !== 0) return null;
+    try {
+      return FONT_HOST.test(new URL(url).hostname) ? url : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  try {
+    document.addEventListener('securitypolicyviolation', function (e) {
+      var url = blockedFont(e);
+      if (!url || blockedFonts.indexOf(url) !== -1 || blockedFonts.length >= MAX_BLOCKED_FONTS) return;
+      blockedFonts.push(url);
+      post('od:fonts-blocked', { urls: blockedFonts.slice() });
+    });
+  } catch (_) {}
+
+  // ---------------------------------------------------------------------
   // Guard: Web Storage shim. Opaque-origin sandboxes throw on access to
   // localStorage/sessionStorage; give the page an in-memory store instead.
   // ---------------------------------------------------------------------

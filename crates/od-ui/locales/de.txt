@@ -1593,6 +1593,7 @@ FirstArtifactBody = Bearbeite und kommentiere ihn direkt in der Vorschau und exp
 FirstArtifactDismiss = Verstanden
 RetryWaitsForLink = Warte auf die Verbindung zu Contour
 WorkspaceRecovering = Verbindung zu Contour unterbrochen. Verbindet sich automatisch neu…
+WebFontsBlocked = Webfonts werden in Contour nicht geladen, daher nutzen Vorschau, PDF und PNG eine Ersatzschrift; der HTML-Export lädt die Originalschrift. Damit alles gleich aussieht, bitte den Agenten, Systemschriften zu verwenden.
 ToolManualEdit = Element bearbeiten
 ManualEditHint = Klicke in der Vorschau auf ein Element oder wähle eine Ebene und ändere es. Jede Änderung wird als Version gespeichert.
 CommentsTab = Alle Kommentare

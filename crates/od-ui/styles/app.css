@@ -169,11 +169,18 @@ button.nav-link { width: 100%; border: 0; background: transparent; font: inherit
 }
 .picker select:focus { box-shadow: none; }
 /* A wide Home composer (a 1440 window) keeps its controls on one row: the
-   two pickers in the bar shrink, their title gives the full name. Narrower
-   composers wrap, so the names stay whole. */
+   two pickers in the bar are capped at their default names ("No design
+   system", "Default template", QA-111), the room taken from the chips'
+   padding and the pickers' arrow; a longer pick is cut and its title gives
+   the full name. Narrower composers wrap, so the names stay whole. */
 .composer-card { container: composer / inline-size; }
 @container composer (min-width: 800px) {
-  .composer-bar > .picker select { max-width: 116px; }
+  .composer-bar .chip { padding: 0 var(--space-2); }
+  .composer-bar > .picker select {
+    max-width: 130px;
+    padding-right: var(--space-5);
+    background-position: calc(100% - 11px) 50%, calc(100% - 7px) 50%;
+  }
 }
 .swatches { display: inline-flex; gap: 2px; margin-right: var(--space-2); }
 .swatches i { width: 10px; height: 10px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12); }
@@ -1068,6 +1075,8 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .comments-toggle .unread-dot { position: absolute; top: 2px; left: 2px; width: 7px; height: 7px; border-radius: var(--radius-full); background: var(--color-danger); pointer-events: none; }
 .mode-hint { display: flex; align-items: center; gap: var(--space-2); flex: none; margin: 0; padding: var(--space-1-5) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); background: var(--color-accent-soft); color: var(--color-accent-text); font-size: var(--text-sm); }
 .mode-hint .ico { width: var(--icon-sm); height: var(--icon-sm); }
+.fonts-hint { background: var(--color-surface-sunken); color: var(--color-text-secondary); }
+.fonts-hint .ico { flex: none; }
 .tool-status { display: flex; align-items: center; gap: var(--space-2); flex: none; margin: 0; padding: var(--space-1-5) var(--space-2) var(--space-1-5) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface-sunken); color: var(--color-text-secondary); font-size: var(--text-sm); }
 .tool-status > .ico { width: var(--icon-sm); height: var(--icon-sm); color: var(--color-accent); }
 .preview-body { position: relative; flex: 1; min-height: 0; display: flex; }

@@ -10,6 +10,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- The agent is told to use system fonts, not web fonts: the preview, PDF and PNG load nothing from the network, so a linked web font (Google Fonts, for one) showed there as a substitute while the exported HTML loaded it. A page that still links web fonts now says so above the preview.
+- Home: the design system and template pickers show "No design system" and "Default template" in full in a 1440 window, instead of cutting them.
 - An API key saved in a window that still shows the provider another window has since replaced no longer keeps that other provider's model; the provider's default model is used until one is picked. A host changed in the window that shows the provider still keeps the model.
 - Two windows picking a working folder at the same moment both keep their folder among the recent ones.
 - Design system ▸ Set default, clicked again or while another save of the window is still on its way, is kept when the panel is closed right after; it no longer showed as saved and came back after a restart. A working folder picked just before leaving Home is kept among the recent ones.
