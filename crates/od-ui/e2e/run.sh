@@ -7,6 +7,10 @@
 # (default 3 on CI, 2 elsewhere: each scenario has its own browser and
 # daemon, and the debug UI bundle takes about 1 GB per tab).
 #   OD_E2E_SKIP_BUILD=1  reuse the built UI bundle, `od` and node_modules
+#   OD_E2E_RETRIES=1     run each scenario that failed once more, on its own
+#                        (CI sets it). One that passes then is flaky: listed
+#                        in test-results/logs/flaky.txt, and the run passes.
+#                        0 (the default) or 1; never more.
 # A scenario that dies before it stops its daemon (an uncaught error, run.sh
 # itself stopped) leaves no `od daemon start` behind: each scenario runs in
 # a process group of its own, ended when the scenario ends and on exit.
@@ -104,25 +108,33 @@ specs=(
   "OD_E2E_GALLERY_PORT gallery.e2e.mjs"      # + 16; a remixed gallery deck
   "OD_E2E_ROUTES_PORT routes.e2e.mjs"        # + 18; screens left through the router
 )
+# For scripts/tests/e2e_cleanup_test.sh: other scenarios, one spec a line.
+if [ -n "${OD_E2E_SCENARIOS:-}" ]; then
+  specs=()
+  while IFS= read -r line; do [ -z "$line" ] || specs+=("$line"); done <<< "$OD_E2E_SCENARIOS"
+fi
+retries="${OD_E2E_RETRIES:-0}"
+[[ "$retries" =~ ^[01]$ ]] || { echo "OD_E2E_RETRIES must be 0 or 1, not '$retries'" >&2; exit 2; }
 
 jobs_max="${OD_E2E_JOBS:-$([ -n "${CI:-}" ] && echo 3 || echo 2)}"
 [[ "$jobs_max" =~ ^[1-9][0-9]*$ ]] || { echo "OD_E2E_JOBS must be a positive number, not '$jobs_max'" >&2; exit 2; }
 # One log per scenario, printed whole when it ends, so lines of scenarios
 # running together do not interleave.
-logs="$here/test-results/logs"
+logs="${OD_E2E_LOGS:-$here/test-results/logs}"
 rm -rf "$logs"
 mkdir -p "$logs"
 
 # Running scenarios, as parallel arrays (bash 3.2 on macOS has neither
 # associative arrays nor `wait -n`).
-pids=() names=() starts=()
+pids=() names=() starts=() running=()
 used_ports=" "
-failed=()
+failed=() failed_specs=() flaky=()
 started_all=$(date +%s)
 
 start() {
   local var="$1" script="$2" port
-  local name="${script%.mjs}"
+  local name
+  name="$(basename "$script" .mjs)"
   if [ "$var" = - ] || [ -n "$fixed_port" ]; then
     node "$script" >"$logs/$name.log" 2>&1 &
   else
@@ -132,7 +144,7 @@ start() {
     used_ports="$used_ports$port "
     env "$var=$port" node "$script" >"$logs/$name.log" 2>&1 &
   fi
-  pids+=($!) names+=("$name") starts+=("$(date +%s)")
+  pids+=($!) names+=("$name") starts+=("$(date +%s)") running+=("$var $script")
 }
 
 # Waits until one scenario ends, prints its log and drops it from the arrays.
@@ -147,9 +159,10 @@ reap() {
       local name="${names[$i]}" took=$(($(date +%s) - starts[i]))
       echo "--- ${name} ($([ "$rc" = 0 ] && echo PASS || echo "FAIL, exit $rc"), ${took}s)"
       cat "$logs/$name.log"
-      [ "$rc" = 0 ] || failed+=("$name")
-      unset 'pids[i]' 'names[i]' 'starts[i]'
+      [ "$rc" = 0 ] || { failed+=("$name"); failed_specs+=("${running[$i]}"); }
+      unset 'pids[i]' 'names[i]' 'starts[i]' 'running[i]'
       pids=(${pids[@]+"${pids[@]}"}) names=(${names[@]+"${names[@]}"}) starts=(${starts[@]+"${starts[@]}"})
+      running=(${running[@]+"${running[@]}"})
       return
     done
     sleep 1
@@ -163,7 +176,29 @@ for spec in "${specs[@]}"; do
 done
 while [ "${#pids[@]}" -gt 0 ]; do reap; done
 
+# Each failed scenario once more, alone, its first log kept as NAME.try1.log.
+: > "$logs/flaky.txt"
+if [ "$retries" = 1 ] && [ "${#failed[@]}" -gt 0 ]; then
+  again=("${failed_specs[@]}")
+  failed=() failed_specs=()
+  for spec in "${again[@]}"; do
+    script="${spec#* }"
+    name="$(basename "$script" .mjs)"
+    mv "$logs/$name.log" "$logs/$name.try1.log"
+    echo "--- ${name}: failed; running it again on its own (OD_E2E_RETRIES=1)"
+    start "${spec%% *}" "$script"
+    reap
+    if [[ " ${failed[*]-} " != *" $name "* ]]; then
+      flaky+=("$name")
+      echo "$(basename "$script")" >> "$logs/flaky.txt"
+    fi
+  done
+fi
+
 echo "--- e2e: $(( ${#specs[@]} - ${#failed[@]} ))/${#specs[@]} passed in $(($(date +%s) - started_all))s"
+if [ "${#flaky[@]}" -gt 0 ]; then
+  echo "--- flaky (failed, then passed on their own): ${flaky[*]}"
+fi
 if [ "${#failed[@]}" -gt 0 ]; then
   # The failing logs again, last, where CI shows them.
   for name in "${failed[@]}"; do
