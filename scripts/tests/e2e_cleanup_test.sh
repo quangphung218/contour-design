@@ -115,5 +115,59 @@ else
   fail "the hanging QA flow never started its daemon: $(cat "$tmp/qahang.log")"
 fi
 
+# 6. OD_E2E_RETRIES=1 (CI): every scenario through the parallel runner;
+# each failed one runs once more, alone. Each counts its runs in NAME.runs.
+# `flip` fails its first run only, `broken` every run.
+counted() {
+  cat > "$tmp/$1.mjs" << EOF
+import { appendFileSync, readFileSync } from 'node:fs';
+appendFileSync('$tmp/$1.runs', 'x');
+const runs = readFileSync('$tmp/$1.runs', 'utf8').length;
+$2
+EOF
+}
+runs() { cat "$tmp/$1.runs" 2> /dev/null | wc -c | tr -d ' '; }
+suite() {
+  rm -f "$tmp"/*.runs
+  local specs="" s
+  for s in "$@"; do specs="$specs- $tmp/$s.mjs"$'\n'; done
+  OD_E2E_SKIP_BUILD=1 OD_E2E_LOGS="$tmp/logs" OD_E2E_SCENARIOS="$specs" "$run" > "$tmp/suite.log" 2>&1
+}
+counted flip "if (runs === 1) throw new Error('first run fails');"
+counted broken "throw new Error('always fails');"
+counted fine "console.log('PASS');"
+
+OD_E2E_RETRIES=1 suite flip fine; rc=$?
+[ "$rc" = 0 ] || fail "retry: a scenario that passed on its second run failed the suite: $(cat "$tmp/suite.log")"
+[ "$(runs flip)/$(runs fine)" = 2/1 ] || fail "retry: want flip run 2 times, fine 1; got $(runs flip)/$(runs fine)"
+[ "$(cat "$tmp/logs/flaky.txt")" = flip.mjs ] || fail "retry: flaky.txt should name flip.mjs: $(cat "$tmp/logs/flaky.txt" 2> /dev/null)"
+[ -f "$tmp/logs/flip.try1.log" ] || fail "retry: the first run's log was not kept"
+
+OD_E2E_RETRIES=1 suite broken fine; rc=$?
+[ "$rc" != 0 ] || fail "retry: a scenario failing twice passed the suite"
+[ "$(runs broken)" = 2 ] || fail "retry: a failing scenario must run exactly twice, ran $(runs broken)"
+[ ! -s "$tmp/logs/flaky.txt" ] || fail "retry: a scenario failing twice is not flaky: $(cat "$tmp/logs/flaky.txt")"
+
+suite flip fine; rc=$?
+[ "$rc" != 0 ] || fail "no retry by default: a failed scenario passed the suite"
+[ "$(runs flip)" = 1 ] || fail "no retry by default: flip ran $(runs flip) times"
+
+OD_E2E_RETRIES=2 suite fine; rc=$?
+[ "$rc" = 2 ] || fail "OD_E2E_RETRIES=2 must be refused (exit 2), got $rc"
+
+# 7. OD_E2E_SHARD=K/N: every Nth scenario from the Kth; together the
+# shards run each scenario once.
+counted one "console.log('PASS');"
+counted two "console.log('PASS');"
+counted three "console.log('PASS');"
+OD_E2E_SHARD=1/2 suite one two three; rc=$?
+[ "$rc" = 0 ] && [ "$(runs one)$(runs two)$(runs three)" = 101 ] || fail "shard 1/2 should run one and three: rc $rc, runs $(runs one)$(runs two)$(runs three)"
+OD_E2E_SHARD=2/2 suite one two three; rc=$?
+[ "$rc" = 0 ] && [ "$(runs one)$(runs two)$(runs three)" = 010 ] || fail "shard 2/2 should run two: rc $rc, runs $(runs one)$(runs two)$(runs three)"
+OD_E2E_SHARD=3/2 suite one; rc=$?
+[ "$rc" = 2 ] || fail "OD_E2E_SHARD=3/2 must be refused (exit 2), got $rc"
+OD_E2E_SHARD=x suite one; rc=$?
+[ "$rc" = 2 ] || fail "OD_E2E_SHARD=x must be refused (exit 2), got $rc"
+
 [ "$failures" -eq 0 ] || { echo "e2e cleanup: $failures check(s) failed" >&2; exit 1; }
 echo "e2e cleanup: all checks passed"

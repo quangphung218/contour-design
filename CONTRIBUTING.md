@@ -21,7 +21,8 @@ make run        # daemon + UI at http://127.0.0.1:7456
 
 | Run | When | What it does |
 |---|---|---|
-| `make check` | always | `cargo fmt --check`, clippy with `-D warnings`, all workspace tests |
+| `make quick` | while you work, after each change | fmt, then clippy and tests of only the crates changed since `origin/main` and their direct dependents (a few minutes) |
+| `make check` | always, before review | `cargo fmt --check`, clippy with `-D warnings`, all workspace tests |
 | `make lint` | you touched `crates/od-ui` | adds clippy for the `wasm32` UI build |
 | `make e2e` | you touched the UI or an API the UI calls | Playwright against a real daemon and a mock agent |
 | `make deny` | you added or bumped a dependency | licence and advisory policy (`deny.toml`) |

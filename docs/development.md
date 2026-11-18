@@ -33,6 +33,7 @@ On Debian or Ubuntu the desktop crate also needs WebKitGTK and friends:
 | `make setup` | check the toolchain |
 | `make run` | daemon + UI at `http://127.0.0.1:7456` |
 | `make dev` | daemon on `:7456` and `trunk serve` with hot reload on `:8080` |
+| `make quick` | fmt, then clippy and tests of the crates changed since `origin/main` and their direct dependents ([Which check when](#which-check-when)) |
 | `make check` | `cargo fmt --check`, clippy `-D warnings`, all tests |
 | `make test` | tests only |
 | `make lint` | fmt, clippy native and clippy for `wasm32` |
@@ -206,6 +207,25 @@ in the launch `env` of `cargo` to see every local variable.
 
 ## Tests
 
+### Which check when
+
+| Check | When | What it runs |
+|---|---|---|
+| `make quick` | after each change while you work | fmt, then clippy and tests of the crates you changed and the workspace crates that depend on them directly; aim: under 4 minutes |
+| `make check` | before you ask for review, and before every push | every crate: fmt, clippy, all tests, script tests, licences |
+| `make e2e` | you changed the UI (`crates/od-ui`), the daemon's HTTP API, the preview bridge or content the UI shows | Playwright, about 13 minutes |
+| `make ci` | before review on macOS, where pull request CI does not run | everything CI runs, in its order |
+
+`make quick` compares with `origin/main` (run `git fetch` first; set
+`QUICK_BASE=<ref>` for another base) and also counts uncommitted and
+untracked files. A change to `Cargo.toml`, `Cargo.lock`, `.cargo/` or the
+toolchain checks every crate; `content/` and `bridges/` check the crates
+whose tests read them; a change to no crate runs fmt only. It uses
+`cargo nextest` when installed (`cargo install cargo-nextest --locked` or
+`brew install cargo-nextest`), `cargo test` otherwise.
+`scripts/quick.sh --packages FILE…` prints the crates a set of files
+selects.
+
 ```bash
 make test                                      # everything
 cargo test -p od-store                         # one crate
@@ -229,7 +249,10 @@ when it ends; a failing scenario fails the run and its log is printed again
 at the end. `c4-depth` checks its 18 languages `OD_E2E_C4_TABS` at a time
 (default 4). `run.sh <script>…` runs only those scripts, one after another.
 `OD_E2E_SKIP_BUILD=1` reuses the UI bundle, `od` and the npm packages built
-by an earlier run. A scenario that dies, or `run.sh` stopped, leaves no
+by an earlier run. `OD_E2E_SHARD=K/N` runs every Nth scenario starting with
+the Kth (CI splits the suite in two); `OD_E2E_RETRIES=1` runs a failed
+scenario once more on its own and lists it in `test-results/logs/flaky.txt`
+when it passes then. A scenario that dies, or `run.sh` stopped, leaves no
 daemon behind: each scenario runs in a process group of its own, ended with
 it (`make e2e-qa`, `e2e/qa/run.sh`, likewise; `QA_SKIP_BUILD=1` there).
 
@@ -295,30 +318,106 @@ cargo bench -p od-export --bench standalone       # standalone HTML export
 
 ## Continuous integration
 
-**CI on pull requests runs on Linux, plus the workspace tests on Windows.**
-macOS runs when a release is built, or when someone starts CI by hand
-(Actions tab, "Run workflow"). On macOS the main gate is **`make ci` on your machine**: run it
-before asking for review.
+CI has two tiers. **Pull requests run only the jobs their change needs**;
+**the full tier runs every job on every OS** every night on `main` and on
+each release tag, so every test runs at least once before a release.
 
-| Job | Workflow | Pull request, push to `main` | Release, manual run | Steps |
-|---|---|---|---|---|
-| fmt + clippy | `ci.yml` | Ubuntu | manual run only | `make lint` |
-| test | `ci.yml` | Ubuntu | macOS (release); macOS and Ubuntu (manual) | ffmpeg (MP4 export tests), `make test` |
-| test (windows-2025) | `ci.yml` | Windows | manual run only | ffmpeg, `trunk build`, `cargo test --workspace --no-fail-fast` |
-| build (windows) | `ci.yml` | no | Windows (never blocks a release) | `trunk build`, `cargo build --workspace --all-targets` |
-| Chrome on macOS | `ci.yml` | macOS, PRs touching `crates/od-render-cdp/**`, `crates/od-cli/**`, `Cargo.lock` or `ci.yml` | manual run only | `cargo test -p od-render-cdp -p od-cli`, then again with the runner's Chrome approved (through LaunchServices) |
-| e2e | `ci.yml` | Ubuntu | manual run only | `make e2e`, screenshots uploaded on failure |
-| cargo-deny | `ci.yml` | Ubuntu | manual run only | licences, advisories, bans, sources (`deny.toml`) |
-| docs | `docs.yml` | Ubuntu | manual run only | `scripts/check-links.sh`, script tests, actionlint |
-| Linux smoke | `linux-smoke.yml` | PRs touching `apps/desktop/**` or the smoke files | release (blocks the draft); manual run | builds the AppImage and `.deb`, then `scripts/linux-smoke.sh` in ubuntu:22.04 and ubuntu:24.04 containers |
-| Windows smoke | `windows-smoke.yml` | PRs touching `apps/desktop/**`, the agent lookup or the smoke files | release (blocks the draft when the `.msi` built); manual run | builds the `.msi`, then `scripts/windows-smoke.ps1` on windows-2025 and windows-2022 |
-| commit messages | `docs.yml` | Ubuntu, PRs only | no | commitlint over the PR's commits |
+### Pull requests and pushes to `main`
 
-`ci.yml` skips changes that only touch `docs/**` or Markdown; `docs.yml`
-always runs. `release.yml` calls `ci.yml` twice: the macOS tests, which
-run alongside the bundles and which the draft release waits for (each
-release is tested on macOS), and the Windows build, which never blocks the
-release.
+The first job, `changed paths`, compares the change with its base
+(`scripts/ci-changes.sh`: the merge commit's first parent for a pull
+request, the previous commit for a push) and picks the rest. Its job
+summary says what it picked and why.
+
+| Change | Jobs |
+|---|---|
+| code (anything below does not match) | fmt + clippy, test (ubuntu-24.04), e2e, cargo-deny; plus the two below when they apply |
+| … that reaches Windows | + test (windows-2025) |
+| … that reaches Chrome on macOS | + Chrome on macOS (LaunchServices) |
+| version bump only | none: `changed paths` itself checks the diff is only what `make version` writes |
+| docs only | none (docs.yml checks the links) |
+
+`CI result`, the last job, passes when every job that ran passed (a
+skipped job counts as passed). It is the check to require for merging, so
+a version-only or docs-only pull request can merge too.
+
+Which paths pull in which job, and why:
+
+| Paths | Pull in | Why |
+|---|---|---|
+| `apps/desktop/**`, `crates/od-job/**`, `crates/od-term/**`, `crates/od-runtime/src/{detect,login_path,process,engine}.rs` | Windows tests | what the Windows job is for: the desktop shell, the Job Object, the PTY, agent lookup through `.cmd` shims and the registry Path |
+| any `.rs` file with `#[cfg(…)]`, `cfg!(…)` or `#[cfg_attr(…)]` naming `windows` or `unix` (`not(windows)` too), or `target_os` / `target_family = "windows"`, before or after the change | Windows tests | code that branches on the platform; Linux builds only one branch |
+| `Cargo.toml`, `Cargo.lock`, `.cargo/**`, `rust-toolchain*`, any `build.rs`, `.config/nextest.toml` | Windows tests | the build itself |
+| `crates/od-render-cdp/**`, `crates/od-cli/**`, `Cargo.lock` | Chrome on macOS | how a render starts Chrome (LaunchServices exists only on macOS), the exports that use it, dependency bumps (chromiumoxide) |
+| `.github/workflows/ci.yml`, `scripts/ci-changes.sh` | both | the plan itself |
+| `docs/**`, Markdown outside `content/`, `crates/`, `apps/`, `bridges/` | nothing | no build reads them; Markdown under those folders is content or fixtures that tests read, so it counts as code |
+
+A version bump is version-only when the diff holds nothing but: the
+`[workspace.package]` version in `Cargo.toml`, the same old → new version
+of the workspace packages in `Cargo.lock`, `CHANGELOG.md` with the new
+version's section, and docs. One byte more (a dependency, an edition,
+another file, `apps/desktop/tauri.conf.json`, which `make version` never
+writes) and it runs as code. File names outside ASCII are read as they
+are (`core.quotepath=off`). The tag build tests the release in full.
+
+### Full tier: nightly and release
+
+`nightly.yml` runs `ci.yml` with `only: full` at 19:00 UTC on `main`
+(and from the Actions tab): fmt + clippy, test on Ubuntu, macOS and
+Windows, e2e, cargo-deny, Chrome on macOS, the Windows build. A red night
+shows on the Actions tab and names each job in the `CI result` table of
+the run summary; nothing is opened or posted elsewhere. A manual
+"Run workflow" of CI runs the same set.
+
+`release.yml` calls `ci.yml` twice on the tagged commit: `only: release`
+(every test, the Windows tests included; the draft release waits for it,
+so no release goes out with a red test on any OS) and `only: windows` (the
+Windows build of every target; best effort, it never blocks the release).
+On pull requests the Windows tests run only for the paths above, and
+nightly reports them red; the tag is where they block. See [release.md](release.md).
+
+### Other workflows
+
+| Workflow | Runs on | Does |
+|---|---|---|
+| `docs.yml` | every pull request and push to `main` | `scripts/check-links.sh`, script tests, actionlint; commitlint over the PR's commits |
+| `linux-smoke.yml` | PRs touching `apps/desktop/**` or the smoke files; release (blocks the draft); manual | builds the AppImage and `.deb`, then `scripts/linux-smoke.sh` in ubuntu:22.04 and ubuntu:24.04 containers |
+| `windows-smoke.yml` | PRs touching `apps/desktop/**`, the agent lookup or the smoke files; release (blocks the draft when the `.msi` built); manual | builds the `.msi`, then `scripts/windows-smoke.ps1` on windows-2025 and windows-2022 |
+
+### Speed and stability
+
+- The test job runs `cargo nextest run --profile ci` (test binaries side by
+  side; `cargo test` runs them one after another), then the doc tests.
+  `.config/nextest.toml` keeps the file-watcher tests of `od-preview`
+  serial, as their mutex did under `cargo test`. Windows keeps
+  `cargo test`.
+- Rust caches (`Swatinem/rust-cache`) are saved from `main` only. A cache
+  saved by a pull request or a tag serves only that ref; those filled the
+  10 GB repository cache and pushed `main`'s out, so pull requests built
+  from cold.
+- e2e runs in two shards side by side (`OD_E2E_SHARD=1/2`, `2/2`: every
+  other scenario of the longest-first list); in one job it was the longest
+  job of a pull request (13–16 minutes).
+- e2e: a scenario that fails runs once more, alone (`OD_E2E_RETRIES=1`).
+  One that passes then is flaky: a warning, a "flaky" section in the job
+  summary, and `flaky-row:` lines in the log for
+  [qa/flaky.md](qa/flaky.md). Its first log stays as
+  `test-results/logs/<name>.try1.log` in the uploaded artifact.
+- Setup steps that download (apt, brew, choco, npm, Playwright browsers)
+  go through `scripts/ci-retry.sh`: three tries, 15 s and 30 s apart.
+  Every apt call has a time limit: `scripts/linux-deps.sh` (10 minutes a
+  try; the test job installs ffmpeg through it too) and the e2e job's
+  ffmpeg (5 minutes, waiting for the dpkg lock). Playwright's
+  `--with-deps` has none: it runs `sudo apt-get` itself, which `timeout`
+  cannot stop, and the apt-get left running held the dpkg lock. On 18/11 a mirror
+  at 47 kB/s held 3 of 6 test jobs for 13 minutes in an apt call that had
+  no limit. The lint and test jobs also keep the downloaded `.deb` files
+  (`APT_ARCHIVES`): every run restores the newest `apt-<job>-…` cache, and
+  `main` saves a new one when apt changed the folder, also after apt gave
+  up, so the next run goes on from there instead of from zero. apt then
+  fetches only the package lists and what changed since.
+  cargo and rustup retry their own downloads. Tests are never retried, except the single e2e
+  retry above.
 
 Actions are pinned to commit SHAs, permissions are read-only, and a newer
 push cancels the running workflow for the same branch. Dependabot opens at

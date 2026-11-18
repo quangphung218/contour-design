@@ -1,6 +1,7 @@
-# Docs links, script tests, workflow lint and commit messages. Kept apart
-# from ci.yml so that they also run when only docs or Markdown change
-# (ci.yml ignores those paths).
+# Docs links, script tests, workflow lint and commit messages, on every
+# pull request and push to main. ci.yml runs too but, for a change that is
+# only docs or a version bump, skips its build and test jobs
+# (scripts/ci-changes.sh).
 name: Docs
 
 on:

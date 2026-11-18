@@ -156,19 +156,20 @@ release ""; rc=$?
 check "no release yet: a draft is created" '[ $rc -eq 0 ] && grep -q "release create v9.9.9 .*--draft" "$work/gh-calls"'
 
 # The bundles start without waiting for any tests; the draft release waits
-# for the macOS tests (below) and never for the Windows build.
+# for the tests (below, the Windows tests included) and never for the
+# Windows build.
 ruby -ryaml -e '
   jobs = YAML.load_file(ARGV[0])["jobs"]
   call = ->(name) { j = jobs[name] or abort("no job #{name}"); "#{j["uses"]} only=#{(j["with"] || {})["only"]}" }
   puts "bundle needs: #{Array(jobs["bundle"]["needs"]).sort.join(",")}"
   puts "macos-binary needs: #{Array(jobs["macos-binary"]["needs"]).sort.join(",")}"
   puts "ui needs: #{Array(jobs["ui"]["needs"]).sort.join(",")}"
-  puts "macos-tests: #{call.("macos-tests")}"
+  puts "tests: #{call.("tests")}"
   puts "windows-build: #{call.("windows-build")}"
   waiting = jobs.select { |_, j| Array(j["needs"]).include?("windows-build") }.keys
   puts "waits for windows: #{waiting.join(",")}"' "$workflow" > "$work/gates" 2>&1
 check "bundles start after the version check, not after the tests" 'grep -qx "bundle needs: check,ui" "$work/gates" && grep -qx "macos-binary needs: check" "$work/gates" && grep -qx "ui needs: check" "$work/gates"'
-check "macOS tests come from ci.yml with only=macos" 'grep -qx "macos-tests: ./.github/workflows/ci.yml only=macos" "$work/gates"'
+check "the tests come from ci.yml with only=release" 'grep -qx "tests: ./.github/workflows/ci.yml only=release" "$work/gates"'
 check "the Windows build runs from ci.yml with only=windows" 'grep -qx "windows-build: ./.github/workflows/ci.yml only=windows" "$work/gates"'
 check "no job waits for the Windows build" 'grep -qx "waits for windows: " "$work/gates"'
 
@@ -196,7 +197,7 @@ ruby -ryaml -e '
   puts "smoke: #{smoke["uses"]} needs=#{Array(smoke["needs"]).join(",")}"
   puts "smoke artifact: #{smoke["with"]["artifact"] == upload["with"]["name"].sub("${{ matrix.name }}", "windows-x64")}"
   puts "windows bundle best effort: #{windows["best_effort"]} continue-on-error: #{jobs["bundle"]["continue-on-error"]}"' "$workflow" > "$work/wsmoke" 2>&1
-check "the draft release waits for the macOS tests, every bundle and both smoke tests" 'grep -qx "release needs: bundle,linux-smoke,macos-tests,macos-universal,windows-smoke" "$work/smoke"'
+check "the draft release waits for the tests, every bundle and both smoke tests" 'grep -qx "release needs: bundle,linux-smoke,macos-universal,tests,windows-smoke" "$work/smoke"'
 check "the Windows smoke test runs windows-smoke.yml after the bundles" 'grep -qx "smoke: ./.github/workflows/windows-smoke.yml needs=bundle" "$work/wsmoke"'
 check "the Windows smoke test gets the .msi artifact the bundle job uploads" 'grep -qx "smoke artifact: true" "$work/wsmoke"'
 check "the Windows bundle stays best effort" 'grep -qx "windows bundle best effort: true continue-on-error: \${{ matrix.best_effort }}" "$work/wsmoke"'

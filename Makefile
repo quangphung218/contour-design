@@ -20,7 +20,7 @@ APP_NAME := Contour
 BUNDLE_DIR = $(CARGO_TARGET_DIR)/$(1)/bundle
 
 .DEFAULT_GOAL := help
-.PHONY: help setup dev run check test e2e e2e-qa demo-gif lint fmt clippy clippy-wasm deny ui-dist ui-release \
+.PHONY: help setup dev run quick check test e2e e2e-qa demo-gif lint fmt clippy clippy-wasm deny ui-dist ui-release \
 	app-debug app-release dmg install clean version ci links commitlint test-scripts licenses
 
 help: ## Show this help
@@ -35,6 +35,11 @@ dev: ui-dist ## Daemon on :7456 + `trunk serve` with hot reload on :8080
 
 run: ui-dist ## Build and run the daemon, UI at http://127.0.0.1:7456
 	cargo run -p od-cli --bin od
+
+# docs/development.md, "Which check when": quick while you work, check
+# before review, e2e when the UI or the daemon's HTTP API changes.
+quick: ui-dist ## fmt, then clippy + tests of the crates changed since origin/main and their direct dependents
+	@scripts/quick.sh
 
 check: ui-dist ## fmt --check + clippy -D warnings + test (the pre-commit gate)
 	cargo fmt --all --check
