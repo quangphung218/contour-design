@@ -130,7 +130,9 @@
   // CDN script, an image) are not fonts and are left out. Listening here,
   // before any author markup, catches the page's own `<head>` links.
   // ---------------------------------------------------------------------
-  var FONT_HOST = /font|typekit|typography/i;
+  var FONT_HOST = /font|typekit|typography|^rsms\.me$/i;
+  // A font package on a general CDN (jsDelivr, unpkg): `@fontsource/…`.
+  var FONT_PATH = /\/@fontsource\//i;
   var MAX_BLOCKED_FONTS = 10;
   var blockedFonts = [];
   function blockedFont(e) {
@@ -140,7 +142,8 @@
     if (directive.indexOf('font-src') === 0) return url;
     if (directive.indexOf('style-src') !== 0) return null;
     try {
-      return FONT_HOST.test(new URL(url).hostname) ? url : null;
+      var u = new URL(url);
+      return FONT_HOST.test(u.hostname) || FONT_PATH.test(u.pathname) ? url : null;
     } catch (_) {
       return null;
     }

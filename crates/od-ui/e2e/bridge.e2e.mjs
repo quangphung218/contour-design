@@ -535,10 +535,14 @@ const FONT_URLS = [
   'https://fonts.googleapis.com/css2?family=Instrument+Serif',
   'https://fonts.bunny.net/css?family=lato',
   'https://cdn.example.com/brand.woff2',
+  'https://rsms.me/inter/inter.css',
+  'https://cdn.jsdelivr.net/npm/@fontsource/inter/index.css',
 ];
 const fontsFrame = (withFonts) => `<!doctype html><html><head><script data-od-key="K">${bridge}</script>
 ${withFonts ? `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="${FONT_URLS[0]}">
+<link rel="stylesheet" href="${FONT_URLS[3]}">
+<link rel="stylesheet" href="${FONT_URLS[4]}">
 <style>@import url('${FONT_URLS[1]}');
 @font-face { font-family: Brand; src: url(${FONT_URLS[2]}) format('woff2'); }
 h1 { font-family: Brand, serif; }</style>` : '<style>h1 { font-family: Georgia, serif; }</style>'}
