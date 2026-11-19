@@ -369,6 +369,13 @@ impl AssistantTurn {
                 // The status line says it (UI-008): no error block.
                 self.failure = Some(od_contracts::FailureCategory::DaemonRestart);
             }
+            AgentEvent::Error { code, .. }
+                if code.as_deref() == Some(od_contracts::APP_QUIT_CODE) =>
+            {
+                // Stopped by Contour quitting: the status line says it
+                // (QA-114), no error block.
+                self.failure = Some(od_contracts::FailureCategory::AppQuit);
+            }
             AgentEvent::Error { message, .. } => self.blocks.push(Block::Error(message)),
             AgentEvent::ToolLoop {
                 tool_name,
@@ -1234,6 +1241,58 @@ mod tests {
             Some(od_contracts::FailureCategory::DaemonRestart)
         );
         assert!(t.blocks.is_empty(), "{:?}", t.blocks);
+    }
+
+    #[test]
+    fn a_turn_stopped_by_quitting_says_so_not_a_lost_connection() {
+        // QA-114: ⌘Q mid-run ended the turn as "Lost the connection".
+        use crate::guide::{RunPhase, run_phase, stopped_by_quit};
+        use crate::i18n::{T, t};
+        // Live: the run's end.
+        let mut live = AssistantTurn::new();
+        live.apply(decode_frame(
+            "end",
+            r#"{"status":"canceled","code":null,"terminalAt":1,"failureCategory":"app_quit","error":"the daemon stopped while this run was in progress"}"#,
+        ));
+        // Opened again: the stored events, with the files written before.
+        let msg: Message = serde_json::from_value(json!({
+            "id": "m2", "conversationId": "c1", "role": "assistant", "content": "",
+            "position": 1, "createdAt": 1, "runId": "r9", "runStatus": "canceled",
+            "events": [
+                {"type": "tool_use", "id": "t1", "name": "Write", "input": {"file_path": "index.html", "content": "x"}},
+                {"type": "error", "message": "Contour was quit while this run was in progress", "code": od_contracts::APP_QUIT_CODE, "terminal": true}
+            ]
+        }))
+        .unwrap_or_else(|e| panic!("{e}"));
+        let stored = AssistantTurn::from_stored(&msg);
+        for t in [&live, &stored] {
+            assert_eq!(run_phase(t), RunPhase::Stopped);
+            assert!(stopped_by_quit(t), "{t:?}");
+            assert!(
+                !t.blocks.iter().any(|b| matches!(b, Block::Error(_))),
+                "{:?}",
+                t.blocks
+            );
+        }
+        assert_eq!(stored.touched_files(), ["index.html"]);
+        let hint = t(T::RunQuitHint);
+        assert!(
+            hint.contains("quit") && !hint.contains("connection"),
+            "{hint}"
+        );
+        // A Stop is not a quit, nor is a crash.
+        let mut stop = AssistantTurn::new();
+        stop.apply(decode_frame(
+            "end",
+            r#"{"status":"canceled","code":null,"terminalAt":1}"#,
+        ));
+        assert!(!stopped_by_quit(&stop));
+        let mut crash = AssistantTurn::new();
+        crash.apply(decode_frame(
+            "end",
+            r#"{"status":"failed","code":null,"terminalAt":1,"failureCategory":"daemon_restart"}"#,
+        ));
+        assert!(!stopped_by_quit(&crash));
     }
 
     #[test]

@@ -4,7 +4,9 @@
 //! `FileWorkspace` navigation guard does, the browser's Back included, and
 //! the browser asks before a close or reload. In the desktop app, closing
 //! the window or quitting asks too: the shell knows whether work would be
-//! lost (`set_unsaved`) and sends `od:menu` `close` or `quit`.
+//! lost (`set_unsaved`) and sends `od:menu` `close` or `quit`, or
+//! `close:N` / `quit:N` while N agents run, which quitting stops: the same
+//! dialog then says so too (QA-114).
 //!
 //! The question is the app's own dialog, not `window.confirm`: in the
 //! desktop app `tauri-plugin-dialog` makes `confirm` async, so its answer
@@ -14,7 +16,7 @@ use super::Shell;
 use super::desktop;
 use super::icons::Glyph;
 use super::lib_ui::Modal;
-use crate::i18n::{T, t};
+use crate::i18n::{T, t, tf};
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
@@ -41,18 +43,30 @@ pub(super) enum Leave {
     /// while the question is open, and the target is this many entries
     /// back.
     Back(i32),
-    /// The desktop app's window closing or the app quitting: the shell
-    /// holds it until the answer (`close_answer`).
-    App,
+    /// The desktop app's window closing or the app quitting, with
+    /// `running` agents it stops: the shell holds it until the answer
+    /// (`close_answer`).
+    App { running: usize },
 }
 
-/// The desktop shell's `od:menu` `close` or `quit`: the shell holds the
-/// close until the page answers, `go` at once when nothing would be lost,
-/// else after the question (`asking` first, so the shell waits).
-fn app_closing(shell: Shell) {
-    if shell.would_lose() {
+/// The desktop shell's `od:menu` `close` or `quit` (`close:N`, `quit:N`
+/// while N agents run): how many agents run, `None` for another menu.
+fn app_closing_detail(detail: &str) -> Option<usize> {
+    let (way, running) = detail.split_once(':').unwrap_or((detail, "0"));
+    matches!(way, "close" | "quit")
+        .then(|| running.parse().ok())
+        .flatten()
+}
+
+/// The desktop shell's ask to close or quit with `running` agents: the
+/// shell holds the close until the page answers, `go` at once when nothing
+/// would be lost or stopped, else after the question (`asking` first, so
+/// the shell waits). Asked again while the question is open (a second
+/// ⌘Q): the same question, with the count now.
+fn app_closing(shell: Shell, running: usize) {
+    if shell.would_lose() || running > 0 {
         desktop::close_answer("asking");
-        shell.leaving.set(Some(Leave::App));
+        shell.leaving.set(Some(Leave::App { running }));
     } else {
         desktop::close_answer("go");
     }
@@ -233,8 +247,13 @@ pub fn LeaveGuard() -> impl IntoView {
     let menu = window_event_listener(
         ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
         move |e| {
-            if matches!(e.detail().as_string().as_deref(), Some("close" | "quit")) {
-                app_closing(shell);
+            if let Some(running) = e
+                .detail()
+                .as_string()
+                .as_deref()
+                .and_then(app_closing_detail)
+            {
+                app_closing(shell, running);
             }
         },
     );
@@ -259,7 +278,7 @@ pub fn LeaveGuard() -> impl IntoView {
         }
     });
     let stay = Callback::new(move |()| {
-        if matches!(shell.leaving.get_untracked(), Some(Leave::App)) {
+        if matches!(shell.leaving.get_untracked(), Some(Leave::App { .. })) {
             desktop::close_answer("stay");
         }
         shell.leaving.set(None);
@@ -279,29 +298,58 @@ pub fn LeaveGuard() -> impl IntoView {
                     let _ = history.go_with_delta(-steps);
                 }
             }
-            Leave::App => {
+            Leave::App { .. } => {
                 // The window goes with the page: no second ask.
                 released.set_value(true);
                 desktop::close_answer("go");
             }
         }
     });
+    // Agents a quit would stop: the one dialog says so beside the drafts.
+    let running = Memo::new(move |_| match shell.leaving.get() {
+        Some(Leave::App { running }) => running,
+        _ => 0,
+    });
     view! {
         <Show when=move || shell.leaving.with(Option::is_some)>
-            <Modal title=t(T::ManualLeaveTitle).to_owned() glyph=Glyph::EditText on_close=stay testid="leave-dialog"
-                initial_focus="[data-testid=leave-stay]">
-                <div class="dialog-body">
-                    <p>{t(T::LeaveDraftsConfirm)}</p>
-                    <ul class="leave-files" data-testid="leave-files">
-                        {shell.losing().into_iter().map(|f| view! { <li class="mono small">{f}</li> }).collect_view()}
-                    </ul>
-                </div>
-                <div class="dialog-foot">
-                    <button class="btn" data-testid="leave-stay" on:click=move |_| stay.run(())>{t(T::Cancel)}</button>
-                    <button class="btn danger" data-testid="leave-go" on:click=move |_| leave.run(())>{t(T::ManualLeave)}</button>
-                </div>
-            </Modal>
+            {move || {
+                let running = running.get();
+                let losing = shell.losing();
+                let (title, glyph, go) = if running > 0 {
+                    (T::QuitAgentsTitle, Glyph::Stop, T::QuitStopAgents)
+                } else {
+                    (T::ManualLeaveTitle, Glyph::EditText, T::ManualLeave)
+                };
+                view! {
+                    <Modal title=t(title).to_owned() glyph=glyph on_close=stay testid="leave-dialog"
+                        initial_focus="[data-testid=leave-stay]">
+                        <div class="dialog-body">
+                            {(running > 0).then(|| view! {
+                                <p data-testid="quit-agents">{quit_agents_text(running)}</p>
+                            })}
+                            {(running == 0 || !losing.is_empty()).then(|| view! {
+                                <p>{t(T::LeaveDraftsConfirm)}</p>
+                                <ul class="leave-files" data-testid="leave-files">
+                                    {losing.into_iter().map(|f| view! { <li class="mono small">{f}</li> }).collect_view()}
+                                </ul>
+                            })}
+                        </div>
+                        <div class="dialog-foot">
+                            <button class="btn" data-testid="leave-stay" on:click=move |_| stay.run(())>{t(T::Cancel)}</button>
+                            <button class="btn danger" data-testid="leave-go" on:click=move |_| leave.run(())>{t(go)}</button>
+                        </div>
+                    </Modal>
+                }
+            }}
         </Show>
+    }
+}
+
+/// "2 agents are still running. Quitting stops them; …".
+fn quit_agents_text(running: usize) -> String {
+    match running {
+        1 => t(T::QuitAgentsOne).to_owned(),
+        n => tf(T::QuitAgentsMany, &[&n.to_string()]),
     }
 }
 
@@ -322,4 +370,20 @@ fn link_leaves_page(a: &web_sys::Element) -> bool {
         .and_then(|w| w.location().pathname().ok())
         .unwrap_or_default();
     href.split(['?', '#']).next() != Some(here.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::app_closing_detail;
+
+    #[test]
+    fn the_shells_ask_carries_the_agents_running() {
+        assert_eq!(app_closing_detail("quit"), Some(0));
+        assert_eq!(app_closing_detail("close"), Some(0));
+        assert_eq!(app_closing_detail("quit:2"), Some(2));
+        assert_eq!(app_closing_detail("close:1"), Some(1));
+        assert_eq!(app_closing_detail("reload"), None);
+        assert_eq!(app_closing_detail("open-project:p1"), None);
+        assert_eq!(app_closing_detail("quit:x"), None);
+    }
 }

@@ -76,8 +76,8 @@ impl RunContext {
 
     /// Stops every live run the way Stop does (abort line, SIGTERM to the
     /// process group, SIGKILL after the grace) and waits until each has
-    /// ended and its turn is recorded (failed as `daemon_restart`; a run
-    /// the user had stopped already stays canceled), or the limit passes.
+    /// ended and its turn is recorded (canceled as `app_quit`; a run the
+    /// user had stopped already stays canceled with no category), or the limit passes.
     pub async fn stop_all(&self) {
         self.stopping.cancel();
         {
@@ -107,6 +107,18 @@ impl RunContext {
                 "runs still ending at shutdown"
             );
         }
+    }
+
+    /// How many runs have not ended: launching, running or stopping, in
+    /// any project, started from the chat, `od` or MCP alike. Quitting
+    /// the desktop app asks first while any does (QA-114).
+    #[must_use]
+    pub fn running(&self) -> usize {
+        self.registry
+            .list()
+            .iter()
+            .filter(|run| !run.status().is_terminal())
+            .count()
     }
 
     /// Resolves once the daemon starts to stop ([`Self::stop_all`]). An
@@ -170,8 +182,8 @@ pub struct AppState {
 
 impl AppState {
     /// Ends what the daemon started that would outlive it: running agents
-    /// (stopped as by Stop, their turns recorded as failed with
-    /// `daemon_restart`, as after a crash) and the
+    /// (stopped as by Stop, their turns recorded as canceled with
+    /// `app_quit`: Contour was quit, QA-114) and the
     /// terminal tabs' shells and their jobs. Call once the server stopped
     /// serving.
     pub async fn shutdown(&self) {

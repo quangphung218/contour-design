@@ -108,12 +108,12 @@ async fn shutdown_before_launch_is_not_lost() {
     tokio::time::timeout(Duration::from_secs(10), d.state.runs.stop_all())
         .await
         .expect("stop_all did not return");
-    // Told as Contour closing, not as a Stop the user never pressed.
+    // Told as Contour quitting (QA-114), apart from a Stop (no category).
     let reg = d.state.runs.registry.get(&run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
     assert_eq!(
         reg.end_payload().and_then(|e| e.failure_category),
-        Some(od_contracts::FailureCategory::DaemonRestart)
+        Some(od_contracts::FailureCategory::AppQuit)
     );
     // The turn is recorded as ended before stop_all returns.
     let body = d
@@ -128,7 +128,12 @@ async fn shutdown_before_launch_is_not_lost() {
         .find(|m| m["role"] == "assistant")
         .cloned()
         .unwrap();
-    assert_eq!(assistant["runStatus"], "failed", "{assistant}");
+    assert_eq!(assistant["runStatus"], "canceled", "{assistant}");
+    assert_eq!(
+        assistant["events"][0]["code"],
+        od_contracts::APP_QUIT_CODE,
+        "{assistant}"
+    );
     let _ = fut.await;
 }
 

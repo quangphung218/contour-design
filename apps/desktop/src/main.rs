@@ -486,16 +486,23 @@ fn close_answer(app: AppHandle, answer: String) -> Result<(), String> {
 
 /// Takes the user's ask to close or quit `way` into the [`CloseGuard`]:
 /// `true` when the guard holds it (the caller prevents it) while the page
-/// asks about work not saved.
+/// asks about work not saved or running agents.
 fn hold_close<R: Runtime>(app: &AppHandle<R>, way: Way) -> bool {
+    let running = running_agents(app);
     let Some((held, actions)) = app
         .try_state::<Mutex<CloseGuard>>()
-        .and_then(|guard| guard.lock().ok().map(|mut guard| guard.ask(way)))
+        .and_then(|guard| guard.lock().ok().map(|mut guard| guard.ask(way, running)))
     else {
         return false;
     };
     run_close_actions(app, actions);
     held
+}
+
+/// The in-process daemon's runs not ended yet, in every project (QA-114).
+fn running_agents<R: Runtime>(app: &AppHandle<R>) -> usize {
+    app.try_state::<Daemon>()
+        .map_or(0, |daemon| daemon.state.runs.running())
 }
 
 /// Takes `event` into the [`CloseGuard`] and carries out what it says. The
@@ -526,7 +533,7 @@ fn run_close_actions<R: Runtime>(app: &AppHandle<R>, actions: Vec<CloseAction>) 
 fn run_close_action<R: Runtime>(app: &AppHandle<R>, action: CloseAction) {
     match action {
         CloseAction::Let => {}
-        CloseAction::AskPage(way) => ui_action(app, way.as_menu()),
+        CloseAction::AskPage { way, running } => ui_action(app, &way.menu_detail(running)),
         CloseAction::CheckLater { token, after } => {
             let app = app.clone();
             std::thread::spawn(move || {
@@ -2782,8 +2789,12 @@ mod tests {
                 .contains("Action::PageGone => close_event(app, CloseEvent::PageGone)")
         );
         assert!(code.contains(".manage(Mutex::new(CloseGuard::default()))"));
-        // The page is asked by the word its leave guard takes.
-        assert!(body("run_close_action").contains("ui_action(app, way.as_menu())"));
+        // The page is asked by the word its leave guard takes, with the
+        // agents running in the in-process daemon (QA-114).
+        assert!(body("run_close_action").contains("ui_action(app, &way.menu_detail(running))"));
+        assert!(body("hold_close").contains("let running = running_agents(app);"));
+        assert!(body("hold_close").contains("guard.ask(way, running)"));
+        assert!(body("running_agents").contains("daemon.state.runs.running()"));
     }
 
     #[test]
