@@ -1,7 +1,8 @@
 # Status
 
 What works in Contour today, how each part was checked, and what has not been checked. Last updated
-2026-11-19, for `0.2.0-beta.50` (`main` at `ef003c2`). Each user-visible change is in
+2026-11-19, for `0.2.0-beta.50`. `main` at `2064d77` (#265) adds what is under Unreleased in the
+changelog (the quit dialog for running agents, suggestions under a turn), checked by tests only so far. Each user-visible change is in
 [CHANGELOG.md](../CHANGELOG.md); the feature-by-feature comparison with OpenDesign is in
 [parity.md](parity.md).
 
@@ -18,7 +19,7 @@ When a change makes a row here wrong, update it in the same pull request.
 | Release tag | [`release.yml`](../.github/workflows/release.yml) | every CI test on the tagged commit, the bundles, the macOS sealed-signature check, the Linux and Windows smoke tests; the draft waits for them |
 | By hand | [docs/qa/](qa/) | a person (or an agent driving the real app) runs a released build; each run is a dated note |
 
-The e2e tests start a real daemon with a mock agent and fail on any request that leaves the machine. 21
+The e2e tests start a real daemon with a mock agent and fail on any request that leaves the machine. 22
 specs live in `crates/od-ui/e2e/`.
 
 ## What works, and how it was checked

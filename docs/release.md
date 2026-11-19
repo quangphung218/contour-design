@@ -95,7 +95,9 @@ CI does the building; a person decides when and checks the result.
 To rebuild a release (for example after a flaky runner), run the workflow by
 hand from the Actions tab with the existing tag. Files are replaced only
 while the release is still a draft; a published release is never rewritten
-(the job fails instead), so cut a new patch version.
+(the job fails instead), so cut a new patch version. A rebuild also sets the
+draft's text back to the CHANGELOG section: set the
+[release text](#release-text) again after it.
 
 ## Before publishing: check the packaged app
 
@@ -131,10 +133,14 @@ in the Verified line, or leave the release in draft.
 
 ## Release text
 
-`scripts/release-notes.sh <version>` prints the CHANGELOG section as it is;
-`release.yml` uses it for the draft and for `latest.json`, which the app
-shows in Update now. Before publishing, replace the draft's text with the
-full release body:
+`scripts/release-notes.sh <version>` prints the CHANGELOG section without
+its `### Highlights` block; `release.yml` uses it for the draft and for
+`latest.json`, which the app shows in Update now. Before publishing, replace
+the draft's text with the full release body.
+
+Do this **after the last run of the Release workflow** for the tag: every
+run on a draft sets the draft's text again from the CHANGELOG (`gh release
+edit --notes-file`), so a rebuild after this step drops the body.
 
 ```bash
 gh release view v0.2.0 --json assets -q '.assets[].name' > /tmp/assets
@@ -148,7 +154,7 @@ The body has four parts:
 
 | Part | From |
 |---|---|
-| Highlights | the bullets of the version's `### Highlights` block, else its first 3 Added, Fixed or Changed bullets |
+| Highlights | the bullets of the version's `### Highlights` block; no Highlights part when the version has none |
 | What's changed | the CHANGELOG section, without the Highlights block |
 | Verified | the `--verified` line; without it, "Automated checks only … not yet checked by hand" |
 | Downloads | a row per installer in `--assets` (every row without it), linked to the release, then the `SHA256SUMS` and `codesign` note |
@@ -167,6 +173,13 @@ The body has four parts:
       contains the fix (`git merge-base --is-ancestor <fix-commit> v<v>`),
       with a comment naming the version and how the fix was checked.
 - [ ] **STATUS.md** says which version it describes.
+- [ ] **Downloads after 7 days.** Record how often each file was downloaded,
+      in the QA note of that release:
+
+      ```bash
+      gh api repos/quangphung218/contour-design/releases/tags/v<v> \
+        --jq '.assets[] | "\(.name) \(.download_count)"'
+      ```
 
 ## Signing and notarisation (macOS)
 

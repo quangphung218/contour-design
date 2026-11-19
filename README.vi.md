@@ -97,8 +97,8 @@ Toàn bộ tính năng (studio, slide, terminal tab, routine, MCP server, CLI `o
 > - **Mới xong một phần:** Windows và Linux được kiểm bằng smoke test tự động, chưa có người kiểm tay mỗi
 >   bản; các agent khác được test với bản giả, chưa chạy thật từng cái; bản build chưa có Developer ID
 >   hay chữ ký code cho Windows.
-> - **Tiếp theo:** người kiểm tay luồng chính trên Windows và Ubuntu, và kiểm tay Update now từ bản trước
->   trên từng hệ điều hành (CI không kiểm được việc này).
+> - **Tiếp theo:** beta.51, bản phát hành hằng tuần vào thứ Hai 23/11: hộp thoại hỏi trước khi thoát làm
+>   dừng các agent đang chạy (QA-114), và gợi ý bước tiếp theo lấy từ chính lượt vừa xong.
 >
 > [docs/STATUS.md](docs/STATUS.md) liệt kê từng phần và cách đã kiểm. Gặp lỗi thì
 > [mở issue](https://github.com/quangphung218/contour-design/issues).
@@ -219,8 +219,8 @@ Tài liệu trong `docs/` viết bằng tiếng Anh.
 ## License và ghi công
 
 Contour dùng [Apache License 2.0](LICENSE), giống OpenDesign. Contour xây trên OpenDesign của nexu-io và
-các contributor: skill, design template, design system, craft guide, plugin và prompt lấy từ OpenDesign
-(commit `e03d5c2`) và giữ license, ghi công riêng. [NOTICE](NOTICE) liệt kê code bên thứ ba đi kèm và các
+các contributor: skill, design system, 113 trên 174 design template, craft guide, plugin và prompt lấy từ
+OpenDesign (commit `e03d5c2`) và giữ license, ghi công riêng; 61 template còn lại được làm riêng cho Contour. [NOTICE](NOTICE) liệt kê code bên thứ ba đi kèm và các
 file Contour đã sửa; [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES) chứa license của mọi Rust crate và tài
 nguyên đi kèm (`make licenses`). App hiện cả hai ở Settings ▸ About ▸ Licenses.
 

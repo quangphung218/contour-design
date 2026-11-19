@@ -64,8 +64,10 @@ check() { # check <name> <condition>
 has() { grep -qxF -- "$1" "$work/out"; }
 
 run 1.2.0; rc=$?
-check "plain: prints the section as it is" '[ $rc -eq 0 ] && has "### Highlights" && has "- A new export." && ! grep -q "## Downloads" "$work/out"'
+check "plain: prints the section without its Highlights block" '[ $rc -eq 0 ] && ! grep -q "Highlights" "$work/out" && ! grep -q "Export waits" "$work/out" && has "### Added" && has "- A new export." && has "- A fixed bug." && ! grep -q "## Downloads" "$work/out"'
 check "plain: stops at the next version" '! grep -q "Fix one" "$work/out"'
+run 1.1.0; rc=$?
+check "plain: a section without Highlights is printed as it is" '[ $rc -eq 0 ] && [ "$(cat "$work/out")" = "$(printf "\n### Fixed\n\n- Fix one.\n- Fix two.\n\n### Added\n\n- Add one.\n- Add two.\n- Add three.\n")" ]'
 run v1.2.0; rc=$?
 check "plain: a leading v is accepted" '[ $rc -eq 0 ] && has "- A fixed bug."'
 run 9.9.9; rc=$?
@@ -83,9 +85,9 @@ check "body: every download row with the default repo" 'grep -qF "[\`Contour_1.2
 check "body: checksum and signature note" 'grep -qF "SHA256SUMS" "$work/out" && grep -qF "codesign --verify --deep --strict" "$work/out"'
 
 run --body 1.1.0; rc=$?
-check "body: without a Highlights block, the first Added then Fixed bullets, 3 at most" '[ $rc -eq 0 ] && [ "$(sed -n "3,5p" "$work/out" | tr "\n" "|")" = "- Add one.|- Add two.|- Add three.|" ]'
+check "body: without a Highlights block there is no Highlights part" '[ $rc -eq 0 ] && [ "$(head -1 "$work/out")" = "## What'"'"'s changed" ] && ! grep -q "Highlights" "$work/out" && [ "$(grep -c "^- Add one\.$" "$work/out")" -eq 1 ]'
 run --body 1.0.0; rc=$?
-check "body: Changed when there is no Added or Fixed" '[ $rc -eq 0 ] && [ "$(sed -n 3p "$work/out")" = "- Only a change." ]'
+check "body: a one-bullet version without Highlights says its bullet once" '[ $rc -eq 0 ] && [ "$(grep -c "Only a change" "$work/out")" -eq 1 ] && ! grep -q "Highlights" "$work/out"'
 
 printf 'Contour_1.2.0_universal.dmg\nContour_1.2.0_amd64.deb\nSHA256SUMS\n' > "$work/assets"
 run --body 1.2.0 --verified "Checked by hand on macOS: [QA note](docs/qa/x.md)" --assets "$work/assets" --repo o/r; rc=$?

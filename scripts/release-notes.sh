@@ -2,13 +2,15 @@
 # Release notes for one version, from CHANGELOG.md.
 #
 #   scripts/release-notes.sh 0.2.0
-#     The CHANGELOG.md section of that version, as it is. release.yml uses it
-#     for the draft release and the updater's latest.json.
+#     The CHANGELOG.md section of that version, without its "### Highlights"
+#     block (those bullets repeat lines below them). release.yml uses it for
+#     the draft release and the updater's latest.json.
 #
 #   scripts/release-notes.sh --body 0.2.0 [--verified "<line>"] [--assets <file>] [--repo <owner/name>]
 #     The GitHub release body: Highlights, What's changed, Verified, Downloads.
 #     Highlights are the bullets of the version's optional "### Highlights"
-#     block, else its first Added, Fixed or Changed bullets (3 at most).
+#     block; without that block there is no Highlights part (the first
+#     bullets would only repeat What's changed).
 #     --verified is the maintainer's line, e.g. a link to the native QA note;
 #       without it the body says the build was not checked by hand.
 #     --assets is a file with one asset name per line
@@ -49,8 +51,14 @@ notes="$(awk -v v="$v" '
   p { print }' "$file")"
 [ -n "$(printf '%s' "$notes" | tr -d '[:space:]')" ] || { echo "CHANGELOG.md has no notes for $v" >&2; exit 1; }
 
+# The section without its Highlights block.
+without="$(printf '%s\n' "$notes" | awk '
+  $0 == "### Highlights" { skip=1; next }
+  skip && /^### / { skip=0 }
+  !skip { print }')"
+
 if [ $body -eq 0 ]; then
-  printf '%s\n' "$notes"
+  printf '%s\n' "$without"
   exit 0
 fi
 
@@ -67,15 +75,7 @@ bullets() {
 }
 
 highlights="$(bullets Highlights)"
-if [ -z "$highlights" ]; then
-  highlights="$( { bullets Added; bullets Fixed; bullets Changed; } | awk 'NR <= 3')"
-fi
-
-# The section without its Highlights block, so nothing is said twice.
-changes="$(printf '%s\n' "$notes" | awk '
-  $0 == "### Highlights" { skip=1; next }
-  skip && /^### / { skip=0 }
-  !skip { print }' | awk 'NF { started=1 } started' )"
+changes="$(printf '%s\n' "$without" | awk 'NF { started=1 } started')"
 
 tag="v$v"
 url="https://github.com/$repo/releases/download/$tag"

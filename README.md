@@ -97,8 +97,8 @@ The full tour (studio, decks, terminal tabs, routines, MCP server, the `od` CLI)
 > - **Partly there:** Windows and Linux are checked by automated smoke tests, not by a person each release;
 >   other agents are tested against stand-ins, not each one live; the builds have no Developer ID or
 >   Windows code signing.
-> - **Next:** a person's run of the main flow on Windows and Ubuntu, and Update now from the previous
->   release checked by hand on each system (CI cannot check it).
+> - **Next:** beta.51, the weekly release on Monday 23 November: the quit dialog that asks before stopping
+>   running agents (QA-114) and Next suggestions drawn from each finished turn.
 >
 > [docs/STATUS.md](docs/STATUS.md) lists each part and how it was checked. Found something broken?
 > [Open an issue](https://github.com/quangphung218/contour-design/issues).
@@ -217,8 +217,9 @@ The rest (direct text editing limits, detached processes, Wayland) is in
 ## License and credits
 
 Contour is licensed under the [Apache License 2.0](LICENSE), like OpenDesign. It is built on OpenDesign by
-nexu-io and contributors: skills, design templates, design systems, craft guides, plugins and prompt texts
-come from OpenDesign (commit `e03d5c2`) and keep their own licences and attribution. [NOTICE](NOTICE) lists
+nexu-io and contributors: skills, design systems, 113 of the 174 design templates, craft guides, plugins and
+prompt texts come from OpenDesign (commit `e03d5c2`) and keep their own licences and attribution; the other 61
+templates were made for Contour. [NOTICE](NOTICE) lists
 the bundled third-party code and the files Contour changed; [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES)
 holds the licence text of every Rust crate and vendored asset (`make licenses`). The app shows both in
 Settings ▸ About ▸ Licenses.
