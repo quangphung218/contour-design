@@ -369,6 +369,10 @@ async fn prepare_and_launch(
     let assistant = assistant_message_id.clone();
     let user_message = user_message_id.to_owned();
     let model2 = model.clone();
+    // The key of this turn's `<od-next>` markers: shown only in its prompt,
+    // so a page or file the agent reads cannot plant a suggestion.
+    let next_step_key: String = uuid::Uuid::new_v4().simple().to_string()[..16].to_owned();
+    let key_for_launch = next_step_key.clone();
     let bound = crate::routes::library::plugins::project_plugin_request(req, project);
     let plugin =
         crate::routes::media::plugins::applied_plugin(&content, bound.as_ref().unwrap_or(req))?;
@@ -513,10 +517,12 @@ async fn prepare_and_launch(
             let transcript = prompt::transcript(&turns);
             let request =
                 prompt::with_comment_attachments(&req2.message, &req2.comment_attachments);
+            let turn = prompt::next_steps_block(&next_step_key, req2.locale.as_deref());
             let full = prompt::compose_user_message(
                 Some(&instructions),
                 Some(&cwd_str),
                 Some(&transcript),
+                Some(&turn),
                 &request,
                 &req2.attachments,
             );
@@ -527,6 +533,7 @@ async fn prepare_and_launch(
                         (!same).then_some(instructions.as_str()),
                         None,
                         None,
+                        Some(&turn),
                         &request,
                         &req2.attachments,
                     );
@@ -638,6 +645,7 @@ async fn prepare_and_launch(
                 project_id: Some(project.id.clone()),
                 byok: prepared.byok,
                 mcp: mcp.launch,
+                next_step_key: Some(key_for_launch),
             }))
         }
     };

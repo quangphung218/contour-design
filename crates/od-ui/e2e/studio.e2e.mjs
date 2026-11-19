@@ -388,8 +388,11 @@ try {
   // command palette (Ctrl/Cmd+K) and the shortcuts help (?).
   assert.equal(await assistant.last().getByTestId('run-state').getAttribute('data-phase'), 'done');
   await assistant.last().getByTestId('next-steps').getByTestId('next-open').waitFor();
-  await assistant.last().getByTestId('next-mobile').click();
-  assert.match(await page.getByTestId('composer').inputValue(), /390px/);
+  // The mock deck lacks a slide theme (a P0 lint finding): the first chip
+  // asks to fix it, in the lint's own words.
+  assert.equal((await assistant.last().getByTestId('next-fix').textContent()).trim(), 'Fix 1 issue: slide theme missing');
+  await assistant.last().getByTestId('next-fix').click();
+  assert.match(await page.getByTestId('composer').inputValue(), /^<artifact-lint>[\s\S]*\[P0\] slide-theme-missing/);
   await page.getByTestId('composer').fill('');
   assert.equal(await assistant.first().getByTestId('next-steps').count(), 0, 'next steps only under the latest turn');
   await page.evaluate(() => document.activeElement?.blur());

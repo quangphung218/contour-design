@@ -16,8 +16,8 @@ use crate::chat::{
     AssistantTurn, Block, Step, TodoStatus, ToolCall, TurnLayout, plan_progress, run_time_ms,
 };
 use crate::guide::{
-    Activity, FailCause, Followup, NextStep, RunPhase, activity, elapsed, fail_cause, last_file,
-    next_steps, run_phase,
+    Activity, FailCause, FixStep, Followup, NextStep, PageLint, RunPhase, activity, elapsed,
+    fail_cause, last_file, next_steps, run_phase, written_page,
 };
 use crate::i18n::{T, t, tf};
 use crate::markdown;
@@ -27,7 +27,7 @@ use crate::question_form::{
 };
 use crate::workspace::{QueueHold, move_item};
 use leptos::prelude::*;
-use od_contracts::CommentStatus;
+use od_contracts::{CommentStatus, LintResponse};
 use send_wrapper::SendWrapper;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
@@ -1054,13 +1054,16 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     }
 }
 
-/// Suggested next steps under the latest finished turn.
+/// Suggested next steps under the latest finished turn: chips that fill the
+/// composer (the lint fix, the agent's suggestions, Retry), then small
+/// actions (open the page, comment, export, toolbox).
 #[component]
 fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
     let sources = use_context::<Sources>();
     let shell = Shell::get();
     let navigate = super::leave_guard::use_leave();
+    let tasks = Tasks::here();
     let item_id = StoredValue::new(item_id);
     // The user message this turn answered, and its files, for a retry.
     let asked = move || {
@@ -1072,83 +1075,155 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
             })
         })
     };
+    // The lint of the page the turn wrote, again when the page changes:
+    // `(page, None)` when it could not run.
+    let page = Memo::new(move |_| turn.with(written_page));
+    let lint: RwSignal<Option<(String, Option<LintResponse>)>> = RwSignal::new(None);
+    let lint_seq = StoredValue::new(0u32);
+    Effect::new(move |_| {
+        ctx.preview_rev.track();
+        let Some(path) = page.get() else { return };
+        lint_seq.update_value(|n| *n = n.wrapping_add(1));
+        let seq = lint_seq.get_value();
+        let url = format!("{}/lint/{}", ctx.base(), super::api::file_path(&path));
+        tasks.spawn(async move {
+            let res = super::api::get::<LintResponse>(&url).await.ok();
+            // An older answer than the latest request is dropped.
+            if lint_seq.try_get_value() == Some(seq) {
+                let _ = lint.try_set(Some((path, res)));
+            }
+        });
+    });
+    let fill = move |text: String| {
+        ctx.draft.set(text);
+        focus_composer();
+    };
     move || {
-        let steps = turn.with(next_steps);
+        let steps = lint.with(|l| {
+            let state = match l {
+                Some((p, res)) if page.with(|now| now.as_ref() == Some(p)) => {
+                    res.as_ref().map_or(PageLint::Failed, PageLint::Done)
+                }
+                _ => PageLint::Pending,
+            };
+            turn.with(|tn| next_steps(tn, state))
+        });
         let steps_wrote = steps.iter().any(|s| matches!(s, NextStep::Open(_)));
         let wrote_page = steps_wrote && sources.is_some();
         (!steps.is_empty()).then(|| {
             let navigate = navigate.clone();
+            let (chips, actions): (Vec<NextStep>, Vec<NextStep>) =
+                steps.into_iter().partition(|s| s.is_chip() || matches!(s, NextStep::Retry | NextStep::Settings));
             view! {
                 <div class="next-steps" data-testid="next-steps" aria-label=t(T::NextSteps)>
-                    <span class="next-label">{t(T::NextSteps)}</span>
-                    {steps
-                        .into_iter()
-                        .map(|step| {
-                            let navigate = navigate.clone();
-                            // Retry waits for Contour to be back, then turns on
-                            // by itself (UI-008).
-                            let offline = matches!(step, NextStep::Retry);
-                            let (glyph, label, testid) = match &step {
-                                NextStep::Open(path) => (Glyph::Eye, tf(T::NextOpen, &[path.rsplit('/').next().unwrap_or(path)]), "next-open"),
-                                NextStep::Comment => (Glyph::Comment, t(T::NextComment).to_owned(), "next-comment"),
-                                NextStep::Prompt(Followup::Mobile) => (Glyph::Phone, t(T::NextMobile).to_owned(), "next-mobile"),
-                                NextStep::Prompt(Followup::Variations) => (Glyph::Sparkle, t(T::NextVariations).to_owned(), "next-variations"),
-                                NextStep::Retry => (Glyph::Refresh, t(T::NextRetry).to_owned(), "next-retry"),
-                                NextStep::Settings => (Glyph::Settings, t(T::NextSettings).to_owned(), "next-settings"),
-                            };
-                            let run = move |_| match &step {
-                                NextStep::Open(path) => {
-                                    ctx.open_file(path);
-                                    ctx.show_code.set(false);
-                                }
-                                NextStep::Comment => ctx.set_comment_mode(true),
-                                NextStep::Prompt(f) => {
-                                    let text = match f {
-                                        Followup::Mobile => t(T::FollowupMobile),
-                                        Followup::Variations => t(T::FollowupVariations),
+                    {(!chips.is_empty()).then(|| view! {
+                        <div class="next-chips" data-testid="next-chips">
+                            <span class="next-label">{t(T::NextSteps)}</span>
+                            {chips
+                                .into_iter()
+                                .map(|step| {
+                                    let navigate = navigate.clone();
+                                    // Retry waits for Contour to be back, then turns on
+                                    // by itself (UI-008).
+                                    let offline = matches!(step, NextStep::Retry);
+                                    let (glyph, label, testid) = match &step {
+                                        NextStep::Fix(fix) => (Glyph::Warning, fix_label(fix), "next-fix"),
+                                        NextStep::Suggest(text) => (Glyph::ArrowRight, text.clone(), "next-suggestion"),
+                                        NextStep::Prompt(Followup::Mobile) => (Glyph::Phone, t(T::NextMobile).to_owned(), "next-mobile"),
+                                        NextStep::Prompt(Followup::Variations) => (Glyph::Sparkle, t(T::NextVariations).to_owned(), "next-variations"),
+                                        NextStep::Retry => (Glyph::Refresh, t(T::NextRetry).to_owned(), "next-retry"),
+                                        _ => (Glyph::Settings, t(T::NextSettings).to_owned(), "next-settings"),
                                     };
-                                    ctx.draft.set(text.to_owned());
-                                    focus_composer();
-                                }
-                                NextStep::Retry => {
-                                    if let Some((text, files)) = asked() {
-                                        ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, files));
-                                        ctx.send(text, shell);
+                                    let run = move |_| match &step {
+                                        NextStep::Fix(fix) => fill(fix.prompt.clone()),
+                                        NextStep::Suggest(text) => fill(text.clone()),
+                                        NextStep::Prompt(f) => fill(match f {
+                                            Followup::Mobile => t(T::FollowupMobile),
+                                            Followup::Variations => t(T::FollowupVariations),
+                                        }.to_owned()),
+                                        NextStep::Retry => {
+                                            if let Some((text, files)) = asked() {
+                                                ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, files));
+                                                ctx.send(text, shell);
+                                            }
+                                        }
+                                        _ => navigate("/settings"),
+                                    };
+                                    view! {
+                                        <button class="chip next-step" data-testid=testid on:click=run
+                                            disabled=move || offline && ctx.link_down.get()
+                                            title=move || (offline && ctx.link_down.get()).then(|| t(T::RetryWaitsForLink))>
+                                            {icon(glyph)}<span class="next-text">{label}</span>
+                                        </button>
                                     }
-                                }
-                                NextStep::Settings => navigate("/settings"),
-                            };
-                            view! {
-                                <button class="chip next-step" data-testid=testid on:click=run
-                                    disabled=move || offline && ctx.link_down.get()
-                                    title=move || (offline && ctx.link_down.get()).then(|| t(T::RetryWaitsForLink))>
-                                    {icon(glyph)}{label}
-                                </button>
-                            }
-                        })
-                        .collect_view()}
-                    // The way out: on a phone the Export menu sits on the
-                    // Preview pane, so this opens it there.
-                    {steps_wrote.then(|| view! {
-                        <button class="chip next-step" data-testid="next-export"
-                            on:click=move |_| {
-                                ctx.pane.set(super::studio::NarrowPane::Preview);
-                                ctx.export_open.set(true);
-                            }>
-                            {icon(Glyph::Export)}{t(T::Export)}
-                        </button>
+                                })
+                                .collect_view()}
+                        </div>
                     })}
-                    {wrote_page.then(|| crate::toolbox::FEATURED.iter().filter_map(|id| crate::toolbox::find(id)).map(|a| view! {
-                        <button class="chip next-step" data-testid="next-toolbox" data-action=a.id
-                            on:click=move |_| if let Some(sources) = sources {
-                                super::composer::apply_toolbox(a, sources, ctx.chat.context, ctx.draft);
-                            }>
-                            {icon(Glyph::Sparkle)}{t(a.title)}
-                        </button>
-                    }).collect_view())}
+                    {(!actions.is_empty() || wrote_page).then(|| view! {
+                        <div class="next-actions" data-testid="next-actions">
+                            {actions.into_iter().map(|step| {
+                                let (glyph, label, testid) = match &step {
+                                    NextStep::Open(path) => (Glyph::Eye, tf(T::NextOpen, &[path.rsplit('/').next().unwrap_or(path)]), "next-open"),
+                                    _ => (Glyph::Comment, t(T::NextComment).to_owned(), "next-comment"),
+                                };
+                                let run = move |_| match &step {
+                                    NextStep::Open(path) => {
+                                        ctx.open_file(path);
+                                        ctx.show_code.set(false);
+                                    }
+                                    _ => ctx.set_comment_mode(true),
+                                };
+                                view! {
+                                    <button class="btn ghost small next-action" data-testid=testid on:click=run>
+                                        {icon(glyph)}{label}
+                                    </button>
+                                }
+                            }).collect_view()}
+                            // The way out: on a phone the Export menu sits on the
+                            // Preview pane, so this opens it there.
+                            {steps_wrote.then(|| view! {
+                                <button class="btn ghost small next-action" data-testid="next-export"
+                                    on:click=move |_| {
+                                        ctx.pane.set(super::studio::NarrowPane::Preview);
+                                        ctx.export_open.set(true);
+                                    }>
+                                    {icon(Glyph::Export)}{t(T::Export)}
+                                </button>
+                            })}
+                            {wrote_page.then(|| crate::toolbox::FEATURED.iter().filter_map(|id| crate::toolbox::find(id)).map(|a| view! {
+                                <button class="btn ghost small next-action" data-testid="next-toolbox" data-action=a.id
+                                    on:click=move |_| if let Some(sources) = sources {
+                                        super::composer::apply_toolbox(a, sources, ctx.chat.context, ctx.draft);
+                                    }>
+                                    {icon(Glyph::Sparkle)}{t(a.title)}
+                                </button>
+                            }).collect_view())}
+                        </div>
+                    })}
                 </div>
             }
         })
+    }
+}
+
+/// "Fix 2 issues: emoji icon, raw hex", naming at most three rules.
+fn fix_label(fix: &FixStep) -> String {
+    const SHOWN: usize = 3;
+    let mut rules = fix
+        .rules
+        .iter()
+        .take(SHOWN)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if fix.rules.len() > SHOWN {
+        rules.push_str(&format!(", +{}", fix.rules.len() - SHOWN));
+    }
+    if fix.count == 1 {
+        tf(T::NextFixOne, &[&rules])
+    } else {
+        tf(T::NextFixMany, &[&fix.count.to_string(), &rules])
     }
 }
 
@@ -1200,7 +1275,7 @@ pub(super) fn render_block(
         return ().into_any();
     }
     match block {
-        Block::Text(text) => question_form::split(&crate::chat::without_jury_protocol(&text))
+        Block::Text(text) => question_form::split(&crate::chat::readable_prose(&text))
             .into_iter()
             .map(|seg| match seg {
                 Segment::Text(t) => {

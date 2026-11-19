@@ -75,6 +75,7 @@ sleep 300
             project_id: None,
             byok: None,
             mcp: od_runtime::McpLaunch::default(),
+            next_step_key: None,
         });
         let mut sub = run.subscribe(0);
         while let Some(ev) = sub.next().await {
@@ -188,6 +189,7 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
             project_id: None,
             byok: None,
             mcp: od_runtime::McpLaunch::default(),
+            next_step_key: None,
         })
         .await
         .unwrap();
@@ -278,6 +280,7 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
                 project_id: None,
                 byok: None,
                 mcp: od_runtime::McpLaunch::default(),
+                next_step_key: None,
             })
             .await
             .unwrap();
@@ -350,6 +353,7 @@ printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"en
                 project_id: None,
                 byok: None,
                 mcp: od_runtime::McpLaunch::default(),
+                next_step_key: None,
             })
             .await
             .unwrap();
@@ -444,6 +448,7 @@ async fn run_opencode(engine: &RunEngine, runs: &Runs, id: &str, cwd: &Path) {
             project_id: None,
             byok: None,
             mcp: od_runtime::McpLaunch::default(),
+            next_step_key: None,
         })
         .await
         .unwrap();

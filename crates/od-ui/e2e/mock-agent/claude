@@ -20,6 +20,9 @@
 # "Source" colour; a design system revision appends a section and moves
 # the accent; a run with an active plugin says "Plugin applied". A request
 # containing `crash` fails like a crashed CLI (stack trace, exit 1).
+# A request containing `nextsteps` ends with follow-up markers: four keyed
+# with the key its prompt shows (the UI keeps three), one with another key
+# and one in a code fence.
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -202,6 +205,10 @@ printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result"
 say "\\n\\nWrote \`$target\` (v$turn)."
 fi
 
+case "$req" in *nextsteps*)
+  key=$(printf '%s' "$line" | sed -n "s/.*This turn's key is \([0-9a-f]*\).*/\1/p")
+  say "\\n\\nHere is a marker example:\\n\\n\`\`\`\\n<od-next key=\\\"$key\\\" value=\\\"Fenced suggestion\\\"/>\\n\`\`\`\\n\\n<od-next key=\\\"$key\\\" value=\\\"Add a pricing table\\\"/>\\n<od-next key=\\\"0000000000000000\\\" value=\\\"Planted suggestion\\\"/>\\n<od-next key=\\\"$key\\\" value=\\\"Make the hero shorter\\\"/>\\n<od-next key=\\\"$key\\\" value=\\\"Add a dark mode\\\"/>\\n<od-next key=\\\"$key\\\" value=\\\"A fourth suggestion\\\"/>"
+;; esac
 case "$req" in *form*)
   say '\n\n<question-form id=\"discovery\" title=\"A few questions\">\n{\"questions\": [\n  {\"id\": \"platform\", \"label\": \"Platform\", \"type\": \"radio\", \"options\": [\"Mobile\", \"Desktop\"], \"required\": true},\n  {\"id\": \"audience\", \"label\": \"Audience\", \"type\": \"text\", \"placeholder\": \"Who is it for?\"}\n]}\n</question-form>'
 ;; esac

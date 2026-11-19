@@ -112,7 +112,14 @@ async fn second_turn_resumes_and_a_model_change_does_not() {
             .to_owned()
     };
     assert!(text(0).starts_with("# Instructions (read first)"));
-    assert_eq!(text(1), "# User request\n\nmake it blue");
+    // Only the turn's own protocol (its key is new each turn) and the request.
+    assert!(
+        text(1).starts_with("# Follow-up suggestions\n\n"),
+        "{}",
+        text(1)
+    );
+    assert!(text(1).ends_with("\n\n---\n# User request\n\nmake it blue"));
+    assert!(!text(1).contains("# Instructions") && !text(1).contains("# Conversation so far"));
     assert!(text(2).starts_with("# Instructions (read first)"));
     assert!(
         text(2).contains(

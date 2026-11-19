@@ -1563,6 +1563,8 @@ messages! {
     NextComment => "Comment on the page", "Bình luận lên trang";
     NextMobile => "Mobile version", "Bản mobile";
     NextVariations => "Try variations", "Thử phương án khác";
+    NextFixOne => "Fix 1 issue: {0}", "Sửa 1 lỗi: {0}";
+    NextFixMany => "Fix {0} issues: {1}", "Sửa {0} lỗi: {1}";
     NextRetry => "Retry", "Thử lại";
     NextSettings => "Open Settings", "Mở Cài đặt";
     AgentOutput => "Agent output", "Output của agent";

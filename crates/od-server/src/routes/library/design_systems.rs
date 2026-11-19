@@ -1468,6 +1468,7 @@ pub(crate) async fn launch(
         project_id: None,
         byok: None,
         mcp: McpLaunch::default(),
+        next_step_key: None,
     });
     Ok(Launched { run_id, handle })
 }

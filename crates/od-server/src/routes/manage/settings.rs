@@ -326,6 +326,7 @@ async fn test_agent(
         project_id: None,
         byok,
         mcp: McpLaunch::default(),
+        next_step_key: None,
     });
     let ms = |s: Instant| u64::try_from(s.elapsed().as_millis()).unwrap_or(u64::MAX);
     let outcome = match tokio::time::timeout(timeout, handle).await {

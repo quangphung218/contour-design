@@ -3991,6 +3991,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.23.1",
+ "od-contracts",
  "od-store",
  "regex",
  "reqwest 0.12.28",

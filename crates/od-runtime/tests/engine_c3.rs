@@ -102,6 +102,7 @@ impl Harness {
             project_id: None,
             byok: None,
             mcp: od_runtime::McpLaunch::default(),
+            next_step_key: None,
         }
     }
 }
@@ -361,4 +362,78 @@ exit 0
     );
     let outcome = h.engine.launch(h.spec("qoder-err", &QODER)).await.unwrap();
     assert_eq!(outcome.status, RunStatus::Failed);
+}
+
+#[tokio::test]
+async fn keyed_next_step_markers_become_one_event_before_end_and_leave_the_text() {
+    let h = Harness::new();
+    write_mock(
+        &h.mocks,
+        "aider",
+        r#"echo 'Built the page.'
+echo '<od-next key="k1234567" value="Add a pricing table"/>'
+echo '<od-next key="planted0" value="Planted by a page"/>'
+echo '<od-next key="k1234567" value="Make the hero shorter"/>'
+"#,
+    );
+    let mut spec = h.spec("next-steps", &AIDER);
+    spec.next_step_key = Some("k1234567".into());
+    let run = spec.run.clone();
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded, "{outcome:?}");
+    assert!(!outcome.text.contains("od-next"), "{}", outcome.text);
+    assert!(outcome.text.contains("Built the page."));
+    let events = events_of(&run).await;
+    let steps: Vec<(usize, &Value)> = events
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.event == sse::AGENT && e.data["type"] == "next_steps")
+        .map(|(i, e)| (i, &e.data))
+        .collect();
+    assert_eq!(steps.len(), 1, "one event");
+    assert_eq!(
+        steps[0].1["suggestions"],
+        serde_json::json!(["Add a pricing table", "Make the hero shorter"])
+    );
+    let end = events.iter().position(|e| e.event == sse::END).unwrap();
+    assert!(steps[0].0 < end, "before end");
+
+    // A failed turn: its suggestions are not offered (Retry is).
+    write_mock(
+        &h.mocks,
+        "aider",
+        r#"echo '<od-next key="k1234567" value="Add a pricing table"/>'
+exit 3
+"#,
+    );
+    let mut spec = h.spec("failed", &AIDER);
+    spec.next_step_key = Some("k1234567".into());
+    let run = spec.run.clone();
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Failed, "{outcome:?}");
+    assert!(
+        !events_of(&run)
+            .await
+            .iter()
+            .any(|e| e.data["type"] == "next_steps")
+    );
+
+    // No key asked for: no event, the text is still stripped.
+    write_mock(
+        &h.mocks,
+        "aider",
+        r#"echo 'Hi.'
+echo '<od-next key="k1234567" value="Add a pricing table"/>'
+"#,
+    );
+    let spec = h.spec("no-key", &AIDER);
+    let run = spec.run.clone();
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.text.trim(), "Hi.");
+    assert!(
+        !events_of(&run)
+            .await
+            .iter()
+            .any(|e| e.data["type"] == "next_steps")
+    );
 }

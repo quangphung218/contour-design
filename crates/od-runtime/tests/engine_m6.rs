@@ -97,6 +97,7 @@ impl Harness {
             project_id: None,
             byok: None,
             mcp: od_runtime::McpLaunch::default(),
+            next_step_key: None,
         }
     }
 

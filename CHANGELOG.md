@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The suggestions under a finished turn now come from the turn itself: the agent ends its answer with up to three next actions on what it just made, in the app's language, and they show as chips that fill the composer (edit before sending). They stay after a reload. A page the turn wrote with must-fix or should-fix lint findings gets a first chip naming them ("Fix 1 issue: emoji icon") that asks the agent to fix them. "Mobile version" and "Try variations" show only when the agent suggested nothing and the lint found nothing. "View", "Comment on the page", Export and the toolbox actions are now small buttons under the chips.
+
 ## [0.2.0-beta.50] - 2026-11-19
 
 ### Fixed
