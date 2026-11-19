@@ -1757,6 +1757,13 @@ QuitAgentsTitle = Quitter Contour ?
 QuitAgentsOne = 1 agent est encore en cours. Quitter l’arrête ; les fichiers qu’il a déjà écrits sont conservés.
 QuitAgentsMany = {0} agents sont encore en cours. Quitter les arrête ; les fichiers qu’ils ont déjà écrits sont conservés.
 QuitStopAgents = Quitter et arrêter les agents
+QuitDraftsDrop = Ces fichiers ont un commentaire non envoyé ou une modification non appliquée. Ils seront abandonnés.
+QuitStopAgentsDrafts = Quitter, arrêter les agents et abandonner les brouillons
+RestartAgentsTitle = Redémarrer Contour ?
+RestartAgentsOne = 1 agent est encore en cours. Redémarrer l’arrête ; les fichiers qu’il a déjà écrits sont conservés.
+RestartAgentsMany = {0} agents sont encore en cours. Redémarrer les arrête ; les fichiers qu’ils ont déjà écrits sont conservés.
+RestartStopAgents = Redémarrer et arrêter les agents
+RestartStopAgentsDrafts = Redémarrer, arrêter les agents et abandonner les brouillons
 # Desktop app menu bar
 MenuAbout = À propos de {0}
 MenuServices = Services

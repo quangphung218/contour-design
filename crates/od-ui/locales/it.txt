@@ -1757,6 +1757,13 @@ QuitAgentsTitle = Uscire da Contour?
 QuitAgentsOne = 1 agente è ancora in esecuzione. Uscire lo ferma; i file che ha già scritto restano.
 QuitAgentsMany = {0} agenti sono ancora in esecuzione. Uscire li ferma; i file che hanno già scritto restano.
 QuitStopAgents = Esci e ferma gli agenti
+QuitDraftsDrop = Questi file hanno un commento non inviato o una modifica non applicata. Verranno scartati.
+QuitStopAgentsDrafts = Esci, ferma gli agenti e scarta le bozze
+RestartAgentsTitle = Riavviare Contour?
+RestartAgentsOne = 1 agente è ancora in esecuzione. Riavviare lo ferma; i file che ha già scritto restano.
+RestartAgentsMany = {0} agenti sono ancora in esecuzione. Riavviare li ferma; i file che hanno già scritto restano.
+RestartStopAgents = Riavvia e ferma gli agenti
+RestartStopAgentsDrafts = Riavvia, ferma gli agenti e scarta le bozze
 # Desktop app menu bar
 MenuAbout = Informazioni su {0}
 MenuServices = Servizi

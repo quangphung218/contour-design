@@ -1205,7 +1205,9 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await desk.getByTestId('leave-dialog').waitFor();
   assert.equal(await quitAgents(), '2 agents are still running. Quitting stops them; files they already wrote are kept.');
   assert.equal((await desk.getByTestId('leave-files').innerText()).trim(), 'reload.html', 'the drafts in the same dialog');
-  assert.equal((await desk.getByTestId('leave-go').innerText()).trim(), 'Quit and stop agents');
+  // No "Leave…?" question beside the agents: the button names both.
+  assert.equal((await desk.getByTestId('leave-drafts').innerText()).trim(), 'These files have a comment not sent or an edit not applied. They are dropped.');
+  assert.equal((await desk.getByTestId('leave-go').innerText()).trim(), 'Quit, stop agents and drop drafts');
   assert.match(await desk.getByTestId('leave-dialog').innerText(), /Quit Contour\?/);
   // ⌘Q again while it asks: the same one dialog says `asking` again (the
   // shell's timer then waits), never `go`.
@@ -1246,6 +1248,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await desk.getByTestId('leave-dialog').waitFor();
   assert.equal(await quitAgents(), '1 agent is still running. Quitting stops it; files it already wrote are kept.');
   assert.equal(await desk.getByTestId('leave-files').count(), 0, 'no drafts to list');
+  assert.equal((await desk.getByTestId('leave-go').innerText()).trim(), 'Quit and stop agents');
   await desk.getByTestId('leave-stay').click();
   await until(async () => (await answers()).at(-1) === 'close_answer stay', 'Cancel keeps the agent running');
   await menu('close:1');
@@ -1258,7 +1261,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await until(async () => (await answers()).length === quitAsked + 1, 'the quit is answered');
   assert.deepEqual((await answers()).slice(quitAsked), ['close_answer go']);
   assert.equal(await desk.getByTestId('leave-dialog').count(), 0, 'no question with nothing to lose');
-  results.quitAgents = 'od:menu quit:N / close:N (agents running, QA-114) asks in the one leave dialog: "N agents are still running…", the drafts listed beside, "Quit and stop agents"; a second quit while it asks keeps one dialog and answers asking again; Cancel answers stay and keeps the draft; with nothing unsaved it still asks, no files listed; plain quit with nothing goes at once';
+  results.quitAgents = 'od:menu quit:N / close:N (agents running, QA-114) asks in the one leave dialog: "N agents are still running…", the drafts listed beside with "Quit, stop agents and drop drafts" (no Leave question), "Quit and stop agents" with agents only; a second quit while it asks keeps one dialog and answers asking again; Cancel answers stay and keeps the draft; with nothing unsaved it still asks, no files listed; plain quit with nothing goes at once';
   results.openFolder = 'File ▸ Open Folder (od:menu open-project:<id>) asks with work not saved (Cancel keeps it, Leave opens the project) and opens at once with none';
   results.menuClose = 'the page tells the desktop shell whether it holds work not saved (set_unsaved), again once loaded again; od:menu close / quit answers go at once with nothing unsaved, else asks with the leave dialog naming the file (asking, then stay on Cancel with the edit kept, go on Leave); a comment draft and an image uploading with nothing typed count, named by their file while another shows';
   await deskContext.close();
@@ -1351,6 +1354,14 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   const quitLine = cutOff.getByTestId('run-state');
   await quitLine.getByText('Contour was quit while this turn ran').waitFor();
   assert.equal(await quitLine.getAttribute('data-phase'), 'stopped');
+  // The whole line shows in the chat column, "Files it already wrote are
+  // kept" included: it wraps, not cut by an ellipsis.
+  const quitHint = await quitLine.locator('.muted').evaluate((el) => ({
+    scroll: el.scrollWidth, client: el.clientWidth, chat: el.closest('[data-testid="assistant-msg"]').clientWidth, text: el.textContent,
+  }));
+  assert.ok(quitHint.scroll <= quitHint.client, `the quit line is cut: ${JSON.stringify(quitHint)}`);
+  assert.ok(quitHint.chat < 480, `a chat column as narrow as the default: ${quitHint.chat}`);
+  assert.match(quitHint.text, /Files it already wrote are kept\.$/);
   assert.equal(await cutOff.getByText('Lost the connection').count(), 0, 'not told as a lost connection');
   assert.equal(await cutOff.locator('.msg-error').count(), 0, 'one message: the status line');
   // The queue waits: the turn before was stopped.

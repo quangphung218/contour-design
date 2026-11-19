@@ -15,6 +15,12 @@
 //! app open: the close goes on. With no page to ask (gone, not loaded
 //! again yet) running agents do not hold the close.
 //!
+//! macOS logging out, restarting or shutting down quits through the same
+//! `terminate:` ([`system_quit`]): running agents do not hold it (they
+//! stop cleanly as the app exits), so Contour never cancels a logout or a
+//! restart for an agent left running overnight. Work not saved still
+//! asks, as a document app does.
+//!
 //! [`CloseGuard::step`] calls neither Tauri nor AppKit: `main.rs` feeds it
 //! and carries out its [`CloseAction`]s.
 
@@ -30,6 +36,8 @@ pub(crate) enum Way {
     Close,
     /// Quit the app.
     Quit,
+    /// Restart into an installed update (the update dialog's Restart).
+    Restart,
 }
 
 impl Way {
@@ -38,6 +46,7 @@ impl Way {
         match self {
             Self::Close => "close",
             Self::Quit => "quit",
+            Self::Restart => "restart",
         }
     }
 
@@ -49,6 +58,30 @@ impl Way {
             n => format!("{}:{n}", self.as_menu()),
         }
     }
+}
+
+/// `keyAEQuitReason` codes of the quit Apple Event when macOS logs out,
+/// restarts or shuts down (`AERegistry.h`), not the user quitting the app.
+#[cfg(any(target_os = "macos", test))]
+const SYSTEM_QUIT_REASONS: [&[u8; 4]; 6] = [
+    b"logo", // kAELogOut
+    b"rlgo", // kAEReallyLogOut
+    b"rrst", // kAEShowRestartDialog
+    b"rsdn", // kAEShowShutdownDialog
+    b"rest", // kAERestart
+    b"shut", // kAEShutDown
+];
+
+/// Whether a quit whose Apple Event gives `reason` (`keyAEQuitReason`, a
+/// four-char code; `None` for ⌘Q, the menu or the Dock) is macOS logging
+/// out, restarting or shutting down: running agents then do not hold it.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn system_quit(reason: Option<u32>) -> bool {
+    reason.is_some_and(|code| {
+        SYSTEM_QUIT_REASONS
+            .iter()
+            .any(|r| u32::from_be_bytes(**r) == code)
+    })
 }
 
 /// The page's answer to a close (`close_answer`).
@@ -404,6 +437,37 @@ mod tests {
         assert_eq!(guard.step(E::Check(1)), vec![]);
         assert_eq!(guard.step(E::Check(2)), vec![]);
         assert_eq!(guard.step(E::Reply(Reply::Go)), vec![Go(Way::Quit)]);
+    }
+
+    #[test]
+    fn macos_logging_out_restarting_or_shutting_down_is_a_system_quit() {
+        let code = |c: &[u8; 4]| Some(u32::from_be_bytes(*c));
+        for reason in [b"logo", b"rlgo", b"rrst", b"rsdn", b"rest", b"shut"] {
+            assert!(system_quit(code(reason)), "{reason:?}");
+        }
+        // ⌘Q, the menu, the Dock: no reason, or another one; they ask.
+        assert!(!system_quit(None));
+        assert!(!system_quit(code(b"quit")));
+        // Running agents do not hold a system quit; work not saved does.
+        let mut guard = page_loaded();
+        assert_eq!(guard.ask(Way::Quit, 0), (false, vec![Let]));
+        guard.step(E::Unsaved(true));
+        assert!(guard.ask(Way::Quit, 0).0);
+    }
+
+    #[test]
+    fn a_restart_into_an_update_asks_as_a_quit_does() {
+        let mut guard = page_loaded();
+        let (held, actions) = guard.ask(Way::Restart, 1);
+        assert!(held);
+        assert!(actions.contains(&AskPage {
+            way: Way::Restart,
+            running: 1,
+        }));
+        guard.step(E::Reply(Reply::Asking));
+        assert_eq!(guard.step(E::Reply(Reply::Go)), vec![Go(Way::Restart)]);
+        assert_eq!(page_loaded().ask(Way::Restart, 0), (false, vec![Let]));
+        assert_eq!(Way::Restart.menu_detail(2), "restart:2");
     }
 
     #[test]

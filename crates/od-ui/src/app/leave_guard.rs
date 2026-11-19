@@ -43,19 +43,68 @@ pub(super) enum Leave {
     /// while the question is open, and the target is this many entries
     /// back.
     Back(i32),
-    /// The desktop app's window closing or the app quitting, with
-    /// `running` agents it stops: the shell holds it until the answer
-    /// (`close_answer`).
-    App { running: usize },
+    /// The desktop app's window closing, the app quitting or restarting
+    /// into an update (`restart`), with `running` agents it stops: the
+    /// shell holds it until the answer (`close_answer`).
+    App { running: usize, restart: bool },
 }
 
-/// The desktop shell's `od:menu` `close` or `quit` (`close:N`, `quit:N`
-/// while N agents run): how many agents run, `None` for another menu.
-fn app_closing_detail(detail: &str) -> Option<usize> {
+/// The desktop shell's `od:menu` `close`, `quit` or `restart` (`quit:N`
+/// … while N agents run): whether it restarts and how many agents run,
+/// `None` for another menu.
+fn app_closing_detail(detail: &str) -> Option<(bool, usize)> {
     let (way, running) = detail.split_once(':').unwrap_or((detail, "0"));
-    matches!(way, "close" | "quit")
-        .then(|| running.parse().ok())
-        .flatten()
+    let restart = match way {
+        "close" | "quit" => false,
+        "restart" => true,
+        _ => return None,
+    };
+    Some((restart, running.parse().ok()?))
+}
+
+/// The leave dialog's words: one dialog for drafts and running agents,
+/// its text and its button saying the same (QA-114).
+#[derive(Debug, PartialEq, Eq)]
+struct AppWords {
+    title: T,
+    /// The agents a quit or a restart stops: (one, many).
+    agents: Option<(T, T)>,
+    /// What happens to the drafts, above their files.
+    drafts: Option<T>,
+    go: T,
+}
+
+fn app_words(restart: bool, running: usize, drafts: bool) -> AppWords {
+    if running == 0 {
+        return AppWords {
+            title: T::ManualLeaveTitle,
+            agents: None,
+            drafts: Some(T::LeaveDraftsConfirm),
+            go: T::ManualLeave,
+        };
+    }
+    let (title, agents, go, go_drafts) = if restart {
+        (
+            T::RestartAgentsTitle,
+            (T::RestartAgentsOne, T::RestartAgentsMany),
+            T::RestartStopAgents,
+            T::RestartStopAgentsDrafts,
+        )
+    } else {
+        (
+            T::QuitAgentsTitle,
+            (T::QuitAgentsOne, T::QuitAgentsMany),
+            T::QuitStopAgents,
+            T::QuitStopAgentsDrafts,
+        )
+    };
+    AppWords {
+        title,
+        agents: Some(agents),
+        // No question here: the button says what goes.
+        drafts: drafts.then_some(T::QuitDraftsDrop),
+        go: if drafts { go_drafts } else { go },
+    }
 }
 
 /// The desktop shell's ask to close or quit with `running` agents: the
@@ -63,10 +112,10 @@ fn app_closing_detail(detail: &str) -> Option<usize> {
 /// would be lost or stopped, else after the question (`asking` first, so
 /// the shell waits). Asked again while the question is open (a second
 /// ⌘Q): the same question, with the count now.
-fn app_closing(shell: Shell, running: usize) {
+fn app_closing(shell: Shell, restart: bool, running: usize) {
     if shell.would_lose() || running > 0 {
         desktop::close_answer("asking");
-        shell.leaving.set(Some(Leave::App { running }));
+        shell.leaving.set(Some(Leave::App { running, restart }));
     } else {
         desktop::close_answer("go");
     }
@@ -247,13 +296,13 @@ pub fn LeaveGuard() -> impl IntoView {
     let menu = window_event_listener(
         ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
         move |e| {
-            if let Some(running) = e
+            if let Some((restart, running)) = e
                 .detail()
                 .as_string()
                 .as_deref()
                 .and_then(app_closing_detail)
             {
-                app_closing(shell, running);
+                app_closing(shell, restart, running);
             }
         },
     );
@@ -306,29 +355,26 @@ pub fn LeaveGuard() -> impl IntoView {
         }
     });
     // Agents a quit would stop: the one dialog says so beside the drafts.
-    let running = Memo::new(move |_| match shell.leaving.get() {
-        Some(Leave::App { running }) => running,
-        _ => 0,
+    let app = Memo::new(move |_| match shell.leaving.get() {
+        Some(Leave::App { running, restart }) => (restart, running),
+        _ => (false, 0),
     });
     view! {
         <Show when=move || shell.leaving.with(Option::is_some)>
             {move || {
-                let running = running.get();
+                let (restart, running) = app.get();
                 let losing = shell.losing();
-                let (title, glyph, go) = if running > 0 {
-                    (T::QuitAgentsTitle, Glyph::Stop, T::QuitStopAgents)
-                } else {
-                    (T::ManualLeaveTitle, Glyph::EditText, T::ManualLeave)
-                };
+                let words = app_words(restart, running, !losing.is_empty());
+                let glyph = if running > 0 { Glyph::Stop } else { Glyph::EditText };
                 view! {
-                    <Modal title=t(title).to_owned() glyph=glyph on_close=stay testid="leave-dialog"
+                    <Modal title=t(words.title).to_owned() glyph=glyph on_close=stay testid="leave-dialog"
                         initial_focus="[data-testid=leave-stay]">
                         <div class="dialog-body">
-                            {(running > 0).then(|| view! {
-                                <p data-testid="quit-agents">{quit_agents_text(running)}</p>
+                            {words.agents.map(|(one, many)| view! {
+                                <p data-testid="quit-agents">{agents_text(one, many, running)}</p>
                             })}
-                            {(running == 0 || !losing.is_empty()).then(|| view! {
-                                <p>{t(T::LeaveDraftsConfirm)}</p>
+                            {words.drafts.map(|drafts| view! {
+                                <p data-testid="leave-drafts">{t(drafts)}</p>
                                 <ul class="leave-files" data-testid="leave-files">
                                     {losing.into_iter().map(|f| view! { <li class="mono small">{f}</li> }).collect_view()}
                                 </ul>
@@ -336,7 +382,7 @@ pub fn LeaveGuard() -> impl IntoView {
                         </div>
                         <div class="dialog-foot">
                             <button class="btn" data-testid="leave-stay" on:click=move |_| stay.run(())>{t(T::Cancel)}</button>
-                            <button class="btn danger" data-testid="leave-go" on:click=move |_| leave.run(())>{t(go)}</button>
+                            <button class="btn danger" data-testid="leave-go" on:click=move |_| leave.run(())>{t(words.go)}</button>
                         </div>
                     </Modal>
                 }
@@ -346,10 +392,10 @@ pub fn LeaveGuard() -> impl IntoView {
 }
 
 /// "2 agents are still running. Quitting stops them; …".
-fn quit_agents_text(running: usize) -> String {
+fn agents_text(one: T, many: T, running: usize) -> String {
     match running {
-        1 => t(T::QuitAgentsOne).to_owned(),
-        n => tf(T::QuitAgentsMany, &[&n.to_string()]),
+        1 => t(one).to_owned(),
+        n => tf(many, &[&n.to_string()]),
     }
 }
 
@@ -374,16 +420,48 @@ fn link_leaves_page(a: &web_sys::Element) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::app_closing_detail;
+    use super::{AppWords, T, app_closing_detail, app_words};
 
     #[test]
     fn the_shells_ask_carries_the_agents_running() {
-        assert_eq!(app_closing_detail("quit"), Some(0));
-        assert_eq!(app_closing_detail("close"), Some(0));
-        assert_eq!(app_closing_detail("quit:2"), Some(2));
-        assert_eq!(app_closing_detail("close:1"), Some(1));
+        assert_eq!(app_closing_detail("quit"), Some((false, 0)));
+        assert_eq!(app_closing_detail("close"), Some((false, 0)));
+        assert_eq!(app_closing_detail("quit:2"), Some((false, 2)));
+        assert_eq!(app_closing_detail("close:1"), Some((false, 1)));
+        assert_eq!(app_closing_detail("restart"), Some((true, 0)));
+        assert_eq!(app_closing_detail("restart:3"), Some((true, 3)));
         assert_eq!(app_closing_detail("reload"), None);
         assert_eq!(app_closing_detail("open-project:p1"), None);
         assert_eq!(app_closing_detail("quit:x"), None);
+    }
+
+    #[test]
+    fn the_dialogs_text_and_button_say_the_same() {
+        // Drafts only, as before: the leave question.
+        assert_eq!(
+            app_words(false, 0, true),
+            AppWords {
+                title: T::ManualLeaveTitle,
+                agents: None,
+                drafts: Some(T::LeaveDraftsConfirm),
+                go: T::ManualLeave,
+            }
+        );
+        // Agents only.
+        assert_eq!(app_words(false, 2, false).go, T::QuitStopAgents);
+        assert_eq!(app_words(false, 2, false).drafts, None);
+        // Both: no "Leave…?" question; the button names both.
+        let both = app_words(false, 2, true);
+        assert_eq!(both.drafts, Some(T::QuitDraftsDrop));
+        assert_eq!(both.go, T::QuitStopAgentsDrafts);
+        // Restart into an update: its own words.
+        let restart = app_words(true, 1, true);
+        assert_eq!(restart.title, T::RestartAgentsTitle);
+        assert_eq!(
+            restart.agents,
+            Some((T::RestartAgentsOne, T::RestartAgentsMany))
+        );
+        assert_eq!(restart.go, T::RestartStopAgentsDrafts);
+        assert_eq!(app_words(true, 1, false).go, T::RestartStopAgents);
     }
 }

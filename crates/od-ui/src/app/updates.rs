@@ -309,18 +309,16 @@ fn UpdateModal(
             state.set(None);
         });
     });
-    // Restart into the update: the leave guard asks first if work would
-    // be lost, with this dialog gone (closed as `close` does). Cancel keeps
-    // the page; the update waits for the next start.
-    let shell = super::Shell::get();
+    // Restart into the update, with this dialog gone (closed as `close`
+    // does): the shell's close guard asks the page first, in the quit's
+    // one dialog, if work would be lost or agents are running (`od:menu`
+    // `restart`). Cancel keeps the page; the update waits for the next
+    // start.
     let restart = move || {
         tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(0).await;
             state.set(None);
-            super::leave_guard::leave_then(shell, |release| {
-                release.now();
-                desktop::restart_app();
-            });
+            desktop::restart_app();
         });
     };
     // While installing the files are being replaced: Cancel only before that.

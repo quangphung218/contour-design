@@ -860,7 +860,6 @@ fn text_delta(ev: &od_runs::RunEvent) -> Option<&str> {
     ev.data.get("delta").and_then(Value::as_str)
 }
 
-/// The `agent` payload carrying a Design Jury report.
 /// Stores with turn `message` that Contour quitting stopped it, as an
 /// `error` event coded [`od_contracts::APP_QUIT_CODE`]: the chat says so
 /// when the turn is opened again, without the run's log (QA-114). Before
@@ -877,6 +876,7 @@ fn keep_app_quit(s: &Store, message: &str, run_id: &str, last_id: u64) {
     }
 }
 
+/// The `agent` payload carrying a Design Jury report.
 fn critique_event(report: &od_contracts::CritiqueReport) -> Value {
     serde_json::to_value(od_contracts::AgentEvent::Critique {
         report: report.clone(),

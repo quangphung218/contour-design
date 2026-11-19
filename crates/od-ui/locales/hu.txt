@@ -1750,6 +1750,13 @@ QuitAgentsTitle = Kilépsz a Contourból?
 QuitAgentsOne = Még fut 1 ügynök. A kilépés leállítja; a már megírt fájlok megmaradnak.
 QuitAgentsMany = Még fut {0} ügynök. A kilépés leállítja őket; a már megírt fájlok megmaradnak.
 QuitStopAgents = Kilépés és ügynökök leállítása
+QuitDraftsDrop = Ezekben a fájlokban el nem küldött megjegyzés vagy nem alkalmazott szerkesztés van. Elvesznek.
+QuitStopAgentsDrafts = Kilépés, ügynökök leállítása és piszkozatok elvetése
+RestartAgentsTitle = Újraindítod a Contourt?
+RestartAgentsOne = Még fut 1 ügynök. Az újraindítás leállítja; a már megírt fájlok megmaradnak.
+RestartAgentsMany = Még fut {0} ügynök. Az újraindítás leállítja őket; a már megírt fájlok megmaradnak.
+RestartStopAgents = Újraindítás és ügynökök leállítása
+RestartStopAgentsDrafts = Újraindítás, ügynökök leállítása és piszkozatok elvetése
 # Desktop app menu bar
 MenuAbout = A(z) {0} névjegye
 MenuServices = Szolgáltatások

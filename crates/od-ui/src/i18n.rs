@@ -1831,6 +1831,13 @@ messages! {
     QuitAgentsOne => "1 agent is still running. Quitting stops it; files it already wrote are kept.", "Còn 1 agent đang chạy. Thoát sẽ dừng agent này; các file đã ghi vẫn được giữ.";
     QuitAgentsMany => "{0} agents are still running. Quitting stops them; files they already wrote are kept.", "Còn {0} agent đang chạy. Thoát sẽ dừng các agent này; các file đã ghi vẫn được giữ.";
     QuitStopAgents => "Quit and stop agents", "Thoát và dừng agent";
+    QuitDraftsDrop => "These files have a comment not sent or an edit not applied. They are dropped.", "Các file này có bình luận chưa gửi hoặc chỉnh sửa chưa áp dụng. Chúng sẽ bị bỏ.";
+    QuitStopAgentsDrafts => "Quit, stop agents and drop drafts", "Thoát, dừng agent và bỏ nháp";
+    RestartAgentsTitle => "Restart Contour?", "Khởi động lại Contour?";
+    RestartAgentsOne => "1 agent is still running. Restarting stops it; files it already wrote are kept.", "Còn 1 agent đang chạy. Khởi động lại sẽ dừng agent này; các file đã ghi vẫn được giữ.";
+    RestartAgentsMany => "{0} agents are still running. Restarting stops them; files they already wrote are kept.", "Còn {0} agent đang chạy. Khởi động lại sẽ dừng các agent này; các file đã ghi vẫn được giữ.";
+    RestartStopAgents => "Restart and stop agents", "Khởi động lại và dừng agent";
+    RestartStopAgentsDrafts => "Restart, stop agents and drop drafts", "Khởi động lại, dừng agent và bỏ nháp";
     ManualApplyStyle => "Style", "Kiểu";
     ManualApplyAttributes => "Attributes", "Thuộc tính";
     ManualApplyHtml => "HTML", "HTML";

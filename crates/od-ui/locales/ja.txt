@@ -1756,6 +1756,13 @@ QuitAgentsTitle = Contour を終了しますか？
 QuitAgentsOne = エージェントが 1 件実行中です。終了すると停止します。書き込み済みのファイルは残ります。
 QuitAgentsMany = エージェントが {0} 件実行中です。終了するとすべて停止します。書き込み済みのファイルは残ります。
 QuitStopAgents = 終了してエージェントを停止
+QuitDraftsDrop = これらのファイルには未送信のコメントか未適用の編集があります。破棄されます。
+QuitStopAgentsDrafts = 終了してエージェントを停止し、下書きを破棄
+RestartAgentsTitle = Contour を再起動しますか？
+RestartAgentsOne = エージェントが 1 件実行中です。再起動すると停止します。書き込み済みのファイルは残ります。
+RestartAgentsMany = エージェントが {0} 件実行中です。再起動するとすべて停止します。書き込み済みのファイルは残ります。
+RestartStopAgents = 再起動してエージェントを停止
+RestartStopAgentsDrafts = 再起動してエージェントを停止し、下書きを破棄
 # Desktop app menu bar
 MenuAbout = {0}について
 MenuServices = サービス

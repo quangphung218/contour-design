@@ -1134,7 +1134,9 @@ async fn quitting_keeps_the_files_the_agent_wrote_listed() {
 IFS= read -r line
 printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
 printf 'new headline' > early.html
-printf '{{"type":"assistant","message":{{"id":"m1","content":[{{"type":"text","text":"wrote it"}}]}}}}\n'
+printf '{{"type":"assistant","message":{{"id":"m1","content":[{{"type":"tool_use","id":"t1","name":"Write","input":{{"file_path":"early.html","content":"new headline"}}}}]}}}}\n'
+printf 'by the shell' > shell.html
+printf '{{"type":"assistant","message":{{"id":"m2","content":[{{"type":"text","text":"wrote it"}}]}}}}\n'
 i=0
 while [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
 "#
@@ -1167,9 +1169,37 @@ while [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
         .iter()
         .filter_map(Value::as_str)
         .collect();
+    // `artifactPaths` holds the files written outside the write tools.
     assert!(
-        paths.iter().any(|p| p.ends_with("/early.html")),
-        "the file written before the quit: {paths:?}"
+        paths.iter().any(|p| p.ends_with("/shell.html")),
+        "the file the shell wrote before the quit: {paths:?}"
+    );
+    // What the chat lists the turn's files from once opened again: the
+    // stored `tool_use` rows (the agent's Write, and the row the turn
+    // added for the shell's file), kept before the quit's mark.
+    let messages = d.settled_messages(&project, &conversation).await;
+    let stored = messages[1]["events"].as_array().unwrap();
+    let written = |name: &str| {
+        stored
+            .iter()
+            .position(|e| {
+                e["type"] == "tool_use"
+                    && e["input"]["file_path"]
+                        .as_str()
+                        .is_some_and(|f| f.ends_with(name))
+            })
+            .unwrap_or_else(|| panic!("{name} is listed: {stored:?}"))
+    };
+    let quit = stored
+        .iter()
+        .position(|e| e["type"] == "error" && e["code"] == od_contracts::APP_QUIT_CODE)
+        .unwrap_or_else(|| panic!("the quit's mark: {stored:?}"));
+    assert!(written("early.html") < quit, "{stored:?}");
+    assert!(written("shell.html") < quit, "{stored:?}");
+    assert_eq!(
+        quit,
+        stored.len() - 1,
+        "the mark closes the events: {stored:?}"
     );
     drop(reader);
 }

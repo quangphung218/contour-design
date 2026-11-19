@@ -1755,6 +1755,13 @@ QuitAgentsTitle = 退出 Contour？
 QuitAgentsOne = 仍有 1 个代理在运行。退出会停止它；已写入的文件会保留。
 QuitAgentsMany = 仍有 {0} 个代理在运行。退出会停止它们；已写入的文件会保留。
 QuitStopAgents = 退出并停止代理
+QuitDraftsDrop = 这些文件有未发送的评论或未应用的编辑，将被丢弃。
+QuitStopAgentsDrafts = 退出、停止代理并丢弃草稿
+RestartAgentsTitle = 重新启动 Contour？
+RestartAgentsOne = 仍有 1 个代理在运行。重新启动会停止它；已写入的文件会保留。
+RestartAgentsMany = 仍有 {0} 个代理在运行。重新启动会停止它们；已写入的文件会保留。
+RestartStopAgents = 重新启动并停止代理
+RestartStopAgentsDrafts = 重新启动、停止代理并丢弃草稿
 # Desktop app menu bar
 MenuAbout = 关于 {0}
 MenuServices = 服务

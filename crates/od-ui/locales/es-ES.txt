@@ -1757,6 +1757,13 @@ QuitAgentsTitle = ¿Salir de Contour?
 QuitAgentsOne = Aún hay 1 agente en ejecución. Salir lo detiene; los archivos que ya escribió se conservan.
 QuitAgentsMany = Aún hay {0} agentes en ejecución. Salir los detiene; los archivos que ya escribieron se conservan.
 QuitStopAgents = Salir y detener agentes
+QuitDraftsDrop = Estos archivos tienen un comentario sin enviar o una edición sin aplicar. Se descartarán.
+QuitStopAgentsDrafts = Salir, detener agentes y descartar borradores
+RestartAgentsTitle = ¿Reiniciar Contour?
+RestartAgentsOne = Aún hay 1 agente en ejecución. Reiniciar lo detiene; los archivos que ya escribió se conservan.
+RestartAgentsMany = Aún hay {0} agentes en ejecución. Reiniciar los detiene; los archivos que ya escribieron se conservan.
+RestartStopAgents = Reiniciar y detener agentes
+RestartStopAgentsDrafts = Reiniciar, detener agentes y descartar borradores
 # Desktop app menu bar
 MenuAbout = Acerca de {0}
 MenuServices = Servicios

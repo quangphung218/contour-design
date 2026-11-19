@@ -1756,6 +1756,13 @@ QuitAgentsTitle = Sair do Contour?
 QuitAgentsOne = 1 agente ainda está rodando. Sair o interrompe; os arquivos que ele já gravou são mantidos.
 QuitAgentsMany = {0} agentes ainda estão rodando. Sair os interrompe; os arquivos que eles já gravaram são mantidos.
 QuitStopAgents = Sair e parar agentes
+QuitDraftsDrop = Estes arquivos têm um comentário não enviado ou uma edição não aplicada. Eles serão descartados.
+QuitStopAgentsDrafts = Sair, parar agentes e descartar rascunhos
+RestartAgentsTitle = Reiniciar o Contour?
+RestartAgentsOne = 1 agente ainda está rodando. Reiniciar o interrompe; os arquivos que ele já gravou são mantidos.
+RestartAgentsMany = {0} agentes ainda estão rodando. Reiniciar os interrompe; os arquivos que eles já gravaram são mantidos.
+RestartStopAgents = Reiniciar e parar agentes
+RestartStopAgentsDrafts = Reiniciar, parar agentes e descartar rascunhos
 # Desktop app menu bar
 MenuAbout = Sobre o {0}
 MenuServices = Serviços

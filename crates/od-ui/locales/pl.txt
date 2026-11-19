@@ -1756,6 +1756,13 @@ QuitAgentsTitle = Zamknąć Contour?
 QuitAgentsOne = 1 agent nadal działa. Zamknięcie go zatrzyma; zapisane już pliki zostają.
 QuitAgentsMany = Nadal działa agentów: {0}. Zamknięcie je zatrzyma; zapisane już pliki zostają.
 QuitStopAgents = Zamknij i zatrzymaj agentów
+QuitDraftsDrop = Te pliki mają niewysłany komentarz lub niezastosowaną zmianę. Zostaną odrzucone.
+QuitStopAgentsDrafts = Zamknij, zatrzymaj agentów i odrzuć szkice
+RestartAgentsTitle = Uruchomić ponownie Contour?
+RestartAgentsOne = 1 agent nadal działa. Ponowne uruchomienie go zatrzyma; zapisane już pliki zostają.
+RestartAgentsMany = Nadal działa agentów: {0}. Ponowne uruchomienie je zatrzyma; zapisane już pliki zostają.
+RestartStopAgents = Uruchom ponownie i zatrzymaj agentów
+RestartStopAgentsDrafts = Uruchom ponownie, zatrzymaj agentów i odrzuć szkice
 # Desktop app menu bar
 MenuAbout = {0} – informacje
 MenuServices = Usługi
