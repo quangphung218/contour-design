@@ -420,8 +420,8 @@ nightly reports them red; the tag is where they block. See [release.md](release.
   the downloaded `.deb` files (`APT_ARCHIVES`): every run restores the
   newest `apt-<job>-…` cache, and `main` saves a new one when apt changed
   the folder, also after apt gave up, so the next run goes on from there
-  instead of from zero; a pull request saves one when it found none or
-  apt gave up, and e2e starts from the test job's cache until it has its own.
+  instead of from zero; a pull request saves one when apt gave up or
+  it found none of its job's, and e2e starts from the test job's cache until it has its own.
   apt then fetches only the package lists (13 MB, seconds) and what
   changed since.
   cargo and rustup retry their own downloads. Tests are never retried, except the single e2e

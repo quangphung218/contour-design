@@ -76,7 +76,7 @@ ruby -ryaml -e '
   caches = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("Swatinem/rust-cache") }
   puts "caches: #{caches.size}, saved from main only: #{caches.all? { |s| s.dig("with", "save-if") == "${{ github.ref == \x27refs/heads/main\x27 }}" }}"
   saves = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("actions/cache/save") }
-  puts "cache saves: #{saves.size}, from main, a run without one or a failed apt: #{saves.all? { |s| s["if"].to_s.include?("(github.ref == \x27refs/heads/main\x27 || steps.apt-cache.outputs.cache-matched-key == \x27\x27 || steps.deps.outcome == \x27failure\x27)") }}"
+  puts "cache saves: #{saves.size}, from main, a failed apt or a run without its own: #{saves.all? { |s| s["if"].to_s.include?("(github.ref == \x27refs/heads/main\x27 || steps.deps.outcome == \x27failure\x27 || !startsWith(steps.apt-cache.outputs.cache-matched-key, format(\x27apt-{0}-\x27, github.job)))") }}"
   apt = jobs.flat_map { |k, j| (j["steps"] || []).select { |s| s["run"].to_s.include?("scripts/linux-deps.sh") }.map { |s| [k, s] } }
   puts "linux-deps steps: #{apt.size}, all with a budget: #{apt.all? { |_, s| s.dig("env", "APT_BUDGET_SECONDS").to_s =~ /\A[1-9][0-9]*\z/ }}"
   e2e_runs = jobs["e2e"]["steps"].map { |s| s["run"].to_s }
@@ -90,7 +90,7 @@ ruby -ryaml -e '
 check "CI result waits for every other job, even after a failure" 'grep -qx "result needs all: true" "$work/out" && grep -qx "result if: always()" "$work/out"'
 check "every job but changes and CI result is picked by changes" 'grep -qx "jobs not gated by changes: " "$work/out"'
 check "every Rust cache is saved from main only" 'grep -qE "^caches: [1-9][0-9]*, saved from main only: true$" "$work/out"'
-check "apt package caches are saved from main, or by a run that found none or where apt gave up" 'grep -qE "^cache saves: [1-9][0-9]*, from main, a run without one or a failed apt: true$" "$work/out"'
+check "apt package caches are saved from main, after a failed apt, or by a run that found none of its job's" 'grep -qE "^cache saves: [1-9][0-9]*, from main, a failed apt or a run without its own: true$" "$work/out"'
 check "every linux-deps.sh call in ci.yml has an apt budget" 'grep -qE "^linux-deps steps: [3-9], all with a budget: true$" "$work/out"'
 check "e2e installs the Playwright and ffmpeg packages through linux-deps.sh" 'grep -qx "e2e system packages: true" "$work/out"'
 check "e2e runs a failed scenario once more" 'grep -qx "e2e retries: 1" "$work/out"'

@@ -167,9 +167,9 @@ jobs:
       # Downloaded .deb files (scripts/linux-deps.sh, APT_ARCHIVES): the
       # newest saved folder is restored every run; main saves it when apt
       # changed it, also after a failed try, so the next run goes on. A
-      # pull request saves one when it found none or apt gave up (that
-      # cache serves only the pull request), so running it again goes on
-      # from there instead of from zero.
+      # pull request saves one when apt gave up, or when it found none of
+      # this job's (that cache serves only the pull request), so running it
+      # again goes on from there instead of from zero.
       # apt gets 10 minutes in all (APT_BUDGET_SECONDS), then the step
       # fails naming the mirror, instead of using up the job's time.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -184,7 +184,7 @@ jobs:
           APT_BUDGET_SECONDS: "600"
         run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.apt-cache.outputs.cache-matched-key == '' || steps.deps.outcome == 'failure') && steps.deps.outputs.archives-changed == 'true' }}
+        if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.deps.outcome == 'failure' || !startsWith(steps.apt-cache.outputs.cache-matched-key, format('apt-{0}-', github.job))) && steps.deps.outputs.archives-changed == 'true' }}
         with:
           path: ~/.cache/apt-archives
           key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -251,7 +251,7 @@ jobs:
           APT_BUDGET_SECONDS: "600"
         run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh ffmpeg
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: ${{ !cancelled() && runner.os == 'Linux' && (github.ref == 'refs/heads/main' || steps.apt-cache.outputs.cache-matched-key == '' || steps.deps.outcome == 'failure') && steps.deps.outputs.archives-changed == 'true' }}
+        if: ${{ !cancelled() && runner.os == 'Linux' && (github.ref == 'refs/heads/main' || steps.deps.outcome == 'failure' || !startsWith(steps.apt-cache.outputs.cache-matched-key, format('apt-{0}-', github.job))) && steps.deps.outputs.archives-changed == 'true' }}
         with:
           path: ~/.cache/apt-archives
           key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -453,7 +453,7 @@ jobs:
           APT_BUDGET_SECONDS: "600"
         run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh --playwright crates/od-ui/e2e ffmpeg
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: ${{ !cancelled() && matrix.shard == 1 && (github.ref == 'refs/heads/main' || steps.apt-cache.outputs.cache-matched-key == '' || steps.deps.outcome == 'failure') && steps.deps.outputs.archives-changed == 'true' }}
+        if: ${{ !cancelled() && matrix.shard == 1 && (github.ref == 'refs/heads/main' || steps.deps.outcome == 'failure' || !startsWith(steps.apt-cache.outputs.cache-matched-key, format('apt-{0}-', github.job))) && steps.deps.outputs.archives-changed == 'true' }}
         with:
           path: ~/.cache/apt-archives
           key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
