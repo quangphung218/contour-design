@@ -138,6 +138,14 @@ check "--playwright: the dry run asks for Chromium and WebKit after apt-get upda
 check "--playwright: a second dry run checks that nothing is missing" '[ "$(grep -c "^playwright " "$work/calls")" -eq 2 ]'
 rm -rf "$work"
 
+# CI passes DIR relative to the checkout (crates/od-ui/e2e); the first CI
+# run looked for the binary relative to DIR after changing into it.
+setup_playwright
+(cd "$work" && PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 "$script" --playwright pw > "$work/out" 2>&1)
+rc=$?
+check "--playwright: a DIR relative to the working directory" '[ $rc -eq 0 ] && grep "apt-get .* install" "$work/calls" | grep -q " libfoo1 libbar-2.0$"'
+rm -rf "$work"
+
 setup_playwright
 PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 PW_MISSING_RUNS=2 "$script" --playwright "$work/pw" > "$work/out" 2>&1
 rc=$?

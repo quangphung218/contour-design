@@ -97,10 +97,10 @@ apt_get() {
 # playwright_missing: the packages Playwright's browsers still need, one a
 # line (none when all are there); fails when it cannot tell.
 playwright_missing() {
-  local bin="$playwright_dir/node_modules/.bin/playwright" out
-  [ -x "$bin" ] || { echo "linux-deps: no $bin; run npm ci in $playwright_dir first" >&2; return 1; }
+  local bin=node_modules/.bin/playwright out
+  [ -x "$playwright_dir/$bin" ] || { echo "linux-deps: no $playwright_dir/$bin; run npm ci in $playwright_dir first" >&2; return 1; }
   # Exit 1 with a list when packages are missing, 0 when none are.
-  out="$(cd "$playwright_dir" && "$bin" install-deps --dry-run "${playwright_browsers[@]}" 2>&1)" || true
+  out="$(cd "$playwright_dir" && "./$bin" install-deps --dry-run "${playwright_browsers[@]}" 2>&1)" || true
   if grep -q '^All system dependencies are installed' <<< "$out"; then
     return 0
   elif grep -q '^Missing system dependencies' <<< "$out"; then
