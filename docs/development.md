@@ -351,6 +351,7 @@ Which paths pull in which job, and why:
 | `crates/od-render-cdp/**`, `crates/od-cli/**`, `Cargo.lock` | Chrome on macOS | how a render starts Chrome (LaunchServices exists only on macOS), the exports that use it, dependency bumps (chromiumoxide) |
 | `.github/workflows/ci.yml`, `scripts/ci-changes.sh` | both | the plan itself |
 | `docs/**`, Markdown outside `content/`, `crates/`, `apps/`, `bridges/` | nothing | no build reads them; Markdown under those folders is content or fixtures that tests read, so it counts as code |
+| `CLAUDE.md` anywhere | nothing | notes for coding agents; no code reads them (the in-app guide `crates/od-ui/docs/` is included by od-ui, so it stays code) |
 
 A version bump is version-only when the diff holds nothing but: the
 `[workspace.package]` version in `Cargo.toml`, the same old → new version
@@ -405,17 +406,24 @@ nightly reports them red; the tag is where they block. See [release.md](release.
   `test-results/logs/<name>.try1.log` in the uploaded artifact.
 - Setup steps that download (apt, brew, choco, npm, Playwright browsers)
   go through `scripts/ci-retry.sh`: three tries, 15 s and 30 s apart.
-  Every apt call has a time limit: `scripts/linux-deps.sh` (10 minutes a
-  try; the test job installs ffmpeg through it too) and the e2e job's
-  ffmpeg (5 minutes, waiting for the dpkg lock). Playwright's
-  `--with-deps` has none: it runs `sudo apt-get` itself, which `timeout`
-  cannot stop, and the apt-get left running held the dpkg lock. On 18/11 a mirror
-  at 47 kB/s held 3 of 6 test jobs for 13 minutes in an apt call that had
-  no limit. The lint and test jobs also keep the downloaded `.deb` files
-  (`APT_ARCHIVES`): every run restores the newest `apt-<job>-…` cache, and
-  `main` saves a new one when apt changed the folder, also after apt gave
-  up, so the next run goes on from there instead of from zero. apt then
-  fetches only the package lists and what changed since.
+  Every apt call goes through `scripts/linux-deps.sh`: 10 minutes a try,
+  three tries, and in CI 10 minutes for all of them together
+  (`APT_BUDGET_SECONDS`); then the step fails with an error that names
+  the mirror, instead of using up the job's 45 minutes. The test job
+  installs ffmpeg through it; the e2e job installs what Playwright's
+  Chromium and WebKit need, and ffmpeg (`--playwright crates/od-ui/e2e`,
+  the list from `playwright install-deps --dry-run`), then downloads the
+  browsers from Playwright's CDN without `--with-deps`. That flag ran its
+  own `sudo apt-get` with no limit, no retry and no cache: on 18–19/11 it
+  took 35 to 44 minutes for 126 MB at 47 kB/s, and e2e shard 2/2 hit its
+  45 minutes while `make e2e` (3 minutes) ran. The lint, test and e2e jobs keep
+  the downloaded `.deb` files (`APT_ARCHIVES`): every run restores the
+  newest `apt-<job>-…` cache, and `main` saves a new one when apt changed
+  the folder, also after apt gave up, so the next run goes on from there
+  instead of from zero; a pull request saves one when apt gave up or
+  it found none of its job's, and e2e starts from the test job's cache until it has its own.
+  apt then fetches only the package lists (13 MB, seconds) and what
+  changed since.
   cargo and rustup retry their own downloads. Tests are never retried, except the single e2e
   retry above.
 
