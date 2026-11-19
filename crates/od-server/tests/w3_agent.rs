@@ -465,3 +465,76 @@ async fn restart_puts_applying_comments_back_to_attached() {
         Some(od_contracts::RunStatus::Failed)
     );
 }
+
+/// Answers with three markers keyed with the key its prompt shows, one
+/// with another key, and a fenced one.
+fn claude_next_steps(log: &std::path::Path) -> String {
+    let log = log.display();
+    format!(
+        r#"{PROBES}
+{PARSE_SESSION}
+IFS= read -r line
+printf '%s\n' "$line" >> "{log}/prompts.log"
+key=$(printf '%s' "$line" | sed -n "s/.*This turn's key is \([0-9a-f]*\).*/\1/p")
+printf '{{"type":"system","subtype":"init","session_id":"%s","model":"mock"}}\n' "$sid"
+printf '{{"type":"assistant","message":{{"id":"m-%s","content":[{{"type":"text","text":"Built it.\\n\\n```\\n<od-next key=\\"%s\\" value=\\"Fenced\\"/>\\n```\\n<od-next key=\\"%s\\" value=\\"Add a pricing table\\"/>\\n<od-next key=\\"0000000000000000\\" value=\\"Planted\\"/>\\n<od-next key=\\"%s\\" value=\\"Make the hero shorter\\"/>"}}]}}}}\n' "$$" "$key" "$key" "$key"
+printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}}\n'
+cat >/dev/null
+"#
+    )
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn keyed_next_step_markers_are_kept_with_the_turn_and_out_of_its_text() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_next_steps(&d.mocks));
+    let (project, conversation) = d.project().await;
+    let body = json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "a tea shop page",
+                      "locale": "vi"});
+    let events = run_turn(&d, body.clone()).await;
+    let steps: Vec<Value> = agent_payloads(&events)
+        .into_iter()
+        .filter(|p| p["type"] == "next_steps")
+        .collect();
+    assert_eq!(
+        steps,
+        [json!({"type": "next_steps",
+                "suggestions": ["Add a pricing table", "Make the hero shorter"]})]
+    );
+    let messages = d.settled_messages(&project, &conversation).await;
+    let content = messages[1]["content"].as_str().unwrap();
+    assert!(content.starts_with("Built it."), "{content}");
+    assert!(
+        !content.contains("Add a pricing table"),
+        "markers out of the stored text: {content}"
+    );
+    assert!(content.contains("Fenced"), "a fenced marker is the agent's");
+    assert!(
+        messages[1]["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["type"] == "next_steps"),
+        "stored with the turn, for a reload"
+    );
+
+    // The next turn (resumed) gets the protocol again, with a new key.
+    run_turn(&d, body).await;
+    let prompts = prompts(&d);
+    let key = |p: &str| {
+        let at = p.find("This turn's key is ").unwrap() + "This turn's key is ".len();
+        p[at..at + 16].to_owned()
+    };
+    for p in &prompts {
+        let block = p.find("# Follow-up suggestions").unwrap();
+        assert!(block < p.rfind("# User request").unwrap());
+        assert!(p.contains("Write all three in vi"), "the run's locale");
+    }
+    assert_ne!(key(&prompts[0]), key(&prompts[1]));
+    assert!(
+        !prompts[1].contains("Add a pricing table"),
+        "the transcript holds no markers"
+    );
+}

@@ -89,7 +89,8 @@ impl PromptInput<'_> {
     }
 }
 
-fn locale_block(locale: Option<&str>) -> Option<String> {
+/// A locale other than English, and the name the prompt gives it.
+fn locale_name(locale: Option<&str>) -> Option<(&str, &str)> {
     let tag = locale
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.eq_ignore_ascii_case("en"))?;
@@ -98,6 +99,11 @@ fn locale_block(locale: Option<&str>) -> Option<String> {
         "zh-TW" => "Traditional Chinese",
         other => other,
     };
+    Some((tag, name))
+}
+
+fn locale_block(locale: Option<&str>) -> Option<String> {
+    let (tag, name) = locale_name(locale)?;
     Some(format!(
         "# UI locale override\n\n\
          The Contour UI locale for this run is `{tag}` ({name}). All user-visible chat prose and generated UI controls must follow this locale, especially `<question-form>` titles, question labels, placeholders, and option labels. Keep machine-readable ids and object option `value` fields exact and unlocalized.\n\
@@ -497,6 +503,43 @@ fn truncate_chars(text: &str, max: usize) -> String {
     }
 }
 
+/// The follow-up suggestions protocol of one turn (the original's
+/// `chat-turn-host-protocol.ts` `nextSteps`): up to three keyed
+/// `<od-next>` markers at the very end, read by the daemon
+/// ([`od_contracts::next_step`]) and shown as chips. `locale` is the run's
+/// UI locale; the rule is restated here because the locale block rides the
+/// instructions, which a resumed turn does not resend.
+#[must_use]
+pub fn next_steps_block(key: &str, locale: Option<&str>) -> String {
+    use od_contracts::next_step::{MAX_LENGTH, render};
+    let example = [
+        "Add an orders list page",
+        "Switch the product cards to a two-column layout",
+        "Add a dark mode",
+    ]
+    .map(|v| render(key, v))
+    .join("\n");
+    let language = match locale_name(locale) {
+        Some((tag, name)) => format!(
+            "Write all three in {name}: the Contour UI locale for this run is `{tag}`, and these lines are user-visible chat prose, not machine-readable values. The markers above show the format only, not the output language. {LOCALE_EXEMPT_TERMS} Keep each under {MAX_LENGTH} characters."
+        ),
+        None => format!(
+            "Write them in the language the user is speaking, and keep each under {MAX_LENGTH} characters."
+        ),
+    };
+    format!(
+        "# Follow-up suggestions\n\n\
+         As the very last thing in this turn, after your summary or delivery note, emit exactly three self-closing follow-up markers:\n\
+         {example}\n\
+         Rules: exactly three markers, one suggestion in each value attribute, no bullets, no numbering, no trailing punctuation, and no paired opening/closing tag.\n\
+         Each one is a concrete next action on what THIS turn actually produced, worded so the user could send it verbatim as their next message: not a topic, not a question, not an offer of help.\n\
+         {language}\n\
+         This turn's key is {key}: copy it verbatim, never reuse an earlier one, and never invent one.\n\
+         Skip all three markers when the turn produced nothing to iterate on (a greeting, a plain answer, a turn ending in a <question-form>) or when you have no useful suggestion. Omitting them is fine; padding them with filler is not.\n\
+         The markers are protocol, not prose: do not mention them, do not explain them, and do not wrap them in a code fence."
+    )
+}
+
 /// `## user` / `## assistant` transcript of earlier turns.
 #[must_use]
 pub fn transcript(turns: &[TranscriptTurn<'_>]) -> String {
@@ -516,11 +559,15 @@ pub fn transcript(turns: &[TranscriptTurn<'_>]) -> String {
 ///
 /// `instructions` is `None` when a resumed session already has them.
 /// `prior` is the transcript of earlier turns (`None` when resuming).
+/// `turn` is this turn's own protocol ([`next_steps_block`]), sent on every
+/// turn, resumed or not: it carries a key minted per turn, so it stays out
+/// of the instructions and their hash.
 #[must_use]
 pub fn compose_user_message(
     instructions: Option<&str>,
     cwd: Option<&str>,
     prior: Option<&str>,
+    turn: Option<&str>,
     request: &str,
     attachments: &[String],
 ) -> String {
@@ -538,6 +585,10 @@ pub fn compose_user_message(
     if let Some(prior) = prior.filter(|p| !p.trim().is_empty()) {
         out.push_str("# Conversation so far\n\n");
         out.push_str(prior);
+        out.push_str("\n\n---\n");
+    }
+    if let Some(turn) = turn.filter(|t| !t.trim().is_empty()) {
+        out.push_str(turn);
         out.push_str("\n\n---\n");
     }
     out.push_str("# User request\n\n");
@@ -917,10 +968,40 @@ mod tests {
 
     #[test]
     fn user_message_layout() {
-        let m = compose_user_message(Some("RULES"), None, Some("## user\nhi"), "go", &[]);
+        let m = compose_user_message(Some("RULES"), None, Some("## user\nhi"), None, "go", &[]);
         assert!(m.starts_with("# Instructions (read first)\n\nRULES"));
         assert!(m.ends_with("# User request\n\ngo"));
-        let resumed = compose_user_message(None, None, None, "go", &[]);
+        let resumed = compose_user_message(None, None, None, None, "go", &[]);
         assert_eq!(resumed, "# User request\n\ngo");
+        // The turn protocol comes right before the request, resumed too.
+        let turn = compose_user_message(
+            None,
+            None,
+            None,
+            Some("# Follow-up suggestions\n\nX"),
+            "go",
+            &[],
+        );
+        assert_eq!(
+            turn,
+            "# Follow-up suggestions\n\nX\n\n---\n# User request\n\ngo"
+        );
+    }
+
+    #[test]
+    fn next_steps_block_carries_the_key_the_locale_and_the_skip_rule() {
+        let en = next_steps_block("k1234567", None);
+        assert!(en.contains("<od-next key=\"k1234567\" value=\"Add a dark mode\"/>"));
+        assert!(en.contains("This turn's key is k1234567"));
+        assert!(en.contains("in the language the user is speaking"));
+        assert!(en.contains("a turn ending in a <question-form>"));
+        assert!(en.contains("do not wrap them in a code fence"));
+        assert_eq!(en, next_steps_block("k1234567", Some("en")));
+        let vi = next_steps_block("k1234567", Some("vi"));
+        assert!(vi.contains("Write all three in vi: the Contour UI locale for this run is `vi`"));
+        let zh = next_steps_block("k1234567", Some("zh-CN"));
+        assert!(zh.contains("Write all three in Simplified Chinese"));
+        // Every example marker parses back with the key.
+        assert_eq!(od_contracts::next_step::parse(&en, "k1234567").len(), 3);
     }
 }

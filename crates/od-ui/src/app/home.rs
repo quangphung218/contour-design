@@ -124,7 +124,7 @@ pub fn Home() -> impl IntoView {
         }
         text.push_str(t(T::CreatePluginPrompt));
         text.push(' ');
-        brief.set(text);
+        brief.update(|b| *b = crate::chat::seed_draft(b, &text));
         if let Some(el) = brief_ref.get_untracked() {
             let _ = el.focus();
         }
@@ -909,7 +909,7 @@ fn Examples(
                 <span class="eyebrow">{t(T::ExamplesTitle)}</span>
                 {list.iter().map(|&k| view! {
                     <button class="chip example-prompt" data-testid="example-prompt" on:click=move |_| {
-                        brief.set(t(k).to_owned());
+                        brief.update(|b| *b = crate::chat::seed_draft(b, t(k)));
                         if let Some(el) = brief_ref.get_untracked() {
                             let _ = el.focus();
                         }

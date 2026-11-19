@@ -293,6 +293,10 @@ try {
     assert.ok(after.gap <= 1, `the list follows output after it grew at ${width}px ${JSON.stringify(after)}`);
     if (width === 390) {
       log('4. 390 px: Export from the chat, a one-row preview head');
+      // The small actions under the turn are full touch targets too.
+      const heights = await steps.getByTestId('next-actions').locator('button').evaluateAll((els) => els.map((e) => [e.dataset.testid, e.getBoundingClientRect().height]));
+      assert.ok(heights.length >= 4, JSON.stringify(heights));
+      for (const [id, h] of heights) assert.ok(h >= 44, `${id} is ${h} px high at 390 px`);
       await steps.getByTestId('next-export').click();
       await page.getByTestId('export-menu').waitFor();
       await page.keyboard.press('Escape');

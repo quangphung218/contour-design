@@ -163,11 +163,33 @@ pub fn merge_loaded<T>(stored: Vec<T>, local: Vec<T>, id: impl Fn(&T) -> &str) -
     out
 }
 
-/// Assistant prose without the Design Jury protocol, which the theater
-/// shows instead (`<CRITIQUE_RUN>` to its end, or to the end of the text
-/// while it still streams).
+/// The composer after a chip, starter, example or toolbox action puts
+/// `seed` in it: `seed` when it is empty, else what the user typed, kept,
+/// and `seed` on a new line.
 #[must_use]
-pub fn without_jury_protocol(text: &str) -> std::borrow::Cow<'_, str> {
+pub fn seed_draft(draft: &str, seed: &str) -> String {
+    let typed = draft.trim_end();
+    if typed.trim().is_empty() {
+        seed.to_owned()
+    } else {
+        format!("{typed}\n{seed}")
+    }
+}
+
+/// Assistant prose as the user reads it: without the Design Jury protocol,
+/// which the theater shows instead (`<CRITIQUE_RUN>` to its end, or to the
+/// end of the text while it still streams), and without the `<od-next>`
+/// markers, which the chips under the turn show.
+#[must_use]
+pub fn readable_prose(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    match od_contracts::next_step::strip(text) {
+        Cow::Borrowed(t) => without_jury_protocol(t),
+        Cow::Owned(t) => Cow::Owned(without_jury_protocol(&t).into_owned()),
+    }
+}
+
+fn without_jury_protocol(text: &str) -> std::borrow::Cow<'_, str> {
     const OPEN: &str = "<CRITIQUE_RUN";
     const CLOSE: &str = "</CRITIQUE_RUN>";
     let Some(start) = text.find(OPEN) else {
@@ -199,6 +221,9 @@ pub struct AssistantTurn {
     pub critique: Option<CritiqueReport>,
     /// Media the agent generated during the run (track C2), in start order.
     pub media: Vec<od_contracts::MediaTask>,
+    /// The agent's follow-up suggestions for this turn, from its keyed
+    /// `<od-next>` markers (read by the daemon).
+    pub suggestions: Vec<String>,
     /// Why the run failed, from its `end` (or its log, for a stored turn).
     pub failure: Option<od_contracts::FailureCategory>,
     /// When the run started (epoch ms), from the stored message: a run
@@ -228,6 +253,7 @@ impl AssistantTurn {
             cwd: None,
             critique: None,
             media: Vec::new(),
+            suggestions: Vec::new(),
             failure: None,
             started_at: None,
             ended_at: None,
@@ -387,6 +413,7 @@ impl AssistantTurn {
                 &[&tool_name, &count.to_string()],
             ))),
             AgentEvent::Critique { report } => self.critique = Some(report),
+            AgentEvent::NextSteps { suggestions } => self.suggestions = suggestions,
             AgentEvent::Media { task } => {
                 match self.media.iter_mut().find(|m| m.task_id == task.task_id) {
                     Some(slot) => *slot = task,
@@ -1401,5 +1428,34 @@ mod tests {
         );
         assert_eq!(without_jury_protocol("a <CRITIQUE_RUN><ROUND"), "a ");
         assert_eq!(without_jury_protocol("plain"), "plain");
+    }
+
+    #[test]
+    fn a_seed_fills_an_empty_composer_and_keeps_what_was_typed() {
+        assert_eq!(seed_draft("", "Add a dark mode"), "Add a dark mode");
+        assert_eq!(seed_draft("  \n", "Add a dark mode"), "Add a dark mode");
+        assert_eq!(
+            seed_draft("Make the logo bigger\n\n", "Add a dark mode"),
+            "Make the logo bigger\nAdd a dark mode"
+        );
+        assert_eq!(seed_draft("  indented", "x"), "  indented\nx");
+    }
+
+    #[test]
+    fn next_step_markers_fold_in_and_never_show_as_prose() {
+        let mut turn = AssistantTurn::new();
+        turn.apply(RunFrame::Agent(AgentEvent::NextSteps {
+            suggestions: vec!["Add a pricing table".into()],
+        }));
+        assert_eq!(turn.suggestions, ["Add a pricing table"]);
+        let text = "Built it.\n<od-next key=\"k1234567\" value=\"Add a pricing table\"/>";
+        assert_eq!(readable_prose(text), "Built it.");
+        // Still streaming: the half-written marker is held back.
+        assert_eq!(readable_prose("Built it.\n<od-next key=\"k12"), "Built it.");
+        assert_eq!(
+            readable_prose("A <CRITIQUE_RUN>x</CRITIQUE_RUN> b\n<od-next key=\"k\" value=\"v\"/>"),
+            "A  b"
+        );
+        assert_eq!(readable_prose("plain"), "plain");
     }
 }

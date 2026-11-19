@@ -12,6 +12,7 @@ pub mod content;
 pub mod error;
 pub mod file_ops;
 pub mod files;
+pub mod next_step;
 pub mod preview_tools;
 pub mod projects;
 pub mod runs;

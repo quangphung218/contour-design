@@ -312,6 +312,7 @@ pub async fn generate(
         byok: None,
         // A design system draft runs without the user's external MCP servers.
         mcp: McpLaunch::default(),
+        next_step_key: None,
     });
     tokio::spawn(finish(
         state.clone(),

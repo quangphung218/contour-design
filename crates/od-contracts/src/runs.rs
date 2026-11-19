@@ -107,6 +107,13 @@ pub enum AgentEvent {
     Critique {
         report: crate::CritiqueReport,
     },
+    /// The agent's follow-up suggestions for the turn it finished, read
+    /// by the daemon from its keyed `<od-next>` markers
+    /// ([`crate::next_step`]); emitted once, before `end`, when there are
+    /// any.
+    NextSteps {
+        suggestions: Vec<String>,
+    },
     /// A media generation of this run (track C2), emitted by the daemon
     /// when the agent calls the media tool; the latest per task wins.
     Media {

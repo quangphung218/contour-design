@@ -3,7 +3,7 @@
 
 use crate::chat::{AssistantTurn, Block, TodoStatus, TurnState, plan_progress};
 use crate::question_form;
-use od_contracts::FailureCategory;
+use od_contracts::{FailureCategory, LintResponse, LintSeverity};
 
 /// The run status line of one turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,11 +137,17 @@ pub fn elapsed(secs: u64) -> String {
 /// A suggested next step under the latest finished turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NextStep {
-    /// Show this file in the preview.
+    /// Show this file in the preview (a small action, not a chip).
     Open(String),
-    /// Turn on comment mode to point at what to change.
+    /// Turn on comment mode to point at what to change (a small action).
     Comment,
-    /// Fill the composer with a follow-up prompt.
+    /// Fill the composer with a request to fix what the lint found on the
+    /// page the turn wrote.
+    Fix(FixStep),
+    /// Fill the composer with one of the agent's own suggestions.
+    Suggest(String),
+    /// Fill the composer with a fixed follow-up: only when the agent
+    /// suggested nothing and the lint found nothing.
     Prompt(Followup),
     /// Send the last message again.
     Retry,
@@ -149,17 +155,67 @@ pub enum NextStep {
     Settings,
 }
 
-/// Follow-up prompts offered after a turn that wrote a page.
+impl NextStep {
+    /// Whether it shows as a chip that fills the composer.
+    #[must_use]
+    pub fn is_chip(&self) -> bool {
+        matches!(self, Self::Fix(_) | Self::Suggest(_) | Self::Prompt(_))
+    }
+}
+
+/// Fixed follow-up prompts, the fallback after a turn that wrote a page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Followup {
     Mobile,
     Variations,
 }
 
+/// "Fix N issues: …": what the lint found that must or should be fixed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FixStep {
+    /// P0 and P1 findings.
+    pub count: usize,
+    /// Their rule ids (`emoji-icon`), most severe first, once each.
+    pub rules: Vec<String>,
+    /// The page linted: the turn may have written others.
+    pub page: String,
+    /// Whether the label names the page: the turn wrote more than one.
+    pub names_page: bool,
+    /// ``In `page`:`` and the findings as the agent reads them
+    /// ([`LintResponse::agent_message`]).
+    pub prompt: String,
+}
+
+/// The lint of the page the turn wrote, as far as it got.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageLint<'a> {
+    /// Not answered yet: no fallback chips meanwhile, so they do not flash.
+    Pending,
+    Done(&'a LintResponse),
+    /// It could not run: as if it found nothing.
+    Failed,
+}
+
+/// Chips under a turn, at most.
+pub const MAX_CHIPS: usize = 3;
+
+/// The page a finished turn wrote, to lint and to open: `None` while it
+/// runs, when it failed or ends on a question form, or wrote no page.
+#[must_use]
+pub fn written_page(turn: &AssistantTurn) -> Option<String> {
+    if turn.state != TurnState::Succeeded || asks_questions(turn) {
+        return None;
+    }
+    turn.touched_files().into_iter().find(|f| is_page(f))
+}
+
 /// Next steps for `turn`, the latest one. Nothing while it runs, and
 /// nothing when it ends on a question form: answering it is the next step.
+/// A finished turn gets Open and Comment for its page, then at most
+/// [`MAX_CHIPS`] chips: the lint fix first, then the agent's suggestions;
+/// the fixed follow-ups only when neither has any.
 #[must_use]
-pub fn next_steps(turn: &AssistantTurn) -> Vec<NextStep> {
+pub fn next_steps(turn: &AssistantTurn, lint: PageLint<'_>) -> Vec<NextStep> {
     match turn.state {
         TurnState::Pending | TurnState::Running => Vec::new(),
         // Contour closed mid-run: the agent was fine, Settings would not help.
@@ -170,18 +226,129 @@ pub fn next_steps(turn: &AssistantTurn) -> Vec<NextStep> {
         TurnState::Canceled => vec![NextStep::Retry],
         TurnState::Succeeded if asks_questions(turn) => Vec::new(),
         TurnState::Succeeded => {
-            let page = turn.touched_files().into_iter().find(|f| is_page(f));
-            match page {
-                Some(page) => vec![
-                    NextStep::Open(page),
-                    NextStep::Comment,
-                    NextStep::Prompt(Followup::Mobile),
-                    NextStep::Prompt(Followup::Variations),
-                ],
-                None => Vec::new(),
+            let page = written_page(turn);
+            let mut chips: Vec<NextStep> = Vec::new();
+            // A page whose lint has not answered: no chip yet, so none
+            // moves or goes when the fix chip comes first.
+            let holding = page.is_some() && lint == PageLint::Pending;
+            if !holding {
+                if let Some(page) = &page
+                    && let PageLint::Done(lint) = lint
+                    && let Some(fix) = fix_step(lint, page, pages_written(turn) > 1)
+                {
+                    chips.push(NextStep::Fix(fix));
+                }
+                chips.extend(turn.suggestions.iter().cloned().map(NextStep::Suggest));
+                chips.truncate(MAX_CHIPS);
+                if chips.is_empty() && page.is_some() {
+                    chips = vec![
+                        NextStep::Prompt(Followup::Mobile),
+                        NextStep::Prompt(Followup::Variations),
+                    ];
+                }
             }
+            let mut out: Vec<NextStep> = page
+                .map(|p| vec![NextStep::Open(p), NextStep::Comment])
+                .unwrap_or_default();
+            out.extend(chips);
+            out
         }
     }
+}
+
+/// A lint rule in the UI's language (`emoji-icon` → "emoji icon"); a rule
+/// with no label reads as its id in words.
+#[must_use]
+pub fn lint_rule_label(id: &str) -> String {
+    use crate::i18n::{T, t};
+    let key = match id {
+        "purple-gradient" => T::LintRulePurpleGradient,
+        "trust-gradient" => T::LintRuleTrustGradient,
+        "ai-default-indigo" => T::LintRuleAiDefaultIndigo,
+        "emoji-icon" => T::LintRuleEmojiIcon,
+        "left-accent-card" => T::LintRuleLeftAccentCard,
+        "sans-display" => T::LintRuleSansDisplay,
+        "invented-metric" => T::LintRuleInventedMetric,
+        "filler-copy" => T::LintRuleFillerCopy,
+        "scroll-into-view" => T::LintRuleScrollIntoView,
+        "all-caps-no-tracking" => T::LintRuleAllCapsNoTracking,
+        "external-image" => T::LintRuleExternalImage,
+        "raw-hex" => T::LintRuleRawHex,
+        "accent-overuse" => T::LintRuleAccentOveruse,
+        "slide-theme-missing" => T::LintRuleSlideThemeMissing,
+        "slide-rhythm" => T::LintRuleSlideRhythm,
+        other => return other.replace('-', " "),
+    };
+    t(key).to_owned()
+}
+
+/// How many pages a turn wrote.
+fn pages_written(turn: &AssistantTurn) -> usize {
+    turn.touched_files().iter().filter(|f| is_page(f)).count()
+}
+
+/// The lint of the page a turn wrote, as it lands: an answer older than the
+/// latest request is dropped, and an answer for another page (the turn's
+/// page changed meanwhile) counts as not answered yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PageLintSlot {
+    asked: u32,
+    landed: Option<(String, Option<LintResponse>)>,
+}
+
+impl PageLintSlot {
+    /// A new request: its ticket.
+    pub fn begin(&mut self) -> u32 {
+        self.asked = self.asked.wrapping_add(1);
+        self.asked
+    }
+
+    /// The answer of request `ticket` for `page` (`None`: it could not run).
+    /// Returns whether it was kept.
+    pub fn land(&mut self, ticket: u32, page: String, res: Option<LintResponse>) -> bool {
+        if ticket != self.asked {
+            return false;
+        }
+        self.landed = Some((page, res));
+        true
+    }
+
+    /// The lint as [`next_steps`] reads it for the turn's `page` now.
+    #[must_use]
+    pub fn state(&self, page: Option<&str>) -> PageLint<'_> {
+        match &self.landed {
+            Some((p, res)) if Some(p.as_str()) == page => {
+                res.as_ref().map_or(PageLint::Failed, PageLint::Done)
+            }
+            _ => PageLint::Pending,
+        }
+    }
+}
+
+/// The fix chip for a lint with P0 or P1 findings.
+fn fix_step(lint: &LintResponse, page: &str, names_page: bool) -> Option<FixStep> {
+    let mut serious: Vec<&od_contracts::LintFinding> = lint
+        .findings
+        .iter()
+        .filter(|f| matches!(f.severity, LintSeverity::P0 | LintSeverity::P1))
+        .collect();
+    if serious.is_empty() {
+        return None;
+    }
+    serious.sort_by_key(|f| f.severity);
+    let mut rules: Vec<String> = Vec::new();
+    for f in &serious {
+        if !rules.contains(&f.id) {
+            rules.push(f.id.clone());
+        }
+    }
+    Some(FixStep {
+        count: serious.len(),
+        rules,
+        page: page.to_owned(),
+        names_page,
+        prompt: format!("In `{page}`:\n{}", lint.agent_message),
+    })
 }
 
 /// "Continue remaining tasks": the follow-up prompt for the plan items a
@@ -233,7 +400,7 @@ pub fn copy_text(turn: &AssistantTurn) -> String {
     let mut parts: Vec<String> = Vec::new();
     for b in &turn.blocks {
         let Block::Text(text) = b else { continue };
-        for seg in question_form::split(&crate::chat::without_jury_protocol(text)) {
+        for seg in question_form::split(&crate::chat::readable_prose(text)) {
             if let question_form::Segment::Text(t) = seg {
                 let t = t.trim();
                 if !t.is_empty() {
@@ -408,16 +575,180 @@ mod tests {
         );
     }
 
+    fn lint(findings: &[(LintSeverity, &str)]) -> LintResponse {
+        LintResponse {
+            findings: findings
+                .iter()
+                .map(|(severity, id)| od_contracts::LintFinding {
+                    severity: *severity,
+                    id: (*id).to_owned(),
+                    message: String::new(),
+                    fix: String::new(),
+                    snippet: None,
+                })
+                .collect(),
+            agent_message: "<artifact-lint>…</artifact-lint>".to_owned(),
+        }
+    }
+
+    fn page_turn(suggestions: &[&str]) -> AssistantTurn {
+        AssistantTurn {
+            suggestions: suggestions.iter().map(|s| (*s).to_owned()).collect(),
+            ..turn(
+                TurnState::Succeeded,
+                vec![write("style.css"), write("index.html")],
+            )
+        }
+    }
+
     #[test]
     fn a_turn_that_wrote_a_page_offers_to_look_at_it() {
-        let t = turn(
-            TurnState::Succeeded,
-            vec![write("style.css"), write("index.html")],
+        let steps = next_steps(&page_turn(&[]), PageLint::Failed);
+        assert_eq!(
+            steps,
+            [
+                NextStep::Open("index.html".to_owned()),
+                NextStep::Comment,
+                NextStep::Prompt(Followup::Mobile),
+                NextStep::Prompt(Followup::Variations),
+            ],
+            "nothing suggested, the lint could not run: the fixed follow-ups"
         );
-        let steps = next_steps(&t);
-        assert_eq!(steps[0], NextStep::Open("index.html".to_owned()));
-        assert!(steps.contains(&NextStep::Comment));
-        assert!(steps.contains(&NextStep::Prompt(Followup::Mobile)));
+        assert!(!steps[0].is_chip() && !steps[1].is_chip() && steps[2].is_chip());
+    }
+
+    #[test]
+    fn the_agents_suggestions_replace_the_fixed_follow_ups() {
+        let clean = lint(&[(LintSeverity::P2, "missing-section-anchor")]);
+        let steps = next_steps(
+            &page_turn(&["Add a pricing table", "Shorter hero"]),
+            PageLint::Done(&clean),
+        );
+        assert_eq!(
+            steps,
+            [
+                NextStep::Open("index.html".to_owned()),
+                NextStep::Comment,
+                NextStep::Suggest("Add a pricing table".to_owned()),
+                NextStep::Suggest("Shorter hero".to_owned()),
+            ],
+            "a P2 finding alone is no fix chip"
+        );
+        // A turn that wrote no page still shows the agent's suggestions.
+        let plain = AssistantTurn {
+            suggestions: vec!["Write the pricing page".to_owned()],
+            ..turn(
+                TurnState::Succeeded,
+                vec![Block::Text("Here is a plan.".into())],
+            )
+        };
+        assert_eq!(
+            next_steps(&plain, PageLint::Pending),
+            [NextStep::Suggest("Write the pricing page".to_owned())]
+        );
+    }
+
+    #[test]
+    fn the_lint_fix_comes_first_and_chips_stop_at_three() {
+        let found = lint(&[
+            (LintSeverity::P1, "raw-hex"),
+            (LintSeverity::P2, "missing-section-anchor"),
+            (LintSeverity::P0, "emoji-icon"),
+            (LintSeverity::P0, "emoji-icon"),
+        ]);
+        let steps = next_steps(&page_turn(&["A", "B", "C"]), PageLint::Done(&found));
+        assert_eq!(
+            steps[2],
+            NextStep::Fix(FixStep {
+                count: 3,
+                rules: vec!["emoji-icon".to_owned(), "raw-hex".to_owned()],
+                page: "index.html".to_owned(),
+                names_page: false,
+                prompt: "In `index.html`:\n<artifact-lint>…</artifact-lint>".to_owned(),
+            })
+        );
+        assert_eq!(
+            steps[3..],
+            [
+                NextStep::Suggest("A".to_owned()),
+                NextStep::Suggest("B".to_owned())
+            ]
+        );
+        assert_eq!(steps.iter().filter(|s| s.is_chip()).count(), MAX_CHIPS);
+        // The fix alone: no fixed follow-ups next to it.
+        assert_eq!(
+            next_steps(&page_turn(&[]), PageLint::Done(&found))[2..].len(),
+            1
+        );
+    }
+
+    #[test]
+    fn no_chip_shows_while_the_lint_of_the_page_runs() {
+        assert_eq!(
+            next_steps(&page_turn(&[]), PageLint::Pending),
+            [NextStep::Open("index.html".to_owned()), NextStep::Comment]
+        );
+        // The agent's chips wait too: the fix chip would push them aside.
+        assert_eq!(
+            next_steps(&page_turn(&["A", "B", "C"]), PageLint::Pending),
+            [NextStep::Open("index.html".to_owned()), NextStep::Comment]
+        );
+        assert_eq!(written_page(&page_turn(&[])).as_deref(), Some("index.html"));
+        assert_eq!(
+            written_page(&turn(TurnState::Running, vec![write("index.html")])),
+            None
+        );
+    }
+
+    #[test]
+    fn the_fix_names_the_page_when_the_turn_wrote_more_than_one() {
+        let found = lint(&[(LintSeverity::P0, "emoji-icon")]);
+        let two = turn(
+            TurnState::Succeeded,
+            vec![write("index.html"), write("about.html")],
+        );
+        let NextStep::Fix(fix) = &next_steps(&two, PageLint::Done(&found))[2] else {
+            panic!("a fix chip");
+        };
+        assert_eq!(fix.page, "index.html");
+        assert!(fix.names_page);
+        assert!(fix.prompt.starts_with("In `index.html`:\n<artifact-lint>"));
+        let NextStep::Fix(one) = &next_steps(&page_turn(&[]), PageLint::Done(&found))[2] else {
+            panic!("a fix chip");
+        };
+        assert!(!one.names_page, "one page: the label needs no name");
+    }
+
+    #[test]
+    fn lint_rules_read_in_words() {
+        assert_eq!(lint_rule_label("emoji-icon"), "emoji icon");
+        assert_eq!(
+            lint_rule_label("slide-theme-missing"),
+            "slide theme missing"
+        );
+        assert_eq!(lint_rule_label("some-new-rule"), "some new rule");
+    }
+
+    #[test]
+    fn a_late_or_other_page_lint_answer_is_not_taken() {
+        let found = lint(&[(LintSeverity::P0, "emoji-icon")]);
+        let mut slot = PageLintSlot::default();
+        assert_eq!(slot.state(Some("index.html")), PageLint::Pending);
+        let first = slot.begin();
+        let second = slot.begin();
+        assert!(
+            !slot.land(first, "index.html".into(), None),
+            "older request"
+        );
+        assert_eq!(slot.state(Some("index.html")), PageLint::Pending);
+        assert!(slot.land(second, "index.html".into(), Some(found.clone())));
+        assert_eq!(slot.state(Some("index.html")), PageLint::Done(&found));
+        // The turn's page is another one now: its lint has not answered.
+        assert_eq!(slot.state(Some("about.html")), PageLint::Pending);
+        assert_eq!(slot.state(None), PageLint::Pending);
+        let third = slot.begin();
+        assert!(slot.land(third, "about.html".into(), None));
+        assert_eq!(slot.state(Some("about.html")), PageLint::Failed);
     }
 
     #[test]
@@ -427,7 +758,7 @@ mod tests {
             failure: Some(od_contracts::FailureCategory::DaemonRestart),
             ..turn(TurnState::Failed, vec![])
         };
-        assert_eq!(next_steps(&t), [NextStep::Retry]);
+        assert_eq!(next_steps(&t, PageLint::Pending), [NextStep::Retry]);
     }
 
     #[test]
@@ -449,14 +780,20 @@ mod tests {
     #[test]
     fn failures_offer_a_retry_and_nothing_shows_mid_run() {
         assert_eq!(
-            next_steps(&turn(TurnState::Failed, vec![])),
+            next_steps(&turn(TurnState::Failed, vec![]), PageLint::Pending),
             [NextStep::Retry, NextStep::Settings]
         );
         assert_eq!(
-            next_steps(&turn(TurnState::Canceled, vec![])),
+            next_steps(&turn(TurnState::Canceled, vec![]), PageLint::Pending),
             [NextStep::Retry]
         );
-        assert!(next_steps(&turn(TurnState::Running, vec![write("index.html")])).is_empty());
+        assert!(
+            next_steps(
+                &turn(TurnState::Running, vec![write("index.html")]),
+                PageLint::Failed
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -465,10 +802,18 @@ mod tests {
             "Before I start:\n<question-form id=\"q\" title=\"Brief\">{\"questions\":[{\"id\":\"p\",\"label\":\"Platform\",\"type\":\"radio\",\"options\":[\"Mobile\"]}]}</question-form>"
                 .to_owned(),
         );
+        let asking = AssistantTurn {
+            suggestions: vec!["Ignored".to_owned()],
+            ..turn(TurnState::Succeeded, vec![write("index.html"), form])
+        };
+        assert!(next_steps(&asking, PageLint::Failed).is_empty());
         assert!(
-            next_steps(&turn(TurnState::Succeeded, vec![write("index.html"), form])).is_empty()
+            next_steps(
+                &turn(TurnState::Succeeded, vec![Block::Text("Hi".into())]),
+                PageLint::Failed
+            )
+            .is_empty()
         );
-        assert!(next_steps(&turn(TurnState::Succeeded, vec![Block::Text("Hi".into())])).is_empty());
     }
 
     fn todo(content: &str, active: &str, status: TodoStatus) -> Todo {
@@ -517,7 +862,7 @@ mod tests {
             TurnState::Succeeded,
             vec![
                 Block::Thinking("hmm".into()),
-                Block::Text("  Done.  ".into()),
+                Block::Text("  Done.  \n<od-next key=\"k1234567\" value=\"Add\"/>".into()),
                 write("index.html"),
                 Block::Text(form.into()),
             ],
