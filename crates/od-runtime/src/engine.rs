@@ -146,6 +146,9 @@ pub struct LaunchSpec {
     pub byok: Option<ByokConfig>,
     /// External MCP servers for this run (see [`McpLaunch`]).
     pub mcp: McpLaunch,
+    /// The key of this turn's follow-up markers (`<od-next>`), shown only
+    /// in its prompt; `None` when the prompt asks for none.
+    pub next_step_key: Option<String>,
 }
 
 /// How the run's external MCP servers reach the agent: extra argv (Claude
@@ -1479,6 +1482,16 @@ async fn finish_turn(
             }
         }
     }
+    if f.status == RunStatus::Succeeded
+        && let Some(key) = &spec.next_step_key
+    {
+        // Before `end`: the run takes no events once it has ended.
+        let suggestions = od_contracts::next_step::parse(&text_parts.concat(), key);
+        if !suggestions.is_empty() {
+            spec.run
+                .emit_json(sse::AGENT, &AgentEvent::NextSteps { suggestions });
+        }
+    }
     finish(&spec.run, f, text_parts)
 }
 
@@ -1512,7 +1525,8 @@ fn finish(run: &Run, f: Finish, text_parts: &[String]) -> RunOutcome {
         session_id: f.session_id,
         resumed: f.resumed,
         resume_failed: f.resume_failed,
-        text: text_parts.concat(),
+        // The stored message and the next turns' transcript: no markers.
+        text: od_contracts::next_step::strip(&text_parts.concat()).into_owned(),
         exit_code: f.code,
         failure_category: f.category,
     }

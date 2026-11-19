@@ -296,7 +296,8 @@ pub fn end_artifact_paths(sse: &str) -> Vec<String> {
         .collect()
 }
 
-/// Concatenates `text_delta` text from SSE `agent` events.
+/// Concatenates `text_delta` text from SSE `agent` events, without the
+/// turn's `<od-next>` follow-up markers (protocol, not prose).
 #[must_use]
 pub fn agent_text(sse: &str) -> String {
     let mut out = String::new();
@@ -316,12 +317,18 @@ pub fn agent_text(sse: &str) -> String {
             out.push_str(t);
         }
     }
-    out
+    od_contracts::next_step::strip(&out).into_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_text_leaves_out_next_step_markers() {
+        let sse = "event: agent\ndata: {\"type\":\"text_delta\",\"delta\":\"Done.\\n<od-next key=\\\"k1234567\\\" value=\\\"Add a page\\\"/>\"}\n\n";
+        assert_eq!(agent_text(sse), "Done.");
+    }
 
     #[test]
     fn joins_text_deltas() {

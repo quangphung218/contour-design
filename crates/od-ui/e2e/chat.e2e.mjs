@@ -133,6 +133,11 @@ try {
   assert.equal(await examples.count(), 3);
   await examples.first().click();
   assert.match(await brief.inputValue(), /product reveal/);
+  // A second example goes under the first: nothing typed is lost.
+  const firstExample = await brief.inputValue();
+  await examples.nth(1).click();
+  const both = await brief.inputValue();
+  assert.ok(both.startsWith(`${firstExample}\n`) && both.length > firstExample.length + 1, both);
   // Audio: sound effects cap the duration at 30 s.
   await page.getByTestId('chip-more').click();
   await page.locator('[data-testid="chip-option"][data-chip="audio"]').click();
@@ -170,11 +175,14 @@ try {
   await page.keyboard.press('Escape');
   results.workingDir = 'ok';
 
-  // 4b. "+" ▸ "Create plugin" seeds the brief with the plugin authoring plugin.
+  // 4b. "+" ▸ "Create plugin" seeds the brief with the plugin authoring
+  // plugin, under what the brief already held (an example picked above).
+  const typed = await brief.inputValue();
+  assert.ok(typed.trim().length > 0, 'the brief holds the example');
   await page.getByTestId('plus-menu').click();
   await page.getByTestId('action-create-plugin').click();
   assert.equal(await page.getByTestId('action-create-plugin').count(), 0, 'the menu stays open');
-  assert.equal(await brief.inputValue(), '@od-plugin-authoring Create a plugin for: ');
+  assert.equal(await brief.inputValue(), `${typed.trimEnd()}\n@od-plugin-authoring Create a plugin for: `);
   await page.locator('[data-testid="context-chip"][data-kind="plugin"]', { hasText: 'od-plugin-authoring' }).locator('.chip-x').click();
   assert.equal(await page.getByTestId('context-chip').count(), 0);
   results.createPlugin = 'ok';
@@ -387,6 +395,11 @@ try {
   await clearContext();
   await page.locator('[data-testid="next-toolbox"][data-action="visual-polish"]').click();
   assert.match(await composer.inputValue(), /^@impeccable-design-polish Audit visual hierarchy/);
+  await clearContext();
+  // Something typed first: the action goes under it.
+  await composer.fill('Keep the green');
+  await page.locator('[data-testid="next-toolbox"][data-action="visual-polish"]').click();
+  assert.match(await composer.inputValue(), /^Keep the green\n@impeccable-design-polish Audit visual hierarchy/);
   await clearContext();
   results.toolbox = 'ok';
 

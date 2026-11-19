@@ -1099,7 +1099,8 @@ pub fn apply_toolbox(
         stage(context, c);
     }
     text.push_str(t(action.prompt));
-    draft.set(text);
+    // What the user already typed stays.
+    draft.update(|d| *d = crate::chat::seed_draft(d, &text));
     super::chat_view::focus_selector("[data-od-composer]");
 }
 
