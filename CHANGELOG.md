@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Desktop app: quitting (⌘Q, the menu, the Dock), closing the window on Windows and Linux, or Restart after an update while agents are running asks first, in any project and for runs started from `od` or MCP too. The dialog says how many agents are running and that quitting stops them; Quit and stop agents goes, Cancel keeps them running. Work not saved is listed in the same dialog, and the button then says the drafts are dropped. A second ⌘Q while it is open does not quit. Logging out, restarting or shutting down the Mac is not held for running agents: they stop cleanly and Contour quits. A turn stopped by quitting now reads "Stopped" and says Contour was quit while it ran and that the files it wrote are kept, instead of "Lost the connection to Contour".
+
 ## [0.2.0-beta.50] - 2026-11-19
 
 ### Fixed

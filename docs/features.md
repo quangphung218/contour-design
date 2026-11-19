@@ -355,7 +355,17 @@ files under the data folder and the API returns them masked.
   before you copy.
 - Started from Finder or the Dock, the app takes `PATH` from your login
   shell (plus `~/.local/bin`, Homebrew, npm, bun, cargo) to find agents.
-- Quitting stops every terminal shell and running agent.
+- Quitting stops every terminal shell and running agent. While agents are
+  running (in any project, also runs started from `od` or MCP), quitting
+  (⌘Q, the menu, the Dock), closing the window on Windows and Linux, or
+  Restart after an update asks first, in the same dialog as work not
+  saved: it says how many agents run, and Quit and stop agents (or
+  Restart and stop agents) stops them; Cancel keeps them running. With
+  work not saved too, the button says the drafts are dropped. Logging
+  out, restarting or shutting down the Mac does not wait on running
+  agents: they stop cleanly and Contour quits (work not saved still
+  asks). Their turns then read "Stopped", with a line that Contour was
+  quit while they ran; the files they wrote are kept and listed.
 - The window follows the system theme and opens on a splash screen while
   the daemon starts.
 

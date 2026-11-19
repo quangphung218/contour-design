@@ -222,6 +222,9 @@ async fn end_unlaunched(
             if let Some(msg) = &meta.assistant_message_id
                 && s.get_message(msg)?.is_some()
             {
+                if failure_category == Some(od_contracts::FailureCategory::AppQuit) {
+                    keep_app_quit(s, msg, &meta.run_id, 0);
+                }
                 s.finish_assistant_message(msg, "", status, 0)?;
             }
             if let (Some(project), Some(conversation)) = (&meta.project_id, &meta.conversation_id) {
@@ -646,16 +649,20 @@ async fn prepare_and_launch(
             let _ = std::fs::remove_file(file);
         }
         crate::routes::genui::drop_pending_for_run(state, run).await;
-        // Stopped by a shutdown, not by the user: told as Contour closing.
-        let (status, category) = if state.runs.cut_by_shutdown(run.id()) {
-            (
-                RunStatus::Failed,
-                Some(od_contracts::FailureCategory::DaemonRestart),
-            )
-        } else {
-            (RunStatus::Canceled, None)
-        };
-        end_unlaunched(state, run, &comment_ids(req), status, None, category).await;
+        // Stopped by a shutdown, not by Stop: told as Contour quitting.
+        let category = state
+            .runs
+            .cut_by_shutdown(run.id())
+            .then_some(od_contracts::FailureCategory::AppQuit);
+        end_unlaunched(
+            state,
+            run,
+            &comment_ids(req),
+            RunStatus::Canceled,
+            None,
+            category,
+        )
+        .await;
         return Ok(resumed);
     };
     state.runs.tasks.spawn(persist_run(
@@ -772,10 +779,8 @@ async fn persist_run(
         let _ = std::fs::remove_file(file);
     }
     let status = run.status();
-    // Contour closing cut the run off: like a Stop, not like the agent failing.
-    let cut_off = status == RunStatus::Canceled
-        || (status == RunStatus::Failed
-            && outcome.failure_category == Some(od_contracts::FailureCategory::DaemonRestart));
+    // Stopped, by Stop or by Contour quitting (QA-114): not the agent failing.
+    let cut_off = status == RunStatus::Canceled;
     let verdict = jury
         .as_mut()
         .and_then(od_runtime::critique::CritiqueReader::finish);
@@ -814,6 +819,9 @@ async fn persist_run(
                     tracing::warn!(run = %run_id, error = %err, "critique report write failed");
                 }
             }
+            if outcome.failure_category == Some(od_contracts::FailureCategory::AppQuit) {
+                keep_app_quit(s, &fin.assistant_message_id, &run_id, last_id);
+            }
             s.finish_assistant_message(&fin.assistant_message_id, &outcome.text, status, last_id)?;
             set_comments(
                 s,
@@ -850,6 +858,22 @@ fn text_delta(ev: &od_runs::RunEvent) -> Option<&str> {
         return None;
     }
     ev.data.get("delta").and_then(Value::as_str)
+}
+
+/// Stores with turn `message` that Contour quitting stopped it, as an
+/// `error` event coded [`od_contracts::APP_QUIT_CODE`]: the chat says so
+/// when the turn is opened again, without the run's log (QA-114). Before
+/// the critique report's batch (`i64::MAX`), which closes the events.
+fn keep_app_quit(s: &Store, message: &str, run_id: &str, last_id: u64) {
+    let event = serde_json::to_value(od_contracts::AgentEvent::Error {
+        message: "Contour was quit while this run was in progress".to_owned(),
+        code: Some(od_contracts::APP_QUIT_CODE.to_owned()),
+        terminal: true,
+    })
+    .unwrap_or(Value::Null);
+    if let Err(err) = s.append_event_batch(message, run_id, i64::MAX - 1, &[event], last_id) {
+        tracing::warn!(run = %run_id, error = %err, "app quit mark write failed");
+    }
 }
 
 /// The `agent` payload carrying a Design Jury report.

@@ -49,6 +49,13 @@ pub enum FailCause {
     Unreachable,
 }
 
+/// Whether Contour quitting, not Stop, stopped `turn` (QA-114): its
+/// status line says so, and that the files it wrote are kept.
+#[must_use]
+pub fn stopped_by_quit(turn: &AssistantTurn) -> bool {
+    turn.state == TurnState::Canceled && turn.failure == Some(FailureCategory::AppQuit)
+}
+
 #[must_use]
 pub fn fail_cause(turn: &AssistantTurn) -> FailCause {
     match (turn.failure, &turn.run_id) {

@@ -46,10 +46,14 @@ pub fn decode_frame(event: &str, data: &str) -> RunFrame {
 }
 
 /// The error a run ended with, as the chat shows it. None for a run
-/// Contour's going away cut off: its status line tells that (UI-008).
+/// Contour's going away cut off (UI-008) or its quitting stopped
+/// (QA-114): its status line tells that.
 #[must_use]
 pub fn end_error(end: &RunEndPayload) -> Option<String> {
-    if end.failure_category == Some(FailureCategory::DaemonRestart) {
+    if matches!(
+        end.failure_category,
+        Some(FailureCategory::DaemonRestart | FailureCategory::AppQuit)
+    ) {
         return None;
     }
     end.error.clone().filter(|e| !e.is_empty())

@@ -486,16 +486,31 @@ fn close_answer(app: AppHandle, answer: String) -> Result<(), String> {
 
 /// Takes the user's ask to close or quit `way` into the [`CloseGuard`]:
 /// `true` when the guard holds it (the caller prevents it) while the page
-/// asks about work not saved.
+/// asks about work not saved or running agents.
 fn hold_close<R: Runtime>(app: &AppHandle<R>, way: Way) -> bool {
+    hold_quit(app, way, false)
+}
+
+/// [`hold_close`] for a quit that may be macOS logging out, restarting or
+/// shutting down (`system`): running agents do not hold that one, so a
+/// logout or an overnight restart is never cancelled for them; they stop
+/// cleanly as the app exits ([`before_exit`]).
+fn hold_quit<R: Runtime>(app: &AppHandle<R>, way: Way, system: bool) -> bool {
+    let running = if system { 0 } else { running_agents(app) };
     let Some((held, actions)) = app
         .try_state::<Mutex<CloseGuard>>()
-        .and_then(|guard| guard.lock().ok().map(|mut guard| guard.ask(way)))
+        .and_then(|guard| guard.lock().ok().map(|mut guard| guard.ask(way, running)))
     else {
         return false;
     };
     run_close_actions(app, actions);
     held
+}
+
+/// The in-process daemon's runs not ended yet, in every project (QA-114).
+fn running_agents<R: Runtime>(app: &AppHandle<R>) -> usize {
+    app.try_state::<Daemon>()
+        .map_or(0, |daemon| daemon.state.runs.running())
 }
 
 /// Takes `event` into the [`CloseGuard`] and carries out what it says. The
@@ -526,7 +541,7 @@ fn run_close_actions<R: Runtime>(app: &AppHandle<R>, actions: Vec<CloseAction>) 
 fn run_close_action<R: Runtime>(app: &AppHandle<R>, action: CloseAction) {
     match action {
         CloseAction::Let => {}
-        CloseAction::AskPage(way) => ui_action(app, way.as_menu()),
+        CloseAction::AskPage { way, running } => ui_action(app, &way.menu_detail(running)),
         CloseAction::CheckLater { token, after } => {
             let app = app.clone();
             std::thread::spawn(move || {
@@ -543,6 +558,7 @@ fn run_close_action<R: Runtime>(app: &AppHandle<R>, action: CloseAction) {
             }
         }
         CloseAction::Go(Way::Quit) => app.exit(0),
+        CloseAction::Go(Way::Restart) => app.request_restart(),
     }
 }
 
@@ -1708,9 +1724,10 @@ fn main() -> anyhow::Result<()> {
                 // ⌘Q and ⌘R work while a page hangs the window (QA-067).
                 web_process::menu_keys_first();
                 // Quit (⌘Q, the menu, the Dock) asks first about work not
-                // saved.
+                // saved and running agents; logging out or restarting the
+                // Mac about work not saved only.
                 let quitting = handle.clone();
-                mac_quit::install(move || !hold_close(&quitting, Way::Quit));
+                mac_quit::install(move |system| !hold_quit(&quitting, Way::Quit, system));
             }
             #[cfg(not(target_os = "macos"))]
             let _ = window;
@@ -2768,7 +2785,22 @@ mod tests {
         );
         // macOS Quit (⌘Q, the menu, the Dock).
         let setup = hook_args(&code, ".setup(").concat();
-        assert!(setup.contains("mac_quit::install(move || !hold_close(&quitting, Way::Quit))"));
+        assert!(
+            setup.contains(
+                "mac_quit::install(move |system| !hold_quit(&quitting, Way::Quit, system))"
+            )
+        );
+        // A system quit (logout, restart, shutdown) counts no agents.
+        assert!(
+            body("hold_quit")
+                .contains("let running = if system { 0 } else { running_agents(app) };")
+        );
+        // Restart into an update asks as a quit does.
+        assert!(
+            shipped(include_str!("updater.rs"))
+                .contains("if !crate::hold_close(&app, Way::Restart) {"),
+            "restart_app goes through the close guard"
+        );
         // Windows File ▸ Quit, ours.
         let menu = hook_args(&code, ".on_menu_event(").concat();
         let quit = &menu[menu.find("QUIT_MENU_ID =>").expect("File ▸ Quit's event")..];
@@ -2782,8 +2814,16 @@ mod tests {
                 .contains("Action::PageGone => close_event(app, CloseEvent::PageGone)")
         );
         assert!(code.contains(".manage(Mutex::new(CloseGuard::default()))"));
-        // The page is asked by the word its leave guard takes.
-        assert!(body("run_close_action").contains("ui_action(app, way.as_menu())"));
+        // The page is asked by the word its leave guard takes, with the
+        // agents running in the in-process daemon (QA-114).
+        assert!(body("run_close_action").contains("ui_action(app, &way.menu_detail(running))"));
+        assert!(body("hold_close").contains("hold_quit(app, way, false)"));
+        assert!(body("hold_quit").contains("guard.ask(way, running)"));
+        assert!(
+            body("run_close_action")
+                .contains("CloseAction::Go(Way::Restart) => app.request_restart(),")
+        );
+        assert!(body("running_agents").contains("daemon.state.runs.running()"));
     }
 
     #[test]
