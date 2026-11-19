@@ -112,6 +112,27 @@ check "APT_BUDGET_SECONDS: no try gets more than what is left" '! sed -n "s/^lim
 check "APT_BUDGET_SECONDS: spent, the script stops with an error about the mirror" '[ $rc -ne 0 ] && grep -q "^::error::linux-deps: apt-get update did not finish within APT_BUDGET_SECONDS=2: the Ubuntu package mirror is slow" "$work/out" && ! grep -q "apt-get .* install" "$work/calls"'
 rm -rf "$work"
 
+# APT_BUDGET_SECONDS with APT_ARCHIVES: the install ends as the budget runs
+# out (run 44509038299 finished at 598 of 600 s). Cleaning the cache after
+# it is not part of the budget, and a failed clean does not fail the step.
+setup
+cat > "$work/bin/apt-get" <<SH
+#!/usr/bin/env bash
+echo "apt-get \$*" >> "$work/calls"
+if [[ " \$* " == *" install "* ]]; then sleep 2; fi
+if [[ " \$* " == *" autoclean"* ]]; then exit 100; fi
+exit 0
+SH
+cat > "$work/bin/chown" <<SH
+#!/usr/bin/env bash
+echo "chown \$*" >> "$work/calls"
+SH
+chmod +x "$work/bin/apt-get" "$work/bin/chown"
+PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_BUDGET_SECONDS=2 APT_ARCHIVES="$work/debs" "$script" > "$work/out" 2>&1
+rc=$?
+check "APT_BUDGET_SECONDS: an install that ends with the budget is not failed by autoclean" '[ $rc -eq 0 ] && grep -q "^apt-get .* autoclean$" "$work/calls" && ! grep -q "did not finish within" "$work/out" && grep -q "linux-deps: autoclean failed" "$work/out"'
+rm -rf "$work"
+
 # --playwright DIR: a fake playwright that lists two missing packages on
 # its first dry run and none after.
 setup_playwright() {

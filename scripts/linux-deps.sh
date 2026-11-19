@@ -129,4 +129,8 @@ if [ -n "$playwright_dir" ]; then
   fi
 fi
 # Drop versions the mirror no longer has, so the folder does not grow.
-[ -z "${APT_ARCHIVES:-}" ] || apt_get autoclean
+# Outside the budget: the packages are installed, so a clean that is cut
+# short or fails must not fail the step.
+if [ -n "${APT_ARCHIVES:-}" ]; then
+  budget="" apt_get autoclean || echo "linux-deps: autoclean failed; the packages are installed" >&2
+fi
