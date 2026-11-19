@@ -1,13 +1,17 @@
 # cargo-nextest (CI's test job, `make quick`). nextest runs each test in a
 # process of its own, all binaries at once; `cargo test` still works as before.
 
+# Print a test that runs past a minute, and end it (with its process group,
+# so its Chrome too) after four: a test that hangs fails under its own name
+# instead of holding the 60-minute CI job (macos-15, 2026-11-19). The slowest
+# test took 92 s on macos-15 (od-render-cdp::outer_sandbox, nightly
+# 2026-11-19); the Chrome tests run around 60 s on all three systems.
 [profile.default]
-# Print a test that runs past a minute (it keeps running).
-slow-timeout = { period = "60s" }
+slow-timeout = { period = "60s", terminate-after = 4 }
 
 [profile.ci]
 fail-fast = false
-slow-timeout = { period = "60s" }
+slow-timeout = { period = "60s", terminate-after = 4 }
 
 # crates/od-preview/tests/watch.rs times a file watcher and serialises its
 # tests with a mutex, which separate processes no longer share.
@@ -17,3 +21,9 @@ watcher = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = 'package(od-preview) & binary(watch)'
 test-group = 'watcher'
+
+# Retries a stalled pass once on a fresh Chrome, each pass capped at 150 s
+# (PASS_LIMIT in the test): 5 minutes and Chrome's starts.
+[[profile.default.overrides]]
+filter = 'package(od-preview) & binary(bridge_browser) & test(=bridge_in_headless_chrome)'
+slow-timeout = { period = "60s", terminate-after = 6 }
