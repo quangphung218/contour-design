@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Docs: the README is rewritten around what Contour does, how it works and where it stands, with a Vietnamese version (README.vi.md), the download table of each release, how to check a download's checksum and the macOS signature, and a new docs/STATUS.md listing what works and how each part was checked. `scripts/release-notes.sh --body` writes a release page that starts with Highlights (from an optional `### Highlights` block in the CHANGELOG) and ends with what was verified and a download table.
+
 ### Changed
 
 - Desktop app: quitting (⌘Q, the menu, the Dock), closing the window on Windows and Linux, or Restart after an update while agents are running asks first, in any project and for runs started from `od` or MCP too. The dialog says how many agents are running and that quitting stops them; Quit and stop agents goes, Cancel keeps them running. Work not saved is listed in the same dialog, and the button then says the drafts are dropped. A second ⌘Q while it is open does not quit. Logging out, restarting or shutting down the Mac is not held for running agents: they stop cleanly and Contour quits. A turn stopped by quitting now reads "Stopped" and says Contour was quit while it ran and that the files it wrote are kept, instead of "Lost the connection to Contour".

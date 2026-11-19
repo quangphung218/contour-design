@@ -161,7 +161,7 @@ browser ([decisions.md](decisions.md) §2).
   watch the phased generation; review (Looks good / Needs work); browse the
   kit (Showcase, Tokens, `DESIGN.md`); upload fonts and logos; set a default
   for new chats; download or edit with the agent.
-- **Templates**: 115 design templates with live previews and filters, plus
+- **Templates**: 174 design templates (115 from OpenDesign) with live previews and filters, plus
   image and video prompt templates (Copy prompt) and your saved templates.
 - **Plugins**: list and detail pages, Use and Remix, input forms, add from a
   prompt, a link or a folder.
@@ -239,7 +239,7 @@ curl -s -X PUT http://127.0.0.1:7456/api/app-config \
 
 Without an agent CLI, pick **API key (BYOK)**: the daemon calls the Anthropic
 Messages API, an OpenAI-compatible `chat/completions` endpoint, or Azure
-OpenAI, from 26 presets. The model has no tools and returns one HTML file.
+OpenAI, from 28 presets. The model has no tools and returns one HTML file.
 
 ```bash
 curl -s -X PUT http://127.0.0.1:7456/api/app-config \

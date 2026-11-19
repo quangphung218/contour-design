@@ -1,188 +1,229 @@
-<p><img src="assets/brand/contour-wordmark.svg" alt="Contour" height="48"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/contour-wordmark-dark.svg">
+    <img src="assets/brand/contour-wordmark.svg" alt="Contour" height="56">
+  </picture>
+</p>
 
-**Contour is a local-first AI design studio with no telemetry.** It runs
-entirely on your machine and works with the coding agent CLI you already
-have: Claude Code, Codex, Cursor, Copilot and a dozen more. No account, no
-cloud; nothing leaves your machine except calls to the services you
-configure: your agent or model provider, and any MCP server, media or
-research provider you add. Help ▸ Check for Updates asks GitHub Releases
-for the newest version only when you click it, sends nothing but its
-User-Agent, and never checks in the background; its Update now downloads
-and installs that release's signed build only when you click it.
+<p align="center">
+  <b>English</b> · <a href="README.vi.md">Tiếng Việt</a>
+</p>
 
-[![CI](https://github.com/quangphung218/contour-design/actions/workflows/ci.yml/badge.svg)](https://github.com/quangphung218/contour-design/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/quangphung218/contour-design?include_prereleases&sort=semver)](https://github.com/quangphung218/contour-design/releases)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+<p align="center">
+  <b>A local-first AI design studio that works with the coding agent you already have, with no account and no telemetry.</b><br>
+  Describe a page, a deck, a document or a short film; your agent writes it into a project folder on your machine.<br>
+  Contour shows it live, lets you comment on it and edit it, keeps every version and exports it.
+</p>
 
-<p><img src="docs/images/demo.gif" alt="A brief typed on Home becomes a project: the agent streams its reply, the live preview fills in, and the page is exported as HTML" width="100%"></p>
+<p align="center">
+  <a href="https://github.com/quangphung218/contour-design/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/quangphung218/contour-design/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/quangphung218/contour-design/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/quangphung218/contour-design?include_prereleases&sort=semver"></a>
+  <img alt="Status: beta" src="https://img.shields.io/badge/status-beta-d69e2e">
+  <img alt="macOS · Windows · Linux" src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-desktop-2d81ff">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+</p>
 
-<sub>Recorded with a scripted stand-in agent so the run is repeatable; a real
-agent writes its own page.</sub>
+<p align="center">
+  <a href="#downloads"><b>Download Contour</b></a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#status">Status</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#how-is-this-different-from-opendesign">vs OpenDesign</a> ·
+  <a href="#known-limitations">Limitations</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
-Type a brief and your agent writes HTML into a project folder; Contour shows
-the live preview, lets you comment on and edit it directly, keeps a version
-history and exports to HTML, PDF, PPTX, PNG and MP4. Web pages, prototypes,
-slide decks, documents, images and video all work the same way.
-
-## Features
-
-- **Bring your own agent.** 6 coding-agent CLIs and 10 ACP agents are
-  detected on `PATH`; no agent? Use an API key (26 BYOK presets).
-- **Studio.** Streaming chat, live sandboxed preview, comments pinned to
-  elements, direct text and style edits written back to the source, tweaks,
-  palette swap, anti-slop lint, version history, decks with presenter mode,
-  terminal tabs.
-- **Content included.** 169 skills, 115 design templates and 152 design
-  systems from OpenDesign; create your own design system from a brand
-  description, a URL or a `DESIGN.md`.
-- **Export.** Self-contained HTML, ZIP, PDF (raster or vector), PNG/JPEG,
-  PPTX (images or editable shapes), MP4, React component as HTML.
-- **Automate and integrate.** Cron routines, an MCP server for your other
-  agents (`od mcp install claude`), external MCP servers for Contour's
-  agents, and a CLI for everything the UI does.
-- **20 languages**, light and dark themes, keyboard shortcuts, a command
-  palette.
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Contour's Home screen: a brief is typed and sent, a project opens with the agent's reply streaming in the chat on the left, the live preview on the right fills in with the page as the agent writes it, and the page is then exported as HTML from the Export menu" width="100%">
+  <br>
+  <sub>A scripted demo: a stand-in agent replays the same reply each time so the recording is repeatable; a real agent writes its own page.</sub>
+</p>
 
 <table>
-<tr>
-<td><img src="docs/images/studio.png" alt="The Contour studio: chat with the agent on the left, live preview of a tea shop landing page on the right"></td>
-<td><img src="docs/images/studio-dark.png" alt="The same studio in dark mode"></td>
-</tr>
+  <tr>
+    <td width="25%" valign="top">
+      <h3>Bring your own agent</h3>
+      Contour finds 25 coding-agent CLIs on your <code>PATH</code> (Claude Code, Codex, Cursor, Copilot, OpenCode, Qwen Code and ACP agents such as Kimi and Kiro). No agent? Use an API key with one of 28 provider presets.
+    </td>
+    <td width="25%" valign="top">
+      <h3>See it, comment, edit</h3>
+      A sandboxed live preview reloads as files change. Pin a comment on any element for the next turn, or edit text and style by hand: the change is written back to the source file.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Every version kept</h3>
+      Each HTML page keeps its history in the project folder: what the agent wrote, what you edited and what you restored. Open any saved version and restore it.
+    </td>
+    <td width="25%" valign="top">
+      <h3>Export anywhere</h3>
+      8 export formats: self-contained HTML, project ZIP, PDF (raster or vector), PNG/JPEG, PPTX (images or editable shapes) and MP4. 169 skills, 174 templates and 152 design systems are included.
+    </td>
+  </tr>
 </table>
 
-The full tour is in [docs/features.md](docs/features.md).
+## How it works
 
-## Install
+1. **Install** Contour from [Downloads](#downloads) (macOS, Windows, Ubuntu), or build it from source.
+2. **Connect an agent.** Install one and sign in to it once, for example
+   `npm install -g @anthropic-ai/claude-code && claude`. Contour finds it and tests it; or pick *API key*.
+3. **Describe what you want** on Home, such as *"Landing page for a tea shop, warm colours"*, and press Enter.
+   Watch the preview fill in, then comment on what to change or edit it yourself.
+4. **Export** to HTML, PDF, PPTX, PNG or MP4 from the Export menu.
 
-### Download
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/studio.png" alt="The Contour studio in light mode: the chat with the agent on the left, the live preview of a tea shop landing page on the right" width="100%"><br>
+      <sub><b>Studio:</b> chat on the left, live preview on the right.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/studio-dark.png" alt="The same studio and tea shop page in dark mode" width="100%"><br>
+      <sub><b>Dark mode:</b> the same project, in 1 of 20 UI languages and two themes.</sub>
+    </td>
+  </tr>
+</table>
 
-Get the latest build from
-[Releases](https://github.com/quangphung218/contour-design/releases). Each
-release has a `SHA256SUMS` file.
+The full tour (studio, decks, terminal tabs, routines, MCP server, the `od` CLI) is in
+[docs/features.md](docs/features.md); step by step in [docs/getting-started.md](docs/getting-started.md).
 
-| System | File | First launch |
+## Status
+
+> [!IMPORTANT]
+> **Contour is in beta:** `0.2.0-beta.N` pre-releases, published since 26 October 2026. What works, what
+> is partial and what is next:
+>
+> - **Works today:** the desktop app on macOS, Windows and Ubuntu; the main flow (agent → design → comment
+>   and edit → export) with Claude Code, checked by hand on the released macOS build; every scored feature
+>   of OpenDesign that needs no account or cloud; the `od` CLI and MCP server.
+> - **Partly there:** Windows and Linux are checked by automated smoke tests, not by a person each release;
+>   other agents are tested against stand-ins, not each one live; the builds have no Developer ID or
+>   Windows code signing.
+> - **Next:** a person's run of the main flow on Windows and Ubuntu, and Update now from the previous
+>   release checked by hand on each system (CI cannot check it).
+>
+> [docs/STATUS.md](docs/STATUS.md) lists each part and how it was checked. Found something broken?
+> [Open an issue](https://github.com/quangphung218/contour-design/issues).
+
+## Downloads
+
+Every build is on the [Releases page](https://github.com/quangphung218/contour-design/releases); betas
+are pre-releases. `<version>` is the version number, for example `0.2.0-beta.50`.
+
+| System | File | Install |
 |---|---|---|
-| macOS 13.3 or later (Apple silicon and Intel) | `Contour_<version>_universal.dmg` | Unsigned: see below |
-| Ubuntu 22.04 LTS or later (x64) | `Contour_<version>_amd64.deb` or `.AppImage` | `sudo apt install ./Contour_<version>_amd64.deb` ([details](docs/getting-started.md#install-on-ubuntu)) |
-| Windows 10 and 11 (x64) | `Contour_<version>_x64_en-US.msi` | SmartScreen asks once: **More info ▸ Run anyway** ([details](docs/getting-started.md#install-on-windows)) |
+| macOS 13.3 or later, Apple silicon and Intel | `Contour_<version>_universal.dmg` | Drag Contour to Applications, then [allow it once](#first-open-on-macos) |
+| Ubuntu 22.04 LTS or 24.04 LTS, x64 | `Contour_<version>_amd64.deb` | `sudo apt install ./Contour_<version>_amd64.deb` ([details](docs/getting-started.md#install-on-ubuntu)) |
+| | `Contour_<version>_amd64.AppImage` | Make it executable and run it |
+| Windows 10 and 11, x64 | `Contour_<version>_x64_en-US.msi` | SmartScreen asks once: **More info ▸ Run anyway** ([details](docs/getting-started.md#install-on-windows)) |
 
-**macOS: "“Contour” Not Opened".** The build has no Apple Developer ID, so
-the first launch says "Apple could not verify “Contour” is free of
-malware…". Drag Contour to Applications, then run this once in Terminal:
+The other files are for **Update now** in the app: `Contour_<version>_universal.app.tar.gz`, the `.sig`
+signatures and `latest.json`. `SHA256SUMS` lists a checksum for every file. In the download folder:
 
-```bash
+```sh
+shasum -a 256 --ignore-missing -c SHA256SUMS     # macOS: each file you have prints "OK"
+sha256sum --ignore-missing -c SHA256SUMS         # Linux
+```
+
+### First open on macOS
+
+The macOS build is signed **ad-hoc**, without an Apple Developer ID, so the first launch says
+**"“Contour” Not Opened"** ("Apple could not verify “Contour” is free of malware…"). Click **Done**, then
+run this once in Terminal:
+
+```sh
 xattr -dr com.apple.quarantine /Applications/Contour.app
 ```
 
-Or without Terminal: on **macOS 15 and later**, open Contour once, then go
-to **System Settings ▸ Privacy & Security ▸ Open Anyway** and open it
-again; on macOS 13.3 to 14, Control-click the app ▸ **Open**. Step by step:
-[getting started](docs/getting-started.md#open-a-build-without-developer-id-on-macos).
+Or without Terminal: on macOS 15 and later, **System Settings ▸ Privacy & Security ▸ Open Anyway**; on
+macOS 13.3 to 14, Control-click the app ▸ **Open**
+([step by step](docs/getting-started.md#open-a-build-without-developer-id-on-macos)).
+
+**Check the signature.** The ad-hoc signature seals the whole app, so macOS keeps a permission such as
+Documents access once you allow it:
+
+```sh
+codesign --verify --deep --strict --verbose=2 /Applications/Contour.app
+# /Applications/Contour.app: valid on disk
+# /Applications/Contour.app: satisfies its Designated Requirement
+
+codesign -dv /Applications/Contour.app 2>&1 | grep -E 'Signature|Sealed'
+# Signature=adhoc
+# Sealed Resources version=2 …
+```
+
+Any other output means the app was changed after it was built: download it again.
 
 ### Build from source
 
-Needs Rust 1.89+, Node.js 20+ and `trunk`; `make setup` checks and tells you
-what is missing.
+Needs Rust 1.89+, Node.js 20+ and `trunk`; `make setup` checks and says what is missing.
 
-```bash
+```sh
 git clone https://github.com/quangphung218/contour-design.git
 cd contour-design
 make setup
 make app-release && make install     # Contour.app in /Applications (macOS)
 ```
 
-Or run the daemon and use the UI in a browser: `make run`, then open
-`http://127.0.0.1:7456`.
+Or run the daemon and use the UI in a browser: `make run`, then open `http://127.0.0.1:7456`.
 
-## Quickstart
+## Privacy
 
-1. **Install an agent** and sign in to it once, for example
-   `npm install -g @anthropic-ai/claude-code && claude`. (Or have an API
-   key ready.)
-2. **Open Contour** and pick the agent it found (or choose *API key*).
-3. **Type a brief** on Home, such as *"Landing page for a tea shop, warm
-   colours"*, and press Enter. Watch the preview fill in, comment on what to
-   change, then **Export**.
+**No telemetry, no account, no cloud.** No analytics, crash-reporting or tracing client is in the code or
+its dependencies. Nothing leaves your machine except calls to the services you configure: your agent or
+model provider, and any MCP server, media or research provider you add.
 
-More in [docs/getting-started.md](docs/getting-started.md).
+**Updates only when you click.** Help ▸ Check for Updates asks GitHub Releases for the newest version,
+sending nothing but its User-Agent, and never checks in the background. Update now downloads and
+installs that release's signed build, also only when you click it.
 
 ## How is this different from OpenDesign?
 
-Contour started as a Rust rewrite of
-[OpenDesign](https://github.com/nexu-io/open-design) and keeps its
-behaviour, content and prompts. What differs, with the source for each
-claim (OpenDesign as of commit `e03d5c2`):
+Contour started as a Rust rewrite of [OpenDesign](https://github.com/nexu-io/open-design) and keeps its
+behaviour, content and prompts.
 
 | | Contour | OpenDesign |
 |---|---|---|
-| Telemetry | None. No analytics, crash-reporting or tracing client is in the code or its dependencies, and the end-to-end tests block every request the UI makes off the machine. The only other call is Check for Updates, to GitHub Releases, when you click it. | Product analytics and quality traces are on by default and can be turned off; safety and reliability telemetry is always enabled in builds configured with a telemetry destination ([PRIVACY.md](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/PRIVACY.md)). |
-| Account and cloud | None. Nothing to sign in to. | Optional OpenDesign Cloud with sign-in and its own model service ([README](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/README.md)). |
-| Network | Only the services you configure: your agent or model provider, and any MCP server, media or research provider you add, plus GitHub Releases when you click Check for Updates. Contour never downloads a browser, and updates itself only when you click Update now (a signed build from that release). | Also its cloud, sharing and deploy services when you use them. |
-| Built with | Rust: axum daemon, Leptos/WASM UI, Tauri 2 shell. | TypeScript: Node daemon, Next.js UI, Electron shell. |
-| Features | **206 of 206** scored features of OpenDesign. The 20 that need an account, a cloud service or outbound network (connectors, marketplace, team sharing, cloud deploy, auto-update…) are left out on purpose, and Home drops the "Recommended for you" strip. | All of them, including the cloud features. |
+| Telemetry | None | On by default, can be turned off in part |
+| Account and cloud | None | Optional cloud with sign-in |
+| Built with | Rust: axum daemon, Leptos/WASM UI, Tauri 2 shell | TypeScript: Node daemon, Next.js UI, Electron shell |
+| Features | 206 of 206 scored features; the 20 that need an account, a cloud service or outbound network are left out on purpose | All, including the cloud features |
 
-The row-by-row feature comparison with evidence is in
-[docs/parity.md](docs/parity.md), and the choices behind it in
-[docs/decisions.md](docs/decisions.md).
+Each row with its source (OpenDesign as of commit `e03d5c2`) is in
+[docs/parity.md](docs/parity.md#how-contour-differs), the row-by-row feature comparison below it, and the
+choices behind it in [docs/decisions.md](docs/decisions.md).
 
 ## Known limitations
 
-- **Linux means Ubuntu 22.04 LTS and 24.04 LTS on x64.** Each release's
-  `.deb` and AppImage are installed and opened on both, under X11; for a
-  blank window under Wayland see
-  [troubleshooting](docs/troubleshooting.md#the-window-is-blank-or-white-wayland-nvidia).
-  Other distributions with WebKitGTK 4.1 are not tested, and there is no
-  ARM build.
-- **Windows means Windows 10 and 11 on x64, smoke-tested.** Each release's
-  `.msi` is installed, opened, runs an agent turn and a PDF export, and is
-  uninstalled on Windows Server 2025 and 2022 before the release is drafted.
-  Upgrading over the previous release is smoke-tested too. Every pull
-  request runs the workspace tests on Windows, stopping an agent's process
-  tree (Job Objects) included; the tests that drive a mock agent CLI (a
-  `sh` script) and terminal tabs run on macOS and Linux only (ConPTY is
-  untested). The installer is unsigned, and there is no ARM64 build.
-  Onboarding links each agent's setup page rather than giving an install
-  command.
-- **External MCP servers reach Claude, ACP agents and OpenCode only**, as in
-  the original app; ACP takes stdio servers only.
-- **Fully detached processes can survive.** An MCP stdio helper that
-  double-forks, or a terminal job that calls `setsid` and loses its parent
-  within 2 seconds, is not killed when its tab or the daemon stops; macOS
-  has no subreaper to prevent it.
-- **Direct text editing applies to text-only elements.** Elements with child
-  tags or generated by scripts answer 409 with the reason.
-- **No background auto-update.** Check for Updates ▸ Update now installs a newer release when you click it (not the `.deb` or source builds: install the new `.deb`, or `git pull` and rebuild).
-- **Export to PDF, images, PPTX and MP4 needs Chrome, Edge or Chromium**
-  already installed; Contour never downloads a browser.
+- **Platforms:** macOS 13.3+, Windows 10/11 x64 and Ubuntu 22.04/24.04 x64 only; no ARM build for Windows
+  or Linux. Other Linux distributions are not tested.
+- **No Developer ID or Windows code signing:** macOS and Windows ask once on first open (see above).
+- **Export to PDF, images, PPTX and MP4 needs Chrome, Edge or Chromium** already installed; Contour never
+  downloads a browser. MP4 also needs `ffmpeg`.
+- **No background auto-update.** The `.deb` and source builds cannot update themselves.
+- **External MCP servers reach Claude, ACP agents and OpenCode only**, as in OpenDesign.
+
+The rest (direct text editing limits, detached processes, Wayland) is in
+[docs/STATUS.md](docs/STATUS.md#known-limitations).
 
 ## Documentation
 
 | For | Read |
 |---|---|
 | Using Contour | [Getting started](docs/getting-started.md), [Features](docs/features.md), [Troubleshooting](docs/troubleshooting.md) |
+| What works | [Status](docs/STATUS.md), [Parity with OpenDesign](docs/parity.md), [Changelog](CHANGELOG.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md), [Development](docs/development.md), [Architecture](docs/architecture.md), [Release process](docs/release.md) |
 | Design | [Spec](docs/spec.md), [Decisions](docs/decisions.md), [Design system](docs/design-system.md), [Brand](docs/brand.md) |
-| Status | [Parity with OpenDesign](docs/parity.md), [Changelog](CHANGELOG.md) |
 | Security | [SECURITY.md](SECURITY.md) |
 
 ## License and credits
 
-Contour is licensed under the [Apache License 2.0](LICENSE), like
-OpenDesign. It is built on OpenDesign by nexu-io and contributors: skills,
-design templates, design systems, craft guides, plugins and prompt texts come
-from OpenDesign (commit `e03d5c2`) and keep their own licences and
-attribution. Bundled third-party code (xterm.js, React, Sucrase, Remix Icon,
-Geist) are listed in [NOTICE](NOTICE); the files Contour changed from
-OpenDesign are listed there too. [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES)
-holds the licence texts of every Rust crate and vendored asset in the app,
-generated from `Cargo.lock` by `make licenses`. The app ships all three files
-and shows them in Settings ▸ About ▸ Licenses.
+Contour is licensed under the [Apache License 2.0](LICENSE), like OpenDesign. It is built on OpenDesign by
+nexu-io and contributors: skills, design templates, design systems, craft guides, plugins and prompt texts
+come from OpenDesign (commit `e03d5c2`) and keep their own licences and attribution. [NOTICE](NOTICE) lists
+the bundled third-party code and the files Contour changed; [THIRD-PARTY-LICENSES](THIRD-PARTY-LICENSES)
+holds the licence text of every Rust crate and vendored asset (`make licenses`). The app shows both in
+Settings ▸ About ▸ Licenses.
 
-**Trademarks.** 90 of the bundled design systems are named after a real
-company or product (Airbnb, Apple, Stripe…). Each is inspired by that
-brand's public design language; Contour is not affiliated with or endorsed by
-any of them, and all trademarks belong to their owners. The app shows this
-note on each one's page, and [NOTICE](NOTICE) lists them.
-
-Claude Code, Codex, Cursor, Copilot and other names are trademarks of their
-owners; Contour is not affiliated with them.
+**Trademarks.** 90 of the 152 design systems are named after a real company or product (Airbnb, Apple,
+Stripe…). Each is inspired by that brand's public design language; Contour is not affiliated with or
+endorsed by any of them. Claude Code, Codex, Cursor, Copilot and other names are trademarks of their
+owners.
