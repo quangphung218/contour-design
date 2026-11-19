@@ -18,7 +18,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 
 ## Invariants
 1. Every read-modify-write of `app-config.json` holds `CONFIG_LOCK` (`src/routes/ui.rs`).
-   Server code writes app config only through `patch_config`, never the file directly.
+   Code outside `src/routes/ui.rs` writes app config only through `patch_config`, never the file directly.
    - `tests/manage.rs::two_recent_folders_added_at_once_both_stay`
 2. `PUT /api/app-config` is an RFC 7396 merge patch: objects merge, `null` removes at any depth,
    arrays replace (`src/routes/ui.rs:merge_patch`, `merge_object`).
@@ -38,7 +38,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    - `src/routes/ui.rs::a_recent_dir_goes_first_once`
 6. Draft images never ship until a comment claims them. Every route that ships project files
    filters `unclaimed_draft_uploads`: ZIP (`src/routes/export/mod.rs`), selection ZIP (`src/routes/file_ops.rs`),
-   Library assets (`src/routes/library/assets.rs`), handoff (`src/routes/handoff.rs`). `GET files` lists them on purpose.
+   Library assets (`src/routes/library/assets.rs`), handoff (`src/routes/handoff.rs`), the file list (`src/routes/files.rs:list`).
    - `tests/drafts.rs::a_draft_image_ships_only_once_a_comment_takes_it`, `tests/drafts.rs::the_handoff_prompt_leaves_draft_images_out`
 7. A Manual write claims its draft image in the same step and gives it back if the page was not written
    (`src/routes/preview_tools.rs:source_edits`).

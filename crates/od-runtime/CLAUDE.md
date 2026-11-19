@@ -25,7 +25,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    (`src/process.rs:reap_orphan`).
    - `tests/engine.rs::daemon_restart_mid_run_ends_it_failed_and_reaps_the_orphan`
    - `tests/engine.rs::reap_orphan_spares_a_group_running_something_else`
-3. The agent env starts empty: inherited `PATH` and every `OD_*` are dropped, then the run's own
+3. The agent env is the daemon's env minus `PATH` and every `OD_*`; then `PATH` and the run's own
    values are set (`src/env.rs:agent_env`). `OD_API_TOKEN` never reaches the agent.
    - `src/env.rs::api_token_never_reaches_the_agent`
 4. Protocol agents get their cancel message before any signal.

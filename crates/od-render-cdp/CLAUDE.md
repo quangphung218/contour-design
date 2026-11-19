@@ -58,5 +58,5 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
 ## Check
 - Most launch tests run only on macOS. CI runs them in the `chrome-macos` job of `../../.github/workflows/ci.yml`,
   only when a PR changes a file matching `CHROME` in `../../scripts/ci-changes.sh` (od-render-cdp, od-cli, `Cargo.lock`, CI).
-- Two tests are `#[ignore]`; when you change launch, run them by hand:
+- Two launch tests in `tests/launch_services.rs` are `#[ignore]`; when you change launch, run them by hand:
   `cargo test -p od-render-cdp --test launch_services -- --ignored` (see `../../docs/development.md`, "Browser launch").

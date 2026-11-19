@@ -48,7 +48,7 @@ Guards between them:
 | `od-media` | media generation with user keys, `media-config.json` | none |
 | `od-mcp-client` | external MCP servers for agents, OAuth PKCE | job |
 | `od-mcp` | `od mcp` stdio server, `od mcp install` | store |
-| `od-server` | axum HTTP API (`router`, `serve`) | all of the above except od-cli |
+| `od-server` | axum HTTP API (`router`, `serve`) | all of the above except od-cli and od-job (transitive) |
 | `od-cli` | the `od` binary: daemon start and API client | server, runtime, store, … |
 | `od-ui` | Leptos CSR WASM app (built with trunk) | contracts only; talks HTTP |
 | `apps/desktop` | Tauri shell, in-process daemon, menus, dialogs, updater | cli, server, runtime, store, … |
