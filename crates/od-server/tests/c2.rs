@@ -591,7 +591,7 @@ async fn interrupting_the_jury_stops_the_run_and_ships_the_best_round() {
 #[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn closing_contour_mid_jury_ships_the_best_round() {
-    // Contour quitting cuts the run off (failed, `daemon_restart`), and the
+    // Contour quitting stops the run (canceled, `app_quit`), and the
     // jury's best closed round is kept as after an interrupt (track C2).
     let d = daemon_with(Options {
         kill_grace: Duration::from_millis(500),
@@ -631,7 +631,7 @@ async fn closing_contour_mid_jury_ships_the_best_round() {
         .await
         .expect("shutdown did not return");
     let messages = d.settled_messages(&project, &conversation).await;
-    assert_eq!(messages[1]["runStatus"], "failed");
+    assert_eq!(messages[1]["runStatus"], "canceled");
     let report = messages[1]["events"]
         .as_array()
         .unwrap()

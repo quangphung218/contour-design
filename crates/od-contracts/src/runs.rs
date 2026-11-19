@@ -180,6 +180,11 @@ impl RunStatus {
 /// ([`FailureCategory::DaemonRestart`]).
 pub const DAEMON_RESTART_CODE: &str = "DAEMON_RESTART";
 
+/// `error.code` of the event a turn stopped by Contour quitting keeps with
+/// its stored events ([`FailureCategory::AppQuit`]), so the chat says so
+/// when the turn is opened again (QA-114).
+pub const APP_QUIT_CODE: &str = "APP_QUIT";
+
 /// Why a run failed, as surfaced on `end.failureCategory`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -192,6 +197,9 @@ pub enum FailureCategory {
     SpawnFailed,
     /// The daemon restarted while the run was in flight.
     DaemonRestart,
+    /// Contour was quit (or its daemon stopped) while the run was in
+    /// flight: the run was stopped, on a `canceled` end (QA-114).
+    AppQuit,
 }
 
 /// `start` payload.

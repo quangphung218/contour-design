@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Changed
 
 - The suggestions under a finished turn now come from the turn itself: the agent ends its answer with up to three next actions on what it just made, in the app's language, and they show as chips that fill the composer (edit before sending). They stay after a reload. A page the turn wrote with must-fix or should-fix lint findings gets a first chip naming them ("Fix 1 issue: emoji icon") that asks the agent to fix them. "Mobile version" and "Try variations" show only when the agent suggested nothing and the lint found nothing. "View", "Comment on the page", Export and the toolbox actions are now small buttons under the chips.
+- Desktop app: quitting (⌘Q, the menu, the Dock), closing the window on Windows and Linux, or Restart after an update while agents are running asks first, in any project and for runs started from `od` or MCP too. The dialog says how many agents are running and that quitting stops them; Quit and stop agents goes, Cancel keeps them running. Work not saved is listed in the same dialog, and the button then says the drafts are dropped. A second ⌘Q while it is open does not quit. Logging out, restarting or shutting down the Mac is not held for running agents: they stop cleanly and Contour quits. A turn stopped by quitting now reads "Stopped" and says Contour was quit while it ran and that the files it wrote are kept, instead of "Lost the connection to Contour".
 
 ## [0.2.0-beta.50] - 2026-11-19
 

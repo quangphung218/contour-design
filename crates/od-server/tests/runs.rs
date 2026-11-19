@@ -1080,22 +1080,21 @@ async fn shutdown_stops_running_agents_like_stop() {
             break;
         }
     }
+    // What quitting the desktop app asks about (QA-114).
+    assert_eq!(d.state.runs.running(), 1);
 
     tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
         .await
         .expect("shutdown did not return");
-    // Nobody pressed Stop: the run ends as cut off by Contour closing,
-    // as after a crash, not as "Stopped" (UI-008).
+    assert_eq!(d.state.runs.running(), 0);
+    // Nobody pressed Stop: the run ends stopped by Contour quitting
+    // (QA-114), not as a lost connection or a crash (UI-008).
     let reg = d.state.runs.registry.get(&run.run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
     let events = d.events(&run.run_id, None).await;
     let end = events.last().unwrap();
     assert_eq!(end.event, "end");
-    assert_eq!(
-        end.data["failureCategory"], "daemon_restart",
-        "{:?}",
-        end.data
-    );
+    assert_eq!(end.data["failureCategory"], "app_quit", "{:?}", end.data);
     // The turn is recorded as ended before shutdown returns.
     let body = d
         .get_json(&format!(
@@ -1109,11 +1108,107 @@ async fn shutdown_stops_running_agents_like_stop() {
         .find(|m| m["role"] == "assistant")
         .cloned()
         .unwrap();
-    assert_eq!(assistant["runStatus"], "failed");
+    assert_eq!(assistant["runStatus"], "canceled");
+    // The cause goes with the turn: opened again, it says Contour was quit.
+    let codes: Vec<&Value> = assistant["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["type"] == "error")
+        .map(|e| &e["code"])
+        .collect();
+    assert_eq!(codes, [&json!(od_contracts::APP_QUIT_CODE)], "{assistant}");
     if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
         tokio::time::sleep(left).await;
     }
     assert!(!late.exists(), "the agent kept working after shutdown");
+}
+
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn quitting_keeps_the_files_the_agent_wrote_listed() {
+    // QA-114: the change had landed; the stopped turn still lists it.
+    let d = daemon_with(Options {
+        kill_grace: Duration::from_millis(500),
+        ..Options::default()
+    })
+    .await;
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+IFS= read -r line
+printf '{{"type":"system","subtype":"init","session_id":"s","model":"mock"}}\n'
+printf 'new headline' > early.html
+printf '{{"type":"assistant","message":{{"id":"m1","content":[{{"type":"tool_use","id":"t1","name":"Write","input":{{"file_path":"early.html","content":"new headline"}}}}]}}}}\n'
+printf 'by the shell' > shell.html
+printf '{{"type":"assistant","message":{{"id":"m2","content":[{{"type":"text","text":"wrote it"}}]}}}}\n'
+i=0
+while [ $i -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+"#
+        ),
+    );
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project,
+                      "conversationId": conversation, "message": "go"}))
+        .await;
+    let mut reader = d.stream(&run.run_id, None).await;
+    while let Some(ev) = reader.next().await {
+        if ev.event == "agent" && ev.data["type"] == "text_delta" {
+            break;
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(10), d.state.shutdown())
+        .await
+        .expect("shutdown did not return");
+    let events = d.events(&run.run_id, None).await;
+    let end = end_of(&events);
+    assert_eq!(
+        (end["status"].clone(), end["failureCategory"].clone()),
+        (json!("canceled"), json!("app_quit")),
+        "{end}"
+    );
+    let paths: Vec<&str> = end["artifactPaths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    // `artifactPaths` holds the files written outside the write tools.
+    assert!(
+        paths.iter().any(|p| p.ends_with("/shell.html")),
+        "the file the shell wrote before the quit: {paths:?}"
+    );
+    // What the chat lists the turn's files from once opened again: the
+    // stored `tool_use` rows (the agent's Write, and the row the turn
+    // added for the shell's file), kept before the quit's mark.
+    let messages = d.settled_messages(&project, &conversation).await;
+    let stored = messages[1]["events"].as_array().unwrap();
+    let written = |name: &str| {
+        stored
+            .iter()
+            .position(|e| {
+                e["type"] == "tool_use"
+                    && e["input"]["file_path"]
+                        .as_str()
+                        .is_some_and(|f| f.ends_with(name))
+            })
+            .unwrap_or_else(|| panic!("{name} is listed: {stored:?}"))
+    };
+    let quit = stored
+        .iter()
+        .position(|e| e["type"] == "error" && e["code"] == od_contracts::APP_QUIT_CODE)
+        .unwrap_or_else(|| panic!("the quit's mark: {stored:?}"));
+    assert!(written("early.html") < quit, "{stored:?}");
+    assert!(written("shell.html") < quit, "{stored:?}");
+    assert_eq!(
+        quit,
+        stored.len() - 1,
+        "the mark closes the events: {stored:?}"
+    );
+    drop(reader);
 }
 
 #[cfg(unix)] // the mock agent is a `sh` script
@@ -1365,12 +1460,13 @@ async fn stopping_the_server_stops_runs_whose_stream_is_open() {
         .await
         .expect("the server did not stop")
         .unwrap();
-    // Cut off by the stop, not by the user: failed as daemon_restart (UI-008).
+    // Stopped by Contour quitting, not by Stop: canceled as app_quit
+    // (QA-114), never "Lost the connection".
     let reg = d.state.runs.registry.get(&run.run_id).unwrap();
-    assert_eq!(reg.status(), od_contracts::RunStatus::Failed);
+    assert_eq!(reg.status(), od_contracts::RunStatus::Canceled);
     assert_eq!(
         reg.end_payload().and_then(|e| e.failure_category),
-        Some(od_contracts::FailureCategory::DaemonRestart)
+        Some(od_contracts::FailureCategory::AppQuit)
     );
     if let Some(left) = Duration::from_secs(4).checked_sub(started.elapsed()) {
         tokio::time::sleep(left).await;

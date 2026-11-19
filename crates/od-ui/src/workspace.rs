@@ -334,6 +334,11 @@ mod tests {
             queue_hold(Some(RunStatus::Canceled), None),
             Some(QueueHold::Stopped)
         );
+        // QA-114: Contour quitting stopped the turn before.
+        assert_eq!(
+            queue_hold(Some(RunStatus::Canceled), Some(FailureCategory::AppQuit)),
+            Some(QueueHold::Stopped)
+        );
         // UI-008: Contour went away; sending now would fail too, and the
         // hint must not say the turn was stopped.
         assert_eq!(

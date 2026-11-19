@@ -10,6 +10,7 @@
 //! unreachable: no capability grants `updater:*`; the UI calls the three
 //! commands below.
 
+use crate::close_guard::Way;
 use semver::Version;
 use serde::Serialize;
 use std::path::Path;
@@ -366,11 +367,15 @@ pub fn cancel_update(slot: tauri::State<'_, UpdateSlot>) {
 }
 
 /// Restart after an install: quits as Quit does (agents stopped, the data
-/// folder's lock released) and opens the new version.
+/// folder's lock released) and opens the new version. With work not saved
+/// or agents running the page asks first, in the quit's dialog
+/// ([`crate::close_guard`], `od:menu` `restart`), and the guard restarts.
 #[tauri::command]
 pub fn restart_app(app: AppHandle, slot: tauri::State<'_, UpdateSlot>) -> Result<(), Failure> {
     may_restart(&slot)?;
-    app.request_restart();
+    if !crate::hold_close(&app, Way::Restart) {
+        app.request_restart();
+    }
     Ok(())
 }
 

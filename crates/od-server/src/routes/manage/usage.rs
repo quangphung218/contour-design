@@ -172,6 +172,7 @@ fn cause_name(category: FailureCategory) -> &'static str {
         FailureCategory::ToolLoop => "tool_loop",
         FailureCategory::SpawnFailed => "spawn_failed",
         FailureCategory::DaemonRestart => "daemon_restart",
+        FailureCategory::AppQuit => "app_quit",
     }
 }
 
@@ -322,6 +323,7 @@ mod tests {
             FailureCategory::ToolLoop,
             FailureCategory::SpawnFailed,
             FailureCategory::DaemonRestart,
+            FailureCategory::AppQuit,
         ] {
             assert_eq!(
                 serde_json::to_value(category).unwrap(),

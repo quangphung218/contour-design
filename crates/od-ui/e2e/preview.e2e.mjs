@@ -1196,6 +1196,30 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   assert.equal((await desk.getByTestId('leave-files').innerText()).trim(), 'reload.html', 'the draft\'s file, not the one shown');
   await desk.getByTestId('leave-stay').click();
   assert.equal(await lastUnsaved(), 'set_unsaved true');
+  // Agents running (QA-114): the shell counts them (its in-process
+  // daemon's runs, any project) and asks with `quit:N` / `close:N`. One
+  // dialog says so beside the drafts.
+  const quitAgents = async () => (await desk.getByTestId('quit-agents').innerText()).trim();
+  let quitAsked = (await answers()).length;
+  await menu('quit:2');
+  await desk.getByTestId('leave-dialog').waitFor();
+  assert.equal(await quitAgents(), '2 agents are still running. Quitting stops them; files they already wrote are kept.');
+  assert.equal((await desk.getByTestId('leave-files').innerText()).trim(), 'reload.html', 'the drafts in the same dialog');
+  // No "Leave…?" question beside the agents: the button names both.
+  assert.equal((await desk.getByTestId('leave-drafts').innerText()).trim(), 'These files have a comment not sent or an edit not applied. They are dropped.');
+  assert.equal((await desk.getByTestId('leave-go').innerText()).trim(), 'Quit, stop agents and drop drafts');
+  assert.match(await desk.getByTestId('leave-dialog').innerText(), /Quit Contour\?/);
+  // ⌘Q again while it asks: the same one dialog says `asking` again (the
+  // shell's timer then waits), never `go`.
+  await menu('quit:2');
+  await until(async () => (await answers()).length === quitAsked + 2, 'the second quit is answered');
+  assert.equal(await desk.getByTestId('leave-dialog').count(), 1, 'one dialog, not two');
+  assert.deepEqual((await answers()).slice(quitAsked), ['close_answer asking', 'close_answer asking']);
+  // Cancel keeps everything: the agents run on, the draft stays.
+  await desk.getByTestId('leave-stay').click();
+  await until(async () => (await answers()).at(-1) === 'close_answer stay', 'Cancel tells the shell to stay');
+  assert.equal(await desk.getByTestId('leave-dialog').count(), 0, 'Cancel closes the question');
+  assert.equal(await lastUnsaved(), 'set_unsaved true', 'the draft is kept');
   // File ▸ Open Folder: the shell imported the folder and asks the page to
   // open its project (`open-project:<id>`), through the leave guard.
   await desk.evaluate(() => { window.__beforeOpen = true; });
@@ -1216,6 +1240,28 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await desk.evaluate(() => { window.__beforeOpen = true; });
   await menu(`open-project:${pid}`);
   await until(() => desk.evaluate(() => window.__beforeOpen !== true).catch(() => false), 'with nothing unsaved the project opens at once');
+  // Agents running, nothing unsaved: still quitAsked, with no drafts listed
+  // (QA-114); Quit and stop agents goes.
+  await until(async () => (await lastUnsaved()) === 'set_unsaved false', 'the page opened holds nothing');
+  quitAsked = (await answers()).length;
+  await menu('quit:1');
+  await desk.getByTestId('leave-dialog').waitFor();
+  assert.equal(await quitAgents(), '1 agent is still running. Quitting stops it; files it already wrote are kept.');
+  assert.equal(await desk.getByTestId('leave-files').count(), 0, 'no drafts to list');
+  assert.equal((await desk.getByTestId('leave-go').innerText()).trim(), 'Quit and stop agents');
+  await desk.getByTestId('leave-stay').click();
+  await until(async () => (await answers()).at(-1) === 'close_answer stay', 'Cancel keeps the agent running');
+  await menu('close:1');
+  await desk.getByTestId('leave-go').click();
+  await until(async () => (await answers()).at(-1) === 'close_answer go', 'Quit and stop agents tells the shell to close');
+  assert.deepEqual((await answers()).slice(quitAsked), ['close_answer asking', 'close_answer stay', 'close_answer asking', 'close_answer go']);
+  // Nothing running, nothing unsaved: `go` at once, as before.
+  quitAsked = (await answers()).length;
+  await menu('quit');
+  await until(async () => (await answers()).length === quitAsked + 1, 'the quit is answered');
+  assert.deepEqual((await answers()).slice(quitAsked), ['close_answer go']);
+  assert.equal(await desk.getByTestId('leave-dialog').count(), 0, 'no question with nothing to lose');
+  results.quitAgents = 'od:menu quit:N / close:N (agents running, QA-114) asks in the one leave dialog: "N agents are still running…", the drafts listed beside with "Quit, stop agents and drop drafts" (no Leave question), "Quit and stop agents" with agents only; a second quit while it asks keeps one dialog and answers asking again; Cancel answers stay and keeps the draft; with nothing unsaved it still asks, no files listed; plain quit with nothing goes at once';
   results.openFolder = 'File ▸ Open Folder (od:menu open-project:<id>) asks with work not saved (Cancel keeps it, Leave opens the project) and opens at once with none';
   results.menuClose = 'the page tells the desktop shell whether it holds work not saved (set_unsaved), again once loaded again; od:menu close / quit answers go at once with nothing unsaved, else asks with the leave dialog naming the file (asking, then stay on Cancel with the edit kept, go on Leave); a comment draft and an image uploading with nothing typed count, named by their file while another shows';
   await deskContext.close();
@@ -1292,10 +1338,10 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await until(async () => (await page.getByTestId('workspace-recovery-tip').count()) === 0, 'tip gone', 20_000);
   results.recoveryTip = 'shown while down, gone on reconnect';
 
-  // 5b. UI-008: Contour quits mid-run. Nobody pressed Stop, so the turn
-  // says the connection was lost, not "Stopped". A message sent while it
-  // is down gets one line in plain words (no "TypeError", no "daemon"),
-  // Retry only, and Retry turns on once Contour is back.
+  // 5b. Contour quits mid-run (QA-114, was UI-008): the turn says it was
+  // stopped by the quit, not that the connection was lost. A message sent
+  // while it is down gets one line in plain words (no "TypeError", no
+  // "daemon"), Retry only, and Retry turns on once Contour is back.
   await page.getByTestId('composer').fill('slow please');
   await page.getByTestId('composer').press('Enter');
   await until(async () => (await assistant.last().getAttribute('data-state')) === 'running', 'slow run going');
@@ -1304,11 +1350,22 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   await until(async () => (await page.getByTestId('queued').count()) === 1, 'one queued');
   daemon.kill('SIGTERM');
   const cutOff = assistant.last();
-  await until(async () => (await cutOff.getAttribute('data-state')) === 'failed', 'cut-off turn ends failed', 15_000);
-  await cutOff.getByText('Lost the connection to Contour').waitFor();
-  assert.equal(await cutOff.getByText('Stopped').count(), 0, 'not told as a Stop');
-  // The queue waits, and its hint does not say the turn was stopped.
-  await page.getByTestId('queue-held-hint').getByText('connection to Contour was lost').waitFor();
+  await until(async () => (await cutOff.getAttribute('data-state')) === 'canceled', 'the turn stopped by the quit ends canceled', 15_000);
+  const quitLine = cutOff.getByTestId('run-state');
+  await quitLine.getByText('Contour was quit while this turn ran').waitFor();
+  assert.equal(await quitLine.getAttribute('data-phase'), 'stopped');
+  // The whole line shows in the chat column, "Files it already wrote are
+  // kept" included: it wraps, not cut by an ellipsis.
+  const quitHint = await quitLine.locator('.muted').evaluate((el) => ({
+    scroll: el.scrollWidth, client: el.clientWidth, chat: el.closest('[data-testid="assistant-msg"]').clientWidth, text: el.textContent,
+  }));
+  assert.ok(quitHint.scroll <= quitHint.client, `the quit line is cut: ${JSON.stringify(quitHint)}`);
+  assert.ok(quitHint.chat < 480, `a chat column as narrow as the default: ${quitHint.chat}`);
+  assert.match(quitHint.text, /Files it already wrote are kept\.$/);
+  assert.equal(await cutOff.getByText('Lost the connection').count(), 0, 'not told as a lost connection');
+  assert.equal(await cutOff.locator('.msg-error').count(), 0, 'one message: the status line');
+  // The queue waits: the turn before was stopped.
+  await page.getByTestId('queue-held-hint').getByText('the turn before was stopped').waitFor();
   await until(async () => !(await healthy()), 'daemon down', 20_000);
   await page.getByTestId('composer').fill('hello?');
   await page.getByTestId('composer').press('Enter');
@@ -1330,7 +1387,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   daemon = startDaemon();
   await until(healthy, 'daemon back');
   await until(async () => await lost.getByTestId('next-retry').isEnabled(), 'Retry on once back', 20_000);
-  results.daemonLost = 'cut-off turn failed (not Stopped), one plain line, Retry on reconnect';
+  results.daemonLost = 'turn stopped by the quit reads Stopped with the quit line (not Lost the connection), one plain line for a send while down, Retry on reconnect';
 
   // 5c. A message sent past a held queue runs, and the queue still says
   // it waits (not "Sent when the current turn ends"), during that run and
@@ -1348,7 +1405,7 @@ const loop = setInterval(() => { fake(); window.open('https://example.com/loop-'
   // A reload keeps the held queue and why it waits.
   await page.reload();
   await page.getByTestId('queue-held').getByText('1 message waiting').waitFor();
-  await page.getByTestId('queue-held-hint').getByText('connection to Contour was lost').waitFor();
+  await page.getByTestId('queue-held-hint').getByText('the turn before was stopped').waitFor();
   assert.equal(await page.getByTestId('queued').getByText('queued while cut').count(), 1);
   await page.getByTestId('queue-discard').click();
   await until(async () => (await page.getByTestId('queued').count()) === 0, 'queue discarded');

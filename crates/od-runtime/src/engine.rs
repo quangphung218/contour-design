@@ -196,8 +196,10 @@ struct Active {
     stdin: tokio::sync::Mutex<Option<ChildStdin>>,
     cancel: Notify,
     canceled: AtomicBool,
-    /// Stopped because the daemon is shutting down, not by the user: the
-    /// run ends failed as [`FailureCategory::DaemonRestart`] (UI-008).
+    /// Stopped because the daemon is shutting down (Contour quit), not by
+    /// Stop: the run ends canceled as [`FailureCategory::AppQuit`], so the
+    /// chat says Contour was quit, not that the connection was lost
+    /// (QA-114).
     closing: AtomicBool,
     pgid: AtomicI32,
 }
@@ -352,9 +354,10 @@ impl RunEngine {
     }
 
     /// [`Self::cancel`] for every run in flight (daemon shutdown). Returns
-    /// how many were asked to stop. They end failed as
-    /// [`FailureCategory::DaemonRestart`], as after a crash: nobody pressed
-    /// Stop, so the chat must not say "Stopped" (UI-008).
+    /// how many were asked to stop. They end canceled as
+    /// [`FailureCategory::AppQuit`]: the chat says Contour was quit while
+    /// they ran (QA-114), apart from a Stop (no category) and a crash
+    /// ([`FailureCategory::DaemonRestart`], UI-008).
     pub fn cancel_all(&self) -> usize {
         let active: Vec<Arc<Active>> = self.active().values().cloned().collect();
         for run in &active {
@@ -1443,20 +1446,15 @@ impl Finish {
         f
     }
 
-    /// A run that was asked to stop: canceled by the user, or failed as
-    /// [`FailureCategory::DaemonRestart`] when the daemon is shutting down.
+    /// A run that was asked to stop: canceled by the user, or canceled as
+    /// [`FailureCategory::AppQuit`] when the daemon is shutting down.
     fn stopped(active: &Active, code: Option<i32>, signal: Option<String>) -> Self {
+        let mut f = Self::canceled(code, signal);
         if active.closing.load(Ordering::SeqCst) {
-            let mut f = Self::failed(
-                FailureCategory::DaemonRestart,
-                SHUTDOWN_ERROR.to_owned(),
-                code,
-            );
-            f.signal = signal;
-            f
-        } else {
-            Self::canceled(code, signal)
+            f.category = Some(FailureCategory::AppQuit);
+            f.error = Some(SHUTDOWN_ERROR.to_owned());
         }
+        f
     }
 
     fn failed(category: FailureCategory, message: String, code: Option<i32>) -> Self {

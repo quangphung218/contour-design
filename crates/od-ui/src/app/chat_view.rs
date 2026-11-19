@@ -17,7 +17,7 @@ use crate::chat::{
 };
 use crate::guide::{
     Activity, FailCause, FixStep, Followup, NextStep, PageLint, RunPhase, activity, elapsed,
-    fail_cause, last_file, next_steps, run_phase, written_page,
+    fail_cause, last_file, next_steps, run_phase, stopped_by_quit, written_page,
 };
 use crate::i18n::{T, t, tf};
 use crate::markdown;
@@ -754,7 +754,13 @@ fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) 
                     .to_owned(),
                 ),
             ),
-            RunPhase::Stopped => ("stopped", Some(Glyph::Stop), t(T::Stopped).to_owned(), None),
+            RunPhase::Stopped => (
+                "stopped",
+                Some(Glyph::Stop),
+                t(T::Stopped).to_owned(),
+                // QA-114: not "Lost the connection"; the change may have landed.
+                stopped_by_quit(tn).then(|| t(T::RunQuitHint).to_owned()),
+            ),
         })
     });
     let phase = move || line.with(|l| l.0);

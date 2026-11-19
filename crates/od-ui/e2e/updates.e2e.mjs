@@ -112,10 +112,34 @@ function desktopShell({ downloads, good }) {
   let cancelled = false;
   const support = sessionStorage.getItem('od-e2e-support') || 'ready';
   const emit = (detail) => window.dispatchEvent(new CustomEvent('od:update-progress', { detail }));
-  window.__shell = { calls, installed: null, delay: Number(sessionStorage.getItem('od-e2e-delay') || 60) };
+  // `restarted`: restarts carried out. `running`: agents the shell counts.
+  window.__shell = { calls, installed: null, delay: Number(sessionStorage.getItem('od-e2e-delay') || 60), restarted: 0, running: 0 };
+  // As the shell's close guard: Restart with work not saved or agents
+  // running asks the page (`od:menu` `restart` / `restart:N`) and restarts
+  // on its `go`.
+  let unsaved = false;
+  let held = false;
   window.__TAURI_INTERNALS__ = {
     invoke: async (cmd, args = {}) => {
       calls.push(args && args.version ? `${cmd} ${args.version}` : cmd);
+      if (cmd === 'set_unsaved') { unsaved = args.unsaved; return null; }
+      if (cmd === 'close_answer') {
+        if (held && args.answer !== 'asking') {
+          held = false;
+          if (args.answer === 'go') window.__shell.restarted += 1;
+        }
+        return null;
+      }
+      if (cmd === 'restart_app') {
+        const n = window.__shell.running;
+        if (unsaved || n > 0) {
+          held = true;
+          window.dispatchEvent(new CustomEvent('od:menu', { detail: n > 0 ? `restart:${n}` : 'restart' }));
+        } else {
+          window.__shell.restarted += 1;
+        }
+        return null;
+      }
       if (cmd === 'update_support') return support;
       if (cmd === 'cancel_update') { cancelled = true; return null; }
       if (cmd !== 'install_update') return null;
@@ -391,7 +415,7 @@ try {
     return (await app.getByTestId('comment-note').count()) === 1;
   }, 'a comment draft on r.html');
   await app.getByTestId('comment-note').fill('Before the restart');
-  const restarts = async () => (await calls()).filter((c) => c === 'restart_app').length;
+  const restarts = () => app.evaluate(() => window.__shell.restarted);
   const installAndRestart = async () => {
     await app.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'check-updates' })));
     await app.getByTestId('update-now').click();
@@ -409,6 +433,24 @@ try {
   await app.getByTestId('leave-go').click();
   await until(async () => (await restarts()) === restartsBefore + 1, 'Leave restarts');
   results.restartAsks = 'ok';
+  // Agents running (QA-114): Restart asks in the same dialog, beside the
+  // draft, its text and button saying both; Cancel keeps them running.
+  await app.evaluate(() => { window.__shell.running = 2; });
+  await installAndRestart();
+  await app.getByTestId('leave-dialog').waitFor();
+  assert.match(await app.getByTestId('leave-dialog').innerText(), /Restart Contour\?/);
+  assert.equal((await app.getByTestId('quit-agents').innerText()).trim(), '2 agents are still running. Restarting stops them; files they already wrote are kept.');
+  assert.equal((await app.getByTestId('leave-drafts').innerText()).trim(), 'These files have a comment not sent or an edit not applied. They are dropped.');
+  assert.equal((await app.getByTestId('leave-files').innerText()).trim(), 'r.html');
+  assert.equal((await app.getByTestId('leave-go').innerText()).trim(), 'Restart, stop agents and drop drafts');
+  assert.equal(await app.getByTestId('leave-dialog').count(), 1, 'one dialog');
+  await app.getByTestId('leave-stay').click();
+  await stays(async () => (await restarts()) === restartsBefore + 1, 'Cancel: no restart, the agents run on');
+  await installAndRestart();
+  await app.getByTestId('leave-go').click();
+  await until(async () => (await restarts()) === restartsBefore + 2, 'Restart and stop agents restarts');
+  await app.evaluate(() => { window.__shell.running = 0; });
+  results.restartAgents = 'ok';
 
   // 10. A signature the app does not trust: nothing installed, no Try again.
   latest = { status: 200, body: latestJson('0.2.0-beta.99', 'c2lnbmVkIGJ5IHNvbWVvbmUgZWxzZQ==') };

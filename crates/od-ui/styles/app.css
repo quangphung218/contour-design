@@ -832,6 +832,8 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .run-status.failed { padding: var(--space-1-5) var(--space-2-5); border-radius: var(--radius-md); background: var(--color-danger-soft); }
 .run-status.failed .ico, .run-status.failed strong { color: var(--color-danger); }
 .run-status.failed .muted { white-space: normal; }
+/* Stopped by Contour quitting: the whole line says the files are kept (QA-114). */
+.run-status.stopped .muted { white-space: normal; }
 .run-status.stopped .ico { color: var(--color-text-tertiary); }
 /* A failed turn's agent output, opened on demand. */
 .run-log { font-size: var(--text-sm); color: var(--color-text-secondary); }
