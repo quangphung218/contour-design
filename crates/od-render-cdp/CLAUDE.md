@@ -1,0 +1,62 @@
+# od-render-cdp
+
+Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Implements
+`od_export::Renderer`. Map: `../../docs/architecture.md`. Paths below are relative to this folder.
+
+## Owns
+- Finding Chrome (`src/lib.rs:find_chrome`, env `OD_CHROME_PATH`) and starting it.
+- The throwaway profile: mark, abandon, sweep (`src/lib.rs:Profile`).
+- Page settle, animations, captures (`src/script.rs`), ffmpeg helpers.
+
+## Entry points
+- `src/lib.rs:CdpRenderer` (`impl Renderer`), built by od-server in `routes/export`, `routes/media`, `routes/w3`.
+- Every browser starts in one place: `src/lib.rs:Session::open` → `Session::launch`
+  → macOS `Session::launch_detached` (via `src/launch_services.rs:launch`), else or on failure `Session::launch_child`.
+
+## Invariants
+1. On macOS an `.app` bundle's binary starts through `/usr/bin/open -n -g -a` (LaunchServices),
+   so macOS does not charge Chrome and its updater to Contour (App Management prompt).
+   - `src/lib.rs::the_installed_chrome_starts_through_launch_services` (macOS)
+   - `src/launch_services.rs::only_a_bundles_main_executable_goes_through_launch_services`
+2. The LaunchServices path passes the same switches as chromiumoxide (`src/launch_services.rs:switches`).
+   - `src/launch_services.rs::switches_carry_ours_and_the_sandbox_opt_out`, `tests/launch_flags.rs::chrome_gets_the_switches_as_written`
+3. Fall back to a child when: no bundle, a quarantined bundle not yet approved (`awaits_approval`),
+   `ps` cannot run (`sandbox-exec`), the mark cannot be written, or LaunchServices failed.
+   - `src/lib.rs::a_quarantined_bundle_skips_launch_services` (macOS)
+   - `src/launch_services.rs::only_an_unapproved_quarantine_waits_for_gatekeeper`
+4. One 20 s deadline (`LAUNCH_SERVICES_TIMEOUT`) covers `open`, DevToolsActivePort and connect;
+   the whole open stays within `OPEN_TIMEOUT` (90 s) (`src/lib.rs:spent_a_launch`).
+   - `src/launch_services.rs::an_open_that_hangs_times_out_and_is_killed`
+   - `src/lib.rs::only_a_slow_launch_services_failure_costs_a_child_attempt` (macOS)
+5. The profile is marked `od-opening` with our pid before `open` runs (`src/lib.rs:Profile::mark_opening`).
+6. Every Chrome started is ended, even one LaunchServices starts late: a failed or cancelled
+   marked profile is kept, ended now and watched for 120 s (`Profile::abandon`, `watch_abandoned`, `Drop`).
+   - `src/lib.rs::a_browser_that_launch_services_starts_late_is_ended` (macOS)
+   - `src/lib.rs::a_render_cancelled_while_launch_services_opens_ends_the_late_browser` (macOS)
+7. Every new profile sweeps stale ones (`src/lib.rs:sweep_stale_profiles`).
+   - `src/lib.rs::the_sweep_ends_what_runs_on_a_profile_given_up_on`, `tests/tmp_clean.rs::renders_leave_tmpdir_empty`
+8. Close of a detached browser waits until nothing uses the profile, capped at 10 s (`wait_profile_unused`).
+   - `tests/stuck_exit.rs::a_browser_that_never_exits_does_not_hang_the_export`
+9. The failure reason survives the retry: an empty child error keeps LaunchServices' reason (`with_detached_reason`).
+   - `src/lib.rs::a_child_that_says_nothing_keeps_why_launch_services_failed`
+10. Still exports finish entrance animations and pause infinite ones; MP4 frames leave them playing
+    (`src/script.rs:settle`, `Animations::Play`).
+    - `tests/animations.rs::exports_wait_for_entrance_animations` (real Chrome)
+11. Test bundles are never quarantined (else Gatekeeper shows a dialog on the developer's screen).
+    - `src/launch_services.rs::unquarantine_clears_a_bundle_all_the_way_down`
+
+## Traps
+- Headless Chrome as our child woke GoogleUpdater, and macOS asked for App Management on every update.
+  Do not go back to `Browser::launch` for `.app` bundles (#231).
+- Inside `sandbox-exec`, `ps` fails and `open` writes no stderr file: fall back to a child, do not start a second browser (#231).
+- The GitHub macOS runner's Chrome is quarantined (flags `0181`), so `open` waits for Gatekeeper forever (#233).
+- Killing `open` does not cancel the queued LaunchServices request; Chrome can start later with nobody to end it (#235).
+- A `ps -A` right beside the child launch loses a fast-exiting child's stderr (chromiumoxide 0.9.1 race, still open) (#236).
+- Because of that race the child error can be empty; keep LaunchServices' reason (#238).
+- A finished animation with fill `none` leaves `getAnimations()`; never `Finish` before MP4 frames (#259).
+
+## Check
+- Most launch tests run only on macOS. CI runs them in the `chrome-macos` job of `../../.github/workflows/ci.yml`,
+  only when a PR changes a file matching `CHROME` in `../../scripts/ci-changes.sh` (od-render-cdp, od-cli, `Cargo.lock`, CI).
+- Two tests are `#[ignore]`; when you change launch, run them by hand:
+  `cargo test -p od-render-cdp --test launch_services -- --ignored` (see `../../docs/development.md`, "Browser launch").
