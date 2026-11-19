@@ -135,6 +135,20 @@ expect "another tauri.conf.json change is code" "$ALL"
 change docs; printf '# Docs\nmore\n' > "$repo/docs/a.md"; printf 'x\n' > "$repo/README.md"; commit
 expect "docs and root Markdown are docs" "kind=docs windows=false chrome=false"
 
+change claude-md; printf '# Notes\n' > "$repo/CLAUDE.md"; mkdir -p "$repo/crates/od-server" "$repo/apps/desktop"
+printf '# Server notes\n' > "$repo/crates/od-server/CLAUDE.md"; printf '# Desktop notes\n' > "$repo/apps/desktop/CLAUDE.md"
+printf '# Arch\n' > "$repo/docs/architecture.md"; commit
+expect "CLAUDE.md files anywhere, with docs/ (PR #264), are docs" "kind=docs windows=false chrome=false"
+
+change claude-md-and-code; printf '# More notes\n' > "$repo/crates/od-server/CLAUDE.md"; printf 'pub fn a() { }\n' > "$repo/crates/od-server/src/lib.rs"; commit
+expect "a CLAUDE.md beside a code change is still code" "$NONE_CODE"
+
+change ui-guide; mkdir -p "$repo/crates/od-ui/docs"; printf '# Guide\n' > "$repo/crates/od-ui/docs/guide.en.md"; commit
+expect "the in-app guide under crates/od-ui/docs is code (include_str!)" "$NONE_CODE"
+
+change other-md; printf '# Readme\n' > "$repo/crates/od-server/README.md"; commit
+expect "other Markdown under crates/ stays code" "$NONE_CODE"
+
 change changelog; printf -- '- Another.\n' >> "$repo/CHANGELOG.md"; commit
 expect "a CHANGELOG line alone is docs" "kind=docs windows=false chrome=false"
 

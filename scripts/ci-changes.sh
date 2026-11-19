@@ -22,9 +22,13 @@ base="${1-}"
 head="${2:?usage: scripts/ci-changes.sh BASE HEAD}"
 
 # Documentation: docs/ and Markdown, except Markdown the code reads
-# (content/ skills and templates, crate and app fixtures, bridges/).
+# (content/ skills and templates, crate and app fixtures, bridges/, the
+# in-app guide crates/od-ui/docs/ that od-ui includes). A CLAUDE.md is
+# notes for coding agents wherever it is: no code reads one (PR #264 added
+# one per crate and ran every job twice for it).
 DOCS='^(docs/|.*\.md$)'
 DOCS_READ_BY_CODE='^(content|crates|apps|bridges)/'
+AGENT_NOTES='(^|/)CLAUDE\.md$'
 # Windows: the build inputs, the code the Windows job exists for (agent
 # lookup through `.cmd` shims and the registry Path, the Job Object, the
 # PTY, the desktop shell), and this classifier with its workflow. Any Rust
@@ -59,7 +63,7 @@ if [ -z "$files" ]; then
   exit 0
 fi
 
-is_docs() { [[ "$1" =~ $DOCS ]] && ! [[ "$1" =~ $DOCS_READ_BY_CODE ]]; }
+is_docs() { [[ "$1" =~ $AGENT_NOTES ]] || { [[ "$1" =~ $DOCS ]] && ! [[ "$1" =~ $DOCS_READ_BY_CODE ]]; }; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
