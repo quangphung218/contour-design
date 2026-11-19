@@ -50,6 +50,7 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
     - `tests/step_timeout.rs::a_page_that_never_settles_fails_every_export_in_time`
     - `tests/step_timeout.rs::a_browser_killed_during_an_export_fails_it_at_once` (unix)
     - `src/lib.rs::a_command_past_chromiumoxides_wait_says_so_in_words`; QA e2e `e2e/qa/export.qa.mjs:"EXP-16"`
+    - `src/lib.rs::the_browser_counts_as_gone_once_its_connection_is_lost_or_ends` (`drive`)
 
 ## Traps
 - Headless Chrome as our child woke GoogleUpdater, and macOS asked for App Management on every update.
@@ -62,6 +63,8 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
 - A finished animation with fill `none` leaves `getAnimations()`; never `Finish` before MP4 frames (#259).
 - chromiumoxide 0.9.1 waits forever for a page promise that never settles and for every call after the
   connection is lost; a single command stops at its own fixed 30 s whatever `request_timeout` says (#269).
+- Its handler stays pending on a WebSocket Close frame (no error, no end); Chrome quitting, killed or
+  closed by `Browser.close` drops the socket without one (probed), so that case only ends at `STEP_TIMEOUT` (#270).
 
 ## Check
 - Most launch tests run only on macOS. CI runs them in the `chrome-macos` job of `../../.github/workflows/ci.yml`,

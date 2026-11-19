@@ -347,15 +347,30 @@ async fn bridge_in_headless_chrome() {
     }
 }
 
+/// What `msg` says after `Chrome: pid <n>`, when it names a pid.
+fn after_chrome_pid(msg: &str) -> Option<&str> {
+    let (_, rest) = msg.split_once("Chrome: pid ")?;
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    (digits > 0).then(|| &rest[digits..])
+}
+
 /// `msg` holds `Chrome: pid <n> <state>` as `ps` prints it (`S`, `R`…),
 /// not `pid unknown`, `pid <n> gone` or `pid <n>, no ps: …`.
 fn ps_saw_chrome(msg: &str) -> bool {
-    let Some((_, rest)) = msg.split_once("Chrome: pid ") else {
-        return false;
-    };
-    let digits = rest.chars().take_while(char::is_ascii_digit).count();
-    let mut after = rest[digits..].chars();
-    digits > 0 && after.next() == Some(' ') && after.next().is_some_and(|c| c.is_ascii_uppercase())
+    after_chrome_pid(msg).is_some_and(|after| {
+        let mut after = after.chars();
+        after.next() == Some(' ') && after.next().is_some_and(|c| c.is_ascii_uppercase())
+    })
+}
+
+/// `msg` names Chrome's pid and does not say it is gone: `ps` saw it
+/// running, or could not run (inside `sandbox-exec`, as the maintainer's
+/// check runs) or is not used on this OS.
+fn chrome_not_gone(msg: &str) -> bool {
+    ps_saw_chrome(msg)
+        || after_chrome_pid(msg).is_some_and(|after| {
+            after.starts_with(", no ps: ") || after.starts_with(", state not checked on this OS")
+        })
 }
 
 #[test]
@@ -366,10 +381,28 @@ fn only_a_running_chrome_counts_as_seen_by_ps() {
         "Chrome: pid unknown",
         "Chrome: pid 29183 gone",
         "Chrome: pid 29183, no ps: denied",
+        "Chrome: pid 7, no ps: Operation not permitted",
+        "Chrome: pid 7, state not checked on this OS",
         "Chrome: pid  S",
         "no Chrome here",
     ] {
         assert!(!ps_saw_chrome(no), "{no}");
+    }
+    // Where `ps` cannot run or is not used, the pid is all there is.
+    for yes in [
+        "Chrome: pid 29183 S 00:05",
+        "Chrome: pid 7, no ps: Operation not permitted",
+        "Chrome: pid 7, state not checked on this OS",
+    ] {
+        assert!(chrome_not_gone(yes), "{yes}");
+    }
+    for no in [
+        "Chrome: pid unknown",
+        "Chrome: pid 29183 gone",
+        "Chrome: pid , no ps: x",
+        "no Chrome here",
+    ] {
+        assert!(!chrome_not_gone(no), "{no}");
     }
 }
 
@@ -406,13 +439,12 @@ async fn a_page_promise_that_never_settles_fails_in_time() {
         msg.contains("new Promise(() => {})"),
         "names the step: {msg}"
     );
-    // The page itself still answers, and `ps` saw Chrome running (unix;
-    // elsewhere only its pid is known).
+    // The page itself still answers, and Chrome is not gone: `ps` saw it
+    // running where `ps` runs (not inside `sandbox-exec`, not on Windows).
     assert!(msg.contains("visible"), "{msg}");
-    if cfg!(unix) {
+    assert!(chrome_not_gone(&msg), "{msg}");
+    if cfg!(unix) && !msg.contains(", no ps: ") {
         assert!(ps_saw_chrome(&msg), "{msg}");
-    } else {
-        assert!(msg.contains("state not checked on this OS"), "{msg}");
     }
     if let Ok(h) = std::sync::Arc::try_unwrap(h) {
         h.close().await;

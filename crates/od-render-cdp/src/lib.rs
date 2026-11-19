@@ -759,17 +759,8 @@ impl Session {
         } = Self::launch(exe, no_sandbox).await?;
         let gone = Arc::new(AtomicBool::new(false));
         let lost = Arc::clone(&gone);
-        // chromiumoxide reports a lost connection once and then goes quiet,
-        // leaving every call in flight or after it waiting forever. Ending
-        // here drops the handler, which fails them all.
         let handler = tokio::spawn(async move {
-            while let Some(event) = handler.next().await {
-                if let Err(e @ (CdpError::Ws(_) | CdpError::Io(_))) = event {
-                    tracing::warn!(error = %e, "lost the connection to the browser");
-                    lost.store(true, Ordering::Release);
-                    break;
-                }
-            }
+            drive(&mut handler, &lost).await;
         });
         // Chrome that cannot start its sandbox quits here (#231).
         let quit = Arc::clone(&gone);
@@ -1158,6 +1149,27 @@ impl Session {
         }
         self.handler.abort();
     }
+}
+
+/// Drives chromiumoxide's handler `events` until the connection to the
+/// browser is lost or its stream ends, then sets `lost`. chromiumoxide
+/// reports a lost connection once and then goes quiet, leaving every call
+/// in flight or after it waiting forever; the caller then drops the
+/// handler, which fails them all. A stream that ends (`None`) leaves the
+/// same calls with no answer, so it counts as lost too. chromiumoxide
+/// 0.9.1 does not end it on a WebSocket Close frame (its handler stays
+/// pending): that case still ends at [`STEP_TIMEOUT`].
+async fn drive(
+    events: &mut (impl futures_util::Stream<Item = Result<(), CdpError>> + Unpin),
+    lost: &AtomicBool,
+) {
+    while let Some(event) = events.next().await {
+        if let Err(e @ (CdpError::Ws(_) | CdpError::Io(_))) = event {
+            tracing::warn!(error = %e, "lost the connection to the browser");
+            break;
+        }
+    }
+    lost.store(true, Ordering::Release);
 }
 
 /// The answer to the CDP call `what`, chromiumoxide's own timeout (a
@@ -1589,6 +1601,36 @@ mod tests {
             Some(RenderError::Unavailable("y".into())),
         );
         assert!(matches!(other, RenderError::NotADeck));
+    }
+
+    #[tokio::test]
+    async fn the_browser_counts_as_gone_once_its_connection_is_lost_or_ends() {
+        let invalid = || {
+            CdpError::InvalidMessage("x".into(), serde_json::from_str::<Value>("{").unwrap_err())
+        };
+        // Other errors keep the connection.
+        let lost = AtomicBool::new(false);
+        let mut events = futures_util::stream::iter(vec![Ok(()), Err(invalid()), Ok(())])
+            .chain(futures_util::stream::pending());
+        let waited = tokio::time::timeout(Duration::from_millis(50), drive(&mut events, &lost));
+        assert!(waited.await.is_err(), "stopped on a message error");
+        assert!(!lost.load(Ordering::Acquire));
+        // A connection error stops at once, before what follows.
+        let lost = AtomicBool::new(false);
+        let mut events = futures_util::stream::iter(vec![
+            Ok(()),
+            Err(CdpError::Io(std::io::ErrorKind::ConnectionReset.into())),
+        ])
+        .chain(futures_util::stream::pending());
+        tokio::time::timeout(Duration::from_secs(5), drive(&mut events, &lost))
+            .await
+            .expect("went on after the connection was lost");
+        assert!(lost.load(Ordering::Acquire));
+        // The stream ending is lost too.
+        let lost = AtomicBool::new(false);
+        let mut events = futures_util::stream::iter(vec![Ok(())]);
+        drive(&mut events, &lost).await;
+        assert!(lost.load(Ordering::Acquire));
     }
 
     #[test]
