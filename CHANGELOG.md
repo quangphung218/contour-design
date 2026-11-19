@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Docs: the README is rewritten around what Contour does, how it works and where it stands, with a Vietnamese version (README.vi.md), the download table of each release, how to check a download's checksum and the macOS signature, and a new docs/STATUS.md listing what works and how each part was checked. `scripts/release-notes.sh --body` writes a release page that starts with Highlights (from an optional `### Highlights` block in the CHANGELOG) and ends with what was verified and a download table.
+
 ### Changed
 
 - The suggestions under a finished turn now come from the turn itself: the agent ends its answer with up to three next actions on what it just made, in the app's language, and they show as chips that fill the composer (edit before sending). They stay after a reload. A page the turn wrote with must-fix or should-fix lint findings gets a first chip naming them ("Fix 1 issue: emoji icon", with the page's name when the turn wrote more than one) that asks the agent to fix them in that page. A chip, a starter prompt, a Home example, "Create plugin" or a toolbox action no longer replaces what is already typed in the composer: it goes on a new line under it. "Mobile version" and "Try variations" show only when the agent suggested nothing and the lint found nothing. "View", "Comment on the page", Export and the toolbox actions are now small buttons above the chips, full 44 px touch targets on a phone, and they no longer move when the chips come.

@@ -26,7 +26,10 @@ CI does the building; a person decides when and checks the result.
 
 2. **Review the changelog.** Everything user-visible since the last release
    should be under `## [Unreleased]` in [CHANGELOG.md](../CHANGELOG.md),
-   grouped as Added, Changed, Fixed, Removed, Security.
+   grouped as Added, Changed, Fixed, Removed, Security. Optionally put
+   2–4 bullets a user cares about most in a `### Highlights` block at the
+   top of the section; they head the release text
+   ([Release text](#release-text)).
 
 3. **Bump the version** on a release branch:
 
@@ -80,19 +83,103 @@ CI does the building; a person decides when and checks the result.
    | Windows smoke | `windows-smoke.yml`: installs the `.msi` silently on clean Windows Server 2025 and 2022 runners, checks the files, the uninstall entry and the Start Menu shortcut, opens the app from it, checks `/api/health` reports `<v>`, runs an agent turn through an npm-style `claude.cmd` on the user's `Path`, checks that Check again finds a `codex.cmd` added to it while the app runs, installs the MCP server into both as Integrations does (`POST /api/mcp/install/{agent}`) and checks the `mcp add` command and the app path each got, then runs that command as the agent would (`initialize`, `tools/list`, `list_projects` over stdio), runs a PDF export through Edge, closes the app and uninstalls it. Then, in release runs and manual runs (not on pull requests, where fetching the old `.msi` would add to its download count), it upgrades: installs the `.msi` of the latest published release other than `<v>` (none, or no `.msi` in it: skipped with a warning; a failed GitHub API call or download fails the smoke test), makes a project, installs the new `.msi` over it and checks there is one uninstall entry with the new version, the app reports `<v>`, and the project and a file in the data folder are still there (`scripts/windows-upgrade-smoke.ps1`). Screenshots and logs are uploaded as `smoke-windows-*` artifacts. When the Windows bundle built, the draft release waits for it and a failure stops the draft; when it did not build, the smoke test is skipped with a warning and the release goes on without an `.msi` |
    | release | `latest.json` when the bundles are signed for the updater (`scripts/updater-manifest.py`), `SHA256SUMS` (every file, `latest.json` and the `.sig` files included) and a **draft** GitHub Release titled `Contour v<v>` with the CHANGELOG section as notes |
 
-8. **Check the draft.** Download each file, verify it against `SHA256SUMS`,
-   open the app, create a project and run one turn. For Linux and
-   Windows, the `smoke-ubuntu-*` and `smoke-windows-*` screenshots of the run
-   show the window on each system. Check that `latest.json` is there and
-   lists `darwin-aarch64`, `darwin-x86_64`, `linux-x86_64` and (when the
-   Windows bundle built) `windows-x86_64`. Then press **Publish** on the
-   draft. Publishing is what makes Update now see it: drafts are not in the
-   releases list the app checks.
+8. **Check the packaged app** with the files on the draft, as in
+   [Before publishing](#before-publishing-check-the-packaged-app).
+
+9. **Set the release text** ([Release text](#release-text)), then press
+   **Publish** on the draft. Publishing is what makes Update now see it:
+   drafts are not in the releases list the app checks.
+
+10. **After publishing**, follow [After publishing](#after-publishing).
 
 To rebuild a release (for example after a flaky runner), run the workflow by
 hand from the Actions tab with the existing tag. Files are replaced only
 while the release is still a draft; a published release is never rewritten
-(the job fails instead), so cut a new patch version.
+(the job fails instead), so cut a new patch version. A rebuild also sets the
+draft's text back to the CHANGELOG section: set the
+[release text](#release-text) again after it.
+
+## Before publishing: check the packaged app
+
+CI tests the source and the smoke tests open the Linux and Windows
+packages; only a person on a Mac checks what a macOS user downloads. Use
+the files attached to the draft, not a local build. Keep the owner's own
+Contour and its data untouched: install a renamed copy with its own data
+folder, as [first-run-beta50-native.md](qa/first-run-beta50-native.md)
+describes.
+
+- [ ] **Checksums.** Download the `.dmg` and `SHA256SUMS`;
+      `shasum -a 256 --ignore-missing -c SHA256SUMS` prints `OK` for each.
+- [ ] **Signature.** `scripts/macos-signature.sh Contour_<v>_universal.dmg`
+      passes; on the installed app, `codesign --verify --deep --strict
+      --verbose=2` says "valid on disk" and "satisfies its Designated
+      Requirement", and `codesign -dv` shows `Sealed Resources version=2`.
+- [ ] **Install and first open.** Drag to Applications. Gatekeeper says
+      "“Contour” Not Opened"; the README's `xattr` step lets it open.
+- [ ] **Main flow** on an empty data folder with a real agent (Claude Code):
+      the agent screen finds and tests it, a one-sentence brief on Home
+      becomes a page, one comment changes it, and HTML, PDF and PNG export
+      through the Save panel. Open each exported file.
+- [ ] **Linux and Windows.** The `smoke-ubuntu-*` and `smoke-windows-*`
+      screenshots show the window on each system.
+- [ ] **Updater.** `latest.json` is on the draft and lists
+      `darwin-aarch64`, `darwin-x86_64`, `linux-x86_64` and (when the
+      Windows bundle built) `windows-x86_64`.
+
+Write what you ran into a note under [docs/qa/](qa/) (build, OS, agent
+version, each step's result and time), and update [STATUS.md](STATUS.md)
+when what works changed. A step not run stays open: say so in the note and
+in the Verified line, or leave the release in draft.
+
+## Release text
+
+`scripts/release-notes.sh <version>` prints the CHANGELOG section without
+its `### Highlights` block; `release.yml` uses it for the draft and for
+`latest.json`, which the app shows in Update now. Before publishing, replace
+the draft's text with the full release body.
+
+Do this **after the last run of the Release workflow** for the tag: every
+run on a draft sets the draft's text again from the CHANGELOG (`gh release
+edit --notes-file`), so a rebuild after this step drops the body.
+
+```bash
+gh release view v0.2.0 --json assets -q '.assets[].name' > /tmp/assets
+scripts/release-notes.sh --body 0.2.0 \
+  --verified "Checked by hand on macOS 26, Apple silicon, with Claude Code: [QA note](https://github.com/quangphung218/contour-design/blob/main/docs/qa/<note>.md)" \
+  --assets /tmp/assets > release-body.md
+gh release edit v0.2.0 --notes-file release-body.md
+```
+
+The body has four parts:
+
+| Part | From |
+|---|---|
+| Highlights | the bullets of the version's `### Highlights` block; no Highlights part when the version has none |
+| What's changed | the CHANGELOG section, without the Highlights block |
+| Verified | the `--verified` line; without it, "Automated checks only … not yet checked by hand" |
+| Downloads | a row per installer in `--assets` (every row without it), linked to the release, then the `SHA256SUMS` and `codesign` note |
+
+`scripts/tests/release_notes_test.sh` covers each part (`make test-scripts`).
+
+## After publishing
+
+- [ ] **Update now** from the previous release, on a Mac (and the AppImage
+      and `.msi` when you can): Check for Updates finds the new version,
+      Update now downloads it, Restart opens it, and About shows the new
+      version. CI cannot check this; record it in the QA note.
+- [ ] **The Releases page** shows the new version with its Highlights and
+      every file in the Downloads table.
+- [ ] **Issues fixed in this release**: close each one only when the tag
+      contains the fix (`git merge-base --is-ancestor <fix-commit> v<v>`),
+      with a comment naming the version and how the fix was checked.
+- [ ] **STATUS.md** says which version it describes.
+- [ ] **Downloads after 7 days.** Record how often each file was downloaded,
+      in the QA note of that release:
+
+      ```bash
+      gh api repos/quangphung218/contour-design/releases/tags/v<v> \
+        --jq '.assets[] | "\(.name) \(.download_count)"'
+      ```
 
 ## Signing and notarisation (macOS)
 

@@ -1,5 +1,19 @@
 # Contour parity with OpenDesign — last measured on main `f4c455b`, updated on branch `final-polish`
 
+## How Contour differs
+
+The README's comparison, with the source for each claim (OpenDesign as of commit `e03d5c2`):
+
+| | Contour | OpenDesign |
+|---|---|---|
+| Telemetry | None. No analytics, crash-reporting or tracing client is in the code or its dependencies, and the end-to-end tests block every request the UI makes off the machine. The only other call is Check for Updates, to GitHub Releases, when you click it. | Product analytics and quality traces are on by default and can be turned off; safety and reliability telemetry is always enabled in builds configured with a telemetry destination ([PRIVACY.md](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/PRIVACY.md)). |
+| Account and cloud | None. Nothing to sign in to. | Optional OpenDesign Cloud with sign-in and its own model service ([README](https://github.com/nexu-io/open-design/blob/e03d5c23f308c39f4de7c057568df66c29a84385/README.md)). |
+| Network | Only the services you configure: your agent or model provider, and any MCP server, media or research provider you add, plus GitHub Releases when you click Check for Updates. Contour never downloads a browser, and updates itself only when you click Update now (a signed build from that release). | Also its cloud, sharing and deploy services when you use them. |
+| Built with | Rust: axum daemon, Leptos/WASM UI, Tauri 2 shell. | TypeScript: Node daemon, Next.js UI, Electron shell. |
+| Features | **206 of 206** scored features of OpenDesign. The 20 that need an account, a cloud service or outbound network (connectors, marketplace, team sharing, cloud deploy, auto-update…) are left out on purpose, and Home drops the "Recommended for you" strip. | All of them, including the cloud features. |
+
+The rest of this page scores each feature row by row.
+
 > **`final-polish` update (2026-10-24): 100%.** The last two rows are done: #119 Export JSX (preview renders `.jsx/.tsx`, plus "Export React component as HTML", compiled in-page with bundled React 18.3.1 + Sucrase, no CDN) is now 100; #177 BYOK presets reach 26/26 with Azure OpenAI (protocol `azure`: resource endpoint, deployment, `api-version`, key in `api-key`). Evidence is in those two rows and in the "Wave C live run results" section. Everything below keeps the figures measured at `f4c455b`, except the summary table, the "Quick read" section and those two rows.
 
 - Rust version: `main` HEAD `f4c455b` (merge `waveC-integrate`, 2026-10-24): wave C comprises C1-preview, C2-chat-home, C3-runtimes, C4-depth.
