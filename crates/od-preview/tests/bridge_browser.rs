@@ -283,10 +283,15 @@ async fn within<T>(what: &str, call: impl Future<Output = T>) -> T {
 }
 
 /// `ps` on Chrome's process: its state and age, `gone`, or why unknown.
+/// Unix only: Windows has no such `ps` (Git's answers "gone" for a running
+/// Chrome, CI 2026-11-20).
 fn process_state(pid: Option<u32>) -> String {
     let Some(pid) = pid else {
         return "pid unknown".to_owned();
     };
+    if cfg!(not(unix)) {
+        return format!("pid {pid}, state not checked on this OS");
+    }
     match std::process::Command::new("ps")
         .args(["-o", "stat=,etime=", "-p", &pid.to_string()])
         .output()
@@ -401,9 +406,14 @@ async fn a_page_promise_that_never_settles_fails_in_time() {
         msg.contains("new Promise(() => {})"),
         "names the step: {msg}"
     );
-    // The page itself still answers, and `ps` saw Chrome running.
+    // The page itself still answers, and `ps` saw Chrome running (unix;
+    // elsewhere only its pid is known).
     assert!(msg.contains("visible"), "{msg}");
-    assert!(ps_saw_chrome(&msg), "{msg}");
+    if cfg!(unix) {
+        assert!(ps_saw_chrome(&msg), "{msg}");
+    } else {
+        assert!(msg.contains("state not checked on this OS"), "{msg}");
+    }
     if let Ok(h) = std::sync::Arc::try_unwrap(h) {
         h.close().await;
     }
