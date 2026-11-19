@@ -126,6 +126,10 @@ try {
   await sleep(300);
   assert.equal(runs, before, 'nothing sent');
   assert.equal(await assistant.count(), 1);
+  // What the user typed stays: the chip goes on a new line under it.
+  await composer.fill('Keep the logo');
+  await assistant.last().getByTestId('next-suggestion').first().click();
+  assert.equal(await composer.inputValue(), 'Keep the logo\nAdd a pricing table');
   await composer.fill('');
 
   // 4. A reload keeps the same chips (stored with the turn).
@@ -146,14 +150,52 @@ try {
   await page.screenshot({ path: join(OUT, 'next-steps-fix.png') });
   await assistant.last().getByTestId('next-fix').click();
   const fix = await composer.inputValue();
-  assert.match(fix, /^<artifact-lint>/);
+  assert.match(fix, /^In `index\.html`:\n<artifact-lint>/, 'the prompt names the page');
   assert.match(fix, /\[P0\] emoji-icon/);
   assert.equal(await assistant.count(), 2, 'nothing sent');
   await composer.fill('');
 
+  // 5b. A turn that wrote two pages: the fix chip names the page it is about.
+  log('5b. two pages');
+  await send('twopages', 3);
+  await assistant.last().getByTestId('next-fix').waitFor();
+  assert.equal((await assistant.last().getByTestId('next-fix').textContent()).trim(), 'Fix 1 issue in index.html: emoji icon');
+  await composer.fill('Keep the footer');
+  await assistant.last().getByTestId('next-fix').click();
+  assert.match(await composer.inputValue(), /^Keep the footer\nIn `index\.html`:\n<artifact-lint>/, 'appended, with the page');
+  await composer.fill('');
+
+  // 5c. The lint answers late: the row keeps the chips' place, nothing
+  // moves when they come, and they come in their final order.
+  log('5c. a late lint moves nothing');
+  let releaseLint;
+  const lintHeld = new Promise((r) => { releaseLint = r; });
+  await page.route('**/lint/**', async (route) => { await lintHeld; await route.continue(); });
+  await send('tweak nextsteps again', 4);
+  const open = assistant.last().getByTestId('next-open');
+  await open.waitFor();
+  await assistant.last().locator('[data-testid=next-chips][data-pending=true]').waitFor({ state: 'attached' });
+  assert.equal(await assistant.last().getByTestId('next-suggestion').count(), 0, 'agent chips wait for the lint');
+  // Measured inside the turn: the list follows its end, so the page
+  // itself scrolls when the turn grows.
+  const inTurn = () => open.evaluate((el) => {
+    const turn = el.closest('[data-testid=assistant-msg]').getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    return { x: box.x - turn.x, y: box.y - turn.y };
+  });
+  const viewBefore = await inTurn();
+  releaseLint();
+  await assistant.last().getByTestId('next-fix').waitFor();
+  await page.unroute('**/lint/**');
+  assert.deepEqual(await chipTexts(), ['Fix 1 issue: emoji icon', 'Add a pricing table', 'Make the hero shorter']);
+  const viewAfter = await inTurn();
+  // Sub-pixel rounding aside (1e-5 px seen).
+  assert.ok(Math.abs(viewAfter.x - viewBefore.x) < 1 && Math.abs(viewAfter.y - viewBefore.y) < 1,
+    `View did not move: ${JSON.stringify([viewBefore, viewAfter])}`);
+
   // 6. No markers and a clean page: the fixed follow-ups, after the lint.
   log('6. fallback follow-ups');
-  await send('a plain page', 3);
+  await send('a plain page', 5);
   await assistant.last().getByTestId('next-mobile').waitFor();
   await assistant.last().getByTestId('next-variations').waitFor();
   assert.equal(await assistant.last().getByTestId('next-suggestion').count(), 0);

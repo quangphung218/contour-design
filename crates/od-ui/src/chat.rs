@@ -163,6 +163,19 @@ pub fn merge_loaded<T>(stored: Vec<T>, local: Vec<T>, id: impl Fn(&T) -> &str) -
     out
 }
 
+/// The composer after a chip, starter, example or toolbox action puts
+/// `seed` in it: `seed` when it is empty, else what the user typed, kept,
+/// and `seed` on a new line.
+#[must_use]
+pub fn seed_draft(draft: &str, seed: &str) -> String {
+    let typed = draft.trim_end();
+    if typed.trim().is_empty() {
+        seed.to_owned()
+    } else {
+        format!("{typed}\n{seed}")
+    }
+}
+
 /// Assistant prose as the user reads it: without the Design Jury protocol,
 /// which the theater shows instead (`<CRITIQUE_RUN>` to its end, or to the
 /// end of the text while it still streams), and without the `<od-next>`
@@ -1415,6 +1428,17 @@ mod tests {
         );
         assert_eq!(without_jury_protocol("a <CRITIQUE_RUN><ROUND"), "a ");
         assert_eq!(without_jury_protocol("plain"), "plain");
+    }
+
+    #[test]
+    fn a_seed_fills_an_empty_composer_and_keeps_what_was_typed() {
+        assert_eq!(seed_draft("", "Add a dark mode"), "Add a dark mode");
+        assert_eq!(seed_draft("  \n", "Add a dark mode"), "Add a dark mode");
+        assert_eq!(
+            seed_draft("Make the logo bigger\n\n", "Add a dark mode"),
+            "Make the logo bigger\nAdd a dark mode"
+        );
+        assert_eq!(seed_draft("  indented", "x"), "  indented\nx");
     }
 
     #[test]

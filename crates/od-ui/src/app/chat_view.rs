@@ -16,8 +16,8 @@ use crate::chat::{
     AssistantTurn, Block, Step, TodoStatus, ToolCall, TurnLayout, plan_progress, run_time_ms,
 };
 use crate::guide::{
-    Activity, FailCause, FixStep, Followup, NextStep, PageLint, RunPhase, activity, elapsed,
-    fail_cause, last_file, next_steps, run_phase, stopped_by_quit, written_page,
+    Activity, FailCause, FixStep, Followup, NextStep, PageLint, PageLintSlot, RunPhase, activity,
+    elapsed, fail_cause, last_file, next_steps, run_phase, stopped_by_quit, written_page,
 };
 use crate::i18n::{T, t, tf};
 use crate::markdown;
@@ -264,7 +264,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                                 .into_iter()
                                 .map(|key| view! {
                                     <button class="chip" data-testid="starter-prompt" on:click=move |_| {
-                                        draft.set(t(key).to_owned());
+                                        draft.update(|d| *d = crate::chat::seed_draft(d, t(key)));
                                         focus_composer();
                                     }>{icon(Glyph::Sparkle)}{t(key)}</button>
                                 })
@@ -1081,38 +1081,32 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
             })
         })
     };
-    // The lint of the page the turn wrote, again when the page changes:
-    // `(page, None)` when it could not run.
+    // The lint of the page the turn wrote, again when the page changes.
     let page = Memo::new(move |_| turn.with(written_page));
-    let lint: RwSignal<Option<(String, Option<LintResponse>)>> = RwSignal::new(None);
-    let lint_seq = StoredValue::new(0u32);
+    let lint = RwSignal::new(PageLintSlot::default());
     Effect::new(move |_| {
         ctx.preview_rev.track();
         let Some(path) = page.get() else { return };
-        lint_seq.update_value(|n| *n = n.wrapping_add(1));
-        let seq = lint_seq.get_value();
+        let ticket = lint
+            .try_update_untracked(PageLintSlot::begin)
+            .unwrap_or_default();
         let url = format!("{}/lint/{}", ctx.base(), super::api::file_path(&path));
         tasks.spawn(async move {
             let res = super::api::get::<LintResponse>(&url).await.ok();
-            // An older answer than the latest request is dropped.
-            if lint_seq.try_get_value() == Some(seq) {
-                let _ = lint.try_set(Some((path, res)));
-            }
+            // `try_`: the turn may be gone; `land` drops an older answer.
+            let _ = lint.try_update(|l| l.land(ticket, path, res));
         });
     });
+    // Seeds the composer; what the user typed there stays.
     let fill = move |text: String| {
-        ctx.draft.set(text);
+        ctx.draft.update(|d| *d = crate::chat::seed_draft(d, &text));
         focus_composer();
     };
     move || {
-        let steps = lint.with(|l| {
-            let state = match l {
-                Some((p, res)) if page.with(|now| now.as_ref() == Some(p)) => {
-                    res.as_ref().map_or(PageLint::Failed, PageLint::Done)
-                }
-                _ => PageLint::Pending,
-            };
-            turn.with(|tn| next_steps(tn, state))
+        let (steps, holding) = lint.with(|l| {
+            let state = page.with(|p| l.state(p.as_deref()));
+            let holding = page.with(Option::is_some) && state == PageLint::Pending;
+            (turn.with(|tn| next_steps(tn, state)), holding)
         });
         let steps_wrote = steps.iter().any(|s| matches!(s, NextStep::Open(_)));
         let wrote_page = steps_wrote && sources.is_some();
@@ -1122,6 +1116,52 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                 steps.into_iter().partition(|s| s.is_chip() || matches!(s, NextStep::Retry | NextStep::Settings));
             view! {
                 <div class="next-steps" data-testid="next-steps" aria-label=t(T::NextSteps)>
+                    {(!actions.is_empty() || wrote_page).then(|| view! {
+                        <div class="next-actions" data-testid="next-actions">
+                            {actions.into_iter().map(|step| {
+                                let (glyph, label, testid) = match &step {
+                                    NextStep::Open(path) => (Glyph::Eye, tf(T::NextOpen, &[path.rsplit('/').next().unwrap_or(path)]), "next-open"),
+                                    _ => (Glyph::Comment, t(T::NextComment).to_owned(), "next-comment"),
+                                };
+                                let run = move |_| match &step {
+                                    NextStep::Open(path) => {
+                                        ctx.open_file(path);
+                                        ctx.show_code.set(false);
+                                    }
+                                    _ => ctx.set_comment_mode(true),
+                                };
+                                view! {
+                                    <button class="btn ghost small next-action" data-testid=testid on:click=run>
+                                        {icon(glyph)}{label}
+                                    </button>
+                                }
+                            }).collect_view()}
+                            // The way out: on a phone the Export menu sits on the
+                            // Preview pane, so this opens it there.
+                            {steps_wrote.then(|| view! {
+                                <button class="btn ghost small next-action" data-testid="next-export"
+                                    on:click=move |_| {
+                                        ctx.pane.set(super::studio::NarrowPane::Preview);
+                                        ctx.export_open.set(true);
+                                    }>
+                                    {icon(Glyph::Export)}{t(T::Export)}
+                                </button>
+                            })}
+                            {wrote_page.then(|| crate::toolbox::FEATURED.iter().filter_map(|id| crate::toolbox::find(id)).map(|a| view! {
+                                <button class="btn ghost small next-action" data-testid="next-toolbox" data-action=a.id
+                                    on:click=move |_| if let Some(sources) = sources {
+                                        super::composer::apply_toolbox(a, sources, ctx.chat.context, ctx.draft);
+                                    }>
+                                    {icon(Glyph::Sparkle)}{t(a.title)}
+                                </button>
+                            }).collect_view())}
+                        </div>
+                    })}
+                    // While the page's lint runs, an empty row keeps the
+                    // chips' place: nothing moves when they come.
+                    {holding.then(|| view! {
+                        <div class="next-chips next-chips-pending" data-testid="next-chips" data-pending="true" aria-hidden="true"></div>
+                    })}
                     {(!chips.is_empty()).then(|| view! {
                         <div class="next-chips" data-testid="next-chips">
                             <span class="next-label">{t(T::NextSteps)}</span>
@@ -1166,70 +1206,33 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                 .collect_view()}
                         </div>
                     })}
-                    {(!actions.is_empty() || wrote_page).then(|| view! {
-                        <div class="next-actions" data-testid="next-actions">
-                            {actions.into_iter().map(|step| {
-                                let (glyph, label, testid) = match &step {
-                                    NextStep::Open(path) => (Glyph::Eye, tf(T::NextOpen, &[path.rsplit('/').next().unwrap_or(path)]), "next-open"),
-                                    _ => (Glyph::Comment, t(T::NextComment).to_owned(), "next-comment"),
-                                };
-                                let run = move |_| match &step {
-                                    NextStep::Open(path) => {
-                                        ctx.open_file(path);
-                                        ctx.show_code.set(false);
-                                    }
-                                    _ => ctx.set_comment_mode(true),
-                                };
-                                view! {
-                                    <button class="btn ghost small next-action" data-testid=testid on:click=run>
-                                        {icon(glyph)}{label}
-                                    </button>
-                                }
-                            }).collect_view()}
-                            // The way out: on a phone the Export menu sits on the
-                            // Preview pane, so this opens it there.
-                            {steps_wrote.then(|| view! {
-                                <button class="btn ghost small next-action" data-testid="next-export"
-                                    on:click=move |_| {
-                                        ctx.pane.set(super::studio::NarrowPane::Preview);
-                                        ctx.export_open.set(true);
-                                    }>
-                                    {icon(Glyph::Export)}{t(T::Export)}
-                                </button>
-                            })}
-                            {wrote_page.then(|| crate::toolbox::FEATURED.iter().filter_map(|id| crate::toolbox::find(id)).map(|a| view! {
-                                <button class="btn ghost small next-action" data-testid="next-toolbox" data-action=a.id
-                                    on:click=move |_| if let Some(sources) = sources {
-                                        super::composer::apply_toolbox(a, sources, ctx.chat.context, ctx.draft);
-                                    }>
-                                    {icon(Glyph::Sparkle)}{t(a.title)}
-                                </button>
-                            }).collect_view())}
-                        </div>
-                    })}
                 </div>
             }
         })
     }
 }
 
-/// "Fix 2 issues: emoji icon, raw hex", naming at most three rules.
+/// "Fix 2 issues: emoji icon, raw hex", naming at most three rules, and
+/// the page when the turn wrote more than one.
 fn fix_label(fix: &FixStep) -> String {
     const SHOWN: usize = 3;
     let mut rules = fix
         .rules
         .iter()
         .take(SHOWN)
-        .cloned()
+        .map(|id| crate::guide::lint_rule_label(id))
         .collect::<Vec<_>>()
         .join(", ");
     if fix.rules.len() > SHOWN {
         rules.push_str(&format!(", +{}", fix.rules.len() - SHOWN));
     }
-    if fix.count == 1 {
-        tf(T::NextFixOne, &[&rules])
-    } else {
-        tf(T::NextFixMany, &[&fix.count.to_string(), &rules])
+    let count = fix.count.to_string();
+    let page = fix.page.rsplit('/').next().unwrap_or(&fix.page);
+    match (fix.count, fix.names_page) {
+        (1, false) => tf(T::NextFixOne, &[&rules]),
+        (_, false) => tf(T::NextFixMany, &[&count, &rules]),
+        (1, true) => tf(T::NextFixOneIn, &[page, &rules]),
+        (_, true) => tf(T::NextFixManyIn, &[&count, page, &rules]),
     }
 }
 

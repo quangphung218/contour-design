@@ -175,9 +175,14 @@ pub enum Followup {
 pub struct FixStep {
     /// P0 and P1 findings.
     pub count: usize,
-    /// Their rule ids in words (`emoji icon`), most severe first, once each.
+    /// Their rule ids (`emoji-icon`), most severe first, once each.
     pub rules: Vec<String>,
-    /// The findings as the agent reads them ([`LintResponse::agent_message`]).
+    /// The page linted: the turn may have written others.
+    pub page: String,
+    /// Whether the label names the page: the turn wrote more than one.
+    pub names_page: bool,
+    /// ``In `page`:`` and the findings as the agent reads them
+    /// ([`LintResponse::agent_message`]).
     pub prompt: String,
 }
 
@@ -223,19 +228,24 @@ pub fn next_steps(turn: &AssistantTurn, lint: PageLint<'_>) -> Vec<NextStep> {
         TurnState::Succeeded => {
             let page = written_page(turn);
             let mut chips: Vec<NextStep> = Vec::new();
-            if page.is_some()
-                && let PageLint::Done(lint) = lint
-                && let Some(fix) = fix_step(lint)
-            {
-                chips.push(NextStep::Fix(fix));
-            }
-            chips.extend(turn.suggestions.iter().cloned().map(NextStep::Suggest));
-            chips.truncate(MAX_CHIPS);
-            if chips.is_empty() && page.is_some() && lint != PageLint::Pending {
-                chips = vec![
-                    NextStep::Prompt(Followup::Mobile),
-                    NextStep::Prompt(Followup::Variations),
-                ];
+            // A page whose lint has not answered: no chip yet, so none
+            // moves or goes when the fix chip comes first.
+            let holding = page.is_some() && lint == PageLint::Pending;
+            if !holding {
+                if let Some(page) = &page
+                    && let PageLint::Done(lint) = lint
+                    && let Some(fix) = fix_step(lint, page, pages_written(turn) > 1)
+                {
+                    chips.push(NextStep::Fix(fix));
+                }
+                chips.extend(turn.suggestions.iter().cloned().map(NextStep::Suggest));
+                chips.truncate(MAX_CHIPS);
+                if chips.is_empty() && page.is_some() {
+                    chips = vec![
+                        NextStep::Prompt(Followup::Mobile),
+                        NextStep::Prompt(Followup::Variations),
+                    ];
+                }
             }
             let mut out: Vec<NextStep> = page
                 .map(|p| vec![NextStep::Open(p), NextStep::Comment])
@@ -246,8 +256,77 @@ pub fn next_steps(turn: &AssistantTurn, lint: PageLint<'_>) -> Vec<NextStep> {
     }
 }
 
+/// A lint rule in the UI's language (`emoji-icon` → "emoji icon"); a rule
+/// with no label reads as its id in words.
+#[must_use]
+pub fn lint_rule_label(id: &str) -> String {
+    use crate::i18n::{T, t};
+    let key = match id {
+        "purple-gradient" => T::LintRulePurpleGradient,
+        "trust-gradient" => T::LintRuleTrustGradient,
+        "ai-default-indigo" => T::LintRuleAiDefaultIndigo,
+        "emoji-icon" => T::LintRuleEmojiIcon,
+        "left-accent-card" => T::LintRuleLeftAccentCard,
+        "sans-display" => T::LintRuleSansDisplay,
+        "invented-metric" => T::LintRuleInventedMetric,
+        "filler-copy" => T::LintRuleFillerCopy,
+        "scroll-into-view" => T::LintRuleScrollIntoView,
+        "all-caps-no-tracking" => T::LintRuleAllCapsNoTracking,
+        "external-image" => T::LintRuleExternalImage,
+        "raw-hex" => T::LintRuleRawHex,
+        "accent-overuse" => T::LintRuleAccentOveruse,
+        "slide-theme-missing" => T::LintRuleSlideThemeMissing,
+        "slide-rhythm" => T::LintRuleSlideRhythm,
+        other => return other.replace('-', " "),
+    };
+    t(key).to_owned()
+}
+
+/// How many pages a turn wrote.
+fn pages_written(turn: &AssistantTurn) -> usize {
+    turn.touched_files().iter().filter(|f| is_page(f)).count()
+}
+
+/// The lint of the page a turn wrote, as it lands: an answer older than the
+/// latest request is dropped, and an answer for another page (the turn's
+/// page changed meanwhile) counts as not answered yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PageLintSlot {
+    asked: u32,
+    landed: Option<(String, Option<LintResponse>)>,
+}
+
+impl PageLintSlot {
+    /// A new request: its ticket.
+    pub fn begin(&mut self) -> u32 {
+        self.asked = self.asked.wrapping_add(1);
+        self.asked
+    }
+
+    /// The answer of request `ticket` for `page` (`None`: it could not run).
+    /// Returns whether it was kept.
+    pub fn land(&mut self, ticket: u32, page: String, res: Option<LintResponse>) -> bool {
+        if ticket != self.asked {
+            return false;
+        }
+        self.landed = Some((page, res));
+        true
+    }
+
+    /// The lint as [`next_steps`] reads it for the turn's `page` now.
+    #[must_use]
+    pub fn state(&self, page: Option<&str>) -> PageLint<'_> {
+        match &self.landed {
+            Some((p, res)) if Some(p.as_str()) == page => {
+                res.as_ref().map_or(PageLint::Failed, PageLint::Done)
+            }
+            _ => PageLint::Pending,
+        }
+    }
+}
+
 /// The fix chip for a lint with P0 or P1 findings.
-fn fix_step(lint: &LintResponse) -> Option<FixStep> {
+fn fix_step(lint: &LintResponse, page: &str, names_page: bool) -> Option<FixStep> {
     let mut serious: Vec<&od_contracts::LintFinding> = lint
         .findings
         .iter()
@@ -259,15 +338,16 @@ fn fix_step(lint: &LintResponse) -> Option<FixStep> {
     serious.sort_by_key(|f| f.severity);
     let mut rules: Vec<String> = Vec::new();
     for f in &serious {
-        let words = f.id.replace('-', " ");
-        if !rules.contains(&words) {
-            rules.push(words);
+        if !rules.contains(&f.id) {
+            rules.push(f.id.clone());
         }
     }
     Some(FixStep {
         count: serious.len(),
         rules,
-        prompt: lint.agent_message.clone(),
+        page: page.to_owned(),
+        names_page,
+        prompt: format!("In `{page}`:\n{}", lint.agent_message),
     })
 }
 
@@ -581,8 +661,10 @@ mod tests {
             steps[2],
             NextStep::Fix(FixStep {
                 count: 3,
-                rules: vec!["emoji icon".to_owned(), "raw hex".to_owned()],
-                prompt: "<artifact-lint>…</artifact-lint>".to_owned(),
+                rules: vec!["emoji-icon".to_owned(), "raw-hex".to_owned()],
+                page: "index.html".to_owned(),
+                names_page: false,
+                prompt: "In `index.html`:\n<artifact-lint>…</artifact-lint>".to_owned(),
             })
         );
         assert_eq!(
@@ -601,9 +683,14 @@ mod tests {
     }
 
     #[test]
-    fn no_fixed_follow_ups_flash_while_the_lint_runs() {
+    fn no_chip_shows_while_the_lint_of_the_page_runs() {
         assert_eq!(
             next_steps(&page_turn(&[]), PageLint::Pending),
+            [NextStep::Open("index.html".to_owned()), NextStep::Comment]
+        );
+        // The agent's chips wait too: the fix chip would push them aside.
+        assert_eq!(
+            next_steps(&page_turn(&["A", "B", "C"]), PageLint::Pending),
             [NextStep::Open("index.html".to_owned()), NextStep::Comment]
         );
         assert_eq!(written_page(&page_turn(&[])).as_deref(), Some("index.html"));
@@ -611,6 +698,57 @@ mod tests {
             written_page(&turn(TurnState::Running, vec![write("index.html")])),
             None
         );
+    }
+
+    #[test]
+    fn the_fix_names_the_page_when_the_turn_wrote_more_than_one() {
+        let found = lint(&[(LintSeverity::P0, "emoji-icon")]);
+        let two = turn(
+            TurnState::Succeeded,
+            vec![write("index.html"), write("about.html")],
+        );
+        let NextStep::Fix(fix) = &next_steps(&two, PageLint::Done(&found))[2] else {
+            panic!("a fix chip");
+        };
+        assert_eq!(fix.page, "index.html");
+        assert!(fix.names_page);
+        assert!(fix.prompt.starts_with("In `index.html`:\n<artifact-lint>"));
+        let NextStep::Fix(one) = &next_steps(&page_turn(&[]), PageLint::Done(&found))[2] else {
+            panic!("a fix chip");
+        };
+        assert!(!one.names_page, "one page: the label needs no name");
+    }
+
+    #[test]
+    fn lint_rules_read_in_words() {
+        assert_eq!(lint_rule_label("emoji-icon"), "emoji icon");
+        assert_eq!(
+            lint_rule_label("slide-theme-missing"),
+            "slide theme missing"
+        );
+        assert_eq!(lint_rule_label("some-new-rule"), "some new rule");
+    }
+
+    #[test]
+    fn a_late_or_other_page_lint_answer_is_not_taken() {
+        let found = lint(&[(LintSeverity::P0, "emoji-icon")]);
+        let mut slot = PageLintSlot::default();
+        assert_eq!(slot.state(Some("index.html")), PageLint::Pending);
+        let first = slot.begin();
+        let second = slot.begin();
+        assert!(
+            !slot.land(first, "index.html".into(), None),
+            "older request"
+        );
+        assert_eq!(slot.state(Some("index.html")), PageLint::Pending);
+        assert!(slot.land(second, "index.html".into(), Some(found.clone())));
+        assert_eq!(slot.state(Some("index.html")), PageLint::Done(&found));
+        // The turn's page is another one now: its lint has not answered.
+        assert_eq!(slot.state(Some("about.html")), PageLint::Pending);
+        assert_eq!(slot.state(None), PageLint::Pending);
+        let third = slot.begin();
+        assert!(slot.land(third, "about.html".into(), None));
+        assert_eq!(slot.state(Some("about.html")), PageLint::Failed);
     }
 
     #[test]

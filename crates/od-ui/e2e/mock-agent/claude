@@ -22,7 +22,8 @@
 # containing `crash` fails like a crashed CLI (stack trace, exit 1).
 # A request containing `nextsteps` ends with follow-up markers: four keyed
 # with the key its prompt shows (the UI keeps three), one with another key
-# and one in a code fence.
+# and one in a code fence. `twopages` writes index.html (with an emoji
+# icon, a lint finding) and about.html, then stops.
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -154,6 +155,16 @@ case "$req" in *"motion film"*)
   bash_call "render-$$" "od media generate" "$OD_NODE_BIN" "$OD_BIN" media generate --project "$OD_PROJECT_ID" \
     --surface video --model hyperframes-html --composition-dir motion-source/film --output film.mp4
   say "Rendered film.mp4 ($res)."
+  end_turn
+;; esac
+
+case "$req" in *twopages*)
+  for page in index about; do
+    printf '{"type":"assistant","message":{"id":"m%s-%s","role":"assistant","content":[{"type":"tool_use","id":"w-%s-%s","name":"Write","input":{"file_path":"%s/%s.html","content":"..."}}]}}\n' "$$" "$page" "$page" "$$" "$PWD" "$page"
+    printf '<!doctype html><html><body><h1 id="title">Mock page v%s</h1><h3>🚀 %s</h3></body></html>\n' "$turn" "$page" > "$page.html"
+    printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"w-%s-%s","content":"File created successfully"}]}}\n' "$page" "$$"
+  done
+  say "Wrote two pages."
   end_turn
 ;; esac
 
