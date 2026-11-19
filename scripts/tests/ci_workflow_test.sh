@@ -76,7 +76,11 @@ ruby -ryaml -e '
   caches = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("Swatinem/rust-cache") }
   puts "caches: #{caches.size}, saved from main only: #{caches.all? { |s| s.dig("with", "save-if") == "${{ github.ref == \x27refs/heads/main\x27 }}" }}"
   saves = jobs.values.flat_map { |j| j["steps"] || [] }.select { |s| s["uses"].to_s.start_with?("actions/cache/save") }
-  puts "cache saves: #{saves.size}, from main only: #{saves.all? { |s| s["if"].to_s.include?("github.ref == \x27refs/heads/main\x27") }}"
+  puts "cache saves: #{saves.size}, from main or a run without one: #{saves.all? { |s| s["if"].to_s.include?("(github.ref == \x27refs/heads/main\x27 || steps.apt-cache.outputs.cache-matched-key == \x27\x27)") }}"
+  apt = jobs.flat_map { |k, j| (j["steps"] || []).select { |s| s["run"].to_s.include?("scripts/linux-deps.sh") }.map { |s| [k, s] } }
+  puts "linux-deps steps: #{apt.size}, all with a budget: #{apt.all? { |_, s| s.dig("env", "APT_BUDGET_SECONDS").to_s =~ /\A[1-9][0-9]*\z/ }}"
+  e2e_runs = jobs["e2e"]["steps"].map { |s| s["run"].to_s }
+  puts "e2e system packages: #{e2e_runs.any? { |r| r.include?("scripts/linux-deps.sh --playwright crates/od-ui/e2e ffmpeg") }}"
   e2e = jobs["e2e"]
   puts "e2e retries: #{e2e["env"]["OD_E2E_RETRIES"]}"
   puts "e2e shards: #{e2e["strategy"]["matrix"]["shard"].join(",")} env: #{e2e["env"]["OD_E2E_SHARD"]}"
@@ -86,7 +90,9 @@ ruby -ryaml -e '
 check "CI result waits for every other job, even after a failure" 'grep -qx "result needs all: true" "$work/out" && grep -qx "result if: always()" "$work/out"'
 check "every job but changes and CI result is picked by changes" 'grep -qx "jobs not gated by changes: " "$work/out"'
 check "every Rust cache is saved from main only" 'grep -qE "^caches: [1-9][0-9]*, saved from main only: true$" "$work/out"'
-check "apt package caches are saved from main only" 'grep -qE "^cache saves: [1-9][0-9]*, from main only: true$" "$work/out"'
+check "apt package caches are saved from main, or by a run that found none" 'grep -qE "^cache saves: [1-9][0-9]*, from main or a run without one: true$" "$work/out"'
+check "every linux-deps.sh call in ci.yml has an apt budget" 'grep -qE "^linux-deps steps: [3-9], all with a budget: true$" "$work/out"'
+check "e2e installs the Playwright and ffmpeg packages through linux-deps.sh" 'grep -qx "e2e system packages: true" "$work/out"'
 check "e2e runs a failed scenario once more" 'grep -qx "e2e retries: 1" "$work/out"'
 check "e2e runs in two shards that together cover the list" 'grep -qx "e2e shards: 1,2 env: \${{ matrix.shard }}/2" "$work/out"'
 check "the test job runs nextest and the doc tests" 'grep -qx "nextest: true doc tests: true" "$work/out"'
@@ -111,10 +117,11 @@ check "nightly reads only (no issue, no comment)" 'grep -qx "permissions: {\"con
 check "nightly reports even when CI failed" 'grep -qx "report needs ci always: true" "$work/out"'
 check "nightly opens no issue" '! grep -qiE "gh issue|issues:" "$workflows/nightly.yml"'
 
-# `timeout` stops only its own child: around `npx playwright install
-# --with-deps` it left the `sudo apt-get` that Playwright starts holding
-# the dpkg lock, and every later try failed on it.
-check "no time limit around Playwright's apt-get" '! grep -E "timeout [0-9]+ npx playwright" "$ci"'
+# Playwright's `--with-deps` runs its own `sudo apt-get`: no time limit
+# (`timeout` stopped npx but left that apt-get holding the dpkg lock), no
+# retry, no .deb cache; on 18-19/11 it took 35 to 44 minutes. The e2e job
+# gets those packages from linux-deps.sh --playwright instead.
+check "no Playwright --with-deps in any workflow" '! grep -n -- "--with-deps" "$workflows"/*.yml | grep -vE "^[^:]+:[0-9]+: *#"'
 
 # Every action is pinned to a full commit SHA.
 grep -hE '^\s*-?\s*uses:' "$workflows"/*.yml | grep -vE 'uses: \./' | grep -vE '@[0-9a-f]{40}( |$)' > "$work/out"

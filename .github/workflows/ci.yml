@@ -166,17 +166,24 @@ jobs:
           tool: trunk
       # Downloaded .deb files (scripts/linux-deps.sh, APT_ARCHIVES): the
       # newest saved folder is restored every run; main saves it when apt
-      # changed it, also after a failed try, so the next run goes on.
+      # changed it, also after a failed try, so the next run goes on. A run
+      # that found no folder at all saves one too (a pull request's serves
+      # only that pull request), so trying it again does not start from zero.
+      # apt gets 10 minutes in all (APT_BUDGET_SECONDS), then the step
+      # fails naming the mirror, instead of using up the job's time.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: apt-cache
         with:
           path: ~/.cache/apt-archives
           key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: apt-${{ github.job }}-
       - name: Linux packages
         id: deps
+        env:
+          APT_BUDGET_SECONDS: "600"
         run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.deps.outputs.archives-changed == 'true' }}
+        if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || steps.apt-cache.outputs.cache-matched-key == '') && steps.deps.outputs.archives-changed == 'true' }}
         with:
           path: ~/.cache/apt-archives
           key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -228,8 +235,9 @@ jobs:
       # The MP4 export tests need ffmpeg and ffprobe, and fail without them.
       # On Linux it joins the Tauri packages: one apt install, with the
       # step limit and tries of linux-deps.sh.
-      # Downloaded .deb files, as in the lint job.
+      # Downloaded .deb files and the 10-minute limit, as in the lint job.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: apt-cache
         if: runner.os == 'Linux'
         with:
           path: ~/.cache/apt-archives
@@ -238,9 +246,11 @@ jobs:
       - name: Linux packages and ffmpeg
         id: deps
         if: runner.os == 'Linux'
+        env:
+          APT_BUDGET_SECONDS: "600"
         run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh ffmpeg
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: ${{ !cancelled() && runner.os == 'Linux' && github.ref == 'refs/heads/main' && steps.deps.outputs.archives-changed == 'true' }}
+        if: ${{ !cancelled() && runner.os == 'Linux' && (github.ref == 'refs/heads/main' || steps.apt-cache.outputs.cache-matched-key == '') && steps.deps.outputs.archives-changed == 'true' }}
         with:
           path: ~/.cache/apt-archives
           key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -416,23 +426,38 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: crates/od-ui/e2e/package-lock.json
-      - name: Playwright
+      - name: npm packages
         working-directory: crates/od-ui/e2e
-        run: |
-          ../../../scripts/ci-retry.sh npm ci --no-audit --no-fund
-          # No time limit here: --with-deps runs `sudo apt-get` itself, and
-          # `timeout` stops npx but not that apt-get, which kept the dpkg
-          # lock and failed both later tries (18/11).
-          ../../../scripts/ci-retry.sh npx playwright install --with-deps chromium webkit
-      # motion.e2e.mjs renders an MP4 and checks it with ffprobe.
-      # A slow mirror (47 kB/s on 18/11) gets 5 minutes a try; a try waits
-      # for the dpkg lock that an interrupted one may still hold.
-      - name: ffmpeg
-        run: |
-          apt=(sudo timeout 300 apt-get -o DPkg::Lock::Timeout=120)
-          scripts/ci-retry.sh "${apt[@]}" update
-          scripts/ci-retry.sh "${apt[@]}" install -y --no-install-recommends ffmpeg
-          ffmpeg -version | head -n1
+        run: ../../../scripts/ci-retry.sh npm ci --no-audit --no-fund
+      # The system packages of Chromium and WebKit, and ffmpeg (motion.e2e
+      # renders an MP4 and checks it with ffprobe), through linux-deps.sh:
+      # a .deb cache as in the lint job, a time limit on every apt call,
+      # and 10 minutes for all of them. `playwright install --with-deps`
+      # ran its own apt-get with none of these: on 18-19/11 it took 35 to
+      # 44 minutes for 126 MB (47 kB/s) and the job hit its 45 minutes.
+      # Shard 1 saves the folder; both download the same packages.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: apt-cache
+        with:
+          path: ~/.cache/apt-archives
+          key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: apt-${{ github.job }}-
+      - name: Linux packages (Playwright, ffmpeg)
+        id: deps
+        env:
+          APT_BUDGET_SECONDS: "600"
+        run: APT_ARCHIVES="$HOME/.cache/apt-archives" scripts/linux-deps.sh --playwright crates/od-ui/e2e ffmpeg
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: ${{ !cancelled() && matrix.shard == 1 && (github.ref == 'refs/heads/main' || steps.apt-cache.outputs.cache-matched-key == '') && steps.deps.outputs.archives-changed == 'true' }}
+        with:
+          path: ~/.cache/apt-archives
+          key: apt-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - run: ffmpeg -version | head -n1
+      # The browsers come from Playwright's CDN (8 s on 19/11), not apt, so
+      # a time limit stops the whole download.
+      - name: Playwright browsers
+        working-directory: crates/od-ui/e2e
+        run: ../../../scripts/ci-retry.sh timeout 300 npx playwright install chromium webkit
       - run: make e2e
       # Scenarios that failed and then passed alone (run.sh writes
       # flaky.txt): a warning, and rows for docs/qa/flaky.md.
