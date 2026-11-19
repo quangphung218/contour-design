@@ -14,11 +14,21 @@ use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use od_preview::inject_bridge_keyed;
 use serde_json::{Value, json};
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const FRAME_W: u32 = 1280;
 const FRAME_H: u32 = 720;
+
+/// The longest one CDP call may take; the page waits in it last at most
+/// 10 s. chromiumoxide 0.9.1 never gives up on a page promise that does not
+/// settle (its 30 s request limit does not cover one), nor on a call after
+/// Chrome went away: without this a stalled page hangs the test until CI
+/// cancels the job (macos-15, 2026-11-19).
+const STEP_LIMIT: Duration = Duration::from_secs(30);
+/// Marks a step that ran past its limit (see [`Harness::stalled`]).
+const STALLED: &str = "stalled:";
 
 /// The browser the app's own export finds (`OD_CHROME_PATH`, the usual
 /// places on macOS, Linux and Windows, then `PATH`).
@@ -46,9 +56,13 @@ const HOST: &str = r#"<!doctype html><html><head><style>body{margin:0}</style></
   };
   window.__send = (msg) => { frame.contentWindow.postMessage(msg, '*'); return true; };
   // First message of `type` at index >= since that passes `pred`.
+  // Every poll of `__after` counts: a stalled step shows whether the
+  // page's timers still run.
+  window.__ticks = 0;
   window.__after = (type, since, pred, ms) => new Promise((resolve, reject) => {
     const t0 = Date.now();
     (function tick() {
+      window.__ticks++;
       for (let i = since; i < window.__msgs.length; i++) {
         const m = window.__msgs[i];
         if (m && m.type === type && (!pred || pred(m))) return resolve(m);
@@ -67,6 +81,8 @@ const HOST: &str = r#"<!doctype html><html><head><style>body{margin:0}</style></
 struct Harness {
     browser: Browser,
     page: Page,
+    /// Chrome's own process, for the diagnosis of a stalled step.
+    chrome_pid: Option<u32>,
     _profile: tempfile::TempDir,
 }
 
@@ -96,27 +112,89 @@ impl Harness {
             .arg(("host-resolver-rules", "MAP * ~NOTFOUND"))
             .build()
             .unwrap();
-        let (browser, mut handler) = Browser::launch(config).await.unwrap();
-        tokio::spawn(async move { while handler.next().await.is_some() {} });
-        let page = browser.new_page("about:blank").await.unwrap();
+        let (mut browser, mut handler) = within("launching Chrome", Browser::launch(config))
+            .await
+            .unwrap();
+        // A lost connection is the lead when a step stalls next.
+        tokio::spawn(async move {
+            while let Some(event) = handler.next().await {
+                if let Err(e) = event {
+                    eprintln!("CDP connection: {e}");
+                }
+            }
+        });
+        let chrome_pid = browser.get_mut_child().and_then(|c| c.as_mut_inner().id());
+        let page = within("opening a page", browser.new_page("about:blank"))
+            .await
+            .unwrap();
         let host = HOST
             .replace("__W__", &FRAME_W.to_string())
             .replace("__H__", &FRAME_H.to_string());
-        page.set_content(host).await.unwrap();
+        within("loading the host page", page.set_content(host))
+            .await
+            .unwrap();
         Some(Self {
             browser,
             page,
+            chrome_pid,
             _profile: profile,
         })
     }
 
     async fn eval(&self, js: &str) -> Value {
-        self.page
-            .evaluate(js)
-            .await
-            .unwrap_or_else(|e| panic!("{js}: {e}"))
-            .into_value()
-            .unwrap_or(Value::Null)
+        self.eval_within(js, STEP_LIMIT).await
+    }
+
+    async fn eval_within(&self, js: &str, limit: Duration) -> Value {
+        let what = js.chars().take(120).collect::<String>();
+        match tokio::time::timeout(limit, self.page.evaluate(js)).await {
+            Ok(res) => res
+                .unwrap_or_else(|e| panic!("{what}: {e}"))
+                .into_value()
+                .unwrap_or(Value::Null),
+            Err(_) => self.stalled(&what, limit).await,
+        }
+    }
+
+    /// Runs one CDP call within [`STEP_LIMIT`].
+    async fn step<T>(&self, what: &str, call: impl Future<Output = T>) -> T {
+        match tokio::time::timeout(STEP_LIMIT, call).await {
+            Ok(v) => v,
+            Err(_) => self.stalled(what, STEP_LIMIT).await,
+        }
+    }
+
+    async fn click(&self, at: Point) {
+        self.step("click", self.page.click(at)).await.unwrap();
+    }
+
+    async fn execute<C: chromiumoxide::types::Command>(&self, cmd: C) {
+        let method = cmd.identifier();
+        self.step(&method, self.page.execute(cmd)).await.unwrap();
+    }
+
+    /// Fails a step that ran past `waited`, with what the page and Chrome
+    /// were doing: whether the page still answers, its timers run (the
+    /// `__after` polls, read 1 s apart) and Chrome's process is there.
+    async fn stalled(&self, what: &str, waited: Duration) -> ! {
+        const PROBE: &str = "JSON.stringify({ visibility: document.visibilityState, \
+            ticks: window.__ticks, msgs: window.__msgs.length })";
+        let mut page = Vec::new();
+        for _ in 0..2 {
+            let seen = match tokio::time::timeout(Duration::from_secs(5), self.page.evaluate(PROBE))
+                .await
+            {
+                Ok(Ok(v)) => v.into_value::<String>().unwrap_or_default(),
+                Ok(Err(e)) => format!("error: {e}"),
+                Err(_) => "no answer in 5 s".to_owned(),
+            };
+            page.push(seen);
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        panic!(
+            "{STALLED} {what} gave no answer in {waited:?}; page (1 s apart): {page:?}; Chrome: {}",
+            process_state(self.chrome_pid)
+        );
     }
 
     async fn load(&self, html: &str) {
@@ -176,7 +254,7 @@ impl Harness {
             _ => panic!("unmapped key {key}"),
         };
         // Focus the frame's document first.
-        self.page.click(Point { x: 5.0, y: 5.0 }).await.unwrap();
+        self.click(Point { x: 5.0, y: 5.0 }).await;
         for ty in [
             DispatchKeyEventType::RawKeyDown,
             DispatchKeyEventType::KeyUp,
@@ -188,13 +266,37 @@ impl Harness {
                 .windows_virtual_key_code(vk)
                 .build()
                 .unwrap();
-            self.page.execute(cmd).await.unwrap();
+            self.execute(cmd).await;
         }
     }
 
     async fn close(mut self) {
-        let _ = self.browser.close().await;
-        let _ = self.browser.wait().await;
+        let _ = within("closing Chrome", self.browser.close()).await;
+        let _ = within("waiting for Chrome to exit", self.browser.wait()).await;
+    }
+}
+
+/// A call outside a [`Harness`] (start, close) within [`STEP_LIMIT`].
+async fn within<T>(what: &str, call: impl Future<Output = T>) -> T {
+    tokio::time::timeout(STEP_LIMIT, call)
+        .await
+        .unwrap_or_else(|_| panic!("{STALLED} {what} took over {STEP_LIMIT:?}"))
+}
+
+/// `ps` on Chrome's process: its state and age, `gone`, or why unknown.
+fn process_state(pid: Option<u32>) -> String {
+    let Some(pid) = pid else {
+        return "pid unknown".to_owned();
+    };
+    match std::process::Command::new("ps")
+        .args(["-o", "stat=,etime=", "-p", &pid.to_string()])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            format!("pid {pid} {}", String::from_utf8_lossy(&out.stdout).trim())
+        }
+        Ok(_) => format!("pid {pid} gone"),
+        Err(e) => format!("pid {pid}, no ps: {e}"),
     }
 }
 
@@ -207,20 +309,78 @@ fn template(rel: &str) -> String {
 
 /// One pass takes about 35 s. Chrome very rarely stalls with no error (one
 /// of 67 pre-merge `make check` runs on 2026-11-01 hung here until the
-/// 15 minute limit): a stalled pass is dropped after this long (which
-/// kills its Chrome) and run once more on a fresh browser.
+/// 15 minute limit; two macos-15 CI runs on 2026-11-19 stalled from the
+/// start): a pass that stalls, a step past [`STEP_LIMIT`] or the whole pass
+/// past this long, is dropped (which kills its Chrome) and run once more on
+/// a fresh browser.
 const PASS_LIMIT: Duration = Duration::from_secs(150);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bridge_in_headless_chrome() {
     for attempt in 1..=2 {
-        match tokio::time::timeout(PASS_LIMIT, bridge_pass()).await {
-            Ok(()) => return,
-            Err(_) if attempt == 1 => {
-                eprintln!("bridge pass stalled for {PASS_LIMIT:?}; retrying on a fresh Chrome");
+        let mut pass = tokio::spawn(bridge_pass());
+        let why = match tokio::time::timeout(PASS_LIMIT, &mut pass).await {
+            Ok(Ok(())) => return,
+            Ok(Err(e)) if e.is_panic() => {
+                let payload = e.into_panic();
+                let msg = panic_message(&*payload);
+                if !msg.starts_with(STALLED) {
+                    std::panic::resume_unwind(payload);
+                }
+                msg
             }
-            Err(_) => panic!("bridge pass stalled twice ({PASS_LIMIT:?} each)"),
+            Ok(Err(e)) => panic!("bridge pass: {e}"),
+            Err(_) => {
+                pass.abort();
+                format!("{STALLED} the pass took over {PASS_LIMIT:?}")
+            }
+        };
+        if attempt == 1 {
+            eprintln!("{why}\nretrying on a fresh Chrome");
+        } else {
+            panic!("bridge pass stalled twice; the second time: {why}");
         }
+    }
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+        .unwrap_or_default()
+}
+
+/// A page promise that never settles fails its step within the limit and
+/// says what stalled and whether the page and Chrome still answer:
+/// chromiumoxide would wait for it forever.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_promise_that_never_settles_fails_in_time() {
+    let Some(h) = Harness::start().await else {
+        return;
+    };
+    let h = std::sync::Arc::new(h);
+    let step = tokio::spawn({
+        let h = h.clone();
+        async move {
+            h.eval_within("new Promise(() => {})", Duration::from_secs(2))
+                .await;
+        }
+    });
+    let done = tokio::time::timeout(Duration::from_secs(20), step)
+        .await
+        .expect("a step whose page promise never settles hung");
+    let msg = panic_message(&*done.expect_err("the step passed").into_panic());
+    assert!(msg.starts_with(STALLED), "{msg}");
+    assert!(
+        msg.contains("new Promise(() => {})"),
+        "names the step: {msg}"
+    );
+    // The page itself still answers, and Chrome is there.
+    assert!(msg.contains("visible"), "{msg}");
+    assert!(msg.contains("Chrome: pid"), "{msg}");
+    if let Ok(h) = std::sync::Arc::try_unwrap(h) {
+        h.close().await;
     }
 }
 
@@ -434,8 +594,10 @@ async fn selection_snapshot_and_size(h: &Harness) {
     h.eval("window.__send({ type: 'od:select-mode', enabled: true })")
         .await;
     // Inside the tagged card: the nearest data-od-id wins.
-    h.page.move_mouse(Point { x: 80.0, y: 70.0 }).await.unwrap();
-    h.page.click(Point { x: 80.0, y: 70.0 }).await.unwrap();
+    h.step("move_mouse", h.page.move_mouse(Point { x: 80.0, y: 70.0 }))
+        .await
+        .unwrap();
+    h.click(Point { x: 80.0, y: 70.0 }).await;
     let picked = h.wait("od:select", "null", 5_000).await;
     assert_eq!(picked["odId"], "hero", "{picked}");
     assert_eq!(picked["selector"], "[data-od-id=\"hero\"]");
@@ -490,21 +652,19 @@ async fn pins_follow_their_elements(h: &Harness) {
     let mut moved = Value::Null;
     for _ in 0..5 {
         let since = h.msg_count().await;
-        h.page
-            .execute(
-                chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventParams::builder()
-                    .r#type(
-                        chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventType::MouseWheel,
-                    )
-                    .x(100.0)
-                    .y(100.0)
-                    .delta_x(0.0)
-                    .delta_y(400.0)
-                    .build()
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        h.execute(
+            chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventParams::builder()
+                .r#type(
+                    chromiumoxide::cdp::browser_protocol::input::DispatchMouseEventType::MouseWheel,
+                )
+                .x(100.0)
+                .y(100.0)
+                .delta_x(0.0)
+                .delta_y(400.0)
+                .build()
+                .unwrap(),
+        )
+        .await;
         moved = h
             .eval(&format!(
                 "window.__after('od:located', {since}, (m) => m.items[0].rect && m.items[0].rect.y < 600, 3000).catch(() => null)"
@@ -824,11 +984,9 @@ async fn edit_key_stays_with_the_bridge(h: &Harness) {
 
     // A real click on the heading, real typing, a real Enter.
     let since = h.msg_count().await;
-    h.page.click(Point { x: 80.0, y: 60.0 }).await.unwrap();
-    h.page
-        .execute(chromiumoxide::cdp::browser_protocol::input::InsertTextParams::new("Hi there"))
-        .await
-        .unwrap();
+    h.click(Point { x: 80.0, y: 60.0 }).await;
+    h.execute(chromiumoxide::cdp::browser_protocol::input::InsertTextParams::new("Hi there"))
+        .await;
     for ty in [
         DispatchKeyEventType::RawKeyDown,
         DispatchKeyEventType::KeyUp,
@@ -840,7 +998,7 @@ async fn edit_key_stays_with_the_bridge(h: &Harness) {
             .windows_virtual_key_code(13)
             .build()
             .unwrap();
-        h.page.execute(cmd).await.unwrap();
+        h.execute(cmd).await;
     }
     let edit = h
         .eval(&format!(
@@ -897,13 +1055,14 @@ async fn bundled_decks_stay_decks() {
     assert!(decks.len() > 40, "only {} decks found", decks.len());
     let mut missed = Vec::new();
     for (i, (path, html)) in decks.iter().enumerate() {
+        // Names the deck a stalled step (which panics) is on.
+        eprintln!("deck {i}: {}", path.display());
         // A fresh key per load, like the app: quick loads are not a loop.
         h.load_keyed(html, Some(&format!("deck{i}"))).await;
         let ready = h
-            .page
-            .evaluate("window.__after('od:deck-ready', 0, null, 8000).then(m => m.count)")
+            .eval("window.__after('od:deck-ready', 0, null, 8000).then(() => true, () => false)")
             .await;
-        if ready.is_err() {
+        if ready != json!(true) {
             missed.push(path.display().to_string());
         }
     }
