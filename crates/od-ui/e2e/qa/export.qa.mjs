@@ -287,4 +287,34 @@ test('EXP-15', 'An MP4 export started, then the Studio left for good: the file s
   assert.equal(new URL(page.url()).pathname, '/projects', 'the download pulled the user back to the Studio');
 }, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', timeout: 100_000 });
 
+// A page whose script stops animation frames never settles, and the export
+// once waited for it forever. The daemon's step limit is cut to 3 s here
+// (`OD_RENDER_STEP_TIMEOUT_MS`; a minute in the product).
+const FROZEN = '<!doctype html><html><head><meta charset="utf-8">' +
+  '<script>window.requestAnimationFrame = function () { return 0; };</script></head>' +
+  '<body><h1 id="title">Đứng hình</h1></body></html>';
+
+test('EXP-16', 'Export PDF of a page that never settles fails in time with a reason, and works once the page is fixed', async ({ d, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Frozen page', { 'index.html': FROZEN });
+  const started = Date.now();
+  const res = await exportVia(page, 'export-pdf', 60_000);
+  assert.ok(!res.bytes, 'a PDF downloaded from a page that never settles');
+  assert.equal(
+    res.text,
+    'Export failed: render failed: the page gave no answer within 3 s while waiting for the page to load; try again, and if it fails again, a script on the page may be holding it up',
+  );
+  assert.ok(Date.now() - started < 45_000, `the error took ${Date.now() - started} ms`);
+  // The agent fixes the page: the same menu exports it.
+  const fixed = await fetch(`${d.base}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'index.html', content: PAGE, overwrite: true }),
+  });
+  assert.ok(fixed.ok, `fixing the page: ${fixed.status}`);
+  await page.keyboard.press('Escape');
+  const again = await exportVia(page, 'export-pdf');
+  assert.ok(again.bytes, `no download after the fix: ${again.text}`);
+  assert.equal(again.bytes.subarray(0, 5).toString(), '%PDF-');
+}, { skip: CHROME ? undefined : 'no Chrome, Edge or Chromium on this machine', timeout: 150_000, daemon: { env: { OD_RENDER_STEP_TIMEOUT_MS: '3000' } } });
+
 await run('export');

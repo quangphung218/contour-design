@@ -25,8 +25,10 @@ const FRAME_H: u32 = 720;
 /// 10 s. chromiumoxide 0.9.1 never gives up on a page promise that does not
 /// settle (its 30 s request limit does not cover one), nor on a call after
 /// Chrome went away: without this a stalled page hangs the test until CI
-/// cancels the job (macos-15, 2026-11-19).
-const STEP_LIMIT: Duration = Duration::from_secs(30);
+/// cancels the job (macos-15, 2026-11-19). Under that 30 s, so a page that
+/// blocks its main thread ends here, with the diagnosis and the retry,
+/// not with chromiumoxide's bare "Request timed out".
+const STEP_LIMIT: Duration = Duration::from_secs(25);
 /// Marks a step that ran past its limit (see [`Harness::stalled`]).
 const STALLED: &str = "stalled:";
 
@@ -83,6 +85,8 @@ struct Harness {
     page: Page,
     /// Chrome's own process, for the diagnosis of a stalled step.
     chrome_pid: Option<u32>,
+    /// Bound of each step: [`STEP_LIMIT`], less in a test of the bound.
+    step_limit: Duration,
     _profile: tempfile::TempDir,
 }
 
@@ -137,30 +141,25 @@ impl Harness {
             browser,
             page,
             chrome_pid,
+            step_limit: STEP_LIMIT,
             _profile: profile,
         })
     }
 
     async fn eval(&self, js: &str) -> Value {
-        self.eval_within(js, STEP_LIMIT).await
-    }
-
-    async fn eval_within(&self, js: &str, limit: Duration) -> Value {
         let what = js.chars().take(120).collect::<String>();
-        match tokio::time::timeout(limit, self.page.evaluate(js)).await {
-            Ok(res) => res
-                .unwrap_or_else(|e| panic!("{what}: {e}"))
-                .into_value()
-                .unwrap_or(Value::Null),
-            Err(_) => self.stalled(&what, limit).await,
-        }
+        self.step(&what, self.page.evaluate(js))
+            .await
+            .unwrap_or_else(|e| panic!("{what}: {e}"))
+            .into_value()
+            .unwrap_or(Value::Null)
     }
 
-    /// Runs one CDP call within [`STEP_LIMIT`].
+    /// Runs one CDP call within [`Self::step_limit`].
     async fn step<T>(&self, what: &str, call: impl Future<Output = T>) -> T {
-        match tokio::time::timeout(STEP_LIMIT, call).await {
+        match tokio::time::timeout(self.step_limit, call).await {
             Ok(v) => v,
-            Err(_) => self.stalled(what, STEP_LIMIT).await,
+            Err(_) => self.stalled(what, self.step_limit).await,
         }
     }
 
@@ -343,6 +342,32 @@ async fn bridge_in_headless_chrome() {
     }
 }
 
+/// `msg` holds `Chrome: pid <n> <state>` as `ps` prints it (`S`, `R`…),
+/// not `pid unknown`, `pid <n> gone` or `pid <n>, no ps: …`.
+fn ps_saw_chrome(msg: &str) -> bool {
+    let Some((_, rest)) = msg.split_once("Chrome: pid ") else {
+        return false;
+    };
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    let mut after = rest[digits..].chars();
+    digits > 0 && after.next() == Some(' ') && after.next().is_some_and(|c| c.is_ascii_uppercase())
+}
+
+#[test]
+fn only_a_running_chrome_counts_as_seen_by_ps() {
+    assert!(ps_saw_chrome("x; Chrome: pid 29183 S 00:05"));
+    assert!(ps_saw_chrome("Chrome: pid 7 Rs+ 01:00"));
+    for no in [
+        "Chrome: pid unknown",
+        "Chrome: pid 29183 gone",
+        "Chrome: pid 29183, no ps: denied",
+        "Chrome: pid  S",
+        "no Chrome here",
+    ] {
+        assert!(!ps_saw_chrome(no), "{no}");
+    }
+}
+
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     payload
         .downcast_ref::<String>()
@@ -356,15 +381,15 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 /// chromiumoxide would wait for it forever.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_page_promise_that_never_settles_fails_in_time() {
-    let Some(h) = Harness::start().await else {
+    let Some(mut h) = Harness::start().await else {
         return;
     };
+    h.step_limit = Duration::from_secs(2);
     let h = std::sync::Arc::new(h);
     let step = tokio::spawn({
         let h = h.clone();
         async move {
-            h.eval_within("new Promise(() => {})", Duration::from_secs(2))
-                .await;
+            h.eval("new Promise(() => {})").await;
         }
     });
     let done = tokio::time::timeout(Duration::from_secs(20), step)
@@ -376,9 +401,9 @@ async fn a_page_promise_that_never_settles_fails_in_time() {
         msg.contains("new Promise(() => {})"),
         "names the step: {msg}"
     );
-    // The page itself still answers, and Chrome is there.
+    // The page itself still answers, and `ps` saw Chrome running.
     assert!(msg.contains("visible"), "{msg}");
-    assert!(msg.contains("Chrome: pid"), "{msg}");
+    assert!(ps_saw_chrome(&msg), "{msg}");
     if let Ok(h) = std::sync::Arc::try_unwrap(h) {
         h.close().await;
     }
@@ -1029,6 +1054,9 @@ async fn edit_key_stays_with_the_bridge(h: &Harness) {
         .await;
 }
 
+/// Misses in a row after which [`bundled_decks_stay_decks`] stops.
+const MISSES_IN_A_ROW: usize = 5;
+
 /// Every bundled example with slide markup (`.slide`, `data-od-slide`) is
 /// still announced as a deck once the bridge tells decks from carousels
 /// (UI-001).
@@ -1054,7 +1082,15 @@ async fn bundled_decks_stay_decks() {
     decks.sort();
     assert!(decks.len() > 40, "only {} decks found", decks.len());
     let mut missed = Vec::new();
+    // Each miss waits the full 8 s: when the bridge is broken for all, stop
+    // after a few in a row and list them, before nextest's limit (4 min)
+    // ends the test with no list.
+    let mut in_a_row = 0;
     for (i, (path, html)) in decks.iter().enumerate() {
+        if in_a_row == MISSES_IN_A_ROW {
+            eprintln!("{MISSES_IN_A_ROW} decks in a row missed; not trying the rest");
+            break;
+        }
         // Names the deck a stalled step (which panics) is on.
         eprintln!("deck {i}: {}", path.display());
         // A fresh key per load, like the app: quick loads are not a loop.
@@ -1062,7 +1098,10 @@ async fn bundled_decks_stay_decks() {
         let ready = h
             .eval("window.__after('od:deck-ready', 0, null, 8000).then(() => true, () => false)")
             .await;
-        if ready != json!(true) {
+        if ready == json!(true) {
+            in_a_row = 0;
+        } else {
+            in_a_row += 1;
             missed.push(path.display().to_string());
         }
     }

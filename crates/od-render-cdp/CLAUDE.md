@@ -44,6 +44,12 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
     - `tests/animations.rs::exports_wait_for_entrance_animations` (real Chrome)
 11. Test bundles are never quarantined (else Gatekeeper shows a dialog on the developer's screen).
     - `src/launch_services.rs::unquarantine_clears_a_bundle_all_the_way_down`
+12. Every CDP call after the page opens is bounded by `STEP_TIMEOUT` (60 s, `Session::step`); a lost
+    connection ends the handler task, which fails every call waiting at once (`unless_gone`). Failure goes
+    through `Session::close` like any other.
+    - `tests/step_timeout.rs::a_page_that_never_settles_fails_every_export_in_time`
+    - `tests/step_timeout.rs::a_browser_killed_during_an_export_fails_it_at_once` (unix)
+    - `src/lib.rs::a_command_past_chromiumoxides_wait_says_so_in_words`; QA e2e `e2e/qa/export.qa.mjs:"EXP-16"`
 
 ## Traps
 - Headless Chrome as our child woke GoogleUpdater, and macOS asked for App Management on every update.
@@ -54,6 +60,8 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
 - A `ps -A` right beside the child launch loses a fast-exiting child's stderr (chromiumoxide 0.9.1 race, still open) (#236).
 - Because of that race the child error can be empty; keep LaunchServices' reason (#238).
 - A finished animation with fill `none` leaves `getAnimations()`; never `Finish` before MP4 frames (#259).
+- chromiumoxide 0.9.1 waits forever for a page promise that never settles and for every call after the
+  connection is lost; a single command stops at its own fixed 30 s whatever `request_timeout` says (#269).
 
 ## Check
 - Most launch tests run only on macOS. CI runs them in the `chrome-macos` job of `../../.github/workflows/ci.yml`,
