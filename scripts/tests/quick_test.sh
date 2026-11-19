@@ -15,7 +15,7 @@ expect() {
 }
 
 expect "a crate and its direct dependents" "od-job od-mcp-client od-runtime od-term" crates/od-job/src/lib.rs
-expect "only direct dependents, not theirs" "od-cli od-content od-contracts od-live od-preview od-runs od-runtime od-server od-store od-ui" crates/od-contracts/src/lib.rs
+expect "only direct dependents, not theirs" "od-cli od-content od-contracts od-live od-mcp od-preview od-runs od-runtime od-server od-store od-ui" crates/od-contracts/src/lib.rs
 expect "a crate nothing depends on" "od-ui" crates/od-ui/src/app.rs
 expect "the desktop app" "od-desktop" apps/desktop/src/main.rs
 expect "two crates" "od-desktop od-media od-server" crates/od-media/src/lib.rs apps/desktop/build.rs
