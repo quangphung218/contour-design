@@ -25,9 +25,8 @@ pub fn forwarding(agent: &str) -> Option<bool> {
     match agent {
         "claude" | "opencode" | "codebuddy" | "mimo" => Some(false),
         // ACP adapters take stdio servers only.
-        "kimi" | "hermes" | "kiro" | "kilo" | "vibe" | "trae-cli" | "reasonix" | "devin" => {
-            Some(true)
-        }
+        "kimi" | "hermes" | "kiro" | "kilo" | "vibe" | "trae-cli" | "reasonix" | "devin"
+        | "gemini" => Some(true),
         _ => None,
     }
 }
@@ -508,5 +507,16 @@ mod tests {
         );
         assert_eq!(shell_word("/Volumes/My Apps/od"), "'/Volumes/My Apps/od'");
         assert_eq!(shell_word("/a/it's"), r"'/a/it'\''s'");
+    }
+
+    /// Every ACP agent (`McpInjection::Acp` in `od-runtime`) takes stdio
+    /// servers only.
+    #[test]
+    fn acp_agents_are_forwarded_stdio_only() {
+        for id in [
+            "kimi", "hermes", "kiro", "kilo", "vibe", "trae-cli", "reasonix", "devin", "gemini",
+        ] {
+            assert_eq!(forwarding(id), Some(true), "{id}");
+        }
     }
 }

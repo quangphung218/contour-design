@@ -2,7 +2,8 @@
 //! `agent-protocol/acp/session.ts`, `rpc.ts`, `updates.ts`).
 //!
 //! JSON-RPC 2.0 over stdio: `initialize` → `session/new` (or
-//! `session/load` to resume) → optional `session/set_model` →
+//! `session/load` to resume, unless the agent says `loadSession: false`:
+//! then `session/new` with the full transcript) → optional `session/set_model` →
 //! `session/prompt`. `session/update` notifications become events,
 //! `session/request_permission` is answered by [`PermissionMode`], and
 //! cancel is the `session/cancel` notification.
@@ -33,6 +34,8 @@ pub struct AcpSession {
     writes: Vec<String>,
     next_id: u64,
     session_id: Option<String>,
+    /// A resume was asked but the agent cannot `session/load`.
+    resume_dropped: bool,
     set_model_id: Option<u64>,
     prompt_id: Option<u64>,
     done: bool,
@@ -65,6 +68,7 @@ impl AcpSession {
             writes: Vec::new(),
             next_id: SESSION_ID + 1,
             session_id: None,
+            resume_dropped: false,
             set_model_id: None,
             prompt_id: None,
             done: false,
@@ -141,6 +145,21 @@ impl AcpSession {
 
     fn on_result(&mut self, id: u64, result: &Value, out: &mut Vec<AgentEvent>) {
         if id == INITIALIZE_ID {
+            // Gemini CLI 0.24 says `loadSession: false` and answers
+            // `session/load` with "Method not found": start a new session
+            // carrying the whole conversation instead.
+            // An agent that leaves the flag out keeps the original's
+            // behaviour (load, and reseed if the session is gone).
+            let cannot_load = result
+                .pointer("/agentCapabilities/loadSession")
+                .and_then(Value::as_bool)
+                == Some(false);
+            if cannot_load && self.ctx.resume_session_id.take().is_some() {
+                self.resume_dropped = true;
+                if let Some(full) = self.ctx.fallback_prompt.take() {
+                    self.ctx.prompt = full;
+                }
+            }
             self.open_session();
             return;
         }
@@ -497,6 +516,10 @@ impl StreamParser for AcpSession {
 
     fn completed(&self) -> bool {
         self.done
+    }
+
+    fn resume_dropped(&self) -> bool {
+        self.resume_dropped
     }
 }
 

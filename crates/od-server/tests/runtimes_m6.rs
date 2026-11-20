@@ -185,6 +185,7 @@ async fn a_new_byok_protocol_or_base_url_drops_the_saved_key() {
 async fn agents_list_every_runtime_and_byok_follows_the_key() {
     let d = daemon().await;
     write_mock(&d.mocks, "kimi", "echo kimi 1.2.3\n");
+    write_mock(&d.mocks, "gemini", "echo 0.24.0\n");
     let agents = d.get_json("/api/agents").await;
     let list = agents["agents"].as_array().unwrap();
     let ids: Vec<&str> = list.iter().filter_map(|a| a["id"].as_str()).collect();
@@ -199,6 +200,7 @@ async fn agents_list_every_runtime_and_byok_follows_the_key() {
         "trae-cli",
         "reasonix",
         "devin",
+        "gemini",
         "opencode",
         "cursor-agent",
         "copilot",
@@ -211,6 +213,9 @@ async fn agents_list_every_runtime_and_byok_follows_the_key() {
     let get = |id: &str| list.iter().find(|a| a["id"] == id).unwrap().clone();
     assert_eq!(get("kimi")["available"], true);
     assert_eq!(get("kimi")["version"], "kimi 1.2.3");
+    assert_eq!(get("gemini")["name"], "Gemini CLI");
+    assert_eq!(get("gemini")["available"], true);
+    assert_eq!(get("gemini")["version"], "0.24.0");
     assert_eq!(get("byok")["available"], false);
     assert_eq!(get("cursor-agent")["supportsResume"], false);
 
