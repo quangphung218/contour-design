@@ -288,6 +288,17 @@ pub fn local_time(ms: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// A run stopped by quitting reads "Stopped" in the chat; its Home
+    /// card says the same, not "Canceled" (QA-122).
+    #[test]
+    fn a_canceled_run_reads_stopped_like_its_turn() {
+        assert_eq!(
+            crate::i18n::t(crate::i18n::T::StatusCanceled),
+            crate::i18n::t(crate::i18n::T::Stopped)
+        );
+    }
+
     use super::*;
     use serde_json::json;
 
