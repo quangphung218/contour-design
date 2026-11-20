@@ -26,10 +26,11 @@ CI does the building; a person decides when and checks the result.
 
 2. **Review the changelog.** Everything user-visible since the last release
    should be under `## [Unreleased]` in [CHANGELOG.md](../CHANGELOG.md),
-   grouped as Added, Changed, Fixed, Removed, Security. Optionally put
-   2–4 bullets a user cares about most in a `### Highlights` block at the
-   top of the section; they head the release text
-   ([Release text](#release-text)).
+   grouped as Added, Changed, Fixed, Removed, Security, one short line
+   per change (CONTRIBUTING.md; `scripts/changelog-lint.sh`). Optionally
+   put 2–4 bullets a user cares about most in a `### Highlights` block at
+   the top of the section, each a bold name and one sentence; they head
+   the release text ([Release text](#release-text)).
 
 3. **Bump the version** on a release branch:
 

@@ -32,7 +32,10 @@ make run        # daemon + UI at http://127.0.0.1:7456
 Also:
 
 - Add a line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for
-  anything a user would notice.
+  anything a user would notice: one line, at most 25 words, starting with
+  a verb and ending with the PR number, such as "Fail exports within a
+  minute when Chrome quits, instead of waiting forever (#270)." Details go
+  in the pull request. `scripts/changelog-lint.sh` checks it.
 - Update the README or `docs/` when a command, flag or behaviour changes.
 - Rust code follows the `rust-skills` guidelines in
   `.claude/skills/rust-skills` and the workspace lints in `Cargo.toml`
