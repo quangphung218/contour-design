@@ -14,6 +14,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Print every slide of a bundled deck template to PDF as it looks; 14 of 47 lost layout or text (#285).
 - Fill each PDF page with its slide; decks were printed at two thirds of the page (#283).
 - Keep a deck's background and text colours in the editable PowerPoint export (#283).
 - Fail the `od doctor` agent check when the chosen agent is unknown, instead of passing on Claude Code (#280).
