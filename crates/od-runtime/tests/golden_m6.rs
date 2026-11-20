@@ -481,11 +481,7 @@ fn acp_rpc_error_and_early_exit_fail_the_turn() {
 /// prompt is sent.
 #[test]
 fn gemini_acp_signed_out_fails_at_session_new() {
-    let (events, writes) = replay(
-        StreamFormat::Acp,
-        &ctx(),
-        "acp/gemini-auth-required.jsonl",
-    );
+    let (events, writes) = replay(StreamFormat::Acp, &ctx(), "acp/gemini-auth-required.jsonl");
     check_golden("acp-gemini-auth-required", &events, &writes);
     let methods: Vec<String> = frames(&writes)
         .iter()

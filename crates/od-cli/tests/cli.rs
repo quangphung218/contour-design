@@ -501,7 +501,10 @@ fn doctor_reports_the_data_folder_of_the_daemon_it_asks() {
         let agent = by_id("agent");
         assert_eq!(agent["status"], "fail", "{report:#}");
         assert!(
-            agent["summary"].as_str().unwrap().contains("`no-such-agent`"),
+            agent["summary"]
+                .as_str()
+                .unwrap()
+                .contains("`no-such-agent`"),
             "{agent}"
         );
     }
