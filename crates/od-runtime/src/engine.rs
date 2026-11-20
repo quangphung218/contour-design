@@ -630,6 +630,13 @@ impl RunEngine {
                 .await
             };
             drop(files);
+            if attempt.resume_dropped {
+                // Like a failed resume below, without a second spawn: the
+                // stored session is not used again.
+                tracing::info!(run = %run.id(), "agent cannot load sessions; started a fresh one");
+                resume = None;
+                resume_failed = true;
+            }
             let session = attempt.session_id.clone().or(session_id);
             if attempt.canceled {
                 let mut f = Finish::stopped(active, attempt.exit_code, attempt.signal.clone());
@@ -740,6 +747,7 @@ impl RunEngine {
                 model: spec.model.clone(),
                 reasoning: spec.reasoning.clone(),
                 resume_session_id: resume.map(str::to_owned),
+                fallback_prompt: resume.and(spec.fallback_prompt.clone()),
                 permission: spec.permission,
                 request_id: uuid::Uuid::new_v4().to_string(),
                 acp_turn_end_completes: def.acp_turn_end_completes,
@@ -876,6 +884,7 @@ impl RunEngine {
             }
         }
         parser.finish(&mut events);
+        att.resume_dropped = parser.resume_dropped();
         let _ = self
             .apply_events(run, active, &mut att, &mut guard, &mut events)
             .await;
@@ -1293,6 +1302,8 @@ struct Attempt {
     error_text: String,
     stderr_tail: String,
     session_id: Option<String>,
+    /// The protocol opened a fresh session instead of the stored one.
+    resume_dropped: bool,
     text_parts: Vec<String>,
     written_files: Vec<String>,
     result_error: bool,

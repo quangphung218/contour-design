@@ -63,6 +63,13 @@ pub trait StreamParser: Send {
     fn completed(&self) -> bool {
         false
     }
+
+    /// The session asked to resume could not be, so a fresh one was opened
+    /// with the full transcript (an ACP agent that says it cannot
+    /// `session/load`). The engine reports it like a failed resume.
+    fn resume_dropped(&self) -> bool {
+        false
+    }
 }
 
 /// What a protocol session needs to drive one prompt.
@@ -74,6 +81,9 @@ pub struct SessionContext {
     pub reasoning: Option<String>,
     /// Continue this stored session (`session/load`, dsh `resume_session_id`).
     pub resume_session_id: Option<String>,
+    /// The prompt with the whole transcript, for a protocol session that
+    /// finds it cannot resume (an ACP agent without `loadSession`).
+    pub fallback_prompt: Option<String>,
     pub permission: PermissionMode,
     /// Correlates dsh commands and frames.
     pub request_id: String,

@@ -152,14 +152,22 @@ fn agent_text(events: &[Arc<RunEvent>]) -> String {
 /// `MOCK_MODE`: `ok` answers and waits for EOF; `linger` answers and never
 /// exits on its own; `cancel` streams one chunk and ignores
 /// `session/cancel`. `MOCK_PERM_KIND` is the kind of the permission asked.
+/// `MOCK_LOAD=false` says `loadSession: false` and answers `session/load`
+/// like Gemini CLI 0.24 (the ACP SDK's "Method not found").
 const ACP_MOCK: &str = r#"
 case "$1" in --version) echo "kimi 9.9.9"; exit 0;; esac
 log="$MOCK_LOG"
 trap 'echo SIGTERM >> "$log"; exit 143' TERM
 say() { printf '%s\n' "$1"; }
 read -r l; printf "%s\n" "$l" >> "$log"
-say '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true}}}'
+say "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"loadSession\":${MOCK_LOAD:-true}}}}"
 read -r l; printf "%s\n" "$l" >> "$log"
+case "$MOCK_LOAD:$l" in false:*session/load*)
+  say '{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"\"Method not found\": session/load"}}'
+  while read -r l; do printf "%s\n" "$l" >> "$log"; done
+  echo EOF >> "$log"
+  exit 0;;
+esac
 say '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess-1"}}'
 read -r l; printf "%s\n" "$l" >> "$log"
 if [ "$MOCK_MODE" = cancel ]; then
@@ -222,6 +230,67 @@ async fn acp_mock_agent_runs_the_whole_turn() {
         agent_events(&events, "status")
             .iter()
             .any(|s| s["label"] == "permission")
+    );
+}
+
+/// An agent that says `loadSession: false` (Gemini CLI 0.24) is never sent
+/// `session/load`: the next turn opens a new session with the whole
+/// transcript, and the stored session counts as failed so it is replaced.
+#[tokio::test]
+async fn acp_agent_without_load_session_resumes_with_the_transcript() {
+    let h = Harness::new();
+    write_mock(&h.mocks, "kimi", ACP_MOCK);
+    let mut spec = h.spec(
+        "acp-no-load",
+        &KIMI,
+        &[("MOCK_MODE", "ok"), ("MOCK_LOAD", "false")],
+    );
+    spec.resume_session_id = Some("sess-old".into());
+    spec.fallback_prompt = Some("Whole conversation, then: Build a landing page".into());
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded, "{outcome:?}");
+    assert_eq!(outcome.session_id.as_deref(), Some("sess-1"));
+    assert!(outcome.resume_failed, "{outcome:?}");
+    assert!(!outcome.resumed, "{outcome:?}");
+    assert_eq!(
+        h.log_entries(),
+        [
+            "initialize",
+            "session/new",
+            "session/prompt",
+            "<response>",
+            "EOF"
+        ]
+    );
+    let frames = h.log_frames();
+    assert_eq!(
+        frames[2]["params"]["prompt"][0]["text"],
+        "Whole conversation, then: Build a landing page"
+    );
+}
+
+/// An agent that says `loadSession: true` still resumes its stored
+/// session with the short prompt.
+#[tokio::test]
+async fn acp_agent_with_load_session_resumes_its_session() {
+    let h = Harness::new();
+    write_mock(&h.mocks, "kimi", ACP_MOCK);
+    let mut spec = h.spec("acp-load", &KIMI, &[("MOCK_MODE", "ok")]);
+    spec.resume_session_id = Some("sess-old".into());
+    spec.fallback_prompt = Some("Whole conversation, then: Build a landing page".into());
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded, "{outcome:?}");
+    assert!(outcome.resumed && !outcome.resume_failed, "{outcome:?}");
+    let entries = h.log_entries();
+    assert_eq!(
+        entries[..3],
+        ["initialize", "session/load", "session/prompt"]
+    );
+    let frames = h.log_frames();
+    assert_eq!(frames[1]["params"]["sessionId"], "sess-old");
+    assert_eq!(
+        frames[2]["params"]["prompt"][0]["text"],
+        "Build a landing page"
     );
 }
 

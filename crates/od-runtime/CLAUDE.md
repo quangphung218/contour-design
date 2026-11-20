@@ -47,6 +47,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 
 ## Traps
 - An agent's shell can turn any project path into a link; writing through it changes files outside the project (#206).
+- An ACP agent that says `loadSession: false` (Gemini CLI 0.24) answers `session/load` with "Method not found";
+  `AcpSession` opens `session/new` with the full transcript instead (#280,
+  `tests/engine_m6.rs::acp_agent_without_load_session_resumes_with_the_transcript`).
 
 ## Check
 - `cargo test -p od-runtime`. After an intended parser change: `OD_UPDATE_GOLDEN=1 cargo test -p od-runtime --test golden` rewrites the `.events.jsonl` files.
