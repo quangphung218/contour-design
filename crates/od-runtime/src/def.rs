@@ -1358,6 +1358,21 @@ mod tests {
             let said = format!("{} {unit}", BUILTIN.len());
             assert!(text.contains(&said), "{file} must say \"{said}\"");
         }
+        // Getting started spells out how many speak ACP.
+        const WORDS: [&str; 13] = [
+            "No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+            "Eleven", "Twelve",
+        ];
+        let acp = BUILTIN
+            .iter()
+            .filter(|d| d.stream_format == StreamFormat::Acp)
+            .count();
+        let text = std::fs::read_to_string(root.join("docs/getting-started.md")).unwrap();
+        let said = format!("{} more agents speak ACP", WORDS[acp]);
+        assert!(
+            text.contains(&said),
+            "docs/getting-started.md must say \"{said}\""
+        );
     }
 
     #[test]
