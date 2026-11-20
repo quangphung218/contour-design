@@ -22,15 +22,15 @@ use od_server::request_id::HEADER;
 use od_server::{AppState, ServerConfig};
 use od_store::{DataDir, Store};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 use tower::ServiceExt;
 
 /// The log every test here writes to (one global subscriber per binary),
 /// and a lock so each test reads only its own lines.
-static LOG: LazyLock<(tempfile::TempDir, Mutex<()>)> = LazyLock::new(|| {
+static LOG: LazyLock<(tempfile::TempDir, tokio::sync::Mutex<()>)> = LazyLock::new(|| {
     let tmp = tempfile::tempdir().unwrap();
     od_server::logs::init(Some(tmp.path()));
-    (tmp, Mutex::new(()))
+    (tmp, tokio::sync::Mutex::new(()))
 });
 
 fn log_root() -> &'static Path {
@@ -131,10 +131,7 @@ fn export_app(data: &Path, content: &Path) -> (AppState, Router) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn every_line_of_a_failed_export_carries_its_request_id() {
-    let _one = LOG
-        .1
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _one = LOG.1.lock().await;
     let tmp = tempfile::tempdir().unwrap();
     let (state, app) = export_app(&tmp.path().join("data"), &tmp.path().join("content"));
     let project = state
@@ -203,10 +200,7 @@ async fn every_line_of_a_failed_export_carries_its_request_id() {
 #[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_runs_lines_carry_its_run_id_and_the_request_that_started_it() {
-    let _one = LOG
-        .1
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _one = LOG.1.lock().await;
     let d = common::daemon().await;
     common::write_mock(
         &d.mocks,

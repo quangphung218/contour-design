@@ -211,7 +211,7 @@ enum FilesCommand {
 /// app answers `daemon …` through [`main_code_with`] (its bundled content)
 /// and serves `mcp` itself.
 pub const CLIENT_COMMANDS: &[&str] = &[
-    "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools",
+    "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools", "doctor",
 ];
 
 /// The subcommand `od` would run for `args` (program name left out): the

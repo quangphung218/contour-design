@@ -602,6 +602,7 @@ mod tests {
         path
     }
 
+    #[cfg(unix)]
     fn path_of(dir: &Path) -> std::ffi::OsString {
         std::env::join_paths([dir, Path::new("/usr/bin"), Path::new("/bin")]).unwrap()
     }
