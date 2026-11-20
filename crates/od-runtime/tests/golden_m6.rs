@@ -475,6 +475,27 @@ fn acp_rpc_error_and_early_exit_fail_the_turn() {
     assert_eq!(errors(&ev), ["ACP session exited before completion"]);
 }
 
+/// Recorded from Gemini CLI 0.24.0 (`gemini --experimental-acp`) through a
+/// Contour run on 2026-11-20, on a machine whose Google sign-in had lapsed:
+/// `session/new` is refused, the turn fails with Gemini's own words and no
+/// prompt is sent.
+#[test]
+fn gemini_acp_signed_out_fails_at_session_new() {
+    let (events, writes) = replay(
+        StreamFormat::Acp,
+        &ctx(),
+        "acp/gemini-auth-required.jsonl",
+    );
+    check_golden("acp-gemini-auth-required", &events, &writes);
+    let methods: Vec<String> = frames(&writes)
+        .iter()
+        .map(|f| f["method"].as_str().unwrap_or("<response>").to_owned())
+        .collect();
+    assert_eq!(methods, ["initialize", "session/new"]);
+    assert_eq!(errors(&events), ["Authentication required"]);
+    assert!(session_ids(&events).is_empty());
+}
+
 #[test]
 fn kiro_turn_end_completes_the_prompt() {
     let mut c = ctx();

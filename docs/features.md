@@ -189,7 +189,8 @@ directly only in BYOK mode.
 
 ACP agents: Kimi CLI (`kimi`), Hermes (`hermes`), Kiro CLI (`kiro-cli`),
 Kilo (`kilo`), Mistral Vibe (`vibe-acp`), Trae CLI (`traecli`), DeepSeek
-Reasonix (`reasonix`), Devin for Terminal (`devin`), DeepSeek Harness
+Reasonix (`reasonix`), Devin for Terminal (`devin`), Gemini CLI (`gemini`,
+[install](https://github.com/google-gemini/gemini-cli)), DeepSeek Harness
 (`dsh`, then `dsnix`). More CLIs (Aider, Amp, Qoder and others) are listed
 in [parity.md](parity.md) row 174.
 

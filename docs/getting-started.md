@@ -199,8 +199,8 @@ Install one of these and sign in to it once in a terminal:
 | OpenCode | `opencode-cli`, then `opencode` |
 | Qwen Code | `qwen` |
 
-Ten more agents speak ACP (Kimi, Hermes, Kiro, Kilo, Mistral Vibe, Trae,
-DeepSeek Reasonix, Devin for Terminal, DeepSeek Harness); see
+Eleven more agents speak ACP (Kimi, Hermes, Kiro, Kilo, Mistral Vibe, Trae,
+DeepSeek Reasonix, Devin for Terminal, Gemini CLI, DeepSeek Harness); see
 [features.md](features.md#agents).
 
 No agent? Choose **API key (BYOK)** on the first screen and paste an

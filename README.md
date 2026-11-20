@@ -43,7 +43,7 @@
   <tr>
     <td width="25%" valign="top">
       <h3>Bring your own agent</h3>
-      Contour finds 25 coding-agent CLIs on your <code>PATH</code> (Claude Code, Codex, Cursor, Copilot, OpenCode, Qwen Code and ACP agents such as Kimi and Kiro). No agent? Use an API key with one of 28 provider presets.
+      Contour finds 26 coding-agent CLIs on your <code>PATH</code> (Claude Code, Codex, Cursor, Copilot, OpenCode, Qwen Code and ACP agents such as Gemini CLI, Kimi and Kiro). No agent? Use an API key with one of 28 provider presets.
     </td>
     <td width="25%" valign="top">
       <h3>See it, comment, edit</h3>

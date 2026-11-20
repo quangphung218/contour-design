@@ -43,7 +43,7 @@
   <tr>
     <td width="25%" valign="top">
       <h3>Dùng agent sẵn có</h3>
-      Contour tìm 25 coding-agent CLI trên <code>PATH</code> (Claude Code, Codex, Cursor, Copilot, OpenCode, Qwen Code và các ACP agent như Kimi, Kiro). Không có agent thì dùng API key với một trong 28 preset nhà cung cấp.
+      Contour tìm 26 coding-agent CLI trên <code>PATH</code> (Claude Code, Codex, Cursor, Copilot, OpenCode, Qwen Code và các ACP agent như Gemini CLI, Kimi, Kiro). Không có agent thì dùng API key với một trong 28 preset nhà cung cấp.
     </td>
     <td width="25%" valign="top">
       <h3>Xem, comment, sửa</h3>
