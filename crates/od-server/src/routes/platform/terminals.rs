@@ -21,6 +21,7 @@ use axum::{Extension, Router};
 use od_term::{Output, Session, TermError, TerminalInfo};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::Instrument;
 
 /// Largest client frame (a paste) accepted.
 const MAX_FRAME_BYTES: usize = 64 * 1024;
@@ -122,10 +123,14 @@ async fn attach(
         .terminals
         .get(&tid)
         .ok_or_else(|| ApiErr::not_found("terminal not found"))?;
+    // axum runs the upgraded socket in its own task, outside this
+    // request's span; carry the span over so `pump`'s lines keep the
+    // request id (crates/od-server/CLAUDE.md, invariant 10).
+    let span = tracing::Span::current();
     Ok(ws
         .max_message_size(MAX_FRAME_BYTES)
         .max_frame_size(MAX_FRAME_BYTES)
-        .on_upgrade(move |socket| pump(socket, session)))
+        .on_upgrade(move |socket| pump(socket, session).instrument(span)))
 }
 
 fn exit_frame(exit: &od_term::TermExit) -> Message {

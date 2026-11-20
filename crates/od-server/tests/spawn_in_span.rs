@@ -122,3 +122,27 @@ fn the_scan_sees_a_direct_spawn_and_skips_comments() {
     assert_eq!(found["routes/a.rs"].len(), 1);
     assert!(found["routes/a.rs"][0].starts_with("routes/a.rs:2:"));
 }
+
+/// `WebSocketUpgrade::on_upgrade` also runs its future in a new task
+/// (axum spawns it), so the future must carry the request's span.
+#[test]
+fn every_websocket_upgrade_keeps_the_callers_span() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_files(&src, &mut files);
+    let mut bad = Vec::new();
+    for file in files {
+        let text = std::fs::read_to_string(&file).unwrap();
+        for (n, line) in text.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or_default();
+            if code.contains(".on_upgrade(") && !code.contains(".instrument(") {
+                bad.push(format!("{}:{}: {}", file.display(), n + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "on_upgrade without `.instrument(span)` (span taken before the upgrade):\n{}",
+        bad.join("\n")
+    );
+}
