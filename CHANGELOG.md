@@ -10,6 +10,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Fill each PDF page with its slide; decks were printed at two thirds of the page (#283).
+- Keep a deck's background and text colours in the editable PowerPoint export (#283).
 - Daemon log lines from background tasks now carry the request id, so diagnostics find them (#274).
 - OpenCode 2 works and writes in the project folder, and its thinking shows in the chat.
 - Every agent run logs a start and an end line under its run id.
