@@ -475,6 +475,51 @@ fn acp_rpc_error_and_early_exit_fail_the_turn() {
     assert_eq!(errors(&ev), ["ACP session exited before completion"]);
 }
 
+/// Recorded from Gemini CLI 0.24.0 (`gemini --experimental-acp`) through a
+/// Contour run on 2026-11-20, on a machine whose Google sign-in had lapsed:
+/// `session/new` is refused, the turn fails with Gemini's own words and no
+/// prompt is sent.
+#[test]
+fn gemini_acp_signed_out_fails_at_session_new() {
+    let (events, writes) = replay(StreamFormat::Acp, &ctx(), "acp/gemini-auth-required.jsonl");
+    check_golden("acp-gemini-auth-required", &events, &writes);
+    let methods: Vec<String> = frames(&writes)
+        .iter()
+        .map(|f| f["method"].as_str().unwrap_or("<response>").to_owned())
+        .collect();
+    assert_eq!(methods, ["initialize", "session/new"]);
+    assert_eq!(errors(&events), ["Authentication required"]);
+    assert!(session_ids(&events).is_empty());
+}
+
+/// The same recording on a later turn: Gemini's real `initialize` says
+/// `loadSession: false`, so the stored session is not asked for and the new
+/// session gets the whole transcript.
+#[test]
+fn gemini_acp_never_gets_session_load() {
+    let mut c = ctx();
+    c.resume_session_id = Some("sess-old".to_owned());
+    c.fallback_prompt = Some("Whole conversation".to_owned());
+    let mut s = parser_for(StreamFormat::Acp, &c);
+    s.take_writes();
+    let init = std::fs::read_to_string(fixtures().join("acp/gemini-auth-required.jsonl")).unwrap();
+    let mut ev = Vec::new();
+    s.line(init.lines().next().unwrap(), &mut ev);
+    let sent = frames(&s.take_writes());
+    assert_eq!(sent[0]["method"], "session/new");
+    assert!(s.resume_dropped());
+    s.line(
+        r#"{"jsonrpc":"2.0","id":2,"result":{"sessionId":"g-new"}}"#,
+        &mut ev,
+    );
+    let prompt = frames(&s.take_writes());
+    assert_eq!(prompt[0]["params"]["sessionId"], "g-new");
+    assert_eq!(
+        prompt[0]["params"]["prompt"][0]["text"],
+        "Whole conversation"
+    );
+}
+
 #[test]
 fn kiro_turn_end_completes_the_prompt() {
     let mut c = ctx();

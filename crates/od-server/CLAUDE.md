@@ -61,7 +61,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 12. `od doctor` and `POST /api/doctor` share `src/doctor.rs`; a check takes its inputs as arguments
     and has a pass and a fail test; only `Status::Fail` fails the report. The route is a POST (it starts
     Chrome and the agents; a GET from an `<img>` carries no `Origin`) and runs one at a time.
+    When a daemon answers, `od doctor` takes the checks from it, not from its own `OD_DATA_DIR` (QA-119).
     - `src/doctor.rs::tests`, `../od-cli/tests/cli.rs::doctor_reports_each_check_and_fails_on_any_failure`
+    - `../od-cli/tests/cli.rs::doctor_reports_the_data_folder_of_the_daemon_it_asks`
     - `tests/c2.rs::the_doctor_runs_only_on_a_post_from_the_app`
 13. A run that fails logs one `run failed` line in its span and becomes the last failure diagnostics lead with
     (`src/routes/runs.rs:persist_run`, `src/request_id.rs:remember_failed`).

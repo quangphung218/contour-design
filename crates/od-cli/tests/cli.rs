@@ -408,7 +408,8 @@ fn open_logs_shows_the_log_folder() {
 /// at a missing file so the test starts no browser and the check fails.
 #[test]
 fn doctor_reports_each_check_and_fails_on_any_failure() {
-    let d = start(false);
+    // The daemon runs the checks, so its Chrome is the one pointed away.
+    let d = start_with(false, None, &[], &[("OD_CHROME_PATH", "/no/chrome")]);
     let data = d._tmp.path().join("data");
     let doctor = |url: &str| {
         Command::new(OD)
@@ -455,4 +456,113 @@ fn doctor_reports_each_check_and_fails_on_any_failure() {
         text.contains("  fix: Open Contour, or run `od daemon start`."),
         "{text}"
     );
+}
+
+/// A daemon of this version whose `POST /api/doctor` fails: `od doctor`
+/// runs the checks itself and a warning line says they are this shell's.
+#[test]
+fn doctor_says_when_the_checks_are_this_shells_not_the_daemons() {
+    use std::io::{Read as _, Write as _};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+            let mut head = Vec::new();
+            let mut byte = [0u8; 1];
+            while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).unwrap_or(0) == 1 {
+                head.push(byte[0]);
+            }
+            let (status, body) = if head.starts_with(b"GET /api/version") {
+                let v = env!("CARGO_PKG_VERSION");
+                (
+                    "200 OK",
+                    format!(r#"{{"version":"{v}","name":"contour","platform":"x","arch":"y"}}"#),
+                )
+            } else {
+                ("500 Internal Server Error", "{}".to_owned())
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    let mine = tempfile::tempdir().unwrap();
+    let out = Command::new(OD)
+        .args(["--daemon-url", &url, "--json", "doctor"])
+        .env("OD_DATA_DIR", mine.path())
+        .env("OD_CHROME_PATH", "/no/chrome")
+        .output()
+        .unwrap();
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let checks = report["checks"].as_array().unwrap();
+    let ids: Vec<&str> = checks.iter().filter_map(|c| c["id"].as_str()).collect();
+    assert_eq!(
+        ids[..3],
+        ["daemon", "daemon-checks", "data-dir"],
+        "{report:#}"
+    );
+    let note = &checks[1];
+    assert_eq!(note["status"], "warn", "{note}");
+    let summary = note["summary"].as_str().unwrap();
+    assert!(summary.contains(&url), "{summary}");
+    assert!(summary.contains("500"), "{summary}");
+    assert!(
+        summary.contains(&mine.path().display().to_string()),
+        "{summary}"
+    );
+}
+
+/// QA-119: `od doctor` against a daemon reports that daemon's data folder
+/// and chosen agent, not the ones this shell's `OD_DATA_DIR` names; the
+/// flag and `OD_DAEMON_URL` alike.
+#[test]
+fn doctor_reports_the_data_folder_of_the_daemon_it_asks() {
+    let d = start_with(false, None, &[], &[("OD_CHROME_PATH", "/no/chrome")]);
+    let theirs = d._tmp.path().join("data");
+    std::fs::write(
+        theirs.join("app-config.json"),
+        r#"{"agentId": "no-such-agent"}"#,
+    )
+    .unwrap();
+    let mine = tempfile::tempdir().unwrap();
+    let by_flag = Command::new(OD)
+        .args(["--daemon-url", &d.url, "--json", "doctor"])
+        .env("OD_DATA_DIR", mine.path())
+        .env_remove("OD_DAEMON_URL")
+        .output()
+        .unwrap();
+    let by_env = Command::new(OD)
+        .args(["--json", "doctor"])
+        .env("OD_DATA_DIR", mine.path())
+        .env("OD_DAEMON_URL", &d.url)
+        .output()
+        .unwrap();
+    for out in [by_flag, by_env] {
+        let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let checks = report["checks"].as_array().unwrap();
+        let by_id = |id: &str| checks.iter().find(|c| c["id"] == id).unwrap().clone();
+        assert_eq!(by_id("daemon")["status"], "ok", "{report:#}");
+        let data_dir = by_id("data-dir")["summary"].as_str().unwrap().to_owned();
+        assert!(
+            data_dir.contains(&theirs.display().to_string()),
+            "{data_dir}"
+        );
+        assert!(
+            !data_dir.contains(&mine.path().display().to_string()),
+            "{data_dir}"
+        );
+        // The daemon's own choice, refused (QA-118), not this shell's.
+        let agent = by_id("agent");
+        assert_eq!(agent["status"], "fail", "{report:#}");
+        assert!(
+            agent["summary"]
+                .as_str()
+                .unwrap()
+                .contains("`no-such-agent`"),
+            "{agent}"
+        );
+    }
 }

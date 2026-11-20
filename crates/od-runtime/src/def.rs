@@ -13,7 +13,7 @@ pub enum StreamFormat {
     CodexExecJson,
     /// Agent Client Protocol: JSON-RPC 2.0 over stdio, one shared client
     /// for every ACP agent (Kimi, Hermes, Kiro, Kilo, Vibe, Trae, Reasonix,
-    /// Devin).
+    /// Devin, Gemini).
     Acp,
     /// `opencode run --format json`.
     OpenCodeJson,
@@ -220,6 +220,8 @@ const ACP_BASE: RuntimeDef = RuntimeDef {
         "Unknown session",
         "unknown session",
         "Resource not found",
+        // An agent that has no `session/load` and does not say so.
+        "Method not found",
     ],
     args: &["acp"],
     ask_args: &["acp"],
@@ -310,6 +312,18 @@ pub const DEVIN: RuntimeDef = RuntimeDef {
         "acp",
     ],
     ask_args: &["--respect-workspace-trust", "false", "acp"],
+    ..ACP_BASE
+};
+
+/// Gemini CLI: ACP behind `--experimental-acp` (0.24). Tool approvals go
+/// through `session/request_permission`, answered by the permission mode,
+/// so both modes share one argv.
+pub const GEMINI: RuntimeDef = RuntimeDef {
+    id: "gemini",
+    name: "Gemini CLI",
+    bin: "gemini",
+    args: &["--experimental-acp"],
+    ask_args: &["--experimental-acp"],
     ..ACP_BASE
 };
 
@@ -595,7 +609,7 @@ pub const BYOK: RuntimeDef = RuntimeDef {
 };
 
 /// Every built-in runtime, in port order (spec 2.3).
-pub const BUILTIN: [&RuntimeDef; 25] = [
+pub const BUILTIN: [&RuntimeDef; 26] = [
     &CLAUDE,
     &CODEX,
     &KIMI,
@@ -606,6 +620,7 @@ pub const BUILTIN: [&RuntimeDef; 25] = [
     &TRAE,
     &REASONIX,
     &DEVIN,
+    &GEMINI,
     &OPENCODE,
     &CURSOR,
     &COPILOT,
@@ -624,8 +639,8 @@ pub const BUILTIN: [&RuntimeDef; 25] = [
 ];
 
 /// [`BUILTIN`] plus [`BYOK`], which has no binary to detect.
-pub const ALL: [&RuntimeDef; 26] = {
-    let mut all = [&BYOK; 26];
+pub const ALL: [&RuntimeDef; 27] = {
+    let mut all = [&BYOK; 27];
     let mut i = 0;
     while i < BUILTIN.len() {
         all[i] = BUILTIN[i];
@@ -1314,6 +1329,52 @@ mod tests {
         for def in ALL {
             assert_eq!(find(def.id).map(|d| d.id), Some(def.id));
         }
+    }
+
+    #[test]
+    fn gemini_runs_over_acp_in_both_modes() {
+        let def = find("gemini").expect("gemini is a built-in agent");
+        assert_eq!((def.name, def.bin), ("Gemini CLI", "gemini"));
+        assert_eq!(def.stream_format, StreamFormat::Acp);
+        assert_eq!(def.mcp, McpInjection::Acp);
+        for permission in [PermissionMode::Auto, PermissionMode::Ask] {
+            let input = ArgvInput {
+                permission,
+                ..ArgvInput::default()
+            };
+            assert_eq!(def.build_args(&input), ["--experimental-acp"]);
+        }
+    }
+
+    /// The READMEs and STATUS say how many agent CLIs Contour finds; the
+    /// number is [`BUILTIN`]'s length, not typed by hand.
+    #[test]
+    fn the_readmes_count_every_built_in_agent() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (file, unit) in [
+            ("README.md", "coding-agent CLIs"),
+            ("README.vi.md", "coding-agent CLI"),
+            ("docs/STATUS.md", "CLIs, API key"),
+        ] {
+            let text = std::fs::read_to_string(root.join(file)).unwrap();
+            let said = format!("{} {unit}", BUILTIN.len());
+            assert!(text.contains(&said), "{file} must say \"{said}\"");
+        }
+        // Getting started spells out how many speak ACP.
+        const WORDS: [&str; 13] = [
+            "No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+            "Eleven", "Twelve",
+        ];
+        let acp = BUILTIN
+            .iter()
+            .filter(|d| d.stream_format == StreamFormat::Acp)
+            .count();
+        let text = std::fs::read_to_string(root.join("docs/getting-started.md")).unwrap();
+        let said = format!("{} more agents speak ACP", WORDS[acp]);
+        assert!(
+            text.contains(&said),
+            "docs/getting-started.md must say \"{said}\""
+        );
     }
 
     #[test]

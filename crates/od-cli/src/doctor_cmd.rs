@@ -4,18 +4,42 @@
 //!
 //! The checks are `od_server::doctor`'s, shared with Settings ▸ About;
 //! only the daemon check is the CLI's own, since it asks the daemon from
-//! outside.
+//! outside. A daemon that answers runs the other checks itself
+//! (`POST /api/doctor`): its data folder and its agents, not the ones this
+//! shell's `OD_DATA_DIR` names (QA-119).
 
-use od_server::doctor::{self, Check, Report};
+use od_server::doctor::{self, Check, Report, Status};
 use std::time::Duration;
 
 /// How long the daemon has to answer `GET /api/version`.
 const DAEMON_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// How long the daemon has to run the checks: one run takes at most
+/// 10 + 60 + 10 s (agent, Chrome, ffmpeg) and the route runs one at a time,
+/// so a second caller may wait a whole run first.
+const DAEMON_DOCTOR_TIMEOUT: Duration = Duration::from_secs(180);
+
 /// Runs every check; returns the exit code.
 #[must_use]
 pub fn run(daemon_url: &str, json: bool) -> u8 {
-    let daemon = daemon_line(daemon_url);
+    let (daemon, answered_at) = daemon_line(daemon_url);
+    // Same version only: an older daemon may have no route or other checks.
+    let asked = answered_at.filter(|_| daemon.status == Status::Ok);
+    let mut checks = vec![daemon];
+    if let Some(url) = asked {
+        match checks_at(&url) {
+            Ok(remote) => {
+                checks.extend(remote);
+                return finish(checks, json);
+            }
+            // Say so: the checks below are this shell's, not that daemon's.
+            Err(why) => checks.push(doctor::daemon_checks_check(
+                &url,
+                &why,
+                od_store::DataDir::from_env().root(),
+            )),
+        }
+    }
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -26,13 +50,45 @@ pub fn run(daemon_url: &str, json: bool) -> u8 {
             return 1;
         }
     };
-    let mut checks = vec![daemon];
     checks.extend(
         runtime.block_on(async { doctor::run_local(doctor::Inputs::from_env().await).await }),
     );
+    finish(checks, json)
+}
+
+fn finish(checks: Vec<Check>, json: bool) -> u8 {
     let report = Report::new(checks);
     print(&report, json);
     u8::from(!report.ok)
+}
+
+/// The checks the daemon at `url` ran on itself, its daemon line left out
+/// (the CLI's own comes first); else why it did not run them.
+fn checks_at(url: &str) -> Result<Vec<Check>, String> {
+    let http = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(DAEMON_DOCTOR_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = http
+        .post(format!("{}/api/doctor", url.trim_end_matches('/')))
+        .send()
+        .map_err(|e| {
+            if e.is_timeout() {
+                format!("no answer in {} s", DAEMON_DOCTOR_TIMEOUT.as_secs())
+            } else {
+                e.to_string()
+            }
+        })?;
+    if !res.status().is_success() {
+        return Err(format!("POST /api/doctor answered {}", res.status()));
+    }
+    let report: Report = res.json().map_err(|e| format!("unreadable report: {e}"))?;
+    Ok(report
+        .checks
+        .into_iter()
+        .filter(|c| c.id != "daemon")
+        .collect())
 }
 
 fn print(report: &Report, json: bool) {
@@ -47,8 +103,9 @@ fn print(report: &Report, json: bool) {
 }
 
 /// The daemon check: `url` (the flag, the env, or the default) or the one
-/// the running app recorded in `daemon.lock`.
-fn daemon_line(url: &str) -> Check {
+/// the running app recorded in `daemon.lock`; with the address that
+/// answered.
+fn daemon_line(url: &str) -> (Check, Option<String>) {
     let data = od_store::DataDir::from_env();
     let recorded = std::fs::read_to_string(data.root().join(od_server::lock::LOCK_FILE))
         .ok()
@@ -57,14 +114,13 @@ fn daemon_line(url: &str) -> Check {
     let candidates: Vec<&str> = std::iter::once(url).chain(recorded.as_deref()).collect();
     for candidate in &candidates {
         if let Some(version) = version_at(candidate) {
-            return doctor::daemon_check(
-                Some(candidate),
-                Some(&version),
-                env!("CARGO_PKG_VERSION"),
-            );
+            let check =
+                doctor::daemon_check(Some(candidate), Some(&version), env!("CARGO_PKG_VERSION"));
+            return (check, Some((*candidate).to_owned()));
         }
     }
-    doctor::daemon_check(recorded.as_deref(), None, env!("CARGO_PKG_VERSION"))
+    let check = doctor::daemon_check(recorded.as_deref(), None, env!("CARGO_PKG_VERSION"));
+    (check, None)
 }
 
 /// The version the daemon at `url` reports, if it answers in time.
