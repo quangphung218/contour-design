@@ -488,6 +488,28 @@ async fn an_agent_upgraded_in_place_is_probed_again() {
     let last = lines.last().unwrap();
     assert!(last.contains("--standalone"), "{lines:?}");
     assert!(!last.contains("--dir"), "{lines:?}");
+    // OpenCode 2's help without `--thinking`: the probe, not the version,
+    // decides, so the flag is left out.
+    assert!(!last.contains("--thinking"), "{lines:?}");
+}
+
+/// The help probe is the path a real OpenCode 2 takes: `--thinking` comes
+/// from its help, so its reasoning is shown (QA-116).
+#[tokio::test]
+async fn opencode_2s_help_turns_thinking_on() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    let argv = tmp.path().join("argv.log");
+    write_opencode(&mocks, "--standalone --auto --thinking", "2.0.25", &argv);
+    let runs = Runs::new(tmp.path().join("runs"));
+    let engine = RunEngine::new(EngineConfig::from_env().with_path_prefix(&mocks));
+
+    run_opencode(&engine, &runs, "first", tmp.path()).await;
+
+    let lines = logged(&argv);
+    assert!(lines[0].contains("--thinking"), "{lines:?}");
+    assert!(lines[0].contains("--standalone"), "{lines:?}");
 }
 
 /// The help probe of OpenCode 2 fails (a slow first exec): its version
