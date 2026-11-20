@@ -14,22 +14,31 @@ use std::time::Duration;
 /// How long the daemon has to answer `GET /api/version`.
 const DAEMON_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// How long the daemon has to run the checks: Chrome's limit, the agents'
-/// and room for a second caller holding its one-at-a-time lock.
-const DAEMON_DOCTOR_TIMEOUT: Duration = Duration::from_secs(150);
+/// How long the daemon has to run the checks: one run takes at most
+/// 10 + 60 + 10 s (agent, Chrome, ffmpeg) and the route runs one at a time,
+/// so a second caller may wait a whole run first.
+const DAEMON_DOCTOR_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Runs every check; returns the exit code.
 #[must_use]
 pub fn run(daemon_url: &str, json: bool) -> u8 {
     let (daemon, answered_at) = daemon_line(daemon_url);
     // Same version only: an older daemon may have no route or other checks.
-    let remote = answered_at
-        .filter(|_| daemon.status == Status::Ok)
-        .and_then(|url| checks_at(&url));
+    let asked = answered_at.filter(|_| daemon.status == Status::Ok);
     let mut checks = vec![daemon];
-    if let Some(remote) = remote {
-        checks.extend(remote);
-        return finish(checks, json);
+    if let Some(url) = asked {
+        match checks_at(&url) {
+            Ok(remote) => {
+                checks.extend(remote);
+                return finish(checks, json);
+            }
+            // Say so: the checks below are this shell's, not that daemon's.
+            Err(why) => checks.push(doctor::daemon_checks_check(
+                &url,
+                &why,
+                od_store::DataDir::from_env().root(),
+            )),
+        }
     }
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -54,28 +63,32 @@ fn finish(checks: Vec<Check>, json: bool) -> u8 {
 }
 
 /// The checks the daemon at `url` ran on itself, its daemon line left out
-/// (the CLI's own comes first). `None` when it did not run them.
-fn checks_at(url: &str) -> Option<Vec<Check>> {
+/// (the CLI's own comes first); else why it did not run them.
+fn checks_at(url: &str) -> Result<Vec<Check>, String> {
     let http = reqwest::blocking::Client::builder()
         .no_proxy()
         .timeout(DAEMON_DOCTOR_TIMEOUT)
         .build()
-        .ok()?;
+        .map_err(|e| e.to_string())?;
     let res = http
         .post(format!("{}/api/doctor", url.trim_end_matches('/')))
         .send()
-        .ok()?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                format!("no answer in {} s", DAEMON_DOCTOR_TIMEOUT.as_secs())
+            } else {
+                e.to_string()
+            }
+        })?;
     if !res.status().is_success() {
-        return None;
+        return Err(format!("POST /api/doctor answered {}", res.status()));
     }
-    let report: Report = res.json().ok()?;
-    Some(
-        report
-            .checks
-            .into_iter()
-            .filter(|c| c.id != "daemon")
-            .collect(),
-    )
+    let report: Report = res.json().map_err(|e| format!("unreadable report: {e}"))?;
+    Ok(report
+        .checks
+        .into_iter()
+        .filter(|c| c.id != "daemon")
+        .collect())
 }
 
 fn print(report: &Report, json: bool) {

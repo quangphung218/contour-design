@@ -60,7 +60,8 @@ impl Status {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     /// Stable name: `daemon`, `data-dir`, `agent`, `chrome`, `ffmpeg`,
-    /// `folder-access`, `disk`.
+    /// `folder-access`, `disk`; `daemon-checks` when `od doctor` had to run
+    /// them itself.
     pub id: Cow<'static, str>,
     pub status: Status,
     /// What was found, in one sentence.
@@ -169,6 +170,21 @@ pub fn daemon_check(url: Option<&str>, answered: Option<&str>, expected: &str) -
         ),
         Some(v) => Check::ok(ID, format!("Daemon {v} answers at {url}.")),
     }
+}
+
+/// The daemon at `url` answered but did not run the checks (`why`), so the
+/// lines after this one are this machine's: `root` may not be its folder.
+#[must_use]
+pub fn daemon_checks_check(url: &str, why: &str, root: &Path) -> Check {
+    Check::warn(
+        "daemon-checks",
+        format!(
+            "The daemon at {url} did not run the checks ({why}); the lines below check this \
+             shell's data folder {}.",
+            root.display()
+        ),
+        "Run `od doctor` again; if it repeats, set OD_DATA_DIR to that daemon's data folder.",
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -571,6 +587,20 @@ mod tests {
         let same = daemon_check(Some("http://x"), Some("1.0.0"), "1.0.0");
         assert_eq!(same.status, Status::Ok);
         assert_eq!(same.fix, None);
+    }
+
+    #[test]
+    fn checks_not_run_by_the_daemon_say_whose_they_are() {
+        let check = daemon_checks_check("http://127.0.0.1:1", "timed out", Path::new("/mine"));
+        assert_eq!(check.status, Status::Warn);
+        assert!(
+            check.summary.contains("http://127.0.0.1:1"),
+            "{}",
+            check.summary
+        );
+        assert!(check.summary.contains("timed out"), "{}", check.summary);
+        assert!(check.summary.contains("/mine"), "{}", check.summary);
+        assert!(check.fix.is_some());
     }
 
     #[test]
