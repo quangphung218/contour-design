@@ -14,6 +14,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
+- Fill each PDF page with its slide; decks were printed at two thirds of the page (#283).
+- Keep a deck's background and text colours in the editable PowerPoint export (#283).
 - Fail the `od doctor` agent check when the chosen agent is unknown, instead of passing on Claude Code (#280).
 - Check the asked daemon's data folder and agent in `od doctor --daemon-url`, not this shell's (#280).
 - Show "Stopped" on the Home card of a run stopped by quitting, like its turn (#284).

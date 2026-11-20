@@ -1356,16 +1356,17 @@ impl CdpRenderer {
             let info = s.settle(script::Animations::Finish).await?;
             let params = if is_deck(mode, &info)? {
                 s.fit_to_slides(&info).await?;
+                let paper_height = DECK_PAGE_WIDTH_IN * f64::from(s.height) / f64::from(s.width);
                 s.eval(
                     "laying out the slides for print",
-                    &script::print_slides(s.width, s.height),
+                    &script::print_slides(s.width, s.height, (DECK_PAGE_WIDTH_IN, paper_height)),
                 )
                 .await?;
                 let css_width = DECK_PAGE_WIDTH_IN * CSS_PX_PER_IN;
                 let scale = (css_width / f64::from(s.width)).clamp(0.1, 2.0);
                 PrintToPdfParams::builder()
                     .paper_width(DECK_PAGE_WIDTH_IN)
-                    .paper_height(DECK_PAGE_WIDTH_IN * f64::from(s.height) / f64::from(s.width))
+                    .paper_height(paper_height)
                     .scale(scale)
                     .margin_top(0.0)
                     .margin_bottom(0.0)
