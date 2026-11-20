@@ -8,8 +8,14 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Add Gemini CLI as an agent: Contour finds `gemini` on your PATH and runs it over ACP (#280).
+
 ### Fixed
 
+- Fail the `od doctor` agent check when the chosen agent is unknown, instead of passing on Claude Code (#280).
+- Check the asked daemon's data folder and agent in `od doctor --daemon-url`, not this shell's (#280).
 - Daemon log lines from background tasks now carry the request id, so diagnostics find them (#274).
 - OpenCode 2 works and writes in the project folder, and its thinking shows in the chat.
 - Every agent run logs a start and an end line under its run id.

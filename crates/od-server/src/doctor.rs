@@ -3,8 +3,10 @@
 //!
 //! Every check takes what it looks at as an argument (a folder, a `PATH`,
 //! a renderer, a free-space figure), so tests run it on a fake machine.
-//! [`run_local`] gathers the real inputs; the CLI adds the daemon check
-//! ([`daemon_check`]) before it, the daemon's route says it answers.
+//! [`run_local`] gathers the real inputs. The CLI asks the daemon it found
+//! to run them (`POST /api/doctor`, the daemon's own data folder) and runs
+//! them itself only when no daemon answers; either way its own daemon check
+//! ([`daemon_check`]) comes first. The daemon's route says it answers.
 //!
 //! Nothing is uploaded and nothing secret is printed: paths, versions and
 //! sizes only. The macOS folder permission is only reported, never asked:
@@ -12,7 +14,8 @@
 
 use od_export::{CaptureOptions, ImageFormat, RenderError, RenderTarget, Renderer};
 use od_runtime::def::{RuntimeDef, StreamFormat};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -28,7 +31,7 @@ pub const FFMPEG_TIMEOUT: Duration = Duration::from_secs(10);
 pub const MIN_FREE_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// How a check came out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
     /// Works.
@@ -52,12 +55,13 @@ impl Status {
     }
 }
 
-/// One line of the report.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// One line of the report. `od doctor` reads it back from the daemon's
+/// `POST /api/doctor`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     /// Stable name: `daemon`, `data-dir`, `agent`, `chrome`, `ffmpeg`,
     /// `folder-access`, `disk`.
-    pub id: &'static str,
+    pub id: Cow<'static, str>,
     pub status: Status,
     /// What was found, in one sentence.
     pub summary: String,
@@ -69,7 +73,7 @@ pub struct Check {
 impl Check {
     fn ok(id: &'static str, summary: impl Into<String>) -> Self {
         Self {
-            id,
+            id: Cow::Borrowed(id),
             status: Status::Ok,
             summary: summary.into(),
             fix: None,
@@ -78,7 +82,7 @@ impl Check {
 
     fn warn(id: &'static str, summary: impl Into<String>, fix: impl Into<String>) -> Self {
         Self {
-            id,
+            id: Cow::Borrowed(id),
             status: Status::Warn,
             summary: summary.into(),
             fix: Some(fix.into()),
@@ -87,7 +91,7 @@ impl Check {
 
     fn fail(id: &'static str, summary: impl Into<String>, fix: impl Into<String>) -> Self {
         Self {
-            id,
+            id: Cow::Borrowed(id),
             status: Status::Fail,
             summary: summary.into(),
             fix: Some(fix.into()),
@@ -96,7 +100,7 @@ impl Check {
 }
 
 /// The whole report, as `od doctor --json` prints it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Report {
     /// Version of the program that ran the checks.
     pub version: String,
@@ -193,7 +197,7 @@ pub fn data_dir_check(root: &Path) -> Check {
 
 /// The agent the user chose (`agentId` in app config) or, with none,
 /// every agent with a CLI: found on `path` (or at `custom_bin`), and its
-/// `--version` answers within `timeout`.
+/// `--version` answers within `timeout`. A chosen id that is no agent fails.
 pub async fn agent_check(
     configured: Option<&str>,
     path: &OsStr,
@@ -201,10 +205,17 @@ pub async fn agent_check(
     timeout: Duration,
 ) -> Check {
     const ID: &str = "agent";
-    let chosen = configured
-        .filter(|id| !id.is_empty() && *id != "auto")
-        .and_then(od_runtime::def::find);
-    if let Some(def) = chosen {
+    let chosen = configured.filter(|id| !id.is_empty() && *id != "auto");
+    if let Some(id) = chosen {
+        // An id no build knows (another build's agent, a typo): the runs
+        // would refuse it, so no other agent may stand in for it (QA-118).
+        let Some(def) = od_runtime::def::find(id) else {
+            return Check::fail(
+                ID,
+                format!("The chosen agent `{id}` is not one this Contour knows."),
+                "Pick an agent in Settings ▸ Agents.",
+            );
+        };
         if def.stream_format == StreamFormat::Byok {
             return Check::ok(ID, format!("{} uses an API key; no CLI needed.", def.name));
         }
@@ -650,6 +661,25 @@ mod tests {
         let any = agent_check(Some("auto"), &path, none, AGENT_TIMEOUT).await;
         assert_eq!(any.status, Status::Ok, "{any:?}");
         assert!(any.summary.contains("codex-cli"), "{}", any.summary);
+    }
+
+    /// QA-118: an unknown `agentId` fails; it never falls back to any
+    /// installed agent.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_chosen_agent_that_does_not_exist_fails() {
+        let tmp = tempfile::tempdir().unwrap();
+        script(tmp.path(), "claude", "echo '2.1.0 (Claude Code)'");
+        let path = path_of(tmp.path());
+        let check = agent_check(Some("no-such-agent"), &path, |_: &str| None, AGENT_TIMEOUT).await;
+        assert_eq!(check.status, Status::Fail, "{check:?}");
+        assert!(
+            check.summary.contains("`no-such-agent`"),
+            "{}",
+            check.summary
+        );
+        assert!(!check.summary.contains("Claude"), "{}", check.summary);
+        assert!(check.fix.is_some());
     }
 
     #[tokio::test]

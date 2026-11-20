@@ -175,6 +175,8 @@ Nothing leaves the machine: the user copies or attaches what these give.
 - `od doctor` (`crates/od-cli/src/doctor_cmd.rs`) and Settings ▸ About ▸ Check setup
   (`POST /api/doctor`, behind the origin guard: it starts Chrome and the agents; one run at a time) share `crates/od-server/src/doctor.rs`; each check takes its
   inputs as arguments and has a pass and a fail test there. Exit 1 on any `fail`.
+  `od doctor` asks the daemon that answers to run the checks (`POST /api/doctor`, its own data folder and agents)
+  and runs them itself only when none does.
 
 ## Content
 
