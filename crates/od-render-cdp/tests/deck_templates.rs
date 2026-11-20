@@ -1,14 +1,18 @@
-//! Real Chrome exports the bundled `html-ppt-*` deck templates to a vector
-//! PDF that looks like their slides: one page per slide, the slide's shape,
-//! and each page, rasterised, matches the slide's screenshot.
+//! Real Chrome exports the bundled decks to a vector PDF that looks like
+//! their slides: one page per slide, the slide's shape, and each page,
+//! rasterised, matches the slide's screenshot.
 //!
-//! Each template is bundled as the daemon bundles an export
+//! Each deck is bundled as the daemon bundles an export
 //! (`standalone::bundle`, lenient): the renderer loads the page alone, so a
 //! template's `assets/` must be inlined first.
 //!
-//! By default a sample runs, one template per way a deck printed wrong;
-//! `OD_DECK_TEMPLATES=all` runs every bundled `html-ppt-*` template
-//! (47 in Nov 2026, about 6 min in a debug build), or a comma-separated list.
+//! By default a sample runs: one bundled template per way a deck printed
+//! wrong, and decks written here for what no bundled one does.
+//! `OD_DECK_TEMPLATES=all` runs every bundled deck: each `example.html` in
+//! `content/design-templates` and `content/skills` with slide markup, found
+//! as `od-preview`'s `bundled_decks_stay_decks` finds them (68 in Nov 2026,
+//! about 8 min in a debug build; 8 of them still fail, see PR #285). A
+//! comma-separated list of folder names runs those.
 //!
 //! Needs Chrome (see `chrome.rs`); `OD_SKIP_CHROME_TESTS=1` skips it.
 
@@ -43,15 +47,78 @@ const SAMPLE: &[&str] = &[
     "html-ppt-graphify-dark-graph",
 ];
 
+/// Folders under `content/` that hold bundled decks.
+const GROUPS: &[&str] = &["design-templates", "skills"];
+
+/// A slide that contains its own layout (`contain: layout`) holds its
+/// `position: fixed` boxes: each slide shows only its own. Print lost that
+/// when the slide's `contain` was replaced (review of #285): every page drew
+/// every slide's box, at the page's corner.
+const FIXED_IN_CONTAINED_SLIDES: &str = r#"<!doctype html><html><head><style>
+html,body{margin:0;background:#222}
+.slide{position:relative;width:1920px;height:1080px;background:#f4efe6;contain:layout;overflow:hidden}
+.mark{position:fixed;width:400px;height:400px}
+h1{margin:0;padding:120px;font:96px sans-serif;color:#1c1b1a}
+</style></head><body>
+<section class="slide"><h1>One</h1><div class="mark" style="left:100px;top:500px;background:#c0392b"></div></section>
+<section class="slide"><h1>Two</h1><div class="mark" style="left:760px;top:340px;background:#2e86de"></div></section>
+<section class="slide"><h1>Three</h1><div class="mark" style="left:1420px;top:600px;background:#27ae60"></div></section>
+</body></html>"#;
+
+/// A deck that moves its slide strip itself: a script watches each slide's
+/// `.active` class and sets the strip's inline `transform`, as
+/// `kami-deck` does for the host bridge. Giving every slide the class (to
+/// print it, or to show one for its screenshot) set the script off, and its
+/// inline write replaced the export's own inline `transform: none`
+/// (review of #285): pages and screenshots showed the wrong slide or none.
+const SCRIPT_FOLLOWS_ACTIVE: &str = r#"<!doctype html><html><head><style>
+html,body{margin:0;overflow:hidden;background:#222}
+#deck{display:flex;width:300vw;height:100vh}
+.slide{flex:0 0 100vw;width:100vw;height:100vh;position:relative;overflow:hidden}
+.s1{background:#1b3a5c;color:#faf9f5}.s2{background:#f4efe6;color:#1c1b1a}.s3{background:#7a2e2e;color:#faf9f5}
+h1{margin:0;padding:120px;font:120px sans-serif}
+.box{position:absolute;width:500px;height:300px;background:#e0b040}
+</style></head><body><div id="deck">
+<section class="slide s1 active"><h1>One</h1><div class="box" style="left:200px;top:500px"></div></section>
+<section class="slide s2"><h1>Two</h1><div class="box" style="left:800px;top:600px"></div></section>
+<section class="slide s3"><h1>Three</h1><div class="box" style="left:1300px;top:400px"></div></section>
+</div><script>
+const deck = document.getElementById('deck');
+const slides = Array.from(document.querySelectorAll('.slide'));
+let idx = 0;
+function apply(n) {
+  idx = n;
+  deck.style.transform = 'translateX(' + (-n * 100) + 'vw)';
+  slides.forEach((s, i) => s.classList.toggle('active', i === n));
+}
+const mo = new MutationObserver(() => {
+  for (let i = 0; i < slides.length; i++) {
+    if (slides[i].classList.contains('active') && i !== idx) { apply(i); return; }
+  }
+});
+slides.forEach((s) => mo.observe(s, { attributes: true, attributeFilter: ['class'] }));
+apply(0);
+</script></body></html>"#;
+
 /// Cells per page compared: small enough to ignore antialiasing and font
 /// hinting, large enough to see a line of text move.
 const GRID: (usize, usize) = (240, 135);
 /// A cell differs when its colour is off by more than this (0–255, mean of RGB).
 const CELL_TOLERANCE: f64 = 40.0;
 /// A page matches its slide when at most this share of cells differs.
-/// The sample stays under 2 % and every bundled template under 4.5 % (Nov 2026);
-/// the faults above reached 10–65 %.
+/// The sample stays under 2 % and every bundled `html-ppt-*` template under
+/// 4.5 % (Nov 2026); the faults above reached 10–65 %.
 const PAGE_TOLERANCE: f64 = 0.05;
+
+/// A deck to print: its HTML, bundled, and where it came from.
+struct Deck {
+    name: String,
+    html: String,
+    /// For a deck written here, each slide's background: the PDF page and
+    /// the screenshot must both show it, since a fault on the path they
+    /// share would make them match each other and still be wrong.
+    backgrounds: Vec<[u8; 3]>,
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bundled_deck_templates_print_as_their_slides_look() {
@@ -60,25 +127,25 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
         return;
     }
     let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/design-templates");
-    let names = templates(&root);
+    let decks = decks();
     let scratch = tempfile::tempdir().unwrap();
     let mut wrong = Vec::new();
-    for name in &names {
-        let dir = root.join(name);
-        let html = std::fs::read_to_string(dir.join("example.html")).unwrap();
-        let options = Options {
-            lenient: true,
-            ..Options::default()
-        };
-        let bundled = bundle("example.html", &html, &Dir(dir), &options).unwrap();
+    for Deck {
+        name,
+        html,
+        backgrounds,
+    } in &decks
+    {
         let path = scratch.path().join(format!("{name}.html"));
-        std::fs::write(&path, bundled.html).unwrap();
+        std::fs::write(&path, html).unwrap();
         let deck = RenderTarget::new(path);
 
         let pdf = renderer.print_pdf(&deck, DeckMode::Auto).await.unwrap();
         let slides = renderer.render_slides(&deck, DeckMode::Auto).await.unwrap();
-        assert!(slides.deck, "{name} is not seen as a deck");
+        if !slides.deck {
+            wrong.push(format!("{name}: not seen as a deck"));
+            continue;
+        }
         let pages = raster_pages(&pdf);
         if pages.len() != slides.images.len() {
             wrong.push(format!(
@@ -103,6 +170,21 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
             }
             let (sw, sh) = (slide.width as usize, slide.height as usize);
             let shot = cells(&slide.pixels, sw, sh);
+            if let Some(want) = backgrounds.get(i) {
+                // Bottom left, clear of the slides' text and boxes.
+                let at = (GRID.1 - 3) * GRID.0 + 2;
+                for (what, cell) in [("page", page.cells[at]), ("screenshot", shot[at])] {
+                    if cell
+                        .iter()
+                        .zip(want)
+                        .any(|(c, w)| (c - f64::from(*w)).abs() > 12.0)
+                    {
+                        wrong.push(format!(
+                            "{name} {what} {n}: background {cell:.0?}, not {want:?}"
+                        ));
+                    }
+                }
+            }
             let off = differing(&page.cells, &shot);
             worst = worst.max(off);
             if off > PAGE_TOLERANCE {
@@ -120,38 +202,112 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
     }
     assert!(
         wrong.is_empty(),
-        "PDF pages unlike their slides ({} templates checked):\n{}",
-        names.len(),
+        "PDF pages unlike their slides ({} decks checked):\n{}",
+        decks.len(),
         wrong.join("\n")
     );
 }
 
-/// The sample, every `html-ppt-*` template with `OD_DECK_TEMPLATES=all`, or
-/// the comma-separated names it gives.
-fn templates(root: &Path) -> Vec<String> {
-    let all = || {
-        let mut names: Vec<String> = std::fs::read_dir(root)
-            .unwrap()
-            .flatten()
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.starts_with("html-ppt-") && root.join(n).join("example.html").is_file())
-            .collect();
-        names.sort();
-        names
+/// The sample and the decks written here; every bundled deck with
+/// `OD_DECK_TEMPLATES=all`; or the comma-separated folders it names.
+fn decks() -> Vec<Deck> {
+    let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+    let all = bundled(&content);
+    let pick = |name: &str| {
+        all.iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("{name} is not a bundled deck"))
+            .1
+            .clone()
+    };
+    let load = |name: &str, dir: &Path| Deck {
+        name: name.to_owned(),
+        html: bundled_html(dir),
+        backgrounds: Vec::new(),
+    };
+    let written = || {
+        [
+            (
+                "fixed-in-contained-slides",
+                FIXED_IN_CONTAINED_SLIDES,
+                vec![[244, 239, 230]; 3],
+            ),
+            (
+                "script-follows-active",
+                SCRIPT_FOLLOWS_ACTIVE,
+                vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
+            ),
+        ]
+        .map(|(name, html, backgrounds)| Deck {
+            name: name.to_owned(),
+            html: html.to_owned(),
+            backgrounds,
+        })
     };
     match std::env::var("OD_DECK_TEMPLATES").ok().as_deref() {
-        Some("all") => all(),
-        Some(list) if !list.trim().is_empty() => {
-            list.split(',').map(|s| s.trim().to_owned()).collect()
-        }
-        _ => {
-            let names = all();
-            for s in SAMPLE {
-                assert!(names.iter().any(|n| n == s), "{s} is no longer bundled");
+        Some("all") => all
+            .iter()
+            .map(|(n, d)| load(n, d))
+            .chain(written())
+            .collect(),
+        Some(list) if !list.trim().is_empty() => list
+            .split(',')
+            .map(str::trim)
+            .map(|n| load(n, &pick(n)))
+            .collect(),
+        _ => SAMPLE
+            .iter()
+            .map(|n| load(n, &pick(n)))
+            .chain(written())
+            .collect(),
+    }
+}
+
+/// Every bundled `example.html` with slide markup, by folder name.
+fn bundled(content: &Path) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    for group in GROUPS {
+        for entry in std::fs::read_dir(content.join(group)).unwrap().flatten() {
+            let dir = entry.path();
+            let Ok(html) = std::fs::read_to_string(dir.join("example.html")) else {
+                continue;
+            };
+            if has_slide_markup(&html) {
+                out.push((entry.file_name().to_string_lossy().into_owned(), dir));
             }
-            SAMPLE.iter().map(|s| (*s).to_owned()).collect()
         }
     }
+    out.sort();
+    out
+}
+
+/// `example.html` in `dir` with its local files inlined, as the export
+/// route bundles a project's entry.
+fn bundled_html(dir: &Path) -> String {
+    let html = std::fs::read_to_string(dir.join("example.html")).unwrap();
+    let options = Options {
+        lenient: true,
+        ..Options::default()
+    };
+    bundle("example.html", &html, &Dir(dir.to_owned()), &options)
+        .unwrap()
+        .html
+}
+
+/// An element whose class list has `slide`, or a `data-od-slide` attribute
+/// (as `od-preview/tests/bridge_browser.rs` tells a bundled deck).
+fn has_slide_markup(html: &str) -> bool {
+    html.contains("data-od-slide")
+        || html.match_indices("class=").any(|(at, _)| {
+            let rest = &html[at + 6..];
+            let Some(quote) = rest.chars().next().filter(|c| *c == '"' || *c == '\'') else {
+                return false;
+            };
+            let value = &rest[1..];
+            value[..value.find(quote).unwrap_or(0)]
+                .split_whitespace()
+                .any(|c| c == "slide")
+        })
 }
 
 struct Page {
