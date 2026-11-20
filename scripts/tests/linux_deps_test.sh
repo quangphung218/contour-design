@@ -119,7 +119,7 @@ setup
 cat > "$work/bin/apt-get" <<SH
 #!/usr/bin/env bash
 echo "apt-get \$*" >> "$work/calls"
-if [[ " \$* " == *" install "* ]]; then sleep 2; fi
+if [[ " \$* " == *" install "* ]]; then sleep 6; fi
 if [[ " \$* " == *" autoclean"* ]]; then exit 100; fi
 exit 0
 SH
@@ -128,7 +128,9 @@ cat > "$work/bin/chown" <<SH
 echo "chown \$*" >> "$work/calls"
 SH
 chmod +x "$work/bin/apt-get" "$work/bin/chown"
-PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_BUDGET_SECONDS=2 APT_ARCHIVES="$work/debs" "$script" > "$work/out" 2>&1
+# The install outlasts the budget by 1 s and still starts with time left
+# when the calls before it take up to 4 s on a busy machine.
+PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_BUDGET_SECONDS=5 APT_ARCHIVES="$work/debs" "$script" > "$work/out" 2>&1
 rc=$?
 check "APT_BUDGET_SECONDS: an install that ends with the budget is not failed by autoclean" '[ $rc -eq 0 ] && grep -q "^apt-get .* autoclean$" "$work/calls" && ! grep -q "did not finish within" "$work/out" && grep -q "linux-deps: autoclean failed" "$work/out"'
 rm -rf "$work"
