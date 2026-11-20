@@ -100,6 +100,35 @@ slides.forEach((s) => mo.observe(s, { attributes: true, attributeFilter: ['class
 apply(0);
 </script></body></html>"#;
 
+/// A deck that shows only its active slide (`display: none` otherwise) and
+/// whose script keeps `active` on one slide: when print adds the class to
+/// every slide, the script takes it off all but one (review of #285).
+const SCRIPT_KEEPS_ONE_ACTIVE: &str = r#"<!doctype html><html><head><style>
+html,body{margin:0;overflow:hidden;background:#222}
+.slide{display:none;width:100vw;height:100vh;position:relative;overflow:hidden}
+.slide.active{display:block}
+.s1{background:#1b3a5c;color:#faf9f5}.s2{background:#f4efe6;color:#1c1b1a}.s3{background:#7a2e2e;color:#faf9f5}
+h1{margin:0;padding:120px;font:120px sans-serif}
+</style></head><body>
+<section class="slide s1 active"><h1>One</h1></section>
+<section class="slide s2"><h1>Two</h1></section>
+<section class="slide s3"><h1>Three</h1></section>
+<script>
+const slides = Array.from(document.querySelectorAll('.slide'));
+let idx = 0;
+function go(n) {
+  idx = n;
+  slides.forEach((s, i) => s.classList.toggle('active', i === n));
+}
+const mo = new MutationObserver(() => {
+  for (let i = 0; i < slides.length; i++) {
+    if (slides[i].classList.contains('active') && i !== idx) { go(i); return; }
+  }
+});
+slides.forEach((s) => mo.observe(s, { attributes: true, attributeFilter: ['class'] }));
+go(0);
+</script></body></html>"#;
+
 /// Cells per page compared: small enough to ignore antialiasing and font
 /// hinting, large enough to see a line of text move.
 const GRID: (usize, usize) = (240, 135);
@@ -235,6 +264,11 @@ fn decks() -> Vec<Deck> {
             (
                 "script-follows-active",
                 SCRIPT_FOLLOWS_ACTIVE,
+                vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
+            ),
+            (
+                "script-keeps-one-active",
+                SCRIPT_KEEPS_ONE_ACTIVE,
                 vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
             ),
         ]

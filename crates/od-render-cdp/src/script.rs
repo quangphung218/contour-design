@@ -183,7 +183,10 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
 /// Each slide prints as it shows on screen (bundled `html-ppt-*` decks):
 /// - every slide gets the deck's "active" classes, as [`show_slide`] gives
 ///   the one it shows: decks lay a slide out (`.slide.active { display:
-///   flex }`) or show its content only while it is active;
+///   flex }`) or show its content only while it is active. The display
+///   those classes give is pinned inline, since a deck script may take them
+///   off all slides but one; content shown only under an active slide is
+///   then still lost;
 /// - ancestors lose an inline `width`: a slide strip a script sets to
 ///   N×100vw made the page N slides wide, and Chrome shrank it onto the paper.
 ///   They are held again at the end, as in [`show_slide`], since a script
@@ -229,7 +232,10 @@ pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
     if (k === slides.length - 1) s.setAttribute('data-od-print-last', '');
     used.forEach((c) => s.classList.add(c));
     s.removeAttribute('hidden');
-    if (getComputedStyle(s).display === 'none') s.style.setProperty('display', 'block', 'important');
+    // Pin the display the active classes give: a deck script may take them
+    // off every slide but one (review of #285).
+    const d = getComputedStyle(s).display;
+    s.style.setProperty('display', d === 'none' ? 'block' : d, 'important');
     for (let a = s.parentElement; a; a = a.parentElement) {{
       for (const c of a.children) {{
         if (!keep.has(c) && !slides.includes(c)) c.setAttribute('data-od-print-hidden', '');

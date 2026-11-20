@@ -52,7 +52,7 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
     - `src/lib.rs::a_command_past_chromiumoxides_wait_says_so_in_words`; QA e2e `e2e/qa/export.qa.mjs:"EXP-16"`
     - `src/lib.rs::the_browser_counts_as_gone_once_its_connection_is_lost_or_ends` (`drive`)
 13. A deck exports as its slides look: the vector PDF page is the paper (13.333 in), the page's own
-    `@page` size is overridden, every slide prints with the deck's active classes, unbroken, holding its
+    `@page` size is overridden, every slide prints with the display the deck's active classes give (pinned, a deck script may take the classes off), unbroken, holding its
     own `position: fixed` boxes (`contain: size layout`), under ancestors without an inline width,
     held again after a deck script answers the classes (`script::print_slides`, `show_slide`); the editable PPTX background is the first box
     from the slide up with an opaque paint (its colour, else a gradient's first opaque stop), and every
