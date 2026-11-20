@@ -79,7 +79,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+      # apt gets 10 minutes in all, then the step fails naming the mirror
+      # (scripts/linux-deps.sh), instead of using up the job's time.
       - name: Linux packages
+        env:
+          APT_BUDGET_SECONDS: "600"
         run: scripts/linux-deps.sh
       - name: UI bundle (release)
         working-directory: crates/od-ui
