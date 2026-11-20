@@ -326,6 +326,13 @@ impl RunEngine {
         tokio::spawn(tracing::Instrument::instrument(
             async move {
                 let run_id = spec.run.id().to_owned();
+                // Every run, whatever its agent, leaves a start and an end
+                // line in its span (QA-117); `finish` writes the end.
+                tracing::info!(
+                    resumed = spec.resume_session_id.is_some(),
+                    model = spec.model.as_deref().unwrap_or("default"),
+                    "run started"
+                );
                 // Project runs only: what the agent changes there is the turn's
                 // result (spec L4); taken before the agent can write.
                 // The window opens before the snapshot: whatever the agent
@@ -755,6 +762,8 @@ impl RunEngine {
             Some(pgid),
             Some(spawn.program.to_string_lossy().into_owned()),
         );
+        // Never the argv: some agents take the prompt there.
+        tracing::info!(pid = pgid, bin = %spawn.program.display(), "agent process started");
 
         let (tx, mut rx) = mpsc::channel::<Line>(256);
         if let Some(out) = child.stdout.take() {
@@ -1531,6 +1540,14 @@ fn finish(run: &Run, f: Finish, text_parts: &[String]) -> RunOutcome {
             signal = ?f.signal,
             reason = %f.error.as_deref().map(logged_reason).unwrap_or_default(),
             "run failed"
+        );
+    } else {
+        tracing::info!(
+            status = ?f.status,
+            exit_code = ?f.code,
+            signal = ?f.signal,
+            files = f.artifact_paths.len(),
+            "run ended"
         );
     }
     if f.status == RunStatus::Failed

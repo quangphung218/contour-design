@@ -27,7 +27,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    - `tests/engine.rs::reap_orphan_spares_a_group_running_something_else`
 3. The agent env is the daemon's env minus `PATH` and every `OD_*`; then `PATH` and the run's own
    values are set (`src/env.rs:agent_env`). `OD_API_TOKEN` never reaches the agent.
+   `src/process.rs:spawn` sets `PWD` to the run's cwd: OpenCode 2 works in `$PWD`, not the process cwd (QA-116).
    - `src/env.rs::api_token_never_reaches_the_agent`
+   - `tests/engine.rs::the_agent_sees_its_cwd_in_pwd`
 4. Protocol agents get their cancel message before any signal.
    - `tests/engine_m6.rs::acp_cancel_sends_session_cancel_before_any_signal`
    - `tests/engine_m6.rs::dsh_cancel_is_sent_on_the_open_stdin_before_any_signal`
@@ -38,8 +40,10 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    - `tests/golden.rs::claude_recordings_match_golden_event_streams`, `tests/golden.rs::codex_exec_json_matches_golden_event_stream`
    - more in `tests/golden_m6.rs`, `tests/golden_c3.rs`; fixtures in `tests/fixtures/`
 7. A run's task runs in a `run{run_id, agent, project}` span under the span of whoever launched it
-   (`src/engine.rs:RunEngine::launch`), so its lines carry the request id too.
+   (`src/engine.rs:RunEngine::launch`), so its lines carry the request id too. Every run logs
+   `run started` and either `run failed` or `run ended` there, whatever the agent (QA-117).
    - `../od-server/tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
+   - `../od-server/tests/request_id.rs::every_run_logs_its_start_and_end_in_its_span`
 
 ## Traps
 - An agent's shell can turn any project path into a link; writing through it changes files outside the project (#206).

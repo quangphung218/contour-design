@@ -235,6 +235,10 @@ async fn a_runs_lines_carry_its_run_id_and_the_request_that_started_it() {
         .filter(|l| l.contains(short) && l.contains("run failed"))
         .collect();
     assert_eq!(why.len(), 1, "{lines:#?}");
+    assert!(
+        lines.iter().any(|l| l.contains("run started")),
+        "{lines:#?}"
+    );
     assert!(why[0].contains("exit_code=Some(3)"), "{}", why[0]);
     assert!(why[0].contains("category=Some("), "{}", why[0]);
     // The failed run leads Report Issue and Export diagnostics.
@@ -256,6 +260,55 @@ async fn a_runs_lines_carry_its_run_id_and_the_request_that_started_it() {
             "the prompt reached the log: {line}"
         );
     }
+}
+
+/// QA-117: a run that does not fail still leaves a start and an end line
+/// in its span, whatever the agent (here OpenCode, which had none).
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn every_run_logs_its_start_and_end_in_its_span() {
+    let _one = LOG.1.lock().await;
+    let d = common::daemon().await;
+    common::write_mock(
+        &d.mocks,
+        "opencode",
+        r#"if [ "$1" = "run" ] && [ "$2" = "--help" ]; then echo '--standalone --auto'; exit 0; fi
+if [ "$1" = "--version" ]; then echo "2.0.25"; exit 0; fi
+cat > /dev/null
+printf '{"type":"text","sessionID":"ses_1","part":{"id":"p1","type":"text","text":"ok"}}\n'
+printf '{"type":"step_finish","sessionID":"ses_1","part":{"id":"p2","type":"step-finish","reason":"stop"}}\n'
+"#,
+    );
+    let (project, conversation) = d.project().await;
+    let from = log_len();
+    let res = d
+        .post(
+            "/api/runs",
+            &serde_json::json!({"agentId": "opencode", "projectId": project,
+                "conversationId": conversation, "message": "make a page"}),
+        )
+        .await;
+    assert_eq!(res.status().as_u16(), 202);
+    let run: od_contracts::CreateRunResponse = res.json().await.unwrap();
+    let events = d.events(&run.run_id, None).await;
+    let end = events.iter().find(|e| e.event == "end").expect("end");
+    assert_eq!(end.data["status"], "succeeded", "{events:?}");
+
+    let span = format!("run{{run_id={}", run.run_id);
+    let lines: Vec<String> = lines_since(from)
+        .into_iter()
+        .filter(|l| l.contains(&span))
+        .collect();
+    for message in ["run started", "agent process started", "run ended"] {
+        assert_eq!(
+            lines.iter().filter(|l| l.contains(message)).count(),
+            1,
+            "{message}: {lines:#?}"
+        );
+    }
+    let ended = lines.iter().find(|l| l.contains("run ended")).unwrap();
+    assert!(ended.contains("status=Succeeded"), "{ended}");
+    assert!(ended.contains("agent=\"opencode\""), "{ended}");
 }
 
 /// Work a route leaves running after it answered logs under the request's

@@ -119,6 +119,19 @@ impl OpenCodeParser {
                 }
                 None => false,
             },
+            // With `--thinking`, one frame per finished reasoning part. A
+            // model can think for minutes before it writes (QA-116); without
+            // these frames the run shows nothing meanwhile.
+            "reasoning" => match str_field(part, "text").filter(|t| !t.trim().is_empty()) {
+                Some(text) => {
+                    out.push(AgentEvent::ThinkingStart);
+                    out.push(AgentEvent::ThinkingDelta {
+                        delta: text.to_owned(),
+                    });
+                    true
+                }
+                None => true,
+            },
             "tool_use" => {
                 // OpenCode 2 has no `callID`; its part `id` is the call's.
                 let call = str_field(part, "callID").or_else(|| str_field(part, "id"));

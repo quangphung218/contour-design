@@ -509,5 +509,29 @@ async fn a_failed_help_probe_falls_back_to_the_version() {
     let lines = logged(&argv);
     assert!(lines[0].contains("--standalone"), "{lines:?}");
     assert!(lines[0].contains("--auto"), "{lines:?}");
+    assert!(lines[0].contains("--thinking"), "{lines:?}");
     assert!(!lines[0].contains("--dir"), "{lines:?}");
+}
+
+/// QA-116: OpenCode 2 takes its working directory from `$PWD`, not from
+/// the process cwd. The daemon's own `PWD` must not reach the agent, or
+/// OpenCode works (and writes) in the folder the daemon started in.
+/// `env` prints what it was given; a shell mock would fix `PWD` itself.
+#[tokio::test]
+async fn the_agent_sees_its_cwd_in_pwd() {
+    let tmp = tempfile::tempdir().unwrap();
+    let project = tmp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let child = process::spawn(&SpawnSpec {
+        program: "/usr/bin/env".into(),
+        args: Vec::new(),
+        cwd: project.clone(),
+        // The daemon's env, started from another folder.
+        env: vec![("PWD".into(), tmp.path().as_os_str().to_owned())],
+    })
+    .unwrap();
+    let out = child.wait_with_output().await.unwrap();
+    let env = String::from_utf8(out.stdout).unwrap();
+    let pwd: Vec<&str> = env.lines().filter(|l| l.starts_with("PWD=")).collect();
+    assert_eq!(pwd, [format!("PWD={}", project.display())], "{env}");
 }
