@@ -75,7 +75,7 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
 - `getComputedStyle` keeps `oklch()`, `lab()`, `color(srgb …)` as written; only the browser can turn them into
   sRGB, so convert in the page script, not in Rust (QA-121).
 - On a coloured slide a gradient is mostly texture (ruled lines, soft spots): taking its first stop as the
-  background broke 9 bundled decks. Only a box painted by a gradient alone covers its ancestors (#283 review).
+  background broke 6 bundled decks. Only a box painted by a gradient alone covers its ancestors (#283 review).
 
 ## Check
 - Most launch tests run only on macOS. CI runs them in the `chrome-macos` job of `../../.github/workflows/ci.yml`,
