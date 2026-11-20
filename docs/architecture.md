@@ -140,6 +140,36 @@ Subsystem notes: [od-ui](../crates/od-ui/CLAUDE.md), [od-server](../crates/od-se
 
 `localStorage` in od-ui holds UI state only (layout, tabs, unsent text). The daemon never reads it.
 
+## Diagnostics
+
+Nothing leaves the machine: the user copies or attaches what these give.
+
+- Log: `crates/od-server/src/logs.rs:init` → stderr and, in the app or with
+  `--log-file`/`OD_LOG_FILE`, `<data>/logs/daemon.log` (5 files of 5 MB). The
+  file layer has its own field formatter (`PlainFields`), else span fields
+  arrive with the console's ANSI colors.
+- Request ids: `crates/od-server/src/request_id.rs:tag` (outermost layer of
+  `router`) runs each request in a span `req{request_id, method, path}` and
+  answers with `x-od-request-id`; it remembers the last request that failed.
+  Work moved to its own task keeps the span (`.in_current_span()`,
+  `Span::current()` in `AppState::blocking` and the export workers);
+  `crates/od-runtime/src/engine.rs:RunEngine::launch` adds `run{run_id, agent, project}`;
+  `crates/od-render-cdp/src/lib.rs` instruments the CDP handler and request
+  interception tasks. Error answers log their code and message in the span
+  (`crates/od-server/src/error.rs:log_answer`).
+  - `crates/od-server/tests/request_id.rs::every_line_of_a_failed_export_carries_its_request_id`
+  - `crates/od-server/tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
+- UI: `crates/od-ui/src/app/api.rs:error_of` keeps the header in `HttpError.request_id`;
+  `failure_with_ref` adds "(Ref: …)" to export failures; a failed run's status line
+  shows its run id's first 8 characters (`crates/od-ui/src/app/chat_view.rs:run_ref`).
+- Report Issue `GET /api/diagnostics/summary` (`crates/od-server/src/routes/c2/help.rs:summary`)
+  and Export diagnostics `GET /api/diagnostics/export`
+  (`crates/od-server/src/routes/manage/diagnostics.rs:export`) take `?id=`
+  (else the last failed request) and put its lines first (`log_report`); all lines pass `scrub_line`.
+- `od doctor` (`crates/od-cli/src/doctor_cmd.rs`) and Settings ▸ About ▸ Check setup
+  (`GET /api/doctor`) share `crates/od-server/src/doctor.rs`; each check takes its
+  inputs as arguments and has a pass and a fail test there. Exit 1 on any `fail`.
+
 ## Content
 
 `content/` (skills, templates, design systems, craft, plugins, prompt templates) is indexed at start

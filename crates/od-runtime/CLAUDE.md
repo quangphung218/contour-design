@@ -37,6 +37,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 6. Each parser matches its recorded golden event stream.
    - `tests/golden.rs::claude_recordings_match_golden_event_streams`, `tests/golden.rs::codex_exec_json_matches_golden_event_stream`
    - more in `tests/golden_m6.rs`, `tests/golden_c3.rs`; fixtures in `tests/fixtures/`
+7. A run's task runs in a `run{run_id, agent, project}` span under the span of whoever launched it
+   (`src/engine.rs:RunEngine::launch`), so its lines carry the request id too.
+   - `../od-server/tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
 
 ## Traps
 - An agent's shell can turn any project path into a link; writing through it changes files outside the project (#206).
