@@ -29,7 +29,7 @@ pub async fn version() -> impl IntoResponse {
 
 /// Onboarding warns early when export would have no browser to drive.
 pub async fn browser() -> impl IntoResponse {
-    let found = tokio::task::spawn_blocking(|| od_render_cdp::find_chrome().is_ok())
+    let found = crate::spawn::spawn_blocking_in_span(|| od_render_cdp::find_chrome().is_ok())
         .await
         .unwrap_or(false);
     tracing::info!(found, "export browser check");

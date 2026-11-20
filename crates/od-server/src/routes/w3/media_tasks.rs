@@ -138,7 +138,7 @@ fn worker(state: AppState, deps: &Deps) -> Worker {
                 .map_err(|e| e.to_string())?;
             let (name, bytes) = (generated.name.clone(), generated.bytes);
             let project = task.project_id.clone();
-            let file = tokio::task::spawn_blocking(move || {
+            let file = crate::spawn::spawn_blocking_in_span(move || {
                 store.write_file(&project, &name, &bytes, true, None)
             })
             .await

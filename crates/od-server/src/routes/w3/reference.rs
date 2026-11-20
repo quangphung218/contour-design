@@ -1537,7 +1537,7 @@ pub async fn reference(
         None => None,
     };
     let base = root.clone();
-    let (out, facts) = tokio::task::spawn_blocking(move || {
+    let (out, facts) = crate::spawn::spawn_blocking_in_span(move || {
         let tools = find_tools()?;
         match out {
             Some(out) => build(&tools, &video, &base.join(&out)).map(|f| (out, f)),

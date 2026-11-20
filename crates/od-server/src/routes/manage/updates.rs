@@ -154,6 +154,7 @@ mod tests {
                 (StatusCode::from_u16(status).unwrap(), Json(body))
             }),
         );
+        // A test's stub server, not a request's work (tests/spawn_in_span.rs).
         tokio::spawn(async move { axum::serve(listener, app).await });
         url
     }

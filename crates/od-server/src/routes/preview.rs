@@ -437,7 +437,7 @@ pub async fn events(
         .await?;
     let hub = Arc::clone(&preview.events);
     let project_id = id.clone();
-    let sub = tokio::task::spawn_blocking(move || hub.subscribe(&project_id, &root.dir))
+    let sub = crate::spawn::spawn_blocking_in_span(move || hub.subscribe(&project_id, &root.dir))
         .await
         .map_err(|e| ApiErr::internal(format!("worker failed: {e}")))?
         .map_err(|e| {

@@ -206,7 +206,7 @@ pub async fn export(
         .take(MAX_RUNS)
         .collect();
     let root = state.store.data_dir().root().to_path_buf();
-    let bytes = tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
+    let bytes = crate::spawn::spawn_blocking_in_span(move || -> std::io::Result<Vec<u8>> {
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);

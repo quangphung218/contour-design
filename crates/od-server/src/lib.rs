@@ -10,6 +10,7 @@ pub mod lock;
 pub mod logs;
 pub mod request_id;
 pub mod routes;
+pub mod spawn;
 pub mod state;
 
 use anyhow::Context;
@@ -209,6 +210,7 @@ fn is_loopback_host(host: &str) -> bool {
 /// When the runs folder cannot be listed.
 pub async fn open_runs(store: &Store, _lock: &DaemonLock) -> anyhow::Result<Arc<od_runs::Runs>> {
     let dir = store.data_dir().runs_dir();
+    // Start-up, before any request: no span to keep (tests/spawn_in_span.rs).
     let (runs, report) = tokio::task::spawn_blocking(move || od_runs::Runs::load(dir))
         .await?
         .context("loading runs")?;
@@ -266,10 +268,12 @@ pub async fn serve(opts: ServeOptions) -> anyhow::Result<()> {
     let started = std::time::Instant::now();
     let mut lock = DaemonLock::acquire(opts.data_dir.root())?;
     let data_dir = opts.data_dir.clone();
+    // Start-up, before any request: no span to keep (tests/spawn_in_span.rs).
     let store = tokio::task::spawn_blocking(move || Store::open(data_dir))
         .await?
         .context("opening the data store")?;
     let roots = ContentRoots::bundled(&opts.resource_root).with_user_root(opts.data_dir.root());
+    // Start-up, before any request: no span to keep (tests/spawn_in_span.rs).
     let content = tokio::task::spawn_blocking(move || ContentStore::load(roots)).await?;
 
     let listener = tokio::net::TcpListener::bind((opts.host.as_str(), opts.port))

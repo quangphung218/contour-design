@@ -221,7 +221,7 @@ pub async fn generate(
     let data_root = state.store.data_dir().root().to_path_buf();
     let staging = data_root.join(STAGING_DIR).join(&job_id);
     let staging2 = staging.clone();
-    let permission = tokio::task::spawn_blocking({
+    let permission = crate::spawn::spawn_blocking_in_span({
         let store = Arc::clone(&state.store);
         move || {
             std::fs::create_dir_all(&staging2)?;
@@ -314,7 +314,7 @@ pub async fn generate(
         mcp: McpLaunch::default(),
         next_step_key: None,
     });
-    tokio::spawn(finish(
+    crate::spawn::spawn_in_span(finish(
         state.clone(),
         Arc::clone(&jobs),
         job_id,
@@ -343,7 +343,7 @@ async fn finish(
             let user_root = state.store.data_dir().root().join("design-systems");
             let staging2 = staging.clone();
             let content = Arc::clone(&state.content);
-            let install = tokio::task::spawn_blocking(move || {
+            let install = crate::spawn::spawn_blocking_in_span(move || {
                 let installed = design_system_gen::install(&staging2, &user_root, &req)
                     .map_err(|e| e.to_string())?;
                 content.reload();
@@ -362,7 +362,7 @@ async fn finish(
         Ok(o) => Err(format!("the agent run {}", o.status.as_str())),
         Err(e) => Err(format!("the agent run failed: {e}")),
     };
-    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(staging)).await;
+    let _ = crate::spawn::spawn_blocking_in_span(move || std::fs::remove_dir_all(staging)).await;
     match &result {
         Ok(id) => tracing::info!(job = %job_id, design_system = %id, "design system generated"),
         Err(e) => tracing::warn!(job = %job_id, error = %e, "design system generation failed"),

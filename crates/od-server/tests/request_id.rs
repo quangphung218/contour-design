@@ -257,3 +257,77 @@ async fn a_runs_lines_carry_its_run_id_and_the_request_that_started_it() {
         );
     }
 }
+
+/// Work a route leaves running after it answered logs under the request's
+/// id: the design system job's own task (`finish`) says why it failed.
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_spawned_tasks_lines_carry_the_request_id() {
+    let _one = LOG.1.lock().await;
+    let d = common::daemon().await;
+    common::write_mock(
+        &d.mocks,
+        "claude",
+        &format!("{}echo 'agent says no' >&2\nexit 3\n", common::PROBES),
+    );
+    let from = log_len();
+    let res = d
+        .post(
+            "/api/design-systems/generate",
+            &serde_json::json!({"name": "Tea Site", "brief": "warm and quiet"}),
+        )
+        .await;
+    assert_eq!(res.status().as_u16(), 202);
+    let request_id = res.headers()[HEADER].to_str().unwrap().to_owned();
+    let v: serde_json::Value = res.json().await.unwrap();
+    let job = v["job"]["id"].as_str().unwrap().to_owned();
+
+    // The job ends in its own task, after the answer.
+    let mut done = serde_json::Value::Null;
+    for _ in 0..200 {
+        done = d.get_json(&format!("/api/design-systems/jobs/{job}")).await;
+        if done["job"]["status"] != "running" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(done["job"]["status"], "failed", "{done}");
+
+    let lines: Vec<String> = lines_since(from)
+        .into_iter()
+        .filter(|l| l.contains("design system generation failed") && l.contains(&job))
+        .collect();
+    assert_eq!(lines.len(), 1, "{:#?}", lines_since(from));
+    assert!(
+        lines[0].contains(&format!("request_id={request_id}")),
+        "{}",
+        lines[0]
+    );
+}
+
+/// Both helpers log in the span of the code that started the task.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_spawn_helpers_keep_the_callers_span() {
+    use tracing::Instrument as _;
+    let _one = LOG.1.lock().await;
+    let from = log_len();
+    let id = od_server::request_id::new_id();
+    async {
+        od_server::spawn::spawn_in_span(async { tracing::warn!("helper: async task line") })
+            .await
+            .unwrap();
+        od_server::spawn::spawn_blocking_in_span(|| tracing::warn!("helper: blocking task line"))
+            .await
+            .unwrap();
+    }
+    .instrument(tracing::info_span!("req", request_id = %id))
+    .await;
+    let lines = lines_since(from);
+    for want in ["helper: async task line", "helper: blocking task line"] {
+        let line = lines.iter().find(|l| l.contains(want));
+        assert!(
+            line.is_some_and(|l| l.contains(&format!("request_id={id}"))),
+            "{want}: {lines:#?}"
+        );
+    }
+}

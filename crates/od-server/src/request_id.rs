@@ -5,7 +5,7 @@
 //! may carry a token), and answers with the id in [`HEADER`]. Every line
 //! logged while the request runs carries the span, and so does work it
 //! hands to its own task when that task is instrumented
-//! (`.in_current_span()`): a run started by `POST /api/runs` logs
+//! ([`crate::spawn`], `.in_current_span()`): a run started by `POST /api/runs` logs
 //! `req{request_id=…}:run{run_id=…}`. `grep <id> daemon.log` gives the
 //! whole chain.
 //!

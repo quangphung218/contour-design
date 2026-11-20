@@ -56,7 +56,7 @@ where
     F: FnOnce() -> Result<T, ApiErr> + Send + 'static,
 {
     let content = std::sync::Arc::clone(&state.content);
-    tokio::task::spawn_blocking(move || {
+    crate::spawn::spawn_blocking_in_span(move || {
         let out = f()?;
         content.reload();
         Ok(out)

@@ -152,8 +152,10 @@ Nothing leaves the machine: the user copies or attaches what these give.
   `router`) runs each request in a span `req{request_id, method, path}` and
   answers with `x-od-request-id`; it remembers the last request that failed, and
   `crates/od-server/src/routes/runs.rs:persist_run` the last run that failed (`remember_failed`).
-  Work moved to its own task keeps the span (`.in_current_span()`,
-  `Span::current()` in `AppState::blocking` and the export workers);
+  Work moved to its own task keeps the span: od-server spawns through
+  `crates/od-server/src/spawn.rs` (`spawn_in_span`, `spawn_blocking_in_span`;
+  `tests/spawn_in_span.rs` refuses a direct `tokio::spawn`/`spawn_blocking`
+  outside its start-up list), and `runs.rs` instruments its `TaskTracker` tasks;
   `crates/od-runtime/src/engine.rs:RunEngine::launch` adds `run{run_id, agent, project}`,
   and `finish` logs a failed run's category, exit code and reason (one line, 300 characters) there;
   `crates/od-render-cdp/src/lib.rs` instruments the CDP handler and request
@@ -161,6 +163,8 @@ Nothing leaves the machine: the user copies or attaches what these give.
   (`crates/od-server/src/error.rs:log_answer`).
   - `crates/od-server/tests/request_id.rs::every_line_of_a_failed_export_carries_its_request_id`
   - `crates/od-server/tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
+  - `crates/od-server/tests/request_id.rs::a_spawned_tasks_lines_carry_the_request_id`
+  - `crates/od-server/tests/spawn_in_span.rs::every_task_spawned_in_src_keeps_the_callers_span`
 - UI: `crates/od-ui/src/app/api.rs:error_of` keeps the header in `HttpError.request_id`;
   `failure_with_ref` adds "(Ref: …)" to export failures; a failed run's status line
   shows its run id's first 8 characters (`crates/od-ui/src/app/chat_view.rs:run_ref`).

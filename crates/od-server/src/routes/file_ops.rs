@@ -75,17 +75,18 @@ async fn office_text(
             s.read_file(&id, &path)
         })
         .await?;
-    let (kind, sections) =
-        tokio::task::spawn_blocking(move || od_export::office::extract(&file.name, &bytes))
-            .await
-            .map_err(|e| ApiErr::internal(e.to_string()))?
-            .map_err(|e| {
-                ApiErr::new(
-                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-                    od_contracts::ErrorCode::ValidationFailed,
-                    e.to_string(),
-                )
-            })?;
+    let (kind, sections) = crate::spawn::spawn_blocking_in_span(move || {
+        od_export::office::extract(&file.name, &bytes)
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))?
+    .map_err(|e| {
+        ApiErr::new(
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            od_contracts::ErrorCode::ValidationFailed,
+            e.to_string(),
+        )
+    })?;
     Ok(ApiJson(OfficeTextResponse {
         kind: kind.as_str().to_owned(),
         sections: sections
@@ -259,7 +260,7 @@ async fn save_template(
     let root = state.store.data_dir().user_design_templates_dir();
     let slug = template_slug(&name);
     let skill = move |tid: &str| template_skill_md(tid, &name, &description, mode);
-    let id = tokio::task::spawn_blocking(move || -> std::io::Result<String> {
+    let id = crate::spawn::spawn_blocking_in_span(move || -> std::io::Result<String> {
         std::fs::create_dir_all(&root)?;
         // `create_dir` claims the id: two saves of one name never share it.
         let (tid, dir) = (1..1000)

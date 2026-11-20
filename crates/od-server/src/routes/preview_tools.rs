@@ -53,7 +53,7 @@ where
     F: FnOnce(&Store) -> ApiResult<T> + Send + 'static,
 {
     let store = Arc::clone(&state.store);
-    tokio::task::spawn_blocking(move || f(&store))
+    crate::spawn::spawn_blocking_in_span(move || f(&store))
         .await
         .map_err(|e| ApiErr::internal(format!("worker failed: {e}")))?
 }
@@ -62,7 +62,7 @@ async fn lint_posted(ApiJson(req): ApiJson<LintRequest>) -> ApiResult<ApiJson<Li
     if req.html.is_empty() {
         return Err(ApiErr::bad_request("html required"));
     }
-    let res = tokio::task::spawn_blocking(move || lint_response(&req.html))
+    let res = crate::spawn::spawn_blocking_in_span(move || lint_response(&req.html))
         .await
         .map_err(|e| ApiErr::internal(format!("worker failed: {e}")))?;
     Ok(ApiJson(res))
