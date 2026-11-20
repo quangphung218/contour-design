@@ -160,6 +160,7 @@ Goal: the user takes the design out of Contour.
 | EXP-13 | Every format offered for a plain page works | A page, not a deck, Chrome | Export ▸ PowerPoint (both), MP4 | Each offered item gives a file; one that does not apply is not offered | P1 | auto (QA-031) |
 | EXP-14 | Back in the Studio during an MP4 export, the export still shows | A Motion film, Chrome | Export ▸ MP4, Projects, Back | The running export is shown; a second press does not render again | P1 | auto (QA-075) |
 | EXP-15 | An MP4 export, then the Studio left for good | A Motion film, Chrome | Export ▸ MP4, Projects, stay there | One `.mp4` download arrives on Projects; the user is not pulled back | P1 | auto (QA-075) |
+| EXP-16 | A page that never settles fails the export in time, and a retry works once fixed | A page that stops animation frames, Chrome, step limit 3 s | Export ▸ PDF; fix the page; Export ▸ PDF | "Export failed: …" naming the step within the limit; then a `%PDF` file | P1 | auto |
 
 ## 6. Manage projects (`projects.qa.mjs`)
 

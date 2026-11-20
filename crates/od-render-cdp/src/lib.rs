@@ -27,6 +27,7 @@ use chromiumoxide::cdp::browser_protocol::page::{
     CaptureScreenshotFormat, CaptureScreenshotParams, PrintToPdfParams, Viewport,
 };
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
+use chromiumoxide::error::CdpError;
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
@@ -39,6 +40,8 @@ use od_export::{
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// Environment variable naming the browser executable.
@@ -74,8 +77,31 @@ const LAUNCH_SERVICES_TIMEOUT: Duration = Duration::from_secs(20);
 /// What [`OPEN_TIMEOUT`] keeps, past every launch, for opening the page.
 #[cfg(target_os = "macos")]
 const PAGE_MARGIN: Duration = Duration::from_secs(15);
-/// Longest wait for one DevTools command.
+/// Longest wait chromiumoxide gives command chains (navigation). A single
+/// command (`Page::execute`: print, capture) stops at its own fixed
+/// [`COMMAND_TIMEOUT`] whatever this says.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// chromiumoxide 0.9.1's own fixed wait for one command
+/// (`handler::REQUEST_TIMEOUT`, `CommandFuture`); its error is
+/// `CdpError::Timeout`.
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+/// Longest wait for one step once the page is open: settling, showing a
+/// slide, measuring, printing, capturing, one MP4 frame. chromiumoxide
+/// waits forever for a page promise that never settles (a page that stops
+/// animation frames) and, without [`Session::open`]'s handler loop ending,
+/// for every call once the browser is gone; so each step is bounded here.
+///
+/// Measured (macOS, debug build, a 60-slide 1920×1080 deck with blur):
+/// printing 13.9 s, a full-page capture 3.9 s, a slide capture 0.25 s,
+/// settling 0.1 s. The longest wait a page script makes on purpose is the
+/// film timeline's 15 s (`script::frame_ready`); settling waits images at
+/// most 5 s. 60 s is four times that, and twice [`COMMAND_TIMEOUT`], so a
+/// slow print or capture still ends with chromiumoxide's error first.
+pub const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Milliseconds that replace [`STEP_TIMEOUT`], read by [`CdpRenderer::new`].
+/// For tests that need a page that never settles to fail fast (the QA
+/// e2e); the product never sets it.
+pub const STEP_TIMEOUT_ENV: &str = "OD_RENDER_STEP_TIMEOUT_MS";
 
 /// Switches every render passes on top of chromiumoxide's defaults, as
 /// (key, value) without `--`: chromiumoxide adds it (`--x` would reach
@@ -212,6 +238,8 @@ pub struct CdpRenderer {
     executable: Option<PathBuf>,
     /// Launch with `--no-sandbox` ([`NO_SANDBOX_ENV`]).
     no_sandbox: bool,
+    /// Replaces [`STEP_TIMEOUT`] ([`STEP_TIMEOUT_ENV`], [`Self::with_step_timeout`]).
+    step_timeout: Option<Duration>,
 }
 
 impl CdpRenderer {
@@ -221,6 +249,7 @@ impl CdpRenderer {
         Self {
             executable: None,
             no_sandbox: no_sandbox_from_env(),
+            step_timeout: step_timeout_from_env(),
         }
     }
 
@@ -230,6 +259,7 @@ impl CdpRenderer {
         Self {
             executable: Some(path.into()),
             no_sandbox: no_sandbox_from_env(),
+            step_timeout: step_timeout_from_env(),
         }
     }
 
@@ -242,6 +272,14 @@ impl CdpRenderer {
         self
     }
 
+    /// Bounds each step after the page opened by `limit` instead of
+    /// [`STEP_TIMEOUT`]. For tests.
+    #[must_use]
+    pub fn with_step_timeout(mut self, limit: Duration) -> Self {
+        self.step_timeout = Some(limit);
+        self
+    }
+
     fn executable(&self) -> RenderResult<PathBuf> {
         match &self.executable {
             Some(p) => Ok(p.clone()),
@@ -251,22 +289,44 @@ impl CdpRenderer {
 
     async fn open(&self, target: &RenderTarget) -> RenderResult<Session> {
         let exe = self.executable()?;
-        match tokio::time::timeout(OPEN_TIMEOUT, Session::open(&exe, target, self.no_sandbox)).await
-        {
-            Ok(session) => session,
-            Err(_) => Err(RenderError::Unavailable(format!(
-                "{} started but did not show the page within {} s. Inside another sandbox \
-                 (sandbox-exec, a container) Chrome cannot start its own; only there, \
-                 {NO_SANDBOX_ENV}=1 runs it without (this removes Chrome's isolation of the page)",
-                exe.display(),
-                OPEN_TIMEOUT.as_secs()
-            ))),
+        let opening = Session::open(&exe, target, self.no_sandbox);
+        match tokio::time::timeout(OPEN_TIMEOUT, opening).await {
+            Ok(session) => session.map(|mut s| {
+                s.step_timeout = self.step_timeout.unwrap_or(STEP_TIMEOUT);
+                s
+            }),
+            Err(_) => Err(not_shown(
+                &exe,
+                &format!("did not show the page within {} s", OPEN_TIMEOUT.as_secs()),
+            )),
         }
     }
 }
 
+/// A browser at `exe` that started but `why` (did not show the page):
+/// inside another sandbox it cannot start its own, and either hangs or
+/// quits. The error says where the way out is.
+fn not_shown(exe: &Path, why: &str) -> RenderError {
+    RenderError::Unavailable(format!(
+        "{} started but {why}. Inside another sandbox \
+         (sandbox-exec, a container) Chrome cannot start its own; only there, \
+         {NO_SANDBOX_ENV}=1 runs it without (this removes Chrome's isolation of the page)",
+        exe.display(),
+    ))
+}
+
 fn no_sandbox_from_env() -> bool {
     std::env::var(NO_SANDBOX_ENV).as_deref() == Ok("1")
+}
+
+fn step_timeout_from_env() -> Option<Duration> {
+    std::env::var(STEP_TIMEOUT_ENV)
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|ms| *ms > 0)
+        .map(Duration::from_millis)
 }
 
 /// Whether Chrome at `exe` can start its own sandbox in this process's
@@ -334,6 +394,11 @@ fn failed(context: &str) -> impl Fn(chromiumoxide::error::CdpError) -> RenderErr
 struct Session {
     browser: Browser,
     handler: tokio::task::JoinHandle<()>,
+    /// Set when the connection to the browser is lost (it quit or was
+    /// killed), before the calls waiting fail ([`unless_gone`]).
+    gone: Arc<AtomicBool>,
+    /// Bound of each [`Session::step`].
+    step_timeout: Duration,
     page: Page,
     /// Answers paused requests: only the target file goes through.
     gate: Option<tokio::task::JoinHandle<()>>,
@@ -692,28 +757,49 @@ impl Session {
             profile,
             detached,
         } = Self::launch(exe, no_sandbox).await?;
-        let handler = tokio::spawn(async move { while handler.next().await.is_some() {} });
+        let gone = Arc::new(AtomicBool::new(false));
+        let lost = Arc::clone(&gone);
+        let handler = tokio::spawn(async move {
+            drive(&mut handler, &lost).await;
+        });
+        // Chrome that cannot start its sandbox quits here (#231).
+        let quit = Arc::clone(&gone);
+        let quit = |e: RenderError| {
+            if quit.load(Ordering::Acquire) {
+                not_shown(exe, "quit before it showed the page")
+            } else {
+                e
+            }
+        };
+        let page = browser
+            .new_page("about:blank")
+            .await
+            .map_err(failed("opening a page"))
+            .map_err(quit)?;
         let mut session = Self {
-            page: browser
-                .new_page("about:blank")
-                .await
-                .map_err(failed("opening a page"))?,
+            page,
             browser,
             handler,
+            gone,
+            step_timeout: STEP_TIMEOUT,
             gate: None,
             width: target.width.max(1),
             height: target.height.max(1),
             detached,
             profile,
         };
-        session.resize(session.width, session.height).await?;
+        session
+            .resize(session.width, session.height)
+            .await
+            .map_err(quit)?;
         let url = file_url(&target.html_path)?;
-        session.gate = Some(session.only_allow(url.clone()).await?);
+        session.gate = Some(session.only_allow(url.clone()).await.map_err(quit)?);
         session
             .page
             .goto(url)
             .await
-            .map_err(failed("loading the page"))?;
+            .map_err(failed("loading the page"))
+            .map_err(quit)?;
         Ok(session)
     }
 
@@ -927,19 +1013,46 @@ impl Session {
     async fn resize(&mut self, width: u32, height: u32) -> RenderResult<()> {
         self.width = width;
         self.height = height;
-        self.page
-            .execute(SetDeviceMetricsOverrideParams::new(
-                i64::from(width),
-                i64::from(height),
-                1.0,
-                false,
-            ))
-            .await
-            .map_err(failed("setting the viewport"))?;
+        let resizing = self.page.execute(SetDeviceMetricsOverrideParams::new(
+            i64::from(width),
+            i64::from(height),
+            1.0,
+            false,
+        ));
+        self.step("setting the viewport", resizing).await?;
         Ok(())
     }
 
-    async fn eval(&self, js: &str) -> RenderResult<Value> {
+    /// Runs one CDP call, `what` naming it in errors, within
+    /// [`Self::step_timeout`]; fails at once when the browser is gone.
+    async fn step<T>(
+        &self,
+        what: &str,
+        call: impl std::future::Future<Output = Result<T, CdpError>>,
+    ) -> RenderResult<T> {
+        let started = std::time::Instant::now();
+        let limit = self.step_timeout;
+        let result = unless_gone(&self.gone, what, async {
+            match tokio::time::timeout(limit, call).await {
+                Ok(answer) => answered(what, answer),
+                Err(_) => Err(RenderError::Failed(format!(
+                    "the page gave no answer within {} s while {what}; try again, and if it fails again, a script on the page may be holding it up",
+                    limit.as_secs_f64().ceil()
+                ))),
+            }
+        })
+        .await;
+        tracing::debug!(
+            step = what,
+            ms = started.elapsed().as_millis(),
+            ok = result.is_ok(),
+            "render step"
+        );
+        result
+    }
+
+    /// Runs `js` in the page, awaiting its promise, as one [`Self::step`].
+    async fn eval(&self, what: &str, js: &str) -> RenderResult<Value> {
         let params = EvaluateParams::builder()
             .expression(js)
             .await_promise(true)
@@ -947,17 +1060,17 @@ impl Session {
             .build()
             .map_err(RenderError::Failed)?;
         let result = self
-            .page
-            .evaluate_expression(params)
-            .await
-            .map_err(failed("running page script"))?;
+            .step(what, self.page.evaluate_expression(params))
+            .await?;
         Ok(result.value().cloned().unwrap_or(Value::Null))
     }
 
     /// Waits for fonts, images and two frames, finishing or leaving
     /// `animations`; reports slides and size.
     async fn settle(&self, animations: script::Animations) -> RenderResult<PageInfo> {
-        let v = self.eval(&script::settle(animations)).await?;
+        let v = self
+            .eval("waiting for the page to load", &script::settle(animations))
+            .await?;
         let num = |k: &str| v.get(k).and_then(Value::as_u64).unwrap_or(0);
         let clamp = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
         Ok(PageInfo {
@@ -984,10 +1097,8 @@ impl Session {
             ImageFormat::Webp => params.format(CaptureScreenshotFormat::Webp).quality(92),
         };
         let shot = self
-            .page
-            .execute(params.build())
-            .await
-            .map_err(failed("capturing"))?;
+            .step("capturing", self.page.execute(params.build()))
+            .await?;
         let data: &str = shot.result.data.as_ref();
         use base64::Engine;
         base64::engine::general_purpose::STANDARD
@@ -1038,6 +1149,56 @@ impl Session {
         }
         self.handler.abort();
     }
+}
+
+/// Drives chromiumoxide's handler `events` until the connection to the
+/// browser is lost or its stream ends, then sets `lost`. chromiumoxide
+/// reports a lost connection once and then goes quiet, leaving every call
+/// in flight or after it waiting forever; the caller then drops the
+/// handler, which fails them all. A stream that ends (`None`) leaves the
+/// same calls with no answer, so it counts as lost too. chromiumoxide
+/// 0.9.1 does not end it on a WebSocket Close frame (its handler stays
+/// pending): that case still ends at [`STEP_TIMEOUT`].
+async fn drive(
+    events: &mut (impl futures_util::Stream<Item = Result<(), CdpError>> + Unpin),
+    lost: &AtomicBool,
+) {
+    while let Some(event) = events.next().await {
+        if let Err(e @ (CdpError::Ws(_) | CdpError::Io(_))) = event {
+            tracing::warn!(error = %e, "lost the connection to the browser");
+            break;
+        }
+    }
+    lost.store(true, Ordering::Release);
+}
+
+/// The answer to the CDP call `what`, chromiumoxide's own timeout (a
+/// print or capture past [`COMMAND_TIMEOUT`]) said in the user's words.
+fn answered<T>(what: &str, answer: Result<T, CdpError>) -> RenderResult<T> {
+    match answer {
+        Err(CdpError::Timeout) => Err(RenderError::Failed(format!(
+            "the browser gave no answer within {} s while {what}; try again",
+            COMMAND_TIMEOUT.as_secs()
+        ))),
+        answer => answer.map_err(failed(what)),
+    }
+}
+
+/// `call`, its error saying the browser quit when the connection to it
+/// was lost (`gone`). The handler task ends then, and dropping the handler
+/// fails every call in flight or after at once ("oneshot canceled").
+async fn unless_gone<T>(
+    gone: &AtomicBool,
+    what: &str,
+    call: impl std::future::Future<Output = RenderResult<T>>,
+) -> RenderResult<T> {
+    call.await.map_err(|e| {
+        if gone.load(Ordering::Acquire) {
+            RenderError::Failed(format!("the browser quit while {what}; try again"))
+        } else {
+            e
+        }
+    })
 }
 
 /// Waits until no process runs with `dir` as its profile (or `ps` cannot
@@ -1145,7 +1306,11 @@ impl CdpRenderer {
                 s.fit_to_slides(&info).await?;
                 let mut images = Vec::with_capacity(info.slides);
                 for i in 0..info.slides {
-                    s.eval(&script::show_slide(i, s.width, s.height)).await?;
+                    s.eval(
+                        &format!("showing slide {}", i + 1),
+                        &script::show_slide(i, s.width, s.height),
+                    )
+                    .await?;
                     images.push(
                         s.screenshot(s.viewport_clip(0, s.height), ImageFormat::Png, false)
                             .await?,
@@ -1188,7 +1353,11 @@ impl CdpRenderer {
             let info = s.settle(script::Animations::Finish).await?;
             let params = if is_deck(mode, &info)? {
                 s.fit_to_slides(&info).await?;
-                s.eval(&script::print_slides(s.width, s.height)).await?;
+                s.eval(
+                    "laying out the slides for print",
+                    &script::print_slides(s.width, s.height),
+                )
+                .await?;
                 let css_width = DECK_PAGE_WIDTH_IN * CSS_PX_PER_IN;
                 let scale = (css_width / f64::from(s.width)).clamp(0.1, 2.0);
                 PrintToPdfParams::builder()
@@ -1205,7 +1374,7 @@ impl CdpRenderer {
             } else {
                 PrintToPdfParams::builder().print_background(true).build()
             };
-            s.page.pdf(params).await.map_err(failed("printing"))
+            s.step("printing", s.page.pdf(params)).await
         }
         .await;
         s.close().await;
@@ -1257,7 +1426,12 @@ impl CdpRenderer {
         let s = self.open(target).await?;
         let result = tokio::time::timeout(FRAME_CAPTURE_TIMEOUT, async {
             s.settle(script::Animations::Play).await?;
-            let meta = s.eval(&script::frame_ready(options.require_timeline)).await?;
+            let meta = s
+                .eval(
+                    "waiting for the film's timeline",
+                    &script::frame_ready(options.require_timeline),
+                )
+                .await?;
             if options.require_timeline && meta.get("rootTimeline") != Some(&Value::Bool(true)) {
                 let id = meta.get("rootId").and_then(Value::as_str).unwrap_or("main");
                 return Err(RenderError::Failed(format!(
@@ -1286,8 +1460,11 @@ impl CdpRenderer {
             }
             let count = u32::try_from(count).unwrap_or(u32::MAX);
             for i in 0..count {
-                s.eval(&script::seek_frame(f64::from(i) / f64::from(options.fps)))
-                    .await?;
+                s.eval(
+                    &format!("showing frame {}", i + 1),
+                    &script::seek_frame(f64::from(i) / f64::from(options.fps)),
+                )
+                .await?;
                 let png = s
                     .screenshot(s.viewport_clip(0, s.height), ImageFormat::Png, false)
                     .await?;
@@ -1323,8 +1500,17 @@ impl CdpRenderer {
                 s.fit_to_slides(&info).await?;
                 let mut out = Vec::with_capacity(info.slides);
                 for i in 0..info.slides {
-                    s.eval(&script::show_slide(i, s.width, s.height)).await?;
-                    let raw = s.eval(od_export::pptx_editable::LAYOUT_SCRIPT).await?;
+                    s.eval(
+                        &format!("showing slide {}", i + 1),
+                        &script::show_slide(i, s.width, s.height),
+                    )
+                    .await?;
+                    let raw = s
+                        .eval(
+                            &format!("measuring slide {}", i + 1),
+                            od_export::pptx_editable::LAYOUT_SCRIPT,
+                        )
+                        .await?;
                     out.push(serde_json::from_value(raw).map_err(|e| {
                         RenderError::Failed(format!("measuring slide {}: {e}", i + 1))
                     })?);
@@ -1345,7 +1531,7 @@ impl CdpRenderer {
         let s = self.open(target).await?;
         let result = async {
             s.settle(script::Animations::Finish).await?;
-            s.eval(js).await
+            s.eval("running page script", js).await
         }
         .await;
         s.close().await;
@@ -1415,6 +1601,50 @@ mod tests {
             Some(RenderError::Unavailable("y".into())),
         );
         assert!(matches!(other, RenderError::NotADeck));
+    }
+
+    #[tokio::test]
+    async fn the_browser_counts_as_gone_once_its_connection_is_lost_or_ends() {
+        let invalid = || {
+            CdpError::InvalidMessage("x".into(), serde_json::from_str::<Value>("{").unwrap_err())
+        };
+        // Other errors keep the connection.
+        let lost = AtomicBool::new(false);
+        let mut events = futures_util::stream::iter(vec![Ok(()), Err(invalid()), Ok(())])
+            .chain(futures_util::stream::pending());
+        let waited = tokio::time::timeout(Duration::from_millis(50), drive(&mut events, &lost));
+        assert!(waited.await.is_err(), "stopped on a message error");
+        assert!(!lost.load(Ordering::Acquire));
+        // A connection error stops at once, before what follows.
+        let lost = AtomicBool::new(false);
+        let mut events = futures_util::stream::iter(vec![
+            Ok(()),
+            Err(CdpError::Io(std::io::ErrorKind::ConnectionReset.into())),
+        ])
+        .chain(futures_util::stream::pending());
+        tokio::time::timeout(Duration::from_secs(5), drive(&mut events, &lost))
+            .await
+            .expect("went on after the connection was lost");
+        assert!(lost.load(Ordering::Acquire));
+        // The stream ending is lost too.
+        let lost = AtomicBool::new(false);
+        let mut events = futures_util::stream::iter(vec![Ok(())]);
+        drive(&mut events, &lost).await;
+        assert!(lost.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn a_command_past_chromiumoxides_wait_says_so_in_words() {
+        let e = answered::<()>("printing", Err(CdpError::Timeout)).unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "render failed: the browser gave no answer within 30 s while printing; try again"
+        );
+        let other = answered::<()>("capturing", Err(CdpError::NotFound)).unwrap_err();
+        assert_eq!(
+            other.to_string(),
+            "render failed: capturing: Requested value not found."
+        );
     }
 
     #[test]
