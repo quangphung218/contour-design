@@ -849,3 +849,25 @@ async fn a_memory_index_that_cannot_be_written_does_not_fail_the_run() {
         "{memories}"
     );
 }
+
+/// Check setup starts Chrome and the agent CLIs: a GET (an `<img>` on any
+/// page sends one without `Origin`) must not run it, and a POST from
+/// another page or a sandboxed preview (`Origin: null`) is refused before
+/// it runs. The UI's own POST is covered by e2e `manage.e2e.mjs`.
+#[tokio::test]
+async fn the_doctor_runs_only_on_a_post_from_the_app() {
+    let d = daemon().await;
+    let url = format!("{}/api/doctor", d.base);
+    let get = d.http.get(&url).send().await.unwrap();
+    assert_eq!(get.status().as_u16(), 405, "a GET must not run the checks");
+    for origin in ["http://evil.example", "null"] {
+        let res = d
+            .http
+            .post(&url)
+            .header("origin", origin)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), 403, "Origin {origin}");
+    }
+}

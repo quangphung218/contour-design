@@ -1077,7 +1077,7 @@ fn About() -> impl IntoView {
         checking.set(true);
         report.set(None);
         let work = async move {
-            api::get::<Value>("/api/doctor")
+            api::post::<_, Value>("/api/doctor", &serde_json::json!({}))
                 .await
                 .map_err(|e| api::failure_with_ref(T::CheckSetupFailed, &e))
         };

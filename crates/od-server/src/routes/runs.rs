@@ -790,6 +790,11 @@ async fn persist_run(
             }
         }
     };
+    // A run fails after its request was answered (202): its id leads
+    // Report Issue and Export diagnostics, as a failed request's does.
+    if outcome.status == RunStatus::Failed {
+        crate::request_id::remember_failed(run.id());
+    }
     state.runs.tokens.revoke_run(run.id());
     if let Some(file) = &fin.mcp_file {
         let _ = std::fs::remove_file(file);

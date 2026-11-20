@@ -20,7 +20,7 @@ issue.
    Put it in the issue. Every log line of that request or run carries the
    id, so `grep 1a2b3c4d <data folder>/logs/daemon.log` shows the whole
    chain (request, run, render, error). Help ▸ Report Issue and Export
-   diagnostics put the lines of the last request that failed first;
+   diagnostics put the lines of the last request or run that failed first;
    `/api/diagnostics/summary?id=<ref>` picks another one.
 
 The log holds ids, paths, versions and error messages; never file contents,

@@ -150,10 +150,12 @@ Nothing leaves the machine: the user copies or attaches what these give.
   arrive with the console's ANSI colors.
 - Request ids: `crates/od-server/src/request_id.rs:tag` (outermost layer of
   `router`) runs each request in a span `req{request_id, method, path}` and
-  answers with `x-od-request-id`; it remembers the last request that failed.
+  answers with `x-od-request-id`; it remembers the last request that failed, and
+  `crates/od-server/src/routes/runs.rs:persist_run` the last run that failed (`remember_failed`).
   Work moved to its own task keeps the span (`.in_current_span()`,
   `Span::current()` in `AppState::blocking` and the export workers);
-  `crates/od-runtime/src/engine.rs:RunEngine::launch` adds `run{run_id, agent, project}`;
+  `crates/od-runtime/src/engine.rs:RunEngine::launch` adds `run{run_id, agent, project}`,
+  and `finish` logs a failed run's category, exit code and reason (one line, 300 characters) there;
   `crates/od-render-cdp/src/lib.rs` instruments the CDP handler and request
   interception tasks. Error answers log their code and message in the span
   (`crates/od-server/src/error.rs:log_answer`).
@@ -165,9 +167,9 @@ Nothing leaves the machine: the user copies or attaches what these give.
 - Report Issue `GET /api/diagnostics/summary` (`crates/od-server/src/routes/c2/help.rs:summary`)
   and Export diagnostics `GET /api/diagnostics/export`
   (`crates/od-server/src/routes/manage/diagnostics.rs:export`) take `?id=`
-  (else the last failed request) and put its lines first (`log_report`); all lines pass `scrub_line`.
+  (else the last failed request or run) and put its lines first (`log_report`); all lines pass `scrub_line`.
 - `od doctor` (`crates/od-cli/src/doctor_cmd.rs`) and Settings ▸ About ▸ Check setup
-  (`GET /api/doctor`) share `crates/od-server/src/doctor.rs`; each check takes its
+  (`POST /api/doctor`, behind the origin guard: it starts Chrome and the agents; one run at a time) share `crates/od-server/src/doctor.rs`; each check takes its
   inputs as arguments and has a pass and a fail test there. Exit 1 on any `fail`.
 
 ## Content

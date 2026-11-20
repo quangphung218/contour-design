@@ -10,7 +10,7 @@
 //! whole chain.
 //!
 //! The UI shows the id beside an error (`ref 1a2b3c4d`); the daemon also
-//! keeps the id of the last request that failed ([`last_failed`]) so
+//! keeps the id of the last request or run that failed ([`last_failed`]) so
 //! Export diagnostics and Report Issue put its lines first when the user
 //! gives no id.
 //!
@@ -31,8 +31,9 @@ pub const HEADER: &str = "x-od-request-id";
 /// Characters in an id.
 pub const ID_LEN: usize = 8;
 
-/// The id of the last request that failed (status ≥ 400 but 404), for the
-/// whole process: one daemon per process outside tests.
+/// The id of the last request that failed (status ≥ 400 but 404) or of
+/// the last run that failed, whichever came later, for the whole process:
+/// one daemon per process outside tests.
 static LAST_FAILED: Mutex<Option<String>> = Mutex::new(None);
 
 /// A new id: [`ID_LEN`] lowercase hex characters.
@@ -51,7 +52,7 @@ pub fn is_lookup_id(id: &str) -> bool {
     (4..=64).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
-/// The id of the last request that failed, if any.
+/// The id of the last request or run that failed, if any.
 #[must_use]
 pub fn last_failed() -> Option<String> {
     LAST_FAILED
@@ -60,7 +61,9 @@ pub fn last_failed() -> Option<String> {
         .clone()
 }
 
-fn remember_failed(id: &str) {
+/// Makes `id` (a request's, or a run's that failed after its request was
+/// answered) the last failure: the one diagnostics lead with.
+pub fn remember_failed(id: &str) {
     *LAST_FAILED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(id.to_owned());

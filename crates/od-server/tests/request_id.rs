@@ -227,6 +227,21 @@ async fn a_runs_lines_carry_its_run_id_and_the_request_that_started_it() {
         .filter(|l| l.contains(&run.run_id))
         .collect();
     assert!(!lines.is_empty(), "the run logged nothing with its id");
+    // Why it failed, grep-able by the ref the UI shows (its first 8
+    // characters): category and exit code in the run's span.
+    let short = &run.run_id[..8];
+    let why: Vec<&String> = lines
+        .iter()
+        .filter(|l| l.contains(short) && l.contains("run failed"))
+        .collect();
+    assert_eq!(why.len(), 1, "{lines:#?}");
+    assert!(why[0].contains("exit_code=Some(3)"), "{}", why[0]);
+    assert!(why[0].contains("category=Some("), "{}", why[0]);
+    // The failed run leads Report Issue and Export diagnostics.
+    assert_eq!(
+        od_server::routes::manage::diagnostics::lookup_id(None).as_deref(),
+        Some(run.run_id.as_str())
+    );
     // The engine's own lines sit in the run's span, not only name it.
     assert!(
         lines

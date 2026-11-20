@@ -55,9 +55,14 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
 11. The log file gets its own field formatter (`src/logs.rs:PlainFields`), never the console's.
     - same two tests (ANSI codes break `request_id=…`)
-12. `od doctor` and `GET /api/doctor` share `src/doctor.rs`; a check takes its inputs as arguments
-    and has a pass and a fail test; only `Status::Fail` fails the report.
+12. `od doctor` and `POST /api/doctor` share `src/doctor.rs`; a check takes its inputs as arguments
+    and has a pass and a fail test; only `Status::Fail` fails the report. The route is a POST (it starts
+    Chrome and the agents; a GET from an `<img>` carries no `Origin`) and runs one at a time.
     - `src/doctor.rs::tests`, `../od-cli/tests/cli.rs::doctor_reports_each_check_and_fails_on_any_failure`
+    - `tests/c2.rs::the_doctor_runs_only_on_a_post_from_the_app`
+13. A run that fails logs one `run failed` line in its span and becomes the last failure diagnostics lead with
+    (`src/routes/runs.rs:persist_run`, `src/request_id.rs:remember_failed`).
+    - `tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).
@@ -69,6 +74,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 - A new listing or export that ships files must filter draft images; handoff was missed once (#200).
 - A `tokio::spawn` or `spawn_blocking` drops the request's span: instrument it, or its lines lose the id.
 - Two fmt layers with the same field formatter share a span's formatted fields; the file got the console's colors.
+- A GET that does more than read (starts a process, writes a file) can be set off by an `<img>` with no `Origin`; make it a POST (#271).
 
 ## Check
 - `make check`; single test: `cargo test -p od-server --test drafts`.

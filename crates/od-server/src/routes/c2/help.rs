@@ -4,7 +4,10 @@
 //!   report to paste into an issue (version, platform, agents, recent
 //!   runs, the daemon log: the lines of `?id=` or of the last request
 //!   that failed first, then the last lines), with nothing secret in it.
-//! - `GET  /api/doctor`: the checks of `od doctor` ([`crate::doctor`]).
+//! - `POST /api/doctor`: the checks of `od doctor` ([`crate::doctor`]).
+//!   POST, not GET: it starts Chrome and the agent CLIs, so a page
+//!   elsewhere must not set it off with an `<img>` (the origin guard
+//!   checks the `Origin` a browser always sends with a POST).
 //! - `POST /api/diagnostics/open-logs`: `<data>/logs` (the daemon log) in
 //!   the OS file
 //!   manager (`OD_OPEN_COMMAND` overrides, as for handoff).
@@ -158,10 +161,15 @@ pub async fn summary(
     })))
 }
 
-/// `GET /api/doctor`: Settings ▸ About ▸ Check setup, the checks of `od
+/// One check of the setup at a time: a second press waits for the first
+/// instead of starting a second Chrome.
+static DOCTOR: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// `POST /api/doctor`: Settings ▸ About ▸ Check setup, the checks of `od
 /// doctor` run by this daemon (its own data folder, its agents' `PATH`,
 /// the renderer exports use). The daemon line says it answered.
 pub async fn doctor(State(state): State<AppState>) -> axum::Json<crate::doctor::Report> {
+    let _one = DOCTOR.lock().await;
     let version = env!("CARGO_PKG_VERSION");
     let url = state
         .config

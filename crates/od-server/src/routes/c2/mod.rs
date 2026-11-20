@@ -37,5 +37,5 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/diagnostics/summary", get(help::summary))
         .route("/api/diagnostics/open-logs", post(help::open_logs))
-        .route("/api/doctor", get(help::doctor))
+        .route("/api/doctor", post(help::doctor))
 }
