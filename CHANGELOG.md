@@ -10,31 +10,35 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
-- Daemon log: lines written by work a request hands to a task of its own (a design system job that failed, for one) now carry that request's id, so Report Issue and Export diagnostics find them.
+- Daemon log lines from background tasks now carry the request id, so diagnostics find them (#274).
 
 ## [0.2.0-beta.51] - 2026-11-20
 
 ### Highlights
 
-- **Suggestions that fit the turn.** Under each finished turn, up to three next steps written by the agent for what it just made, plus a "Fix" chip when the page has lint findings. A chip adds to what you typed; it never replaces it.
-- **Quitting asks first while agents run.** ⌘Q, closing the window or Restart after an update tells you how many agents would stop. Logging out or shutting down the Mac is not held.
-- **Exports never hang.** A page that never finishes loading, or a Chrome that quits mid-export, now fails within a minute with the step it was on, and you can export again.
-- **Check setup.** Settings ▸ About ▸ Check setup (or `od doctor`) checks the daemon, data folder, agent CLIs, Chrome, ffmpeg and disk space, and says how to fix each failing item. Errors now carry a short Ref you can paste into an issue.
+- **Suggestions from the agent.** Each finished turn ends with up to three next steps for what it just made.
+- **Quit asks first.** Contour says how many agents are running before ⌘Q or Restart stops them.
+- **Exports never hang.** A stuck page or a closed Chrome now fails within a minute; export again.
+- **Check setup.** Settings ▸ About ▸ Check setup (or `od doctor`) finds what is missing and says how to fix it.
 
 ### Added
 
-- `od doctor` checks what Contour needs, one line each with how to fix it: the daemon runs and matches `od`'s version, the data folder is writable, your agent CLI is found on the login `PATH` and answers `--version`, Chrome opens a blank page for export, ffmpeg for MP4, which project folders macOS asks permission for (reported only, no dialog), and free disk space. It exits 1 when a check fails; `--json` gives a report to attach to an issue. Settings ▸ About ▸ Check setup runs the same checks.
-- Errors now carry an id to quote in an issue: a failed export ends with "(Ref: 1a2b3c4d)" and a failed run shows the start of its run id. Every line of the daemon log for that request or run carries the id, and Report Issue and Export diagnostics put the lines of the last failed request or run first (or of `?id=`). A failed run logs its failure kind, exit code and reason under its id. The log file no longer gets color codes in its span fields.
-- Docs: the README is rewritten around what Contour does, how it works and where it stands, with a Vietnamese version (README.vi.md), the download table of each release, how to check a download's checksum and the macOS signature, and a new docs/STATUS.md listing what works and how each part was checked. `scripts/release-notes.sh --body` writes a release page that starts with Highlights (from an optional `### Highlights` block in the CHANGELOG) and ends with what was verified and a download table.
+- Add `od doctor` and Settings ▸ About ▸ Check setup: checks agent CLIs, Chrome, ffmpeg, data folder and disk (#271).
+- Show a Ref id in export and run errors; diagnostics put that request's log lines first (#271).
+- Rewrite the README, add a Vietnamese README and docs/STATUS.md (#267).
 
 ### Changed
 
-- The suggestions under a finished turn now come from the turn itself: the agent ends its answer with up to three next actions on what it just made, in the app's language, and they show as chips that fill the composer (edit before sending). They stay after a reload. A page the turn wrote with must-fix or should-fix lint findings gets a first chip naming them ("Fix 1 issue: emoji icon", with the page's name when the turn wrote more than one) that asks the agent to fix them in that page. A chip, a starter prompt, a Home example, "Create plugin" or a toolbox action no longer replaces what is already typed in the composer: it goes on a new line under it. "Mobile version" and "Try variations" show only when the agent suggested nothing and the lint found nothing. "View", "Comment on the page", Export and the toolbox actions are now small buttons above the chips, full 44 px touch targets on a phone, and they no longer move when the chips come.
-- Desktop app: quitting (⌘Q, the menu, the Dock), closing the window on Windows and Linux, or Restart after an update while agents are running asks first, in any project and for runs started from `od` or MCP too. The dialog says how many agents are running and that quitting stops them; Quit and stop agents goes, Cancel keeps them running. Work not saved is listed in the same dialog, and the button then says the drafts are dropped. A second ⌘Q while it is open does not quit. Logging out, restarting or shutting down the Mac is not held for running agents: they stop cleanly and Contour quits. A turn stopped by quitting now reads "Stopped" and says Contour was quit while it ran and that the files it wrote are kept, instead of "Lost the connection to Contour".
+- Take the chips under a turn from the agent's own next steps, plus a Fix chip for lint findings (#265).
+- Add chips and examples under what you typed instead of replacing it (#265).
+- Ask before quitting or restarting while agents run, and show how many would stop (#263).
+- Label a turn stopped by quitting "Stopped" and keep its files (#263).
 
 ### Fixed
 
-- PDF, PNG, JPEG, WebP, PPTX and MP4 exports no longer wait forever on a page that never finishes loading (a script that stops animation frames) or on a Chrome that quit in the middle: the export fails within a minute, or at once when Chrome quit, with "Export failed:" and the step it was on, and can be tried again. A print or capture past Chrome's 30 s now says so in words instead of "Request timed out."
+- Fail exports within a minute when the page never finishes loading or Chrome quits, instead of waiting forever (#270).
+
+<!-- changelog-lint: stop -->
 
 ## [0.2.0-beta.50] - 2026-11-19
 
