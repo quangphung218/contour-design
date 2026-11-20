@@ -1344,14 +1344,15 @@ mod tests {
         }
     }
 
-    /// The READMEs say how many agent CLIs Contour finds; the number is
-    /// [`BUILTIN`]'s length, not typed by hand.
+    /// The READMEs and STATUS say how many agent CLIs Contour finds; the
+    /// number is [`BUILTIN`]'s length, not typed by hand.
     #[test]
     fn the_readmes_count_every_built_in_agent() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         for (file, unit) in [
             ("README.md", "coding-agent CLIs"),
             ("README.vi.md", "coding-agent CLI"),
+            ("docs/STATUS.md", "CLIs, API key"),
         ] {
             let text = std::fs::read_to_string(root.join(file)).unwrap();
             let said = format!("{} {unit}", BUILTIN.len());
