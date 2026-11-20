@@ -16,6 +16,8 @@ All notable changes to Contour are recorded here. The format follows
 
 - Fail the `od doctor` agent check when the chosen agent is unknown, instead of passing on Claude Code (#280).
 - Check the asked daemon's data folder and agent in `od doctor --daemon-url`, not this shell's (#280).
+- Show "Stopped" on the Home card of a run stopped by quitting, like its turn (#284).
+- Say Check setup looks only at Contour's project folders; your agent CLI may still ask for Documents (#284).
 - Continue a chat with an ACP agent that cannot reload sessions by resending the conversation (#280).
 - Daemon log lines from background tasks now carry the request id, so diagnostics find them (#274).
 - OpenCode 2 works and writes in the project folder, and its thinking shows in the chat.

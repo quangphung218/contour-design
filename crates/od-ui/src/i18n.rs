@@ -362,7 +362,7 @@ messages! {
     StatusIncomplete => "Incomplete", "Chưa xong";
     StatusSucceeded => "Completed", "Hoàn tất";
     StatusFailed => "Failed", "Lỗi";
-    StatusCanceled => "Canceled", "Đã huỷ";
+    StatusCanceled => "Stopped", "Đã dừng";
     BoardEmptyColumn => "No designs", "Chưa có design";
     Freeform => "freeform", "tự do";
     TagPrototype => "Prototype", "Prototype";

@@ -447,7 +447,7 @@ pub fn folder_access_check(home: Option<&Path>, folders: &[PathBuf]) -> Check {
     if protected.is_empty() {
         return Check::ok(
             ID,
-            "No project folder is in Documents, Desktop or Downloads; macOS asks nothing.",
+            "No Contour project folder is in Documents, Desktop or Downloads. Your agent CLI may still ask for them.",
         );
     }
     let list: Vec<String> = protected.iter().map(|p| p.display().to_string()).collect();
