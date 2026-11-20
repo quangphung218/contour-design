@@ -35,6 +35,8 @@ cat > "$work/CHANGELOG.md" <<'MD'
 
 - A fixed bug.
 
+<!-- changelog-lint: stop -->
+
 ## [1.1.0] - 2026-11-10
 
 ### Fixed
@@ -65,6 +67,7 @@ has() { grep -qxF -- "$1" "$work/out"; }
 
 run 1.2.0; rc=$?
 check "plain: prints the section without its Highlights block" '[ $rc -eq 0 ] && ! grep -q "Highlights" "$work/out" && ! grep -q "Export waits" "$work/out" && has "### Added" && has "- A new export." && has "- A fixed bug." && ! grep -q "## Downloads" "$work/out"'
+check "the changelog-lint marker is left out" '! grep -q "changelog-lint" "$work/out"'
 check "plain: stops at the next version" '! grep -q "Fix one" "$work/out"'
 run 1.1.0; rc=$?
 check "plain: a section without Highlights is printed as it is" '[ $rc -eq 0 ] && [ "$(cat "$work/out")" = "$(printf "\n### Fixed\n\n- Fix one.\n- Fix two.\n\n### Added\n\n- Add one.\n- Add two.\n- Add three.\n")" ]'
@@ -82,6 +85,7 @@ check "body: Highlights are not repeated under What's changed" '[ "$(grep -c "Ex
 check "body: What's changed keeps the section" 'has "## What'"'"'s changed" && has "### Added" && has "- A fixed bug."'
 check "body: without --verified it says not checked by hand" 'grep -q "not yet checked by hand" "$work/out"'
 check "body: every download row with the default repo" 'grep -qF "[\`Contour_1.2.0_universal.dmg\`](https://github.com/quangphung218/contour-design/releases/download/v1.2.0/Contour_1.2.0_universal.dmg)" "$work/out" && grep -qF "Contour_1.2.0_amd64.deb" "$work/out" && grep -qF "Contour_1.2.0_amd64.AppImage" "$work/out" && grep -qF "Contour_1.2.0_x64_en-US.msi" "$work/out"'
+check "body: the changelog-lint marker is left out" '! grep -q "changelog-lint" "$work/out"'
 check "body: checksum and signature note" 'grep -qF "SHA256SUMS" "$work/out" && grep -qF "codesign --verify --deep --strict" "$work/out"'
 
 run --body 1.1.0; rc=$?

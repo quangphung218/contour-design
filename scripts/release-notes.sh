@@ -48,6 +48,7 @@ file="$(cd "$(dirname "$0")/.." && pwd)/CHANGELOG.md"
 notes="$(awk -v v="$v" '
   index($0, "## [" v "]") == 1 { p=1; next }
   p && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+  /^<!-- changelog-lint: stop -->$/ { next }
   p { print }' "$file")"
 [ -n "$(printf '%s' "$notes" | tr -d '[:space:]')" ] || { echo "CHANGELOG.md has no notes for $v" >&2; exit 1; }
 
