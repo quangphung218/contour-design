@@ -170,6 +170,15 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
 /// inches): Chrome lays a CSS page size out and shrinks it onto the paper,
 /// which on top of the print `scale` drew a deck's `@page { size: 1920px
 /// 1080px }` at 2/3 of the page (QA-120).
+///
+/// Each slide prints as it shows on screen (bundled `html-ppt-*` decks):
+/// - every slide gets the deck's "active" classes, as [`show_slide`] gives
+///   the one it shows: decks lay a slide out (`.slide.active { display:
+///   flex }`) or show its content only while it is active;
+/// - ancestors lose an inline `width`: a slide strip a script sets to
+///   N×100vw made the page N slides wide, and Chrome shrank it onto the paper;
+/// - a slide is size-contained, so Chrome does not break it across pages
+///   where a box reaches past its bottom before a transform moves it back.
 pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
     let (pw, ph) = paper_in;
     let css = format!(
@@ -179,7 +188,7 @@ pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
          [data-od-print-hidden] {{ display: none !important; }} \
          [data-od-print-slide] {{ position: relative !important; inset: auto !important; left: auto !important; top: auto !important; \
            width: {w}px !important; height: {h}px !important; margin: 0 !important; transform: none !important; translate: none !important; scale: none !important; \
-           opacity: 1 !important; visibility: visible !important; overflow: hidden !important; \
+           opacity: 1 !important; visibility: visible !important; overflow: hidden !important; contain: size !important; \
            break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; }} \
          [data-od-print-last] {{ break-after: auto !important; page-break-after: auto !important; }}",
         hide = HIDE_CHROME_SELECTOR
@@ -194,9 +203,11 @@ pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
   (document.head || document.documentElement).appendChild(style);
   const keep = new Set();
   slides.forEach((s) => {{ for (let a = s; a; a = a.parentElement) keep.add(a); }});
+  const used = {active}.filter((c) => slides.some((s) => s.classList.contains(c)));
   slides.forEach((s, k) => {{
     s.setAttribute('data-od-print-slide', '');
     if (k === slides.length - 1) s.setAttribute('data-od-print-last', '');
+    used.forEach((c) => s.classList.add(c));
     s.removeAttribute('hidden');
     if (getComputedStyle(s).display === 'none') s.style.setProperty('display', 'block', 'important');
     for (let a = s.parentElement; a; a = a.parentElement) {{
@@ -204,7 +215,7 @@ pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
         if (!keep.has(c) && !slides.includes(c)) c.setAttribute('data-od-print-hidden', '');
       }}
       if (a === document.documentElement) break;
-      for (const [p, v] of [['transform', 'none'], ['height', 'auto'], ['max-height', 'none'], ['overflow', 'visible'], ['position', 'static'], ['display', 'block']]) {{
+      for (const [p, v] of [['transform', 'none'], ['width', 'auto'], ['height', 'auto'], ['max-height', 'none'], ['overflow', 'visible'], ['position', 'static'], ['display', 'block']]) {{
         a.style.setProperty(p, v, 'important');
       }}
     }}
@@ -215,6 +226,7 @@ pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
         slides = slides_fn(),
         finish = finish_animations_fn(),
         css = js_str(&css),
+        active = ACTIVE_CLASSES,
     )
 }
 

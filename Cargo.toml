@@ -41,6 +41,7 @@ criterion = { version = "0.7", default-features = false }
 flate2 = "1"
 fs4 = "1"
 futures-util = "0.3"
+hayro = { version = "0.9", default-features = false }
 hex = "0.4"
 http-body-util = "0.1"
 httpdate = "1"

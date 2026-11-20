@@ -23,6 +23,7 @@ nix.workspace = true
 xattr.workspace = true
 
 [dev-dependencies]
+hayro.workspace = true
 base64.workspace = true
 lopdf.workspace = true
 png.workspace = true
