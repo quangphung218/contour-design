@@ -28,10 +28,27 @@
   };
   const BLOCK = /^(block|flex|grid|table|list-item|flow-root|table-cell|table-caption|inline-block|inline-flex|inline-grid)$/;
 
-  // The nearest painted box behind the slide: decks often colour a stage
-  // between the slide and a body painted as the dark shell around it.
+  // The first box from the slide up that paints an opaque background:
+  // decks often colour a stage between the slide and a body painted as the
+  // dark shell around it. A box's own colour wins over its gradients, which
+  // on a coloured box are mostly texture (ruled lines, soft spots); a box
+  // painted only by a gradient gives its first opaque stop, as it covers
+  // every ancestor (html-ppt-graphify-dark-graph). A gradient with no
+  // opaque stop lets the ancestors show through.
+  const COLOR = /(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix)\((?:[^()]|\([^()]*\))*\)|#[0-9a-fA-F]{3,8}\b/g;
+  const paint = (cs) => {
+    const own = rgb(cs.backgroundColor);
+    if (own) return own;
+    const image = cs.backgroundImage || '';
+    if (!/gradient\(/.test(image)) return null;
+    for (const [c] of image.matchAll(COLOR)) {
+      const stop = rgb(c);
+      if (stop && stop.startsWith('rgb(')) return stop;
+    }
+    return null;
+  };
   let bg = null;
-  for (let a = slide; a && !bg; a = a.parentElement) bg = rgb(getComputedStyle(a).backgroundColor);
+  for (let a = slide; a && !bg; a = a.parentElement) bg = paint(getComputedStyle(a));
   out.background = bg || '#ffffff';
 
   const toPng = async (el, r) => {

@@ -197,6 +197,66 @@ async fn a_framework_deck_exports_as_the_user_sees_it() {
         slide1.contains("2D1D14") && slide1.contains("B74B21"),
         "run colours missing: {slide1}"
     );
+
+    // A slide painted by a gradient covers its parent's colour: the
+    // background is the gradient's first stop, not the white parent
+    // (html-ppt-graphify-dark-graph; review of #283).
+    let path = dir.path().join("gradient.html");
+    std::fs::write(&path, gradient_deck()).unwrap();
+    let layouts = renderer
+        .extract_layouts(&RenderTarget::new(path))
+        .await
+        .unwrap();
+    let backgrounds: Vec<_> = layouts
+        .iter()
+        .map(|s| s.background.as_deref().and_then(parse_color).map(|c| c.hex))
+        .collect();
+    assert_eq!(backgrounds.len(), 4, "{backgrounds:?}");
+    // oklch(0.15 0.02 270): dark blue, not the white `.deck`.
+    assert!(
+        backgrounds[0].is_some_and(|c| c.iter().all(|v| *v < 40) && c[2] > c[0]),
+        "linear oklch gradient: {backgrounds:?}"
+    );
+    assert_eq!(
+        backgrounds[1],
+        Some([16, 32, 48]),
+        "radial gradient after see-through stops: {backgrounds:?}"
+    );
+    // A coloured slide keeps its colour under a texture gradient
+    // (deck-field-notebook's ruled lines, zhangzara-capsule's soft spots).
+    assert_eq!(
+        backgrounds[2],
+        Some([246, 240, 223]),
+        "texture over a colour: {backgrounds:?}"
+    );
+    // A gradient with no opaque stop covers nothing: its parent shows.
+    assert_eq!(
+        backgrounds[3],
+        Some([32, 48, 64]),
+        "see-through gradient: {backgrounds:?}"
+    );
+}
+
+/// Slides that paint their own background with `background-image`, inside
+/// a white `.deck` inside a dark `body`.
+fn gradient_deck() -> String {
+    r#"<!doctype html><html><head><style>
+html,body{margin:0;background:#06060c}
+.deck{width:1920px;height:1080px;background:#ffffff}
+.slide{display:none;width:1920px;height:1080px;color:#f0ece4;font:64px sans-serif}
+.slide.active{display:block}
+.s1{background:linear-gradient(160deg,oklch(0.15 0.02 270),#0e1020 50%,#08080f)}
+.s2{background:radial-gradient(circle at 30% 20%,transparent,rgba(255,255,255,.2),#102030 40%,#000)}
+.s3{background:linear-gradient(transparent 47px,#cfdde6 47px,#cfdde6 48px) #f6f0df;background-size:100% 48px}
+.s4{background:radial-gradient(circle,rgba(255,255,255,.15),transparent 40%)}
+.tint{background:#203040}
+</style></head><body><main class="deck">
+<section class="slide s1 active"><h1>One</h1></section>
+<section class="slide s2"><h1>Two</h1></section>
+<section class="slide s3"><h1>Three</h1></section>
+<div class="tint"><section class="slide s4"><h1>Four</h1></section></div>
+</main></body></html>"#
+        .to_owned()
 }
 
 fn close(a: [u8; 3], b: [u8; 3]) -> bool {
