@@ -6,13 +6,13 @@ the restart step of criterion 4.
 
 **Check setup and quit-while-running work. Two exports are wrong.** The
 PDF of a slide deck fills only the top-left two thirds of each page
-(QA-119), and the editable PowerPoint loses the deck's colours (QA-120).
+(QA-120), and the editable PowerPoint loses the deck's colours (QA-121).
 PowerPoint as images and MP4 are correct.
 
 | # | Criterion | Result |
 |---|---|---|
 | 1 | Settings ▸ About ▸ Check setup runs, every check has a result, a failing check says how to fix it | **Pass** |
-| 2 | Design with an entrance animation, Export PDF, PPTX and MP4 through the Save panel, content right | **Fail**: PDF (QA-119) and PPTX editable (QA-120). PPTX images and MP4 pass |
+| 2 | Design with an entrance animation, Export PDF, PPTX and MP4 through the Save panel, content right | **Fail**: PDF (QA-120) and PPTX editable (QA-121). PPTX images and MP4 pass |
 | 3 | ⌘Q during a run (QA-114): dialog counts agents, Cancel keeps the run, Quit and stop agents exits, turn reads "Stopped", files kept | **Pass** |
 | 4 | Update now beta.50 → beta.51, Restart, app reports beta.51 | **Not finished**: check, download and install pass; Restart not run (see below) |
 
@@ -23,12 +23,12 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 
 | ID | Sev | Bug |
 |---|---|---|
-| QA-119 | 🟠 | PDF of a slide deck: each 960×540 pt page holds the slide at 640×360 pt in its top-left corner; the rest is white |
-| QA-120 | 🟠 | PowerPoint ▸ Editable text: slide background is the deck's dark shell colour and every text run has no colour |
-| QA-121 | 🔵 | A run stopped by quitting reads "Stopped" in the chat but "Canceled" on its Home and Projects card |
-| QA-122 | 🟡 | Check setup says "macOS asks nothing" while the first agent test of the same copy raised the Documents dialog |
+| QA-120 | 🟠 | PDF of a slide deck: each 960×540 pt page holds the slide at 640×360 pt in its top-left corner; the rest is white |
+| QA-121 | 🟠 | PowerPoint ▸ Editable text: slide background is the deck's dark shell colour and every text run has no colour |
+| QA-122 | 🔵 | A run stopped by quitting reads "Stopped" in the chat but "Canceled" on its Home and Projects card |
+| QA-123 | 🟡 | Check setup says "macOS asks nothing" while the first agent test of the same copy raised the Documents dialog |
 
-### QA-119 🟠 Deck PDF is printed at two thirds of the page
+### QA-120 🟠 Deck PDF is printed at two thirds of the page
 
 - Steps: Home ▸ Slide deck, any prompt (here a 3-slide bakery deck); the
   page uses the built-in deck frame (`.deck-stage` 1920×1080, `.slide`
@@ -46,7 +46,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
   comes out at 1280/1920 of the intended size, as if the scale is applied
   once more than needed.
 
-### QA-120 🟠 Editable PowerPoint drops the deck's colours
+### QA-121 🟠 Editable PowerPoint drops the deck's colours
 
 - Steps: same deck, Export ▸ PowerPoint ▸ Editable text ▸ Save; open in
   Keynote, PowerPoint or LibreOffice.
@@ -66,7 +66,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
 - The lint chip "Fix 1 issue: slide theme missing" was shown under the
   turn; it may be related, but the export should not need it.
 
-### QA-121 🔵 "Stopped" in the chat, "Canceled" on the card
+### QA-122 🔵 "Stopped" in the chat, "Canceled" on the card
 
 - After Quit and stop agents and a relaunch, the turn reads "Stopped —
   Contour was quit while this turn ran…" ([06](first-run-beta51-native/06-reopen-stopped.png)),
@@ -76,7 +76,7 @@ get out of · 🟡 poor or confusing message · 🔵 minor.
   `T::StatusCanceled` without looking at `app_quit` (#263 changed only the
   turn).
 
-### QA-122 🟡 Check setup says macOS asks nothing, macOS asked
+### QA-123 🟡 Check setup says macOS asks nothing, macOS asked
 
 - The data folder was under `/private/tmp`, no project in Documents. On the
   first launch the Claude Code test passed (38954 ms), and the TCC table
@@ -139,9 +139,9 @@ hides what does not fit, QA-031):
 
 | Export | Save panel after click | File after Save | Content |
 |---|---|---|---|
-| Deck ▸ PDF | 4 s | 1 s | 3 pages 960×540 pt, all text, slide at two thirds size (**QA-119**) |
+| Deck ▸ PDF | 4 s | 1 s | 3 pages 960×540 pt, all text, slide at two thirds size (**QA-120**) |
 | Deck ▸ PowerPoint ▸ Slides as images | 3 s | under 1 s | 3 slides, 3 PNGs 1920×1080 filling 16:9; darkest text pixel rgb(28, 20, 14) = `--fg`, so captured after the animation ([02](first-run-beta51-native/02-pptx-images-slide1.png)) |
-| Deck ▸ PowerPoint ▸ Editable text | 2 s | under 1 s | 3 slides, every text run present, colours wrong (**QA-120**) |
+| Deck ▸ PowerPoint ▸ Editable text | 2 s | under 1 s | 3 slides, every text run present, colours wrong (**QA-121**) |
 | Motion ▸ MP4 video | 28 s | under 1 s | H.264 1920×1080, 30 fps, 180 frames, 6.000 s, AAC audio; frames at 0.2 / 1.5 / 3 / 5.5 s show the title then the line arriving ([04](first-run-beta51-native/04-mp4-frames.png)) |
 
 The MP4 Save panel opens only after the 28 s render, and it proposes
@@ -169,7 +169,7 @@ agent-desktop refuses to send ⌘Q. The item is the one ⌘Q triggers.
 
 | Time | Step | Result |
 |---|---|---|
-| 17:39:33 | Open the beta.50 copy (`dev.contour.desktop.qa50u`) | Documents dialog during the first test (QA-122); Don't Allow; test timed out at 45 s; Skip for now |
+| 17:39:33 | Open the beta.50 copy (`dev.contour.desktop.qa50u`) | Documents dialog during the first test (QA-123); Don't Allow; test timed out at 45 s; Skip for now |
 | 17:43:37 | Settings ▸ About ▸ Check for updates | "Version 0.2.0-beta.51 is available" in 2 s |
 | 17:43:52 | Update now | "Updating to version 0.2.0-beta.51", then "Version 0.2.0-beta.51 is installed. Restart Contour to start using it." Later / Restart ([07](first-run-beta51-native/07-update-installed.png)); seen at 17:47:49 |
 | | Bundle on disk | `~/Applications/ContourQA50u.app` replaced in place: version 0.2.0-beta.51, `codesign --verify --deep --strict` valid, adhoc, 5594 files, id `dev.contour.desktop` |
