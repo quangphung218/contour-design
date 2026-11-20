@@ -52,8 +52,22 @@ impl ApiErr {
     }
 }
 
+/// Logs an error answer inside the request's span
+/// ([`crate::request_id`]): its code and message, at `warn` for a failure
+/// of ours (5xx), at `info` for a refused request (4xx but 404). The
+/// message is the one the client reads; it names files and agents, never
+/// their contents.
+pub(crate) fn log_answer(status: StatusCode, code: ErrorCode, message: &str) {
+    if status.is_server_error() {
+        tracing::warn!(status = status.as_u16(), ?code, error = %message, "error answer");
+    } else if status.is_client_error() && status != StatusCode::NOT_FOUND {
+        tracing::info!(status = status.as_u16(), ?code, error = %message, "error answer");
+    }
+}
+
 impl IntoResponse for ApiErr {
     fn into_response(self) -> Response {
+        log_answer(self.status, self.code, &self.message);
         let body = ApiErrorResponse {
             error: ApiError {
                 code: self.code,

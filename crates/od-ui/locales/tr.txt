@@ -682,6 +682,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = {0} dışa aktarılıyor…
 Exported = {0} dışa aktarıldı
 ExportFailed = Dışa aktarma başarısız: {0}
+ErrorRef = Ref: {0}
 ExportNoAudio = ses yok
 ExportAudioTrack = 1 ses parçası
 ExportAudioTracks = {0} ses parçası

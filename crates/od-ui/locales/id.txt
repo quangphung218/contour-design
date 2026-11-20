@@ -683,6 +683,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = Mengekspor {0}…
 Exported = {0} diekspor
 ExportFailed = Ekspor gagal: {0}
+ErrorRef = Ref: {0}
 ExportNoAudio = tanpa audio
 ExportAudioTrack = 1 trek audio
 ExportAudioTracks = {0} trek audio

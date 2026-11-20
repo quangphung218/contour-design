@@ -315,29 +315,40 @@ impl RunEngine {
         self.active()
             .insert(spec.run.id().to_owned(), Arc::clone(&active));
         let engine = self.clone();
-        tokio::spawn(async move {
-            let run_id = spec.run.id().to_owned();
-            // Project runs only: what the agent changes there is the turn's
-            // result (spec L4); taken before the agent can write.
-            // The window opens before the snapshot: whatever the agent
-            // stamps falls inside it, and a run of the project that ends
-            // during the walk keeps its window for this one.
-            let turn = match spec.project_id.as_deref() {
-                Some(project) => {
-                    let start = std::time::SystemTime::now();
-                    let turn = engine.turn_windows.open(project, &run_id, start);
-                    let cwd = spec.cwd.clone();
-                    tokio::task::spawn_blocking(move || turn_files::Snapshot::take(&cwd))
-                        .await
-                        .ok()
-                        .map(|before| turn.with_before(before))
-                }
-                None => None,
-            };
-            let outcome = engine.drive(spec, &active, turn).await;
-            engine.active().remove(&run_id);
-            outcome
-        })
+        // Every line the run logs carries its id, under the span of the
+        // request that started it (`req{request_id=…}:run{run_id=…}`).
+        let span = tracing::info_span!(
+            "run",
+            run_id = %spec.run.id(),
+            agent = spec.def.id,
+            project = spec.project_id.as_deref().unwrap_or(""),
+        );
+        tokio::spawn(tracing::Instrument::instrument(
+            async move {
+                let run_id = spec.run.id().to_owned();
+                // Project runs only: what the agent changes there is the turn's
+                // result (spec L4); taken before the agent can write.
+                // The window opens before the snapshot: whatever the agent
+                // stamps falls inside it, and a run of the project that ends
+                // during the walk keeps its window for this one.
+                let turn = match spec.project_id.as_deref() {
+                    Some(project) => {
+                        let start = std::time::SystemTime::now();
+                        let turn = engine.turn_windows.open(project, &run_id, start);
+                        let cwd = spec.cwd.clone();
+                        tokio::task::spawn_blocking(move || turn_files::Snapshot::take(&cwd))
+                            .await
+                            .ok()
+                            .map(|before| turn.with_before(before))
+                    }
+                    None => None,
+                };
+                let outcome = engine.drive(spec, &active, turn).await;
+                engine.active().remove(&run_id);
+                outcome
+            },
+            span,
+        ))
     }
 
     /// Asks a run to stop: abort line (if the protocol has one), close

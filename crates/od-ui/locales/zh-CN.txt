@@ -683,6 +683,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = 正在导出 {0}…
 Exported = 已导出 {0}
 ExportFailed = 导出失败：{0}
+ErrorRef = 参考号：{0}
 ExportNoAudio = 无音频
 ExportAudioTrack = 1 条音轨
 ExportAudioTracks = {0} 条音轨

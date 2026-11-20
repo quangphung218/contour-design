@@ -27,6 +27,7 @@ use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::Instrument;
 
 /// SSE keepalive comment interval (spec 2.2).
 pub const KEEPALIVE: Duration = Duration::from_secs(25);
@@ -158,35 +159,39 @@ pub async fn create(
 
     // axum drops this future when the client disconnects. Once the run is
     // registered it must launch or end, so the rest runs in its own task.
-    let task = state.runs.tasks.spawn({
-        let state = state.clone();
-        let run = Arc::clone(&run);
-        let conversation_id = conversation.id.clone();
-        async move {
-            let res = prepare_and_launch(
-                &state,
-                def,
-                &req,
-                &project,
-                &conversation_id,
-                &run,
-                &user_message_id,
-            )
-            .await;
-            if let Err(err) = &res {
-                end_unlaunched(
+    let task = state.runs.tasks.spawn(
+        {
+            let state = state.clone();
+            let run = Arc::clone(&run);
+            let conversation_id = conversation.id.clone();
+            async move {
+                let res = prepare_and_launch(
                     &state,
+                    def,
+                    &req,
+                    &project,
+                    &conversation_id,
                     &run,
-                    &comment_ids(&req),
-                    RunStatus::Failed,
-                    Some(&err.message),
-                    Some(od_contracts::FailureCategory::SpawnFailed),
+                    &user_message_id,
                 )
                 .await;
+                if let Err(err) = &res {
+                    end_unlaunched(
+                        &state,
+                        &run,
+                        &comment_ids(&req),
+                        RunStatus::Failed,
+                        Some(&err.message),
+                        Some(od_contracts::FailureCategory::SpawnFailed),
+                    )
+                    .await;
+                }
+                res
             }
-            res
         }
-    });
+        // The request's span: the launch and the run log under its id.
+        .in_current_span(),
+    );
     let resumed = task
         .await
         .map_err(|e| ApiErr::internal(format!("run launch failed: {e}")))??;
@@ -673,23 +678,26 @@ async fn prepare_and_launch(
         .await;
         return Ok(resumed);
     };
-    state.runs.tasks.spawn(persist_run(
-        state.clone(),
-        Arc::clone(run),
-        handle,
-        Finalize {
-            project_id: project.id.clone(),
-            comment_ids: comment_ids(req),
-            conversation_id: conversation_id.to_owned(),
-            agent_id: def.id.to_owned(),
-            assistant_message_id,
-            model,
-            cwd: prepared.cwd.to_string_lossy().into_owned(),
-            stable_hash: prepared.stable_hash,
-            critique: prepared.critique,
-            mcp_file: mcp.file,
-        },
-    ));
+    state.runs.tasks.spawn(
+        persist_run(
+            state.clone(),
+            Arc::clone(run),
+            handle,
+            Finalize {
+                project_id: project.id.clone(),
+                comment_ids: comment_ids(req),
+                conversation_id: conversation_id.to_owned(),
+                agent_id: def.id.to_owned(),
+                assistant_message_id,
+                model,
+                cwd: prepared.cwd.to_string_lossy().into_owned(),
+                stable_hash: prepared.stable_hash,
+                critique: prepared.critique,
+                mcp_file: mcp.file,
+            },
+        )
+        .instrument(tracing::info_span!("run", run_id = %run.id())),
+    );
     Ok(resumed)
 }
 

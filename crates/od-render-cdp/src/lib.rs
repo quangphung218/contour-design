@@ -759,9 +759,10 @@ impl Session {
         } = Self::launch(exe, no_sandbox).await?;
         let gone = Arc::new(AtomicBool::new(false));
         let lost = Arc::clone(&gone);
-        let handler = tokio::spawn(async move {
+        // In the export's span: a lost connection logs the request's id.
+        let handler = tokio::spawn(tracing::Instrument::in_current_span(async move {
             drive(&mut handler, &lost).await;
-        });
+        }));
         // Chrome that cannot start its sandbox quits here (#231).
         let quit = Arc::clone(&gone);
         let quit = |e: RenderError| {
@@ -992,22 +993,24 @@ impl Session {
             .await
             .map_err(failed("intercepting requests"))?;
         let page = self.page.clone();
-        Ok(tokio::spawn(async move {
-            while let Some(ev) = paused.next().await {
-                let id = ev.request_id.clone();
-                let res = if same_file_url(&ev.request.url, &allowed) {
-                    page.execute(ContinueRequestParams::new(id)).await.map(drop)
-                } else {
-                    tracing::warn!(url = %ev.request.url, "render blocked a request");
-                    page.execute(FailRequestParams::new(id, ErrorReason::BlockedByClient))
-                        .await
-                        .map(drop)
-                };
-                if res.is_err() {
-                    break; // the page is gone
+        Ok(tokio::spawn(tracing::Instrument::in_current_span(
+            async move {
+                while let Some(ev) = paused.next().await {
+                    let id = ev.request_id.clone();
+                    let res = if same_file_url(&ev.request.url, &allowed) {
+                        page.execute(ContinueRequestParams::new(id)).await.map(drop)
+                    } else {
+                        tracing::warn!(url = %ev.request.url, "render blocked a request");
+                        page.execute(FailRequestParams::new(id, ErrorReason::BlockedByClient))
+                            .await
+                            .map(drop)
+                    };
+                    if res.is_err() {
+                        break; // the page is gone
+                    }
                 }
-            }
-        }))
+            },
+        )))
     }
 
     async fn resize(&mut self, width: u32, height: u32) -> RenderResult<()> {

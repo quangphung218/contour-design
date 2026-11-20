@@ -683,6 +683,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = Экспорт {0}…
 Exported = Экспортировано: {0}
 ExportFailed = Ошибка экспорта: {0}
+ErrorRef = Код: {0}
 ExportNoAudio = без звука
 ExportAudioTrack = 1 аудиодорожка
 ExportAudioTracks = аудиодорожек: {0}

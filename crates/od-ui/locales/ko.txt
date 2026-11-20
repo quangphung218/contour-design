@@ -683,6 +683,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = {0} 내보내는 중…
 Exported = {0} 내보냄
 ExportFailed = 내보내기 실패: {0}
+ErrorRef = 참조: {0}
 ExportNoAudio = 오디오 없음
 ExportAudioTrack = 오디오 트랙 1개
 ExportAudioTracks = 오디오 트랙 {0}개

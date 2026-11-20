@@ -440,9 +440,10 @@ try {
   await page.getByTestId('mp4-render').click();
   await page.getByTestId('mp4-status').waitFor({ timeout: 20_000 });
   results.mp4 = await page.getByTestId('mp4-status').textContent();
-  assert.equal(
+  // The failure ends with the request's id, to look up in the daemon log.
+  assert.match(
     results.mp4,
-    'Export failed: This project is not a motion video, so it has no film to render. Make one with Motion on Home.',
+    /^Export failed: This project is not a motion video, so it has no film to render\. Make one with Motion on Home\. \(Ref: [0-9a-f]{8}\)$/,
   );
   // QA-069: a new base URL host with the key left empty drops the saved
   // key (it must not reach the new host); the save says so instead of a

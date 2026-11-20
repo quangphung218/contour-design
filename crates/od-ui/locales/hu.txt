@@ -683,6 +683,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = {0} exportálása…
 Exported = Exportálva: {0}
 ExportFailed = Az exportálás sikertelen: {0}
+ErrorRef = Azonosító: {0}
 ExportNoAudio = nincs hang
 ExportAudioTrack = 1 hangsáv
 ExportAudioTracks = {0} hangsáv

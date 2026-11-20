@@ -914,6 +914,7 @@ messages! {
     ExportAudioTrack => "1 audio track", "1 track âm thanh";
     ExportAudioTracks => "{0} audio tracks", "{0} track âm thanh";
     ExportFailed => "Export failed: {0}", "Xuất không thành công: {0}";
+    ErrorRef => "Ref: {0}", "Mã tra cứu: {0}";
     Handoff => "Handoff", "Bàn giao";
     HandoffOpenFolder => "Open project folder", "Mở thư mục project";
     HandoffCopyPrompt => "Copy prompt for a coding agent", "Chép prompt cho coding agent";

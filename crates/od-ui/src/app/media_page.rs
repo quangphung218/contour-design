@@ -1079,7 +1079,7 @@ fn Mp4View(on_saved: Callback<()>) -> impl IntoView {
                     status.set(Some(Ok(format!("{head}{note}{stop}"))));
                     on_saved.run(());
                 }
-                Err(e) => status.set(Some(Err(api::failure(T::ExportFailed, &e)))),
+                Err(e) => status.set(Some(Err(api::failure_with_ref(T::ExportFailed, &e)))),
             }
             busy.set(false);
         });

@@ -683,6 +683,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = Exportando {0}…
 Exported = {0} exportado
 ExportFailed = Error al exportar: {0}
+ErrorRef = Ref.: {0}
 ExportNoAudio = sin audio
 ExportAudioTrack = 1 pista de audio
 ExportAudioTracks = {0} pistas de audio

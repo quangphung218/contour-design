@@ -683,6 +683,7 @@ ExportPptx = PowerPoint (PPTX)
 Exporting = جارٍ تصدير {0}…
 Exported = تم تصدير {0}
 ExportFailed = فشل التصدير: {0}
+ErrorRef = المرجع: {0}
 ExportNoAudio = بلا صوت
 ExportAudioTrack = مسار صوتي واحد
 ExportAudioTracks = {0} مسارات صوتية
