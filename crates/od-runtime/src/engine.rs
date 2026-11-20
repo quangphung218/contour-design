@@ -636,6 +636,10 @@ impl RunEngine {
                 tracing::info!(run = %run.id(), "agent cannot load sessions; started a fresh one");
                 resume = None;
                 resume_failed = true;
+                // A retry below must send the whole transcript too.
+                if let Some(full) = &spec.fallback_prompt {
+                    prompt.clone_from(full);
+                }
             }
             let session = attempt.session_id.clone().or(session_id);
             if attempt.canceled {

@@ -220,6 +220,8 @@ const ACP_BASE: RuntimeDef = RuntimeDef {
         "Unknown session",
         "unknown session",
         "Resource not found",
+        // An agent that has no `session/load` and does not say so.
+        "Method not found",
     ],
     args: &["acp"],
     ask_args: &["acp"],

@@ -152,6 +152,8 @@ fn agent_text(events: &[Arc<RunEvent>]) -> String {
 /// `MOCK_MODE`: `ok` answers and waits for EOF; `linger` answers and never
 /// exits on its own; `cancel` streams one chunk and ignores
 /// `session/cancel`. `MOCK_PERM_KIND` is the kind of the permission asked.
+/// `MOCK_FAIL_ONCE=<file>` answers the first `session/prompt` with a 429
+/// (and creates the file), then works.
 /// `MOCK_LOAD=false` says `loadSession: false` and answers `session/load`
 /// like Gemini CLI 0.24 (the ACP SDK's "Method not found").
 const ACP_MOCK: &str = r#"
@@ -170,6 +172,11 @@ case "$MOCK_LOAD:$l" in false:*session/load*)
 esac
 say '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"sess-1"}}'
 read -r l; printf "%s\n" "$l" >> "$log"
+if [ -n "$MOCK_FAIL_ONCE" ] && [ ! -e "$MOCK_FAIL_ONCE" ]; then
+  : > "$MOCK_FAIL_ONCE"
+  say '{"jsonrpc":"2.0","id":3,"error":{"code":-32000,"message":"429 Too Many Requests: rate limit"}}'
+  exit 1
+fi
 if [ "$MOCK_MODE" = cancel ]; then
   say '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"working"}}}}'
   read -r l; printf "%s\n" "$l" >> "$log"
@@ -267,6 +274,41 @@ async fn acp_agent_without_load_session_resumes_with_the_transcript() {
         frames[2]["params"]["prompt"][0]["text"],
         "Whole conversation, then: Build a landing page"
     );
+}
+
+/// A rate limit after the resume was dropped: the retry still sends the
+/// whole transcript, not the short prompt (review of #280).
+#[tokio::test]
+async fn a_retry_after_a_dropped_resume_keeps_the_transcript() {
+    let h = Harness::new();
+    write_mock(&h.mocks, "kimi", ACP_MOCK);
+    let once = h.mocks.join("failed-once");
+    let once = once.to_string_lossy().into_owned();
+    let mut spec = h.spec(
+        "acp-no-load-429",
+        &KIMI,
+        &[
+            ("MOCK_MODE", "ok"),
+            ("MOCK_LOAD", "false"),
+            ("MOCK_FAIL_ONCE", &once),
+        ],
+    );
+    spec.resume_session_id = Some("sess-old".into());
+    spec.fallback_prompt = Some("Whole conversation, then: Build a landing page".into());
+    let outcome = h.engine.launch(spec).await.unwrap();
+    assert_eq!(outcome.status, RunStatus::Succeeded, "{outcome:?}");
+    let prompts: Vec<_> = h
+        .log_frames()
+        .into_iter()
+        .filter(|f| f["method"] == "session/prompt")
+        .collect();
+    assert_eq!(prompts.len(), 2, "{prompts:?}");
+    for p in &prompts {
+        assert_eq!(
+            p["params"]["prompt"][0]["text"],
+            "Whole conversation, then: Build a landing page"
+        );
+    }
 }
 
 /// An agent that says `loadSession: true` still resumes its stored
