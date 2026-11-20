@@ -535,6 +535,8 @@ messages! {
     ExportDiagnostics => "Export diagnostics", "Xuất chẩn đoán";
     DiagnosticsHint => "A zip built on this machine: versions, settings without keys, detected agents and recent run logs. Nothing is uploaded.", "File zip tạo trên máy này: phiên bản, cài đặt không kèm key, agent tìm thấy và log run gần đây. Không gửi lên đâu.";
     DiagnosticsSaved => "Saved diagnostics to {0}", "Đã lưu chẩn đoán vào {0}";
+    CheckSetup => "Check setup", "Kiểm tra cài đặt";
+    CheckSetupFailed => "Could not check the setup: {0}", "Không kiểm tra được cài đặt: {0}";
     ResetOnboarding => "Reset onboarding", "Chạy lại thiết lập ban đầu";
     YourUsage => "Your usage", "Số liệu sử dụng";
     YourUsageHint => "Worked out on this machine from your projects and runs, and never sent anywhere. Copy the summary to paste it into the “Share your usage” discussion on GitHub; for a bug, open an issue with steps to reproduce.", "Tính ngay trên máy này từ các project và run, không gửi đi đâu. Chép bản tóm tắt để dán vào discussion “Share your usage” trên GitHub; gặp bug thì mở issue kèm các bước tái hiện.";

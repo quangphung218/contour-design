@@ -402,3 +402,57 @@ fn open_logs_shows_the_log_folder() {
     assert!(dir.ends_with("/data/logs"), "{dir}");
     assert!(std::path::Path::new(&dir).is_dir());
 }
+
+/// `od doctor --json`: the daemon line comes first and says whether the
+/// daemon answers; a failed check makes the exit code 1. Chrome is pointed
+/// at a missing file so the test starts no browser and the check fails.
+#[test]
+fn doctor_reports_each_check_and_fails_on_any_failure() {
+    let d = start(false);
+    let data = d._tmp.path().join("data");
+    let doctor = |url: &str| {
+        Command::new(OD)
+            .args(["--daemon-url", url, "--json", "doctor"])
+            .env("OD_DATA_DIR", &data)
+            .env("OD_CHROME_PATH", d._tmp.path().join("no-chrome"))
+            .output()
+            .unwrap()
+    };
+    let out = doctor(&d.url);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["ok"], false);
+    let checks = report["checks"].as_array().unwrap();
+    let by_id = |id: &str| checks.iter().find(|c| c["id"] == id).unwrap().clone();
+    assert_eq!(checks[0]["id"], "daemon");
+    assert_eq!(by_id("daemon")["status"], "ok", "{report:#}");
+    assert_eq!(by_id("data-dir")["status"], "ok", "{report:#}");
+    assert_eq!(by_id("disk")["status"], "ok", "{report:#}");
+    let chrome = by_id("chrome");
+    assert_eq!(chrome["status"], "fail");
+    assert!(chrome["fix"].as_str().unwrap().contains("OD_CHROME_PATH"));
+    for c in checks {
+        assert!(c["status"] == "ok" || c["fix"].is_string(), "no fix: {c}");
+    }
+
+    // The daemon gone: its line fails too, and says what to do.
+    drop(d);
+    let out = Command::new(OD)
+        .args(["--daemon-url", "http://127.0.0.1:0", "doctor"])
+        .env("OD_DATA_DIR", tempfile::tempdir().unwrap().path())
+        .env("OD_CHROME_PATH", "/no/chrome")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.starts_with("✗ No Contour daemon is running"), "{text}");
+    assert!(
+        text.contains("  fix: Open Contour, or run `od daemon start`."),
+        "{text}"
+    );
+}

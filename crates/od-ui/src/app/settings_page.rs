@@ -1069,6 +1069,23 @@ fn About() -> impl IntoView {
             exporting.set(false);
         });
     };
+    // Check setup: the checks of `od doctor`, run by the daemon (Chrome
+    // may take a while to show its blank page).
+    let checking = RwSignal::new(false);
+    let report = RwSignal::new(None::<Result<Value, String>>);
+    let check = move |_| {
+        checking.set(true);
+        report.set(None);
+        let work = async move {
+            api::get::<Value>("/api/doctor")
+                .await
+                .map_err(|e| api::failure_with_ref(T::CheckSetupFailed, &e))
+        };
+        tasks.spawn_then(work, move |res| {
+            report.set(Some(res));
+            checking.set(false);
+        });
+    };
     let navigate = leptos_router::hooks::use_navigate();
     let reset = move |_| {
         let mut next = shell.config.get_untracked().unwrap_or_default();
@@ -1095,6 +1112,10 @@ fn About() -> impl IntoView {
                     {move || if exporting.get() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Download).into_any() }}
                     {t(T::ExportDiagnostics)}
                 </button>
+                <button class="btn" data-testid="check-setup" disabled=move || checking.get() on:click=check>
+                    {move || if checking.get() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::CheckCircle).into_any() }}
+                    {t(T::CheckSetup)}
+                </button>
                 <button class="btn ghost" data-testid="reset-onboarding" on:click=reset>{icon(Glyph::Reset)}{t(T::ResetOnboarding)}</button>
             </div>
             <p class="muted small">{t(T::DiagnosticsHint)}</p>
@@ -1102,9 +1123,39 @@ fn About() -> impl IntoView {
                 Ok(m) => view! { <p class="ok-text small" data-testid="diagnostics-state">{m}</p> }.into_any(),
                 Err(e) => view! { <p class="error-text small" data-testid="diagnostics-state">{e}</p> }.into_any(),
             })}
+            {move || report.get().map(|r| match r {
+                Ok(r) => doctor_lines(&r).into_any(),
+                Err(e) => view! { <p class="error-text small" data-testid="doctor-state">{e}</p> }.into_any(),
+            })}
             <YourUsage version/>
             <Licenses/>
         </div>
+    }
+}
+
+/// The report of `GET /api/doctor`: one line per check, its mark, what
+/// was found and how to fix it (the daemon's words, as in `od doctor`).
+fn doctor_lines(report: &Value) -> impl IntoView {
+    let checks = report["checks"].as_array().cloned().unwrap_or_default();
+    view! {
+        <ul class="doctor small" data-testid="doctor-report">
+            {checks.into_iter().map(|c| {
+                let status = c["status"].as_str().unwrap_or("fail").to_owned();
+                let (class, mark) = match status.as_str() {
+                    "ok" => ("ok-text", "✓"),
+                    "warn" => ("muted", "!"),
+                    _ => ("error-text", "✗"),
+                };
+                let summary = c["summary"].as_str().unwrap_or_default().to_owned();
+                let fix = c["fix"].as_str().map(str::to_owned);
+                view! {
+                    <li data-check=c["id"].as_str().unwrap_or_default().to_owned() data-status=status>
+                        <span class=class aria-hidden="true">{mark}" "</span>{summary}
+                        {fix.map(|f| view! { <div class="muted">{f}</div> })}
+                    </li>
+                }
+            }).collect_view()}
+        </ul>
     }
 }
 

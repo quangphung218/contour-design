@@ -4,6 +4,7 @@
 //!   report to paste into an issue (version, platform, agents, recent
 //!   runs, the daemon log: the lines of `?id=` or of the last request
 //!   that failed first, then the last lines), with nothing secret in it.
+//! - `GET  /api/doctor`: the checks of `od doctor` ([`crate::doctor`]).
 //! - `POST /api/diagnostics/open-logs`: `<data>/logs` (the daemon log) in
 //!   the OS file
 //!   manager (`OD_OPEN_COMMAND` overrides, as for handoff).
@@ -155,6 +156,32 @@ pub async fn summary(
         "text": summary_text(&agents, configured.as_deref(), &runs, &log),
         "logDir": log_dir.display().to_string(),
     })))
+}
+
+/// `GET /api/doctor`: Settings ▸ About ▸ Check setup, the checks of `od
+/// doctor` run by this daemon (its own data folder, its agents' `PATH`,
+/// the renderer exports use). The daemon line says it answered.
+pub async fn doctor(State(state): State<AppState>) -> axum::Json<crate::doctor::Report> {
+    let version = env!("CARGO_PKG_VERSION");
+    let url = state
+        .config
+        .daemon_url
+        .clone()
+        .unwrap_or_else(|| "this address".to_owned());
+    let mut checks = vec![crate::doctor::daemon_check(
+        Some(&url),
+        Some(version),
+        version,
+    )];
+    checks.extend(
+        crate::doctor::run_local(crate::doctor::Inputs {
+            data: state.store.data_dir().clone(),
+            agent_path: state.runs.engine.config().path.clone(),
+            renderer: std::sync::Arc::new(od_render_cdp::CdpRenderer::new()),
+        })
+        .await,
+    );
+    axum::Json(crate::doctor::Report::new(checks))
 }
 
 pub async fn open_logs(State(state): State<AppState>) -> ApiResult<ApiJson<OkResponse>> {

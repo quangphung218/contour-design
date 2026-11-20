@@ -3,6 +3,7 @@
 //! Binds loopback by default. Binding elsewhere requires `OD_API_TOKEN`.
 //! Browser requests pass the origin guard (spec 2.2).
 
+pub mod doctor;
 pub mod error;
 pub mod guard;
 pub mod lock;

@@ -104,6 +104,23 @@ async fn probe(
     Some(text)
 }
 
+/// The first line `bin --version` (the agent's version flags) prints
+/// within `timeout`, with `path` as `PATH`; `None` when it could not run,
+/// printed nothing or timed out. For `od doctor`.
+pub async fn version_line(
+    def: &RuntimeDef,
+    bin: &Path,
+    path: &OsStr,
+    timeout: Duration,
+) -> Option<String> {
+    probe(def, bin, def.version_args, path, timeout)
+        .await?
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map(str::to_owned)
+}
+
 /// Help flags of `def` that `bin` advertises; `None` when the help probe
 /// could not run or timed out (a first exec can be slow: macOS scans a
 /// new binary), so the caller can try again rather than keep "no flags".

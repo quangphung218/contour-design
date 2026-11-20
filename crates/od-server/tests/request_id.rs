@@ -233,6 +233,13 @@ async fn a_runs_lines_carry_its_run_id_and_the_request_that_started_it() {
         .filter(|l| l.contains(&run.run_id))
         .collect();
     assert!(!lines.is_empty(), "the run logged nothing with its id");
+    // The engine's own lines sit in the run's span, not only name it.
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains(&format!("run{{run_id={}", run.run_id)) && l.contains("od_runtime")),
+        "{lines:#?}"
+    );
     for line in &lines {
         assert!(line.contains(&format!("request_id={request_id}")), "{line}");
         assert!(
