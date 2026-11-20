@@ -26,9 +26,11 @@ const DIRECTIVE: &str = include_str!("../../od-content/prompts/legacy/DECK_FRAME
 
 /// The canonical skeleton with its slots filled: oklch tokens, 3 slides.
 fn framework_deck() -> String {
-    let start = DIRECTIVE.find("```html\n<!doctype html>").unwrap() + "```html\n".len();
-    let len = DIRECTIVE[start..].find("\n```").unwrap();
-    let mut html = DIRECTIVE[start..start + len].to_owned();
+    // A Windows checkout has CRLF line ends (`core.autocrlf`).
+    let directive = DIRECTIVE.replace("\r\n", "\n");
+    let start = directive.find("```html\n<!doctype html>").unwrap() + "```html\n".len();
+    let len = directive[start..].find("\n```").unwrap();
+    let mut html = directive[start..start + len].to_owned();
     let swap = |html: &mut String, from: &str, to: &str| {
         assert!(html.contains(from), "skeleton lost {from:?}");
         *html = html.replacen(from, to, 1);
