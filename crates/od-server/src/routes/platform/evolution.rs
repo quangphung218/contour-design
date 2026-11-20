@@ -71,7 +71,7 @@ where
     T: Send + 'static,
     F: FnOnce() -> ApiResult<T> + Send + 'static,
 {
-    tokio::task::spawn_blocking(f)
+    crate::spawn::spawn_blocking_in_span(f)
         .await
         .map_err(|e| ApiErr::internal(format!("worker failed: {e}")))?
 }

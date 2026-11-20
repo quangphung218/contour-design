@@ -143,14 +143,15 @@ async fn refresh_with_source(
 ) -> (ApiResult<Json<Value>>, Failure) {
     let id = aid.clone();
     let worker = store.clone();
-    let (err, io) = match tokio::task::spawn_blocking(move || worker.refresh(&root, &id)).await {
-        Ok(Ok(out)) => return (Ok(Json(json!(out))), Failure::default()),
-        Ok(Err(e)) => {
-            let io = matches!(e, LiveError::Io(_));
-            (ApiErr::from(e), io)
-        }
-        Err(e) => (ApiErr::internal(format!("worker failed: {e}")), false),
-    };
+    let (err, io) =
+        match crate::spawn::spawn_blocking_in_span(move || worker.refresh(&root, &id)).await {
+            Ok(Ok(out)) => return (Ok(Json(json!(out))), Failure::default()),
+            Ok(Err(e)) => {
+                let io = matches!(e, LiveError::Io(_));
+                (ApiErr::from(e), io)
+            }
+            Err(e) => (ApiErr::internal(format!("worker failed: {e}")), false),
+        };
     let source = live(store, move |s| s.get(&aid))
         .await
         .ok()
@@ -166,7 +167,7 @@ where
     T: Send + 'static,
     F: FnOnce(&LiveStore) -> od_live::Result<T> + Send + 'static,
 {
-    tokio::task::spawn_blocking(move || f(&store))
+    crate::spawn::spawn_blocking_in_span(move || f(&store))
         .await
         .map_err(|e| ApiErr::internal(format!("worker failed: {e}")))?
         .map_err(ApiErr::from)

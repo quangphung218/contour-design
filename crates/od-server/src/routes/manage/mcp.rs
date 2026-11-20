@@ -215,7 +215,7 @@ pub async fn install_route(
     let spec = launch(&state);
     let home = install::home_dir().ok_or_else(|| ApiErr::internal("HOME is not set"))?;
     let path = state.runs.engine.config().path.clone();
-    let res = tokio::task::spawn_blocking(move || {
+    let res = crate::spawn::spawn_blocking_in_span(move || {
         let plan = install::plan(agent, &spec, &home, SERVER_NAME);
         let runner = |bin: &str, argv: &[String]| -> std::io::Result<i32> {
             // `claude.cmd` / `claude.exe` on Windows, as agent detection finds it.

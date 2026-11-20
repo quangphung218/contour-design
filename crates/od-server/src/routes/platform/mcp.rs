@@ -102,7 +102,7 @@ fn api_err(e: McpError) -> ApiErr {
 
 async fn load(mcp: &Mcp) -> ApiResult<McpConfig> {
     let path = mcp.config_path.clone();
-    tokio::task::spawn_blocking(move || config::load(&path))
+    crate::spawn::spawn_blocking_in_span(move || config::load(&path))
         .await
         .map_err(|e| ApiErr::internal(e.to_string()))?
         .map_err(api_err)
@@ -153,7 +153,7 @@ async fn replace(
         next.clone(),
     );
     // A token is kept only for a server still at the URL it was given for.
-    tokio::task::spawn_blocking(move || {
+    crate::spawn::spawn_blocking_in_span(move || {
         config::save(&path, &cfg)?;
         tokens.retain(|id| {
             cfg.find(id)
@@ -268,7 +268,7 @@ async fn oauth_start(
             .stderr(std::process::Stdio::null())
             .spawn()
             .map_err(|e| ApiErr::internal(format!("cannot run {program}: {e}")))?;
-        tokio::spawn(async move {
+        crate::spawn::spawn_in_span(async move {
             let _ = child.wait().await;
         });
     }
@@ -280,7 +280,7 @@ async fn oauth_forget(
     Path(sid): Path<String>,
 ) -> ApiResult<ApiJson<od_contracts::OkResponse>> {
     let tokens = Arc::clone(&mcp.tokens);
-    tokio::task::spawn_blocking(move || tokens.remove(&sid))
+    crate::spawn::spawn_blocking_in_span(move || tokens.remove(&sid))
         .await
         .map_err(|e| ApiErr::internal(e.to_string()))?
         .map_err(api_err)?;

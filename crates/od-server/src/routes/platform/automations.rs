@@ -184,7 +184,7 @@ where
     F: FnOnce(&RoutineStore) -> Result<T, AutomationError> + Send + 'static,
 {
     let store = Arc::clone(sched.store());
-    tokio::task::spawn_blocking(move || f(&store))
+    crate::spawn::spawn_blocking_in_span(move || f(&store))
         .await
         .map_err(|e| ApiErr::internal(format!("worker failed: {e}")))?
         .map_err(api_err)

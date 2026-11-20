@@ -37,7 +37,7 @@ pub async fn export_pptx_editable(
         .title
         .clone()
         .unwrap_or_else(|| entry.project.name.clone());
-    let pptx = tokio::task::spawn_blocking(move || {
+    let pptx = crate::spawn::spawn_blocking_in_span(move || {
         od_export::pptx_editable::layouts_to_pptx(&layouts, &title)
     })
     .await

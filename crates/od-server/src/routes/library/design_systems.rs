@@ -466,7 +466,7 @@ pub struct Kit {
 pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Kit>> {
     let e = entry(&state, &id)?;
     let a2 = a2(&state);
-    let kit = tokio::task::spawn_blocking(move || {
+    let kit = crate::spawn::spawn_blocking_in_span(move || {
         let body = inside_io(&e.dir, "DESIGN.md")
             .and_then(std::fs::read_to_string)
             .unwrap_or(e.body.clone());
@@ -723,7 +723,7 @@ pub async fn archive(State(state): State<AppState>, Path(id): Path<String>) -> A
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "design-system".to_owned());
-    let bytes = tokio::task::spawn_blocking(move || {
+    let bytes = crate::spawn::spawn_blocking_in_span(move || {
         let files = package_files(&e.dir)
             .into_iter()
             .map(|(rel, p)| (format!("{folder}/{rel}"), p))
@@ -1123,7 +1123,7 @@ pub async fn rebuild(
     }];
     let dir = e.dir.clone();
     let saved = r.clone();
-    tokio::task::spawn_blocking(move || write_revision(&dir, &saved))
+    crate::spawn::spawn_blocking_in_span(move || write_revision(&dir, &saved))
         .await
         .map_err(|err| ApiErr::internal(err.to_string()))?
         .map_err(ApiErr::io)?;
@@ -1350,7 +1350,7 @@ pub async fn revise(
     let dir = e.dir.clone();
     io(write_revision(&dir, &r))?;
     let out = r.clone();
-    tokio::spawn(async move {
+    crate::spawn::spawn_in_span(async move {
         let outcome = launched.handle.await;
         let ok = matches!(&outcome, Ok(o) if o.status == RunStatus::Succeeded);
         r.updated_at = od_store::now_ms();

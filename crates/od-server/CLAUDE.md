@@ -49,8 +49,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 9. A comment follows its file renamed or moved (bookkeeping is in `od-store`).
    - `tests/drafts.rs::a_comment_sent_follows_its_file_renamed_or_moved`
 10. Every request runs in a `req{request_id}` span (`src/request_id.rs:tag`, outermost layer of `router`)
-    and answers with `x-od-request-id`. Work it moves to its own task keeps the span
-    (`.in_current_span()`, `Span::current()`); logs hold ids, paths and messages, never bodies, prompts or tokens.
+    and answers with `x-od-request-id`. Work it moves to its own task keeps the span: spawn through
+    `src/spawn.rs` (`spawn_in_span`, `spawn_blocking_in_span`), never `tokio::spawn`/`spawn_blocking` directly
+    outside the start-up list in `tests/spawn_in_span.rs`; logs hold ids, paths and messages, never bodies, prompts or tokens.
+    - `tests/spawn_in_span.rs::every_task_spawned_in_src_keeps_the_callers_span`
+    - `tests/request_id.rs::a_spawned_tasks_lines_carry_the_request_id`, `tests/request_id.rs::the_spawn_helpers_keep_the_callers_span`
     - `tests/request_id.rs::every_line_of_a_failed_export_carries_its_request_id`
     - `tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
 11. The log file gets its own field formatter (`src/logs.rs:PlainFields`), never the console's.
@@ -72,7 +75,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 - A list setting under RFC 7396 replaces whole; give it its own locked route (#246).
 - `PUT /api/media/config` still replaces its whole map: separate store, left as is in #246.
 - A new listing or export that ships files must filter draft images; handoff was missed once (#200).
-- A `tokio::spawn` or `spawn_blocking` drops the request's span: instrument it, or its lines lose the id.
+- A `tokio::spawn` or `spawn_blocking` drops the request's span: use `crate::spawn`, or its lines lose the id (the static test refuses it).
 - Two fmt layers with the same field formatter share a span's formatted fields; the file got the console's colors.
 - A GET that does more than read (starts a process, writes a file) can be set off by an `<img>` with no `Origin`; make it a POST (#271).
 

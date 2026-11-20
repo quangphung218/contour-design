@@ -209,10 +209,11 @@ pub async fn export_mp4(
     }
     let entry = resolve_entry(&state, id, &req.base).await?;
     let (root, path) = (entry.root.clone(), entry.path.clone());
-    let html = tokio::task::spawn_blocking(move || od_store::files::read_file(&root, &path))
-        .await
-        .map_err(internal)??
-        .1;
+    let html =
+        crate::spawn::spawn_blocking_in_span(move || od_store::files::read_file(&root, &path))
+            .await
+            .map_err(internal)??
+            .1;
     let comp = hyperframes::composition(&String::from_utf8_lossy(&html)).map_err(|e| match e {
         // Not a motion project at all: say so in the user's words.
         CompositionError::NoRoot => bad(
@@ -247,7 +248,7 @@ pub async fn export_mp4(
     let film_seconds = comp
         .duration_ms
         .map_or(f64::INFINITY, |ms| ms as f64 / 1000.0);
-    let plan = tokio::task::spawn_blocking(move || audio_plan(&comp_dir, &html, film_seconds))
+    let plan = crate::spawn::spawn_blocking_in_span(move || audio_plan(&comp_dir, &html, film_seconds))
         .await
         .map_err(internal)?
         .map_err(|e| {

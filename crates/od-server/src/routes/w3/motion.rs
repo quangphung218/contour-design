@@ -701,10 +701,11 @@ async fn render_task(
     // is missing writes no MP4.
     audio_log.policy = hyperframes::audio_policy(&html).as_str();
     let plan_html = html.clone();
-    let plan = tokio::task::spawn_blocking(move || audio_plan(&comp_dir, &plan_html, seconds))
-        .await
-        .map_err(|e| e.to_string())?
-        .inspect_err(|_| audio_log.mux = "refused")?;
+    let plan =
+        crate::spawn::spawn_blocking_in_span(move || audio_plan(&comp_dir, &plan_html, seconds))
+            .await
+            .map_err(|e| e.to_string())?
+            .inspect_err(|_| audio_log.mux = "refused")?;
     audio_log.tracks = plan.tracks.len();
     audio_log.mux = "failed";
     let fps = req.fps.unwrap_or(comp.fps);

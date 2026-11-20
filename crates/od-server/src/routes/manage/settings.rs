@@ -489,7 +489,7 @@ pub async fn put_agent_env(
         .ok_or_else(|| ApiErr::bad_request("env must be an object"))?
         .clone();
     let root = state.store.data_dir().root().to_path_buf();
-    let saved = tokio::task::spawn_blocking(move || -> Result<AgentEnv, String> {
+    let saved = crate::spawn::spawn_blocking_in_span(move || -> Result<AgentEnv, String> {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let mut env = read_env(&root);
         for (agent, vars) in patch {

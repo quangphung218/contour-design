@@ -73,7 +73,7 @@ pub async fn list_design_templates(
     // Films' examples are read for their size and length.
     let index = state.content.snapshot();
     let design_templates =
-        tokio::task::spawn_blocking(move || summaries(&index.design_templates, true))
+        crate::spawn::spawn_blocking_in_span(move || summaries(&index.design_templates, true))
             .await
             .map_err(|e| ApiErr::internal(e.to_string()))?;
     Ok(ApiJson(DesignTemplatesResponse { design_templates }))

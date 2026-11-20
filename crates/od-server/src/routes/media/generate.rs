@@ -70,7 +70,7 @@ pub async fn put_config(
 ) -> ApiResult<Json<Value>> {
     let file = config_file(&state);
     let file2 = file.clone();
-    let dropped = tokio::task::spawn_blocking(move || write_config(&file2, &body, || {}))
+    let dropped = crate::spawn::spawn_blocking_in_span(move || write_config(&file2, &body, || {}))
         .await
         .map_err(|e| ApiErr::internal(e.to_string()))??;
     let mut v = file.masked(deps.env.as_ref());

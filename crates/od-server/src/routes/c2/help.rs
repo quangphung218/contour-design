@@ -149,7 +149,7 @@ pub async fn summary(
         .map(|r| r.info())
         .collect();
     let root = state.store.data_dir().root().to_path_buf();
-    let log = tokio::task::spawn_blocking(move || {
+    let log = crate::spawn::spawn_blocking_in_span(move || {
         crate::routes::manage::diagnostics::log_report(&root, id.as_deref())
     })
     .await
@@ -204,7 +204,7 @@ pub async fn open_logs(State(state): State<AppState>) -> ApiResult<ApiJson<OkRes
         .stderr(std::process::Stdio::null())
         .spawn()
         .map_err(|e| ApiErr::internal(format!("cannot run {program}: {e}")))?;
-    tokio::spawn(async move {
+    crate::spawn::spawn_in_span(async move {
         let _ = child.wait().await;
     });
     Ok(ApiJson(OkResponse { ok: true }))

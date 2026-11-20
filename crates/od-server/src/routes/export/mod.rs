@@ -336,9 +336,7 @@ pub(crate) async fn bundle(
         root: entry.root.clone(),
     };
     let path = entry.path.clone();
-    let span = tracing::Span::current();
-    tokio::task::spawn_blocking(move || {
-        let _in = span.enter();
+    crate::spawn::spawn_blocking_in_span(move || {
         let (_, bytes) = od_store::files::read_file(&source.root, &path)?;
         let html = String::from_utf8(bytes).map_err(|_| StandaloneError::InvalidSource {
             path: path.clone(),
@@ -371,9 +369,7 @@ pub(crate) async fn scratch(
     // Named after the entry: a page without a <title> gets its file's name
     // as the PDF title, not "index.html".
     let name = entry.filename(None, "html");
-    let span = tracing::Span::current();
-    tokio::task::spawn_blocking(move || {
-        let _in = span.enter();
+    crate::spawn::spawn_blocking_in_span(move || {
         std::fs::create_dir_all(&base)?;
         let dir = tempfile::Builder::new()
             .prefix("render-")
@@ -511,9 +507,7 @@ pub async fn archive(
     let filename = format!("{}.zip", if base.is_empty() { "project" } else { &base });
 
     let (tx, rx) = tokio::sync::mpsc::channel::<std::io::Result<Bytes>>(8);
-    let span = tracing::Span::current();
-    tokio::task::spawn_blocking(move || {
-        let _in = span.enter();
+    crate::spawn::spawn_blocking_in_span(move || {
         let writer = ChannelWriter {
             tx: tx.clone(),
             buf: Vec::with_capacity(CHUNK),
@@ -590,16 +584,17 @@ pub async fn export_pdf_image(
     let entry = resolve_entry(&state, id, &req).await?;
     let scratch = scratch(&state, &entry, &req).await?;
     let slides = renderer.render_slides(&scratch.target, req.mode()).await?;
-    let pdf = tokio::task::spawn_blocking(move || od_export::pdf::pngs_to_pdf(&slides.images))
-        .await
-        .map_err(internal)?
-        .map_err(|e| {
-            ExportErr::new(
-                StatusCode::BAD_GATEWAY,
-                ErrorCode::UpstreamUnavailable,
-                e.to_string(),
-            )
-        })?;
+    let pdf =
+        crate::spawn::spawn_blocking_in_span(move || od_export::pdf::pngs_to_pdf(&slides.images))
+            .await
+            .map_err(internal)?
+            .map_err(|e| {
+                ExportErr::new(
+                    StatusCode::BAD_GATEWAY,
+                    ErrorCode::UpstreamUnavailable,
+                    e.to_string(),
+                )
+            })?;
     Ok(attachment(
         "application/pdf",
         &entry.filename(req.title.as_deref(), "pdf"),
@@ -647,16 +642,18 @@ pub async fn export_image(
                 )
             })?
         } else {
-            tokio::task::spawn_blocking(move || od_export::image::stitch_vertical(&slides.images))
-                .await
-                .map_err(internal)?
-                .map_err(|e| {
-                    ExportErr::new(
-                        StatusCode::BAD_GATEWAY,
-                        ErrorCode::UpstreamUnavailable,
-                        e.to_string(),
-                    )
-                })?
+            crate::spawn::spawn_blocking_in_span(move || {
+                od_export::image::stitch_vertical(&slides.images)
+            })
+            .await
+            .map_err(internal)?
+            .map_err(|e| {
+                ExportErr::new(
+                    StatusCode::BAD_GATEWAY,
+                    ErrorCode::UpstreamUnavailable,
+                    e.to_string(),
+                )
+            })?
         }
     };
     // Slides are always PNG; JPEG and WebP apply to page captures.
@@ -705,17 +702,18 @@ pub async fn export_pptx(
         .title
         .clone()
         .unwrap_or_else(|| entry.project.name.clone());
-    let pptx =
-        tokio::task::spawn_blocking(move || od_export::pptx::pngs_to_pptx(&slides.images, &title))
-            .await
-            .map_err(internal)?
-            .map_err(|e| {
-                ExportErr::new(
-                    StatusCode::BAD_GATEWAY,
-                    ErrorCode::UpstreamUnavailable,
-                    e.to_string(),
-                )
-            })?;
+    let pptx = crate::spawn::spawn_blocking_in_span(move || {
+        od_export::pptx::pngs_to_pptx(&slides.images, &title)
+    })
+    .await
+    .map_err(internal)?
+    .map_err(|e| {
+        ExportErr::new(
+            StatusCode::BAD_GATEWAY,
+            ErrorCode::UpstreamUnavailable,
+            e.to_string(),
+        )
+    })?;
     Ok(attachment(
         od_export::pptx::PPTX_MIME,
         &entry.filename(req.title.as_deref(), "pptx"),

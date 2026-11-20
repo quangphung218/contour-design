@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Daemon log: lines written by work a request hands to a task of its own (a design system job that failed, for one) now carry that request's id, so Report Issue and Export diagnostics find them.
+
 ## [0.2.0-beta.51] - 2026-11-20
 
 ### Highlights

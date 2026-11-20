@@ -84,7 +84,7 @@ async fn create(
         })
         .await?;
     let terminals = Arc::clone(&platform.terminals);
-    let session = tokio::task::spawn_blocking(move || {
+    let session = crate::spawn::spawn_blocking_in_span(move || {
         terminals.create(&project_id, &cwd, req.cols, req.rows)
     })
     .await
@@ -186,7 +186,7 @@ async fn pump(mut socket: WebSocket, session: Arc<Session>) {
                 // A failed write means the shell is gone: its exit frame
                 // follows on the channel.
                 let s = Arc::clone(&session);
-                let _ = tokio::task::spawn_blocking(move || s.write(&input)).await;
+                let _ = crate::spawn::spawn_blocking_in_span(move || s.write(&input)).await;
             }
         }
     }
