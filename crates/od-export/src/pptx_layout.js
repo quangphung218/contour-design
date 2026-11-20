@@ -10,13 +10,29 @@
   const out = { width: origin.width, height: origin.height, background: null, elements: [] };
   const box = (r) => ({ x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height });
   const visible = (cs) => cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity || '1') > 0.01;
-  const transparent = (c) => !c || c === 'transparent' || /rgba\([^)]*,\s*0\)$/.test(c);
+  // Computed colours keep their syntax (oklch(), lab(), color(srgb …),
+  // color-mix() …), and `parse_color` reads only #hex, rgb() and rgba():
+  // the canvas turns any colour Chrome knows into sRGB bytes (QA-121).
+  // rgb()/rgba() pass as they are, exact. `null` = no colour or invisible.
+  const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const rgb = (c) => {
+    if (!c || c === 'transparent') return null;
+    if (/^rgba?\(/.test(c)) return /^rgba\([^)]*,\s*0\)$/.test(c) ? null : c;
+    probe.clearRect(0, 0, 1, 1);
+    probe.fillStyle = 'rgba(0, 0, 0, 0)';
+    probe.fillStyle = c;
+    probe.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = probe.getImageData(0, 0, 1, 1).data;
+    if (a === 0) return null;
+    return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${Math.round(a / 255 * 1000) / 1000})`;
+  };
   const BLOCK = /^(block|flex|grid|table|list-item|flow-root|table-cell|table-caption|inline-block|inline-flex|inline-grid)$/;
 
-  let bg = getComputedStyle(slide).backgroundColor;
-  if (transparent(bg)) bg = getComputedStyle(document.body).backgroundColor;
-  if (transparent(bg)) bg = getComputedStyle(document.documentElement).backgroundColor;
-  out.background = transparent(bg) ? '#ffffff' : bg;
+  // The nearest painted box behind the slide: decks often colour a stage
+  // between the slide and a body painted as the dark shell around it.
+  let bg = null;
+  for (let a = slide; a && !bg; a = a.parentElement) bg = rgb(getComputedStyle(a).backgroundColor);
+  out.background = bg || '#ffffff';
 
   const toPng = async (el, r) => {
     const w = Math.max(1, Math.round(r.width * 2)), h = Math.max(1, Math.round(r.height * 2));
@@ -52,7 +68,7 @@
     const weight = parseInt(cs.fontWeight, 10) || (cs.fontWeight === 'bold' ? 700 : 400);
     return {
       size: parseFloat(cs.fontSize) || 16,
-      color: cs.color,
+      color: rgb(cs.color),
       bold: weight >= 600,
       italic: cs.fontStyle === 'italic' || cs.fontStyle === 'oblique',
       underline: (cs.textDecorationLine || cs.textDecoration || '').includes('underline'),
@@ -109,9 +125,9 @@
     }
     if (el instanceof SVGElement) return;
     if (el !== slide) {
-      const fill = transparent(cs.backgroundColor) ? null : cs.backgroundColor;
+      const fill = rgb(cs.backgroundColor);
       const bw = parseFloat(cs.borderTopWidth) || 0;
-      const line = bw > 0 && cs.borderTopStyle !== 'none' && !transparent(cs.borderTopColor) ? cs.borderTopColor : null;
+      const line = bw > 0 && cs.borderTopStyle !== 'none' ? rgb(cs.borderTopColor) : null;
       const url = /url\(["']?(data:image\/(png|jpeg|gif);base64,[^"')]+)["']?\)/.exec(cs.backgroundImage || '');
       if (fill || line) {
         out.elements.push({ kind: 'shape', ...box(r), fill, line, lineWidth: line ? bw : 0, radius: parseFloat(cs.borderTopLeftRadius) || 0 });

@@ -124,8 +124,9 @@ pub struct Color {
     pub alpha: f64,
 }
 
-/// `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()` and `rgba()` (what
-/// `getComputedStyle` returns). `None` for anything else or fully
+/// `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()` and `rgba()`: what the layout
+/// script sends, as it turns `oklch()`, `lab()`, `color()` and the rest into
+/// `rgb()` in the browser first. `None` for anything else or fully
 /// transparent colours.
 #[must_use]
 pub fn parse_color(css: &str) -> Option<Color> {

@@ -51,6 +51,10 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
     - `tests/step_timeout.rs::a_browser_killed_during_an_export_fails_it_at_once` (unix)
     - `src/lib.rs::a_command_past_chromiumoxides_wait_says_so_in_words`; QA e2e `e2e/qa/export.qa.mjs:"EXP-16"`
     - `src/lib.rs::the_browser_counts_as_gone_once_its_connection_is_lost_or_ends` (`drive`)
+13. A deck exports as its slides look: the vector PDF page is the paper (13.333 in), the page's own
+    `@page` size is overridden (`script::print_slides`); the editable PPTX takes the nearest painted
+    ancestor as background and sends every colour as `rgb()` (`od-export/src/pptx_layout.js:rgb`).
+    - `tests/deck_framework.rs::a_framework_deck_exports_as_the_user_sees_it` (real Chrome, the shipped deck skeleton, oklch)
 
 ## Traps
 - Headless Chrome as our child woke GoogleUpdater, and macOS asked for App Management on every update.
@@ -65,6 +69,10 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
   connection is lost; a single command stops at its own fixed 30 s whatever `request_timeout` says (#269).
 - Its handler stays pending on a WebSocket Close frame (no error, no end); Chrome quitting, killed or
   closed by `Browser.close` drops the socket without one (probed), so that case only ends at `STEP_TIMEOUT` (#270).
+- Chrome lays a CSS `@page` size out and then shrinks it onto the paper; with our print `scale` on top,
+  a deck's `@page { size: 1920px 1080px }` came out at 2/3 of the page (QA-120).
+- `getComputedStyle` keeps `oklch()`, `lab()`, `color(srgb …)` as written; only the browser can turn them into
+  sRGB, so convert in the page script, not in Rust (QA-121).
 
 ## Check
 - Most launch tests run only on macOS. CI runs them in the `chrome-macos` job of `../../.github/workflows/ci.yml`,

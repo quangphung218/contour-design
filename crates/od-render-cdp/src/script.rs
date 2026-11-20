@@ -165,9 +165,16 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
 /// slide are hidden, ancestors stop clipping, the last slide has no break
 /// after it (no trailing blank page). Slides that were hidden start their
 /// animations when shown, so those are ended too.
-pub fn print_slides(w: u32, h: u32) -> String {
+///
+/// The page's own `@page` size is replaced by the paper's (`paper_in`,
+/// inches): Chrome lays a CSS page size out and shrinks it onto the paper,
+/// which on top of the print `scale` drew a deck's `@page { size: 1920px
+/// 1080px }` at 2/3 of the page (QA-120).
+pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
+    let (pw, ph) = paper_in;
     let css = format!(
-        "{hide} {{ display: none !important; }} \
+        "@page {{ size: {pw}in {ph}in; margin: 0; }} \
+         {hide} {{ display: none !important; }} \
          html, body {{ margin: 0 !important; padding: 0 !important; width: auto !important; height: auto !important; overflow: visible !important; }} \
          [data-od-print-hidden] {{ display: none !important; }} \
          [data-od-print-slide] {{ position: relative !important; inset: auto !important; left: auto !important; top: auto !important; \
