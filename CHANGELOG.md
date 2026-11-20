@@ -8,6 +8,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.51] - 2026-11-20
+
+### Highlights
+
+- **Suggestions that fit the turn.** Under each finished turn, up to three next steps written by the agent for what it just made, plus a "Fix" chip when the page has lint findings. A chip adds to what you typed; it never replaces it.
+- **Quitting asks first while agents run.** ⌘Q, closing the window or Restart after an update tells you how many agents would stop. Logging out or shutting down the Mac is not held.
+- **Exports never hang.** A page that never finishes loading, or a Chrome that quits mid-export, now fails within a minute with the step it was on, and you can export again.
+- **Check setup.** Settings ▸ About ▸ Check setup (or `od doctor`) checks the daemon, data folder, agent CLIs, Chrome, ffmpeg and disk space, and says how to fix each failing item. Errors now carry a short Ref you can paste into an issue.
+
 ### Added
 
 - `od doctor` checks what Contour needs, one line each with how to fix it: the daemon runs and matches `od`'s version, the data folder is writable, your agent CLI is found on the login `PATH` and answers `--version`, Chrome opens a blank page for export, ffmpeg for MP4, which project folders macOS asks permission for (reported only, no dialog), and free disk space. It exits 1 when a check fails; `--json` gives a report to attach to an issue. Settings ▸ About ▸ Check setup runs the same checks.
@@ -1305,7 +1314,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.50...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.51...HEAD
+[0.2.0-beta.51]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.50...v0.2.0-beta.51
 [0.2.0-beta.50]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.49...v0.2.0-beta.50
 [0.2.0-beta.49]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.48...v0.2.0-beta.49
 [0.2.0-beta.48]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.47...v0.2.0-beta.48
