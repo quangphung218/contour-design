@@ -121,6 +121,13 @@ pub async fn version_line(
         .map(str::to_owned)
 }
 
+/// Whether `--help` output lists `flag` as a whole word: `--thinking` is
+/// not found in `--thinking-budget`, nor `--auto` in `--auto-share`.
+fn help_has_flag(help: &str, flag: &str) -> bool {
+    help.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .any(|word| word == flag)
+}
+
 /// Help flags of `def` that `bin` advertises; `None` when the help probe
 /// could not run or timed out (a first exec can be slow: macOS scans a
 /// new binary), so the caller can try again rather than keep "no flags".
@@ -137,7 +144,7 @@ pub async fn probe_capabilities(
     Some(
         def.help_flags
             .iter()
-            .filter(|flag| help.contains(*flag))
+            .filter(|flag| help_has_flag(&help, flag))
             .map(|flag| (*flag).to_owned())
             .collect(),
     )
@@ -269,6 +276,16 @@ pub async fn detect_all_in(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_help_flag_matches_only_as_a_whole_word() {
+        let help = "  --thinking-budget <n>  budget\n  --auto, -a  approve\n  [--standalone]";
+        assert!(!super::help_has_flag(help, "--thinking"));
+        assert!(super::help_has_flag(help, "--auto"));
+        assert!(super::help_has_flag(help, "--standalone"));
+        assert!(super::help_has_flag("--thinking=true", "--thinking"));
+    }
+
     use super::*;
 
     #[test]
