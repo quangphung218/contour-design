@@ -5,6 +5,7 @@
 //! when an agent calls it as `$OD_BIN` ([`main_with`], [`CLIENT_COMMANDS`]).
 
 mod client;
+mod doctor_cmd;
 mod exit;
 mod export_cmd;
 mod lint_cmd;
@@ -83,6 +84,9 @@ enum Command {
     /// Agent tools the skills call: live artifacts, connectors (none yet).
     #[command(subcommand)]
     Tools(tools_cmd::ToolsCommand),
+    /// Check what Contour needs (daemon, data folder, agent, Chrome,
+    /// ffmpeg, disk); exit 1 when something fails. `--json` for an issue.
+    Doctor,
 }
 
 #[derive(Debug, Subcommand)]
@@ -207,7 +211,7 @@ enum FilesCommand {
 /// app answers `daemon …` through [`main_code_with`] (its bundled content)
 /// and serves `mcp` itself.
 pub const CLIENT_COMMANDS: &[&str] = &[
-    "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools",
+    "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools", "doctor",
 ];
 
 /// The subcommand `od` would run for `args` (program name left out): the
@@ -368,6 +372,7 @@ pub fn main_code_with(args: Vec<OsString>, app: AppDaemon) -> u8 {
         Some(Command::Media(cmd)) => client().and_then(|c| media_cmd::run(&c, cmd, cli.json)),
         Some(Command::Plugin(cmd)) => client().and_then(|c| plugin_cmd::run(&c, cmd, cli.json)),
         Some(Command::Research(cmd)) => client().and_then(|c| research_cmd::run(&c, cmd, cli.json)),
+        Some(Command::Doctor) => return doctor_cmd::run(&cli.daemon_url, cli.json),
         Some(Command::Tools(cmd)) => {
             tools_cmd::run(client, std::env::var(tools_cmd::TOOL_TOKEN_ENV).ok(), cmd)
         }

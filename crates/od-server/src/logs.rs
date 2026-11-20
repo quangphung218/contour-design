@@ -214,6 +214,26 @@ fn env_filter() -> tracing_subscriber::EnvFilter {
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
 }
 
+/// Span fields for the file, formatted apart from the console's.
+///
+/// Each fmt layer keeps a span's formatted fields in the span, keyed by
+/// the type of its field formatter. With the same type as the console
+/// (`DefaultFields`), the file reused the console's colored text and
+/// `request_id=…` reached `daemon.log` wrapped in ANSI codes, so a grep
+/// for it found nothing.
+#[derive(Debug, Default)]
+pub struct PlainFields(tracing_subscriber::fmt::format::DefaultFields);
+
+impl<'writer> tracing_subscriber::fmt::FormatFields<'writer> for PlainFields {
+    fn format_fields<R: tracing_subscriber::field::RecordFields>(
+        &self,
+        writer: tracing_subscriber::fmt::format::Writer<'writer>,
+        fields: R,
+    ) -> std::fmt::Result {
+        self.0.format_fields(writer, fields)
+    }
+}
+
 /// Sets the global `tracing` subscriber: stderr, filtered by
 /// `RUST_LOG` (default `info`), plus `<data_root>/logs/daemon.log` and the
 /// panic hook when `data_root` is given. A file that cannot be opened is
@@ -232,6 +252,7 @@ pub fn init(data_root: Option<&Path>) {
     let file_layer = file.clone().map(|f| {
         tracing_subscriber::fmt::layer()
             .with_ansi(false)
+            .fmt_fields(PlainFields::default())
             .with_writer(f)
             .with_filter(env_filter())
     });
@@ -280,6 +301,29 @@ pub fn tail_lines(data_root: &Path, n: usize) -> Vec<String> {
         lines = older;
     }
     lines
+}
+
+/// Lines of every kept log file that contain `id`, oldest first, at most
+/// the newest `max`. Empty when there is no log or no such line.
+#[must_use]
+pub fn lines_with(data_root: &Path, id: &str, max: usize) -> Vec<String> {
+    if id.is_empty() {
+        return Vec::new();
+    }
+    let logs = dir(data_root);
+    let mut found: Vec<String> = Vec::new();
+    // Oldest file first: `daemon.4.log` … `daemon.log`.
+    for k in (0..KEEP_FILES).rev() {
+        let Ok(bytes) = std::fs::read(logs.join(file_name(k))) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&bytes);
+        found.extend(text.lines().filter(|l| l.contains(id)).map(str::to_owned));
+        if found.len() > max {
+            found.drain(..found.len() - max);
+        }
+    }
+    found
 }
 
 #[cfg(test)]
@@ -385,5 +429,30 @@ mod tests {
         assert_eq!(tail_lines(tmp.path(), 1), ["e"]);
         assert_eq!(tail_lines(tmp.path(), 10).len(), 5);
         assert!(tail_lines(&tmp.path().join("none"), 3).is_empty());
+    }
+
+    #[test]
+    fn lines_with_an_id_come_from_every_file_oldest_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let logs = dir(tmp.path());
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(
+            logs.join("daemon.2.log"),
+            "x req{request_id=ab12cd34}: 1\nother\n",
+        )
+        .unwrap();
+        std::fs::write(logs.join("daemon.1.log"), "none here\n").unwrap();
+        std::fs::write(logs.join(LOG_FILE), "ab12cd34 2\nab12cd34 3\n").unwrap();
+        let found = lines_with(tmp.path(), "ab12cd34", 10);
+        assert_eq!(
+            found,
+            ["x req{request_id=ab12cd34}: 1", "ab12cd34 2", "ab12cd34 3"]
+        );
+        assert_eq!(
+            lines_with(tmp.path(), "ab12cd34", 2),
+            ["ab12cd34 2", "ab12cd34 3"]
+        );
+        assert!(lines_with(tmp.path(), "", 10).is_empty());
+        assert!(lines_with(tmp.path(), "ffffffff", 10).is_empty());
     }
 }

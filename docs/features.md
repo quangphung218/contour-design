@@ -398,6 +398,7 @@ daemon, `od <command> --help` lists the options.
 |---|---|
 | `od`, `od daemon start [--port N]` | run the daemon |
 | `od daemon status` | check a daemon is answering |
+| `od doctor [--json]` | check the daemon, data folder, agent CLI, Chrome, ffmpeg, macOS folder access and free disk; one line each with its fix, exit 1 on a failed check ([troubleshooting](troubleshooting.md#first-steps)) |
 | `od project create\|list` | projects |
 | `od files write\|list` | project files |
 | `od run start\|watch\|cancel\|list` | agent runs |

@@ -48,6 +48,21 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    - `tests/drafts.rs::opening_a_project_sweeps_draft_images_a_day_old`
 9. A comment follows its file renamed or moved (bookkeeping is in `od-store`).
    - `tests/drafts.rs::a_comment_sent_follows_its_file_renamed_or_moved`
+10. Every request runs in a `req{request_id}` span (`src/request_id.rs:tag`, outermost layer of `router`)
+    and answers with `x-od-request-id`. Work it moves to its own task keeps the span
+    (`.in_current_span()`, `Span::current()`); logs hold ids, paths and messages, never bodies, prompts or tokens.
+    - `tests/request_id.rs::every_line_of_a_failed_export_carries_its_request_id`
+    - `tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
+11. The log file gets its own field formatter (`src/logs.rs:PlainFields`), never the console's.
+    - same two tests (ANSI codes break `request_id=…`)
+12. `od doctor` and `POST /api/doctor` share `src/doctor.rs`; a check takes its inputs as arguments
+    and has a pass and a fail test; only `Status::Fail` fails the report. The route is a POST (it starts
+    Chrome and the agents; a GET from an `<img>` carries no `Origin`) and runs one at a time.
+    - `src/doctor.rs::tests`, `../od-cli/tests/cli.rs::doctor_reports_each_check_and_fails_on_any_failure`
+    - `tests/c2.rs::the_doctor_runs_only_on_a_post_from_the_app`
+13. A run that fails logs one `run failed` line in its span and becomes the last failure diagnostics lead with
+    (`src/routes/runs.rs:persist_run`, `src/request_id.rs:remember_failed`).
+    - `tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).
@@ -57,6 +72,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 - A list setting under RFC 7396 replaces whole; give it its own locked route (#246).
 - `PUT /api/media/config` still replaces its whole map: separate store, left as is in #246.
 - A new listing or export that ships files must filter draft images; handoff was missed once (#200).
+- A `tokio::spawn` or `spawn_blocking` drops the request's span: instrument it, or its lines lose the id.
+- Two fmt layers with the same field formatter share a span's formatted fields; the file got the console's colors.
+- A GET that does more than read (starts a process, writes a file) can be set off by an `<img>` with no `Origin`; make it a POST (#271).
 
 ## Check
 - `make check`; single test: `cargo test -p od-server --test drafts`.

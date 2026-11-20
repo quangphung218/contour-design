@@ -418,6 +418,20 @@ try {
   await page.getByTestId('license-text').waitFor({ state: 'detached' });
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByTestId('export-diagnostics').click()]);
   assert.match(download.suggestedFilename(), /^contour-diagnostics-\d{8}-\d{6}\.zip$/);
+  // Check setup: the daemon runs the checks of `od doctor`; one line per
+  // check, and every line that is not ✓ says how to fix it. Chrome may
+  // take a while to show its blank page (or be missing on this machine).
+  await page.getByTestId('check-setup').click();
+  const doctor = page.getByTestId('doctor-report');
+  await doctor.waitFor({ timeout: 90_000 });
+  assert.equal(await doctor.locator('li[data-check="daemon"]').getAttribute('data-status'), 'ok');
+  for (const id of ['data-dir', 'agent', 'chrome', 'ffmpeg', 'disk']) {
+    assert.equal(await doctor.locator(`li[data-check="${id}"]`).count(), 1, `${id} is checked`);
+  }
+  for (const li of await doctor.locator('li:not([data-status="ok"])').all()) {
+    assert.equal(await li.locator('.muted').count(), 1, `no fix under: ${await li.textContent()}`);
+  }
+  assert.equal(await page.getByTestId('check-setup').isDisabled(), false, 'the button is back');
   await page.screenshot({ path: OUT + 'settings-about.png', fullPage: false });
   await page.getByTestId('reset-onboarding').click();
   await page.waitForURL('**/onboarding');

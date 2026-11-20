@@ -1821,6 +1821,7 @@ mod tests {
             status,
             code,
             message: message.to_owned(),
+            request_id: None,
         };
         // The daemon's own reason is shown.
         let bad = err(400, Some(ErrorCode::BadRequest), "not an HTML file");

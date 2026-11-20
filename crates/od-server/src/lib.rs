@@ -3,10 +3,12 @@
 //! Binds loopback by default. Binding elsewhere requires `OD_API_TOKEN`.
 //! Browser requests pass the origin guard (spec 2.2).
 
+pub mod doctor;
 pub mod error;
 pub mod guard;
 pub mod lock;
 pub mod logs;
+pub mod request_id;
 pub mod routes;
 pub mod state;
 
@@ -121,6 +123,7 @@ pub fn router(state: AppState) -> Router {
         guard::token_guard,
     ))
     .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+    .layer(axum::middleware::from_fn(request_id::tag))
     .with_state(state)
 }
 

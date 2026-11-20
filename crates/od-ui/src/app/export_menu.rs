@@ -674,7 +674,7 @@ async fn run_export(
     };
     let (bytes, tracks) = match res {
         Ok(r) => r,
-        Err(e) => return Some(Err(api::failure(T::ExportFailed, &e))),
+        Err(e) => return Some(Err(api::failure_with_ref(T::ExportFailed, &e))),
     };
     // In the app, the Save dialog: the toast then names the file really
     // written and where (QA-048); a download could be renamed

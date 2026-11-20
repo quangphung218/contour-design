@@ -299,9 +299,11 @@ test('EXP-16', 'Export PDF of a page that never settles fails in time with a rea
   const started = Date.now();
   const res = await exportVia(page, 'export-pdf', 60_000);
   assert.ok(!res.bytes, 'a PDF downloaded from a page that never settles');
+  const ref = /\(Ref: ([0-9a-f]{8})\)$/.exec(res.text)?.[1];
+  assert.ok(ref, `no request id in: ${res.text}`);
   assert.equal(
     res.text,
-    'Export failed: render failed: the page gave no answer within 3 s while waiting for the page to load; try again, and if it fails again, a script on the page may be holding it up',
+    `Export failed: render failed: the page gave no answer within 3 s while waiting for the page to load; try again, and if it fails again, a script on the page may be holding it up (Ref: ${ref})`,
   );
   assert.ok(Date.now() - started < 45_000, `the error took ${Date.now() - started} ms`);
   // The agent fixes the page: the same menu exports it.

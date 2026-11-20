@@ -741,7 +741,7 @@ fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) 
                 "failed",
                 Some(Glyph::Warning),
                 t(T::RunFailed).to_owned(),
-                Some(
+                Some(super::api::with_ref(
                     t(match fail_cause(tn) {
                         // The project was deleted meanwhile (QA-076): the
                         // agent and the link are fine.
@@ -752,7 +752,9 @@ fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) 
                         FailCause::Unreachable => T::DaemonUnreachable,
                     })
                     .to_owned(),
-                ),
+                    // The run's lines in the daemon log carry its id.
+                    run_ref(tn),
+                )),
             ),
             RunPhase::Stopped => (
                 "stopped",
@@ -777,6 +779,12 @@ fn RunLine(turn: RwSignal<AssistantTurn>, clock: RunClock, quiet: Signal<bool>) 
             {move || line.with(|l| l.3.clone()).map(|d| view! { <span class="muted">{d}</span> })}
         </div>
     }
+}
+
+/// The first characters of a run's id, as shown beside its failure: a
+/// grep of `daemon.log` for them finds the run's lines (`run_id=…`).
+fn run_ref(turn: &AssistantTurn) -> Option<&str> {
+    turn.run_id.as_deref().map(|id| id.get(..8).unwrap_or(id))
 }
 
 /// "Writing index.html · last: hero.css · 1:23": what the run does now, the

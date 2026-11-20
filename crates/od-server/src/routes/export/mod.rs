@@ -158,6 +158,7 @@ impl From<RenderError> for ExportErr {
 
 impl IntoResponse for ExportErr {
     fn into_response(self) -> Response {
+        crate::error::log_answer(self.status, self.code, &self.message);
         let mut error = json!({ "code": self.code, "message": self.message });
         if let Some(details) = self.details {
             error["details"] = details;
@@ -335,7 +336,9 @@ pub(crate) async fn bundle(
         root: entry.root.clone(),
     };
     let path = entry.path.clone();
+    let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _in = span.enter();
         let (_, bytes) = od_store::files::read_file(&source.root, &path)?;
         let html = String::from_utf8(bytes).map_err(|_| StandaloneError::InvalidSource {
             path: path.clone(),
@@ -368,7 +371,9 @@ pub(crate) async fn scratch(
     // Named after the entry: a page without a <title> gets its file's name
     // as the PDF title, not "index.html".
     let name = entry.filename(None, "html");
+    let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _in = span.enter();
         std::fs::create_dir_all(&base)?;
         let dir = tempfile::Builder::new()
             .prefix("render-")
@@ -506,7 +511,9 @@ pub async fn archive(
     let filename = format!("{}.zip", if base.is_empty() { "project" } else { &base });
 
     let (tx, rx) = tokio::sync::mpsc::channel::<std::io::Result<Bytes>>(8);
+    let span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _in = span.enter();
         let writer = ChannelWriter {
             tx: tx.clone(),
             buf: Vec::with_capacity(CHUNK),

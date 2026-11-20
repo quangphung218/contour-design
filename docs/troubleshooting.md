@@ -5,6 +5,27 @@ collect diagnostics (Help ▸ Report Issue, or the daemon log in
 `<data folder>/logs/daemon.log`, with `RUST_LOG=debug` for more) and open an
 issue.
 
+## First steps
+
+1. Run `od doctor` in a terminal (or Settings ▸ About ▸ Check setup). It
+   checks, one line each: the daemon runs and has the same version as `od`,
+   the data folder takes a file, your agent CLI is on the login `PATH` and
+   answers `--version` within 10 s, Chrome opens a blank page within 60 s,
+   ffmpeg answers (MP4 only), which project folders macOS asks about, and
+   at least 1 GB is free. A `✗` line says how to fix it; `!` is a warning
+   and does not fail. The exit code is 1 when any line is `✗`.
+   `od doctor --json` gives the same report to attach to an issue.
+2. An error in the app ends with `(Ref: 1a2b3c4d)`: a failed export with
+   the request's id, a failed run with the first characters of its run id.
+   Put it in the issue. Every log line of that request or run carries the
+   id, so `grep 1a2b3c4d <data folder>/logs/daemon.log` shows the whole
+   chain (request, run, render, error). Help ▸ Report Issue and Export
+   diagnostics put the lines of the last request or run that failed first;
+   `/api/diagnostics/summary?id=<ref>` picks another one.
+
+The log holds ids, paths, versions and error messages; never file contents,
+prompts or keys.
+
 ## Running
 
 ### "an od daemon is already running at … on …" / "Contour can't open yet"

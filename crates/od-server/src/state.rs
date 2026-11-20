@@ -197,7 +197,9 @@ impl AppState {
         F: FnOnce(&Store) -> Result<T, StoreError> + Send + 'static,
     {
         let store = Arc::clone(&self.store);
-        tokio::task::spawn_blocking(move || f(&store))
+        // In the request's span: a store error logged there keeps its id.
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || span.in_scope(|| f(&store)))
             .await
             .map_err(|e| ApiErr::internal(format!("worker failed: {e}")))?
             .map_err(ApiErr::from)

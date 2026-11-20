@@ -17,6 +17,9 @@ pub struct HttpError {
     pub status: u16,
     pub code: Option<ErrorCode>,
     pub message: String,
+    /// The daemon's id for the request (`x-od-request-id`): shown as
+    /// "ref …" beside an export failure, to look up in its log.
+    pub request_id: Option<String>,
 }
 
 impl HttpError {
@@ -64,6 +67,26 @@ pub fn try_again_text(template: &str) -> String {
         .replace("{0}", "");
     let head = head.trim_end_matches([':', '：', ' ', '.']);
     format!("{head}. {}.", t(Msg::TryAgain))
+}
+
+/// Header of the daemon's id for a request (`od_server::request_id`).
+pub const REQUEST_ID_HEADER: &str = "x-od-request-id";
+
+/// [`failure`], followed by the request's id when the daemon gave one:
+/// "Export failed. Try again. (Ref: 1a2b3c4d)". The user copies the id
+/// into an issue; Export diagnostics puts its log lines first.
+#[must_use]
+pub fn failure_with_ref(key: Msg, e: &HttpError) -> String {
+    with_ref(failure(key, e), e.request_id.as_deref())
+}
+
+/// `text` followed by "(Ref: `id`)", or `text` alone without an id.
+#[must_use]
+pub fn with_ref(text: String, id: Option<&str>) -> String {
+    match id {
+        Some(id) => format!("{text} ({})", tf(Msg::ErrorRef, &[id])),
+        None => text,
+    }
 }
 
 /// [`failure_text`] for an i18n template.
@@ -155,6 +178,7 @@ fn unreachable_daemon(why: &dyn fmt::Display) -> HttpError {
         status: 0,
         code: None,
         message: t(Msg::DaemonUnreachable).to_owned(),
+        request_id: None,
     }
 }
 
@@ -172,6 +196,10 @@ fn fetch_failed(e: &wasm_bindgen::JsValue) -> HttpError {
 /// does not exist goes into the gone set (see [`watch_gone`]).
 pub(crate) async fn error_of(path: &str, res: Response) -> HttpError {
     let status = res.status();
+    let request_id = res
+        .headers()
+        .get(REQUEST_ID_HEADER)
+        .filter(|id| !id.is_empty() && id.len() <= 64);
     let body = res.text().await.unwrap_or_default();
     let (code, message) = serde_json::from_str::<ApiErrorResponse>(&body)
         .map(|e| (Some(e.error.code), e.error.message))
@@ -186,7 +214,10 @@ pub(crate) async fn error_of(path: &str, res: Response) -> HttpError {
     // The status and the daemon's own words, for whoever debugs it; the
     // user reads `Display` (QA-081). The raw body too, when a proxy's page
     // was kept out of `message`.
-    leptos::logging::warn!("request failed: HTTP {status} {code:?}: {message}");
+    leptos::logging::warn!(
+        "request failed: HTTP {status} {code:?}: {message} (ref {})",
+        request_id.as_deref().unwrap_or("-")
+    );
     if code.is_none() && message != body.trim() && !body.trim().is_empty() {
         leptos::logging::warn!("response body: {body}");
     }
@@ -194,6 +225,7 @@ pub(crate) async fn error_of(path: &str, res: Response) -> HttpError {
         status,
         code,
         message,
+        request_id,
     };
     note_gone(path, &e);
     e
@@ -395,6 +427,7 @@ async fn decode<T: DeserializeOwned>(path: &str, res: Response) -> ApiResult<T> 
         status,
         code: None,
         message: tf(Msg::UnexpectedResponse, &[&e.to_string()]),
+        request_id: None,
     })
 }
 
@@ -520,6 +553,7 @@ mod tests {
             status,
             code: None,
             message: "project p1 not found".to_owned(),
+            request_id: None,
         };
         assert_eq!(e(404).to_string(), "Not found: project p1 not found");
         assert_eq!(e(418).to_string(), "project p1 not found");
@@ -543,11 +577,34 @@ mod tests {
     }
 
     #[test]
+    fn an_export_failure_ends_with_the_requests_ref() {
+        let mut e = HttpError {
+            status: 502,
+            code: Some(ErrorCode::UpstreamUnavailable),
+            message: "render failed: the browser quit".to_owned(),
+            request_id: Some("1a2b3c4d".to_owned()),
+        };
+        assert_eq!(
+            failure_with_ref(Msg::ExportFailed, &e),
+            "Export failed: render failed: the browser quit (Ref: 1a2b3c4d)"
+        );
+        // An internal failure hides the daemon's words, not the ref.
+        e.code = Some(ErrorCode::InternalError);
+        let shown = failure_with_ref(Msg::ExportFailed, &e);
+        assert!(shown.ends_with(". (Ref: 1a2b3c4d)"), "{shown}");
+        assert!(!shown.contains("browser"), "{shown}");
+        // No id from the daemon (an older one, no answer): no ref.
+        e.request_id = None;
+        assert!(!failure_with_ref(Msg::ExportFailed, &e).contains("Ref"));
+    }
+
+    #[test]
     fn a_page_sent_to_mp4_says_it_is_no_motion_video() {
         let e = HttpError {
             status: 422,
             code: Some(ErrorCode::NotAComposition),
             message: "This project is not a motion video: index.html has no HyperFrames composition ([data-composition-id] root). Make one with a Motion project.".to_owned(),
+            request_id: None,
         };
         let shown = failure(Msg::ExportFailed, &e);
         assert!(shown.contains(t(Msg::ErrNotMotion)), "{shown}");
@@ -562,6 +619,7 @@ mod tests {
             status: 500,
             code: Some(ErrorCode::InternalError),
             message: "database is locked".to_owned(),
+            request_id: None,
         }
     }
 
@@ -577,6 +635,7 @@ mod tests {
             status: 502,
             code: None,
             message: "<html>Bad Gateway</html>".to_owned(),
+            request_id: None,
         };
         assert!(bare.internal());
         assert_eq!(bare.to_string(), shown);
@@ -585,6 +644,7 @@ mod tests {
             status: 503,
             code: Some(ErrorCode::UpstreamUnavailable),
             message: "Chrome is not installed.".to_owned(),
+            request_id: None,
         };
         assert!(!chrome.internal());
         assert_eq!(chrome.to_string(), "Chrome is not installed.");
@@ -601,6 +661,7 @@ mod tests {
             status: 404,
             code: Some(ErrorCode::FileNotFound),
             message: "index.html".to_owned(),
+            request_id: None,
         };
         assert_eq!(
             failure_text(template, &missing),
@@ -610,6 +671,7 @@ mod tests {
             status: 0,
             code: None,
             message: t(Msg::DaemonUnreachable).to_owned(),
+            request_id: None,
         };
         assert_eq!(
             failure_text(template, &offline),
@@ -644,6 +706,7 @@ mod tests {
             status,
             code: Some(code),
             message: message.to_owned(),
+            request_id: None,
         };
         let denied = e(
             403,
@@ -696,6 +759,7 @@ mod tests {
             status: 404,
             code,
             message: "x".to_owned(),
+            request_id: None,
         };
         assert!(e(Some(ErrorCode::ProjectNotFound)).project_missing());
         for other in [
@@ -714,6 +778,7 @@ mod tests {
             status: 404,
             code,
             message: "x".to_owned(),
+            request_id: None,
         }
     }
 
@@ -785,6 +850,7 @@ mod tests {
             status: 500,
             code: None,
             message: "x".to_owned(),
+            request_id: None,
         };
         assert_eq!(project_to_check("/api/projects/p1/files", &locked), None);
         assert_eq!(

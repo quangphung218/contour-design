@@ -6,11 +6,13 @@
 //! key, agent CLI env, anything named like a key or token), `agents.json`,
 //! `runs.json` (the last [`MAX_RUNS`] runs), the tail of each of the
 //! last [`MAX_RUN_LOGS`] runs' `events.jsonl`, and `logs/daemon.log`: the
-//! last [`LOG_LINES`] lines of the daemon log ([`crate::logs`]), scrubbed.
+//! last [`LOG_LINES`] lines of the daemon log ([`crate::logs`]), scrubbed,
+//! after the lines of one request or run (`?id=`, else the last request
+//! that failed: [`log_report`]).
 
 use crate::error::{ApiErr, ApiResult};
 use crate::state::AppState;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::header;
 use axum::response::IntoResponse;
 use regex::Regex;
@@ -100,6 +102,74 @@ pub fn log_tail(data_root: &std::path::Path) -> String {
         .collect()
 }
 
+/// Lines with one id kept in the report, at most.
+pub const ID_LINES: usize = 200;
+
+/// The id whose lines lead the report: `asked` when it is one
+/// ([`crate::request_id::is_lookup_id`]), else the last request that
+/// failed. An id that is not one is dropped, not searched.
+#[must_use]
+pub fn lookup_id(asked: Option<&str>) -> Option<String> {
+    match asked.map(str::trim).filter(|a| !a.is_empty()) {
+        Some(a) => crate::request_id::is_lookup_id(a).then(|| a.to_owned()),
+        None => crate::request_id::last_failed(),
+    }
+}
+
+/// The daemon log for a report, scrubbed: the lines carrying one id (a
+/// request or a run) and the last lines.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LogReport {
+    /// The id looked up, when one had lines.
+    pub id: Option<String>,
+    /// Lines with `id`, from every kept file, at most [`ID_LINES`].
+    pub matched: String,
+    /// The last [`LOG_LINES`] lines.
+    pub tail: String,
+}
+
+impl LogReport {
+    /// One text: the lines with the id first, then the last lines.
+    #[must_use]
+    pub fn joined(&self) -> String {
+        match &self.id {
+            Some(id) => {
+                let mut out = format!("# Lines with {id}\n{}", self.matched);
+                if !self.tail.is_empty() {
+                    out.push_str("\n# Last lines\n");
+                    out.push_str(&self.tail);
+                }
+                out
+            }
+            None => self.tail.clone(),
+        }
+    }
+}
+
+/// [`LogReport`] of the log under `data_root` for `id`. An id with no
+/// line leaves `id` and `matched` empty.
+#[must_use]
+pub fn log_report(data_root: &std::path::Path, id: Option<&str>) -> LogReport {
+    let tail = log_tail(data_root);
+    let matched: String = id
+        .map(|id| crate::logs::lines_with(data_root, id, ID_LINES))
+        .unwrap_or_default()
+        .iter()
+        .map(|l| scrub_line(l) + "\n")
+        .collect();
+    LogReport {
+        id: id.filter(|_| !matched.is_empty()).map(str::to_owned),
+        matched,
+        tail,
+    }
+}
+
+/// `?id=`: a request id (`ref` in an error) or a run id.
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct IdQuery {
+    pub id: Option<String>,
+}
+
 fn tail(bytes: &[u8]) -> &[u8] {
     let start = bytes.len().saturating_sub(LOG_TAIL_BYTES);
     // Start on a line boundary.
@@ -114,7 +184,11 @@ fn tail(bytes: &[u8]) -> &[u8] {
     &bytes[start..]
 }
 
-pub async fn export(State(state): State<AppState>) -> ApiResult<impl IntoResponse> {
+pub async fn export(
+    State(state): State<AppState>,
+    Query(query): Query<IdQuery>,
+) -> ApiResult<impl IntoResponse> {
+    let id = lookup_id(query.id.as_deref());
     let byok = state
         .store
         .data_dir()
@@ -179,7 +253,7 @@ pub async fn export(State(state): State<AppState>) -> ApiResult<impl IntoRespons
                 add(&format!("runs/{}/events.jsonl", run.id()), tail(&log))?;
             }
         }
-        let log = log_tail(&root);
+        let log = log_report(&root, id.as_deref()).joined();
         if !log.is_empty() {
             add("logs/daemon.log", log.as_bytes())?;
         }

@@ -315,29 +315,40 @@ impl RunEngine {
         self.active()
             .insert(spec.run.id().to_owned(), Arc::clone(&active));
         let engine = self.clone();
-        tokio::spawn(async move {
-            let run_id = spec.run.id().to_owned();
-            // Project runs only: what the agent changes there is the turn's
-            // result (spec L4); taken before the agent can write.
-            // The window opens before the snapshot: whatever the agent
-            // stamps falls inside it, and a run of the project that ends
-            // during the walk keeps its window for this one.
-            let turn = match spec.project_id.as_deref() {
-                Some(project) => {
-                    let start = std::time::SystemTime::now();
-                    let turn = engine.turn_windows.open(project, &run_id, start);
-                    let cwd = spec.cwd.clone();
-                    tokio::task::spawn_blocking(move || turn_files::Snapshot::take(&cwd))
-                        .await
-                        .ok()
-                        .map(|before| turn.with_before(before))
-                }
-                None => None,
-            };
-            let outcome = engine.drive(spec, &active, turn).await;
-            engine.active().remove(&run_id);
-            outcome
-        })
+        // Every line the run logs carries its id, under the span of the
+        // request that started it (`req{request_id=…}:run{run_id=…}`).
+        let span = tracing::info_span!(
+            "run",
+            run_id = %spec.run.id(),
+            agent = spec.def.id,
+            project = spec.project_id.as_deref().unwrap_or(""),
+        );
+        tokio::spawn(tracing::Instrument::instrument(
+            async move {
+                let run_id = spec.run.id().to_owned();
+                // Project runs only: what the agent changes there is the turn's
+                // result (spec L4); taken before the agent can write.
+                // The window opens before the snapshot: whatever the agent
+                // stamps falls inside it, and a run of the project that ends
+                // during the walk keeps its window for this one.
+                let turn = match spec.project_id.as_deref() {
+                    Some(project) => {
+                        let start = std::time::SystemTime::now();
+                        let turn = engine.turn_windows.open(project, &run_id, start);
+                        let cwd = spec.cwd.clone();
+                        tokio::task::spawn_blocking(move || turn_files::Snapshot::take(&cwd))
+                            .await
+                            .ok()
+                            .map(|before| turn.with_before(before))
+                    }
+                    None => None,
+                };
+                let outcome = engine.drive(spec, &active, turn).await;
+                engine.active().remove(&run_id);
+                outcome
+            },
+            span,
+        ))
     }
 
     /// Asks a run to stop: abort line (if the protocol has one), close
@@ -1495,7 +1506,33 @@ async fn finish_turn(
     finish(&spec.run, f, text_parts)
 }
 
+/// At most this many characters of a failure's reason go to the log.
+const LOGGED_REASON_CHARS: usize = 300;
+
+/// A failure's reason for the log: one line, cut to
+/// [`LOGGED_REASON_CHARS`].
+fn logged_reason(message: &str) -> String {
+    let line: String = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    match line.char_indices().nth(LOGGED_REASON_CHARS) {
+        Some((at, _)) => format!("{}…", &line[..at]),
+        None => line,
+    }
+}
+
 fn finish(run: &Run, f: Finish, text_parts: &[String]) -> RunOutcome {
+    if f.status == RunStatus::Failed {
+        // In the run's span: `grep <run ref> daemon.log` gives why it
+        // failed. The reason is the one the user reads under the turn (the
+        // agent's error line, or ours), on one line and cut; never the
+        // prompt or the agent's reply.
+        tracing::warn!(
+            category = ?f.category,
+            exit_code = ?f.code,
+            signal = ?f.signal,
+            reason = %f.error.as_deref().map(logged_reason).unwrap_or_default(),
+            "run failed"
+        );
+    }
     if f.status == RunStatus::Failed
         && let Some(message) = &f.error
     {
@@ -1535,6 +1572,15 @@ fn finish(run: &Run, f: Finish, text_parts: &[String]) -> RunOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_logged_reason_is_one_short_line() {
+        assert_eq!(logged_reason("agent says\n  no"), "agent says no");
+        let long = "é".repeat(LOGGED_REASON_CHARS + 50);
+        let cut = logged_reason(&long);
+        assert_eq!(cut.chars().count(), LOGGED_REASON_CHARS + 1);
+        assert!(cut.ends_with('…'));
+    }
 
     #[test]
     fn classification() {
