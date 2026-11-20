@@ -20,7 +20,8 @@ pub struct SpawnSpec {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub cwd: PathBuf,
-    /// The complete environment (the parent's is not inherited).
+    /// The complete environment (the parent's is not inherited), except
+    /// `PWD`, which [`spawn`] sets to `cwd`.
     pub env: Vec<(OsString, OsString)>,
 }
 
@@ -34,6 +35,10 @@ pub fn spawn(spec: &SpawnSpec) -> std::io::Result<Child> {
         .current_dir(&spec.cwd)
         .env_clear()
         .envs(spec.env.iter().map(|(k, v)| (k, v)))
+        // What a shell would export after `cd`: OpenCode 2 takes its
+        // working directory from `$PWD`, and the daemon's own value would
+        // send it to the folder the daemon started in (QA-116).
+        .env("PWD", &spec.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

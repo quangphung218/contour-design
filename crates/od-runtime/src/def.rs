@@ -324,6 +324,11 @@ pub const OPENCODE_STANDALONE_FLAG: &str = "--standalone";
 /// OpenCode 2's flag that skips its own permission prompts.
 pub const OPENCODE_AUTO_FLAG: &str = "--auto";
 
+/// OpenCode's flag that prints reasoning parts (`reasoning` frames) in
+/// `--format json`; without it a model that thinks for minutes shows
+/// nothing (QA-116).
+pub const OPENCODE_THINKING_FLAG: &str = "--thinking";
+
 pub const OPENCODE: RuntimeDef = RuntimeDef {
     id: "opencode",
     name: "OpenCode",
@@ -338,6 +343,7 @@ pub const OPENCODE: RuntimeDef = RuntimeDef {
         OPENCODE_SKIP_PERMISSIONS_FLAG,
         OPENCODE_STANDALONE_FLAG,
         OPENCODE_AUTO_FLAG,
+        OPENCODE_THINKING_FLAG,
     ],
     extra_env: &[],
     idle_timeout: Duration::from_secs(600),
@@ -669,9 +675,13 @@ impl RuntimeDef {
         if self.infers_flags_from_version()
             && major_version(version).is_some_and(|major| major >= 2)
         {
-            return [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
-                .map(str::to_owned)
-                .to_vec();
+            return [
+                OPENCODE_STANDALONE_FLAG,
+                OPENCODE_AUTO_FLAG,
+                OPENCODE_THINKING_FLAG,
+            ]
+            .map(str::to_owned)
+            .to_vec();
         }
         Vec::new()
     }
@@ -965,6 +975,9 @@ fn opencode_args(input: &ArgvInput<'_>) -> Vec<String> {
             args.extend(["--dir".to_owned(), cwd.to_string_lossy().into_owned()]);
         }
     }
+    if has(OPENCODE_THINKING_FLAG) {
+        args.push(OPENCODE_THINKING_FLAG.to_owned());
+    }
     if let Some(id) = input.resume_session_id {
         args.extend(["-s".to_owned(), id.to_owned()]);
     }
@@ -1248,14 +1261,14 @@ mod tests {
 
     #[test]
     fn an_opencode_2_version_implies_its_argv() {
-        assert_eq!(
-            OPENCODE.flags_from_version("2.0.25\n"),
-            [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
-        );
-        assert_eq!(
-            OPENCODE.flags_from_version("opencode v10.1.0"),
-            [OPENCODE_STANDALONE_FLAG, OPENCODE_AUTO_FLAG]
-        );
+        // QA-116: 2.0.25 shows reasoning only with `--thinking`.
+        let v2 = [
+            OPENCODE_STANDALONE_FLAG,
+            OPENCODE_AUTO_FLAG,
+            OPENCODE_THINKING_FLAG,
+        ];
+        assert_eq!(OPENCODE.flags_from_version("2.0.25\n"), v2);
+        assert_eq!(OPENCODE.flags_from_version("opencode v10.1.0"), v2);
         assert!(OPENCODE.flags_from_version("1.14.3").is_empty());
         assert!(OPENCODE.flags_from_version("unknown").is_empty());
         assert!(CLAUDE.flags_from_version("2.1.0 (Claude Code)").is_empty());
@@ -1266,6 +1279,7 @@ mod tests {
         let caps = vec![
             OPENCODE_STANDALONE_FLAG.to_owned(),
             OPENCODE_AUTO_FLAG.to_owned(),
+            OPENCODE_THINKING_FLAG.to_owned(),
         ];
         let cwd = std::path::Path::new("/p");
         let args = OPENCODE.build_args(&ArgvInput {
@@ -1277,7 +1291,7 @@ mod tests {
         });
         assert_eq!(
             args.join(" "),
-            "run --format json --standalone --auto -s ses_1 -m opencode/big-pickle"
+            "run --format json --standalone --auto --thinking -s ses_1 -m opencode/big-pickle"
         );
         let ask = OPENCODE.build_args(&ArgvInput {
             cwd: Some(cwd),
@@ -1285,7 +1299,10 @@ mod tests {
             permission: PermissionMode::Ask,
             ..ArgvInput::default()
         });
-        assert_eq!(ask, ["run", "--format", "json", "--standalone"]);
+        assert_eq!(
+            ask,
+            ["run", "--format", "json", "--standalone", "--thinking"]
+        );
     }
 
     #[test]

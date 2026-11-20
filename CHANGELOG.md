@@ -11,6 +11,8 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Daemon log lines from background tasks now carry the request id, so diagnostics find them (#274).
+- OpenCode 2 works and writes in the project folder, and its thinking shows in the chat.
+- Every agent run logs a start and an end line under its run id.
 
 ## [0.2.0-beta.51] - 2026-11-20
 

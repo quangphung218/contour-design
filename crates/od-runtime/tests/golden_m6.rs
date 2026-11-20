@@ -204,6 +204,46 @@ fn opencode_2_run_json() {
     );
 }
 
+/// OpenCode 2.0.25 with `--thinking`, recorded from a real run: each
+/// finished reasoning part is one `reasoning` frame, shown as thinking
+/// (QA-116: a model thought for 7.5 minutes and the chat showed nothing).
+#[test]
+fn opencode_2_thinking_frames_are_shown() {
+    let (events, _) = replay(
+        StreamFormat::OpenCodeJson,
+        &ctx(),
+        "opencode/turn-run-json-v2-thinking.jsonl",
+    );
+    let thinking: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ThinkingDelta { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(thinking.len(), 2, "{events:?}");
+    assert!(thinking[0].starts_with("The user wants me to create"));
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::ThinkingStart))
+            .count(),
+        2
+    );
+    let uses = tool_uses(&events);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].1, "Write");
+    assert_eq!(uses[0].2["file_path"], "index.html");
+    assert_eq!(
+        text(&events),
+        "Đã tạo file index.html với nội dung body \"Xin chào\"."
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, AgentEvent::Raw { .. })),
+        "every frame is understood: {events:?}"
+    );
+}
+
 #[test]
 fn cursor_stream_json() {
     let (events, writes) = replay(
