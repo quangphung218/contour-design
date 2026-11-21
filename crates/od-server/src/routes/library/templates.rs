@@ -306,8 +306,8 @@ fn remix_metadata(kind: Option<ProjectKind>) -> ProjectMetadata {
 /// (`assets/styles.css`, an iframe's page…), by their paths relative to
 /// the page's folder, so a project made from it opens and exports as the
 /// gallery page does.
-fn example_with_files(example: &std::path::Path) -> Result<(String, SideFiles), StoreError> {
-    let html = std::fs::read_to_string(example)?;
+fn example_with_files(example: &std::path::Path) -> Result<(Vec<u8>, SideFiles), StoreError> {
+    let html = std::fs::read(example)?;
     let (Some(dir), Some(name)) = (example.parent(), example.file_name()) else {
         return Ok((html, Vec::new()));
     };
@@ -315,11 +315,10 @@ fn example_with_files(example: &std::path::Path) -> Result<(String, SideFiles), 
         dir: dir.to_path_buf(),
         imported: true,
     };
-    let entry = name.to_string_lossy();
+    // Read as text only to find what it loads; the page is copied as is.
+    let text = String::from_utf8_lossy(&html);
     let mut side = Vec::new();
-    for path in crate::routes::export::page_files(&root, &entry, &html)
-        .map_err(|e| StoreError::Io(std::io::Error::other(e.to_string())))?
-    {
+    for path in crate::routes::export::page_files(&root, &name.to_string_lossy(), &text) {
         let (_, bytes) = od_store::files::read_file(&root, &path)?;
         side.push((path, bytes));
     }
@@ -375,7 +374,7 @@ pub async fn remix(
                 for (path, bytes) in &side {
                     s.write_file(&project.id, path, bytes, true, None)?;
                 }
-                s.write_file(&project.id, "index.html", html.as_bytes(), true, None)
+                s.write_file(&project.id, "index.html", &html, true, None)
             })?;
             Ok((project, cid))
         })

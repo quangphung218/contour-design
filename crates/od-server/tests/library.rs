@@ -828,6 +828,123 @@ async fn remix_copies_only_what_the_example_loads() {
     );
 }
 
+/// A content root holding one deck template `id` with these files.
+fn one_template(id: &str, files: &[(&str, &[u8])]) -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    let t = root.path().join("design-templates").join(id);
+    std::fs::create_dir_all(&t).unwrap();
+    std::fs::write(
+        t.join("SKILL.md"),
+        format!("---\nname: {id}\ndescription: A deck.\nod:\n  mode: deck\n---\n\n# {id}\n"),
+    )
+    .unwrap();
+    for (path, bytes) in files {
+        let p = t.join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, bytes).unwrap();
+    }
+    root
+}
+
+/// Remixes `id` from `root`; the new project's file names, sorted, and
+/// the daemon to read them from.
+async fn remix_names(root: &Path, id: &str) -> (Daemon, String, Vec<String>) {
+    let d = daemon_with(Options {
+        content_root: Some(root.to_path_buf()),
+        ..Options::default()
+    })
+    .await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-templates/{id}/remix"),
+        None,
+    )
+    .await;
+    assert_eq!(s, 200, "{id}: {v}");
+    let pid = v["project"]["id"].as_str().unwrap().to_owned();
+    let files = d.get_json(&format!("/api/projects/{pid}/files")).await;
+    let mut names: Vec<String> = files["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap().to_owned())
+        .collect();
+    names.sort_unstable();
+    (d, pid, names)
+}
+
+/// Copying is not exporting: a page over the export's 2 MiB entry limit
+/// and a side file over its 50 MiB asset limit still remix, the file
+/// along with it.
+#[tokio::test]
+async fn remix_copies_past_the_export_limits() {
+    let big = vec![7u8; 51 * 1024 * 1024];
+    let page = format!(
+        "<!doctype html><video src=\"assets/clip.mp4\"></video><h1>Deck</h1><!--{}-->",
+        "x".repeat(2 * 1024 * 1024 + 1)
+    );
+    let root = one_template(
+        "big-files",
+        &[("example.html", page.as_bytes()), ("assets/clip.mp4", &big)],
+    );
+    let (d, pid, names) = remix_names(root.path(), "big-files").await;
+    assert_eq!(names, ["assets/clip.mp4", "index.html"]);
+    let res = d
+        .http
+        .get(format!("{}/api/projects/{pid}/raw/assets/clip.mp4", d.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.bytes().await.unwrap().len(), big.len());
+}
+
+/// What the walk cannot follow is skipped, and the rest still comes: a
+/// file under a folder whose name starts with `.` (refused in a template
+/// folder, as in an imported one) and a stylesheet `@import` cycle.
+#[tokio::test]
+async fn remix_skips_what_it_cannot_follow() {
+    let root = one_template(
+        "odd-refs",
+        &[
+            (
+                "example.html",
+                b"<!doctype html><link rel=\"stylesheet\" href=\".cache/a.css\">\
+                  <link rel=\"stylesheet\" href=\"assets/a.css\"><h1>Deck</h1>",
+            ),
+            (".cache/a.css", b"h1{color:red}"),
+            ("assets/a.css", b"@import \"b.css\";"),
+            ("assets/b.css", b"@import \"a.css\";"),
+        ],
+    );
+    let (_d, _pid, names) = remix_names(root.path(), "odd-refs").await;
+    assert_eq!(names, ["assets/a.css", "assets/b.css", "index.html"]);
+}
+
+/// An example that is not UTF-8 (a template saved in Latin-1) remixes,
+/// and the project's page is its bytes as they are.
+#[tokio::test]
+async fn remix_keeps_an_example_that_is_not_utf8() {
+    let page: &[u8] = b"<!doctype html><meta charset=\"latin1\"><h1>Caf\xe9</h1>\
+                        <script src=\"assets/deck.js\"></script>";
+    let root = one_template(
+        "latin1",
+        &[("example.html", page), ("assets/deck.js", b"1;")],
+    );
+    let (d, pid, names) = remix_names(root.path(), "latin1").await;
+    assert_eq!(names, ["assets/deck.js", "index.html"]);
+    let got = d
+        .http
+        .get(format!("{}/api/projects/{pid}/raw/index.html", d.base))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(got.as_ref(), page);
+}
+
 /// A template folder read as the export reads a project.
 struct TemplateDir(od_store::files::ProjectRoot);
 

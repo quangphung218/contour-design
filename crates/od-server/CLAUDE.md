@@ -69,8 +69,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     (`src/routes/runs.rs:persist_run`, `src/request_id.rs:remember_failed`).
     - `tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
 14. A project made from bundled content (Remix) gets the files its page loads, as the one-file export
-    walks them (`src/routes/export/mod.rs:page_files`), not the page alone.
+    walks them (`src/routes/export/mod.rs:page_files`), not the page alone. Copying is not exporting:
+    no export limits, a file it cannot follow (hidden, missing) is skipped, never a failed Remix.
     - `tests/library.rs::remix_brings_every_file_its_example_uses`, `tests/library.rs::remix_copies_only_what_the_example_loads`
+    - `tests/library.rs::remix_copies_past_the_export_limits`, `tests/library.rs::remix_skips_what_it_cannot_follow`
+    - `tests/library.rs::remix_keeps_an_example_that_is_not_utf8`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).
