@@ -207,6 +207,55 @@ impl AssetSource for StoreSource {
     }
 }
 
+/// A [`StoreSource`] that notes every file the bundler reads. A file it
+/// may not read (a hidden segment, a link out of the root) is missing.
+struct Recording {
+    inner: StoreSource,
+    read: std::cell::RefCell<std::collections::BTreeSet<String>>,
+}
+
+impl AssetSource for Recording {
+    fn stat(&self, path: &str) -> std::io::Result<Option<AssetMeta>> {
+        Ok(self.inner.stat(path).ok().flatten())
+    }
+
+    fn read(&self, path: &str) -> std::io::Result<Vec<u8>> {
+        let bytes = self.inner.read(path)?;
+        self.read.borrow_mut().insert(path.to_owned());
+        Ok(bytes)
+    }
+}
+
+/// Every local file the page `entry` (content `html`) under `root` loads, at
+/// any depth, as the one-file export walks it: stylesheets and their
+/// `url()`/`@import`, scripts, modules, images, iframes. Paths are relative
+/// to `root`, sorted, without `entry` itself unless the page loads it.
+///
+/// What a project made from bundled content copies beside its entry, so it
+/// opens and exports as the bundled page does. Copying is not exporting:
+/// the export's size limits do not apply, a file the walk cannot follow
+/// (missing, out of `root`, hidden) is skipped, and a walk that stops on an
+/// error (a stylesheet cycle) gives the files it read until then.
+pub(crate) fn page_files(root: &ProjectRoot, entry: &str, html: &str) -> Vec<String> {
+    let source = Recording {
+        inner: StoreSource { root: root.clone() },
+        read: std::cell::RefCell::default(),
+    };
+    let options = Options {
+        lenient: true,
+        limits: od_export::Limits {
+            entry_bytes: u64::MAX,
+            graph_nodes: usize::MAX,
+            asset_bytes: u64::MAX,
+            output_bytes: u64::MAX,
+        },
+    };
+    if let Err(e) = standalone::bundle(entry, html, &source, &options) {
+        tracing::warn!(entry, error = %e, "page files: the walk stopped early");
+    }
+    source.read.into_inner().into_iter().collect()
+}
+
 /// Body shared by every `export/*` route (original `ExportRequest` fields).
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
