@@ -11,8 +11,9 @@
 //! `OD_DECK_TEMPLATES=all` runs every bundled deck: each `example.html` in
 //! `content/design-templates` and `content/skills` with slide markup, found
 //! as `od-preview`'s `bundled_decks_stay_decks` finds them (68 in Nov 2026,
-//! about 8 min in a debug build; 8 of them still fail, see PR #285). A
-//! comma-separated list of folder names runs those.
+//! about 8 min in a debug build). A comma-separated list of folder names,
+//! or of the decks written here, runs those. `OD_DECK_DUMP=<dir>` writes
+//! each deck's PDF and slide screenshots to `<dir>/<deck>/` to look at.
 //!
 //! Needs Chrome (see `chrome.rs`); `OD_SKIP_CHROME_TESTS=1` skips it.
 
@@ -46,6 +47,17 @@ const SAMPLE: &[&str] = &[
     // A slide painted by a gradient over a white parent.
     "html-ppt-graphify-dark-graph",
 ];
+
+/// Bundled decks that print unlike their screen on purpose, with why: their
+/// pages still count and keep the slide's shape, but are not compared with
+/// the screenshots.
+const OWN_PRINT_LAYOUT: &[(&str, &str)] = &[(
+    "ib-pitch-book",
+    "its `@media print` lays each slide's card full-bleed (100 % × 100 %, no \
+     scale, no shadow) where the screen shows a centred 1320×820 card. The PDF \
+     keeps the deck's print design (review of #287): ignoring print rules \
+     broke `<deck-stage>` decks (1 page for 11 slides).",
+)];
 
 /// Folders under `content/` that hold bundled decks.
 const GROUPS: &[&str] = &["design-templates", "skills"];
@@ -129,6 +141,127 @@ slides.forEach((s) => mo.observe(s, { attributes: true, attributeFilter: ['class
 go(0);
 </script></body></html>"#;
 
+/// A slide with padding and the default `box-sizing: content-box`: its
+/// measured size (`offsetWidth`) holds the padding, and a print or capture
+/// box given that size as `width` grew by the padding again, so each slide
+/// ran onto a second page (`ppt-keynote`).
+const PADDED_SLIDES: &str = r#"<!doctype html><html><head><style>
+html,body{margin:0;background:#222}
+.slide{width:1280px;height:720px;padding:64px 80px;position:relative;overflow:hidden;font:72px sans-serif}
+.s1{background:#1b3a5c;color:#faf9f5}.s2{background:#f4efe6;color:#1c1b1a}.s3{background:#7a2e2e;color:#faf9f5}
+.foot{position:absolute;right:80px;bottom:48px;width:600px;height:300px;background:#e0b040}
+</style></head><body>
+<section class="slide s1">One<div class="foot"></div></section>
+<section class="slide s2">Two<div class="foot"></div></section>
+<section class="slide s3">Three<div class="foot"></div></section>
+</body></html>"#;
+
+/// Slides inside a framed deck (`margin`, `padding`, `border` on the
+/// parents, as `digits-fintech-swiss-template` and `deck-guizang-editorial`
+/// do): the first slide started below the page's top and ran onto a second.
+/// A parent's `min-height` past the slides left a blank page at the end.
+const FRAMED_DECK: &str = r#"<!doctype html><html><head><style>
+*{box-sizing:border-box}
+html,body{margin:0;background:#222}
+main{margin:24px auto;border:12px solid #888;padding:8px;width:1360px}
+.slides{padding:24px;display:grid;gap:24px;min-height:2600px}
+.slide{width:1280px;height:720px;position:relative;overflow:hidden;font:72px sans-serif;padding:64px}
+.s1{background:#1b3a5c;color:#faf9f5}.s2{background:#f4efe6;color:#1c1b1a}.s3{background:#7a2e2e;color:#faf9f5}
+</style></head><body><main><div class="slides">
+<section class="slide s1">One</section>
+<section class="slide s2">Two</section>
+<section class="slide s3">Three</section>
+</div></main></body></html>"#;
+
+/// Slides in a strip with `will-change: transform` under a banner
+/// (`ib-pitch-book`): like a transform, it makes the strip hold the slide's
+/// `position: fixed` and its stacking, so a screenshot showed the slide
+/// below the banner, under the deck's own fixed controls.
+const WILL_CHANGE_STRIP: &str = r#"<!doctype html><html><head><style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#222}
+.deck{display:flex;flex-direction:column;width:100vw;height:100vh}
+.banner{flex:0 0 160px;background:#111}
+.stage{flex:1;display:flex;will-change:transform}
+.slide{min-width:100vw;height:100%;position:relative;overflow:hidden;font:72px sans-serif;padding:64px}
+.s1{background:#f4efe6;color:#1c1b1a}.s2{background:#e8f0e0;color:#1c1b1a}.s3{background:#f0e0e8;color:#1c1b1a}
+.nav{position:fixed;right:40px;bottom:40px;width:300px;height:120px;background:#111;z-index:10}
+</style></head><body><div class="deck"><div class="banner"></div><div class="stage">
+<section class="slide s1">One</section>
+<section class="slide s2">Two</section>
+<section class="slide s3">Three</section>
+</div></div><div class="nav"></div></body></html>"#;
+
+/// [`WILL_CHANGE_STRIP`] with every other property that makes a box hold
+/// its descendants' `position: fixed`, one per nested parent (review of
+/// #287): the screenshot must keep the slide at the viewport's corner past
+/// each of them. `container-type` is left out: Chrome no longer gives a
+/// container layout containment, so it holds no fixed box (probed).
+const CONTAINING_CHAIN: &str = r#"<!doctype html><html><head><style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#222}
+.deck{display:flex;flex-direction:column;width:100vw;height:100vh}
+.banner{flex:0 0 160px;background:#111}
+.chain{flex:1;min-height:0}.chain div{height:100%}
+.c-transform{transform:translateX(0)}.c-translate{translate:0px}.c-rotate{rotate:0deg}.c-scale{scale:1}
+.c-perspective{perspective:1000px}.c-filter{filter:blur(0)}.c-backdrop{backdrop-filter:blur(1px)}
+.c-contain{contain:paint}.c-visibility{content-visibility:auto}
+.c-will-change{will-change:transform}.c-preserve{transform-style:preserve-3d}
+.chain .stage{display:flex}
+.slide{min-width:100vw;height:100%;position:relative;overflow:hidden;font:72px sans-serif;padding:64px}
+.s1{background:#f4efe6;color:#1c1b1a}.s2{background:#e8f0e0;color:#1c1b1a}.s3{background:#f0e0e8;color:#1c1b1a}
+.nav{position:fixed;right:40px;bottom:40px;width:300px;height:120px;background:#111;z-index:10}
+</style></head><body><div class="deck"><div class="banner"></div><div class="chain">
+<div class="c-transform"><div class="c-translate"><div class="c-rotate"><div class="c-scale">
+<div class="c-perspective"><div class="c-filter"><div class="c-backdrop"><div class="c-contain">
+<div class="c-visibility"><div class="c-will-change"><div class="c-preserve">
+<div class="stage">
+<section class="slide s1">One</section>
+<section class="slide s2">Two</section>
+<section class="slide s3">Three</section>
+</div></div></div></div></div></div></div></div></div></div></div></div>
+</div></div><div class="nav"></div></body></html>"#;
+
+/// [`SCRIPT_FOLLOWS_ACTIVE`] with the strip's move animated
+/// (`transition: transform`) and navigation dots whose transitions the
+/// script sets off with it, as `kami-deck` has: the export ended both,
+/// then held the strip's `transform: none` again, which started a new
+/// transition from the script's position. A transition outranks
+/// `!important`, so the screenshot caught the strip at the slide's own
+/// offset, the slide off screen.
+const ANIMATED_STRIP: &str = r#"<!doctype html><html><head><style>
+html,body{margin:0;overflow:hidden;background:#222}
+#deck{position:fixed;inset:0;display:flex;width:300vw;height:100vh;transition:transform .9s cubic-bezier(.77,0,.175,1);will-change:transform}
+.slide{flex:0 0 100vw;width:100vw;height:100vh;position:relative;overflow:hidden}
+.s1{background:#1b3a5c;color:#faf9f5}.s2{background:#f4efe6;color:#1c1b1a}.s3{background:#7a2e2e;color:#faf9f5}
+h1{margin:0;padding:120px;font:120px sans-serif}
+#nav{position:fixed;left:50%;bottom:40px;z-index:10;display:flex;gap:8px}
+.dot{width:10px;height:10px;background:#bbb;transition:width .3s,background-color .3s}
+.dot.active{width:28px;background:#333}
+</style></head><body><div id="nav"><i class="dot"></i><i class="dot"></i><i class="dot"></i></div><div id="deck">
+<section class="slide s1 active"><h1>One</h1></section>
+<section class="slide s2"><h1>Two</h1></section>
+<section class="slide s3"><h1>Three</h1></section>
+</div><script>
+const deck = document.getElementById('deck');
+const slides = Array.from(document.querySelectorAll('.slide'));
+let idx = 0;
+function apply(n) {
+  idx = n;
+  deck.style.transform = 'translateX(' + (-n * 100) + 'vw)';
+  slides.forEach((s, i) => s.classList.toggle('active', i === n));
+  dots.forEach((d, i) => d.classList.toggle('active', i === n));
+}
+const dots = Array.from(document.querySelectorAll('.dot'));
+const mo = new MutationObserver(() => {
+  for (let i = 0; i < slides.length; i++) {
+    if (slides[i].classList.contains('active') && i !== idx) { apply(i); return; }
+  }
+});
+slides.forEach((s) => mo.observe(s, { attributes: true, attributeFilter: ['class'] }));
+apply(0);
+</script></body></html>"#;
+
 /// Cells per page compared: small enough to ignore antialiasing and font
 /// hinting, large enough to see a line of text move.
 const GRID: (usize, usize) = (240, 135);
@@ -140,6 +273,7 @@ const CELL_TOLERANCE: f64 = 40.0;
 const PAGE_TOLERANCE: f64 = 0.05;
 
 /// A deck to print: its HTML, bundled, and where it came from.
+#[derive(Clone)]
 struct Deck {
     name: String,
     html: String,
@@ -171,6 +305,14 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
 
         let pdf = renderer.print_pdf(&deck, DeckMode::Auto).await.unwrap();
         let slides = renderer.render_slides(&deck, DeckMode::Auto).await.unwrap();
+        if let Some(dir) = std::env::var_os("OD_DECK_DUMP") {
+            let dir = Path::new(&dir).join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("deck.pdf"), &pdf).unwrap();
+            for (i, png) in slides.images.iter().enumerate() {
+                std::fs::write(dir.join(format!("slide-{}.png", i + 1)), png).unwrap();
+            }
+        }
         if !slides.deck {
             wrong.push(format!("{name}: not seen as a deck"));
             continue;
@@ -183,6 +325,10 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
                 slides.images.len()
             ));
             continue;
+        }
+        let own_layout = OWN_PRINT_LAYOUT.iter().find(|(n, _)| n == name);
+        if let Some((_, why)) = own_layout {
+            eprintln!("{name}: pages not compared with the slides: {why}");
         }
         let mut worst = 0.0_f64;
         for (i, (page, png)) in pages.iter().zip(&slides.images).enumerate() {
@@ -214,6 +360,9 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
                     }
                 }
             }
+            if own_layout.is_some() {
+                continue;
+            }
             let off = differing(&page.cells, &shot);
             worst = worst.max(off);
             if off > PAGE_TOLERANCE {
@@ -223,11 +372,15 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
                 ));
             }
         }
-        eprintln!(
-            "{name}: {} pages, worst {:.1} % off",
-            pages.len(),
-            worst * 100.0
-        );
+        if own_layout.is_some() {
+            eprintln!("{name}: {} pages, not compared", pages.len());
+        } else {
+            eprintln!(
+                "{name}: {} pages, worst {:.1} % off",
+                pages.len(),
+                worst * 100.0
+            );
+        }
     }
     assert!(
         wrong.is_empty(),
@@ -271,6 +424,31 @@ fn decks() -> Vec<Deck> {
                 SCRIPT_KEEPS_ONE_ACTIVE,
                 vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
             ),
+            (
+                "padded-slides",
+                PADDED_SLIDES,
+                vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
+            ),
+            (
+                "framed-deck",
+                FRAMED_DECK,
+                vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
+            ),
+            (
+                "animated-strip",
+                ANIMATED_STRIP,
+                vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
+            ),
+            (
+                "containing-chain",
+                CONTAINING_CHAIN,
+                vec![[244, 239, 230], [232, 240, 224], [240, 224, 232]],
+            ),
+            (
+                "will-change-strip",
+                WILL_CHANGE_STRIP,
+                vec![[244, 239, 230], [232, 240, 224], [240, 224, 232]],
+            ),
         ]
         .map(|(name, html, backgrounds)| Deck {
             name: name.to_owned(),
@@ -284,11 +462,16 @@ fn decks() -> Vec<Deck> {
             .map(|(n, d)| load(n, d))
             .chain(written())
             .collect(),
-        Some(list) if !list.trim().is_empty() => list
-            .split(',')
-            .map(str::trim)
-            .map(|n| load(n, &pick(n)))
-            .collect(),
+        Some(list) if !list.trim().is_empty() => {
+            let written = written();
+            list.split(',')
+                .map(str::trim)
+                .map(|n| match written.iter().find(|d| d.name == n) {
+                    Some(deck) => deck.clone(),
+                    None => load(n, &pick(n)),
+                })
+                .collect()
+        }
         _ => SAMPLE
             .iter()
             .map(|n| load(n, &pick(n)))
