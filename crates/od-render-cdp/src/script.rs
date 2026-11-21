@@ -108,19 +108,27 @@ pub fn settle(animations: Animations) -> String {
 
 const ACTIVE_CLASSES: &str = r#"["active", "is-active", "current", "present"]"#;
 
-/// Shows exactly slide `i`, pinned to the top-left `w`×`h` box, then ends
-/// the animations that showing it started and waits two frames. Ancestors
-/// lose transforms (they would capture `position: fixed`), and the deck's
-/// own "active" classes move to slide `i`. The ancestors are held again
-/// after the animations end: a deck script that follows the classes can set
-/// its strip's inline `transform` in between (`kami-deck`; review of #285).
+/// Shows exactly slide `i`, pinned to the top-left `w`×`h` box (padding and
+/// border inside: `w`×`h` is the measured `offsetWidth`/`offsetHeight`), then
+/// ends the animations that showing it started and waits two frames.
+/// Ancestors lose every property that makes a box hold `position: fixed`
+/// and the slide's stacking: transforms (`transform`, `translate`,
+/// `rotate`, `scale`, `perspective`, `transform-style: preserve-3d`),
+/// `filter`, `backdrop-filter`, `contain`, `content-visibility` and
+/// `will-change` (`ib-pitch-book`'s `will-change` drew its banner and
+/// controls over the slide; review of #287). `container-type` holds none in
+/// Chrome (probed). The deck's own "active" classes move to slide `i`. The ancestors are held again after the animations end: a deck
+/// script that follows the classes can set its strip's inline `transform` in
+/// between (`kami-deck`; review of #285). They lose their `transition` too:
+/// holding `transform: none` would start one, and a running transition
+/// outranks `!important` (`kami-deck` captured slides 2–9 off screen).
 pub fn show_slide(i: usize, w: u32, h: u32) -> String {
     let css = format!(
         "{hide} {{ display: none !important; }} \
          html, body {{ overflow: hidden !important; }} \
          [data-od-capture-hidden] {{ display: none !important; }} \
          [data-od-capture-active] {{ position: fixed !important; left: 0 !important; top: 0 !important; right: auto !important; bottom: auto !important; \
-           width: {w}px !important; height: {h}px !important; margin: 0 !important; transform: none !important; translate: none !important; scale: none !important; \
+           width: {w}px !important; height: {h}px !important; box-sizing: border-box !important; margin: 0 !important; transform: none !important; translate: none !important; scale: none !important; \
            opacity: 1 !important; visibility: visible !important; z-index: 2147483647 !important; }}",
         hide = HIDE_CHROME_SELECTOR
     );
@@ -147,9 +155,14 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
   const slide = slides[{i}];
   const hold = () => {{
     for (let a = slide && slide.parentElement; a; a = a.parentElement) {{
-      a.style.setProperty('transform', 'none', 'important');
-      a.style.setProperty('filter', 'none', 'important');
-      a.style.setProperty('contain', 'none', 'important');
+      // Each of these but `transition` makes `a` hold the slide's `position:
+      // fixed` (and its stacking); a held transform would start a transition.
+      for (const [p, v] of [['transition', 'none'], ['transform', 'none'], ['translate', 'none'], ['rotate', 'none'],
+          ['scale', 'none'], ['perspective', 'none'], ['transform-style', 'flat'], ['filter', 'none'],
+          ['backdrop-filter', 'none'], ['contain', 'none'], ['content-visibility', 'visible'],
+          ['will-change', 'auto']]) {{
+        a.style.setProperty(p, v, 'important');
+      }}
     }}
   }};
   if (slide) {{
@@ -189,8 +202,13 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
 ///   then still lost;
 /// - ancestors lose an inline `width`: a slide strip a script sets to
 ///   N×100vw made the page N slides wide, and Chrome shrank it onto the paper.
-///   They are held again at the end, as in [`show_slide`], since a script
-///   that answers the new classes can rewrite them;
+///   They lose margin, padding, border and `min-height` too: a framed deck
+///   pushed its first slide down past the page's bottom, a tall parent left a
+///   blank last page. They are held again at the end, as in [`show_slide`],
+///   since a script that answers the new classes can rewrite them;
+/// - a slide is exactly `w`×`h` with its padding inside (`border-box`): `w`
+///   and `h` are measured with the padding, and a `content-box` slide grew
+///   by it again onto a second page (`ppt-keynote`);
 /// - a slide is size-contained, so Chrome does not break it across pages
 ///   where a box reaches past its bottom before a transform moves it back,
 ///   and layout-contained: `contain` replaces the deck's own value, and a
@@ -204,7 +222,7 @@ pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
          html, body {{ margin: 0 !important; padding: 0 !important; width: auto !important; height: auto !important; overflow: visible !important; }} \
          [data-od-print-hidden] {{ display: none !important; }} \
          [data-od-print-slide] {{ position: relative !important; inset: auto !important; left: auto !important; top: auto !important; \
-           width: {w}px !important; height: {h}px !important; margin: 0 !important; transform: none !important; translate: none !important; scale: none !important; \
+           width: {w}px !important; height: {h}px !important; box-sizing: border-box !important; margin: 0 !important; transform: none !important; translate: none !important; scale: none !important; \
            opacity: 1 !important; visibility: visible !important; overflow: hidden !important; contain: size layout !important; \
            break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; }} \
          [data-od-print-last] {{ break-after: auto !important; page-break-after: auto !important; }}",
@@ -223,7 +241,7 @@ pub fn print_slides(w: u32, h: u32, paper_in: (f64, f64)) -> String {
   const used = {active}.filter((c) => slides.some((s) => s.classList.contains(c)));
   const holders = new Set();
   const hold = () => holders.forEach((a) => {{
-    for (const [p, v] of [['transform', 'none'], ['width', 'auto'], ['height', 'auto'], ['max-height', 'none'], ['overflow', 'visible'], ['position', 'static'], ['display', 'block']]) {{
+    for (const [p, v] of [['transform', 'none'], ['width', 'auto'], ['height', 'auto'], ['max-height', 'none'], ['overflow', 'visible'], ['position', 'static'], ['display', 'block'], ['margin', '0'], ['padding', '0'], ['border', 'none'], ['min-height', '0']]) {{
       a.style.setProperty(p, v, 'important');
     }}
   }});
