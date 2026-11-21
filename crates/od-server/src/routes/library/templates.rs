@@ -369,10 +369,12 @@ pub async fn remix(
                 custom_instructions: None,
                 conversation_id: None,
             };
-            // The page last: a side file at its name never replaces it.
+            // Side files at exactly the names the page links to (the name
+            // sanitizer would rename `My Style.css` and fold `a~.css` onto
+            // `a_.css`); the page last, so a side file never replaces it.
             let (project, cid, _) = s.create_project_with(req, |project, _| {
                 for (path, bytes) in &side {
-                    s.write_file(&project.id, path, bytes, true, None)?;
+                    s.create_file_exact(&project.id, path, bytes)?;
                 }
                 s.write_file(&project.id, "index.html", &html, true, None)
             })?;

@@ -921,6 +921,50 @@ async fn remix_skips_what_it_cannot_follow() {
     assert_eq!(names, ["assets/a.css", "assets/b.css", "index.html"]);
 }
 
+/// Side files keep the names the page links to: none is renamed by the
+/// project name sanitizer, and two that it would map to one name both
+/// come (review round 2 of #286).
+#[tokio::test]
+async fn remix_keeps_side_file_names_exact() {
+    let root = one_template(
+        "odd-names",
+        &[
+            (
+                "example.html",
+                b"<!doctype html><link rel=\"stylesheet\" href=\"assets/My Style.css\">\
+                  <link rel=\"stylesheet\" href=\"assets/a~.css\">\
+                  <link rel=\"stylesheet\" href=\"assets/a_.css\"><h1>Deck</h1>",
+            ),
+            ("assets/My Style.css", b"h1{color:red}"),
+            ("assets/a~.css", b"h1{color:green}"),
+            ("assets/a_.css", b"h1{color:blue}"),
+        ],
+    );
+    let (d, pid, names) = remix_names(root.path(), "odd-names").await;
+    assert_eq!(
+        names,
+        [
+            "assets/My Style.css",
+            "assets/a_.css",
+            "assets/a~.css",
+            "index.html"
+        ]
+    );
+    for (name, want) in [
+        ("assets/My%20Style.css", "h1{color:red}"),
+        ("assets/a~.css", "h1{color:green}"),
+        ("assets/a_.css", "h1{color:blue}"),
+    ] {
+        let res = d
+            .http
+            .get(format!("{}/api/projects/{pid}/raw/{name}", d.base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.text().await.unwrap(), want, "{name}");
+    }
+}
+
 /// An example that is not UTF-8 (a template saved in Latin-1) remixes,
 /// and the project's page is its bytes as they are.
 #[tokio::test]
