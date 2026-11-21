@@ -256,10 +256,12 @@ pub async fn use_template(
                 conversation_id: None,
             };
             // All or nothing: a file that cannot be written and the
-            // project goes, so Try again does not make a second one.
+            // project goes, so Try again does not make a second one. Each
+            // file at exactly its saved name: the name sanitizer would
+            // rename `My Style.css` and fold `a~.css` onto `a_.css`.
             let (project, cid, ()) = s.create_project_with(req, |project, _| {
                 for f in t.files.unwrap_or_default() {
-                    s.write_file(&project.id, &f.path, f.content.as_bytes(), true, None)?;
+                    s.create_file_exact(&project.id, &f.path, f.content.as_bytes())?;
                 }
                 Ok(())
             })?;

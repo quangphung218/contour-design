@@ -356,6 +356,62 @@ async fn plugins_install_use_and_uninstall() {
     assert_eq!(s, 404);
 }
 
+/// A saved template's files come back at exactly their saved names: the
+/// project name sanitizer does not rename `My Style.css` (the page links
+/// it so) or fold `a~.css` onto `a_.css` (same class as #286).
+#[tokio::test]
+async fn using_a_saved_template_keeps_file_names_exact() {
+    let d = daemon().await;
+    let pid = new_project(&d, "Odd names").await;
+    write_file(&d, &pid, "index.html", "<h1>Hi</h1>").await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/templates",
+        Some(json!({ "name": "Odd names", "sourceProjectId": pid })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let tid = v["template"]["id"].as_str().unwrap().to_owned();
+    d.state
+        .store
+        .with_conn(|c| {
+            for (path, content) in [
+                ("assets/My Style.css", "h1{color:red}"),
+                ("assets/a~.css", "h1{color:green}"),
+                ("assets/a_.css", "h1{color:blue}"),
+            ] {
+                c.execute(
+                    "UPDATE templates SET files_json = json_insert(files_json, '$[#]', \
+                     json_object('path', ?2, 'content', ?3)) WHERE id = ?1",
+                    [&tid, path, content],
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let (s, v) = call(&d, "POST", &format!("/api/templates/{tid}/use"), None).await;
+    assert_eq!(s, 200, "{v}");
+    let copy = v["project"]["id"].as_str().unwrap();
+    let files = d.get_json(&format!("/api/projects/{copy}/files")).await;
+    let mut names: Vec<&str> = files["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "assets/My Style.css",
+            "assets/a_.css",
+            "assets/a~.css",
+            "index.html"
+        ]
+    );
+}
+
 #[tokio::test]
 async fn saved_templates_and_remix() {
     let d = daemon().await;
