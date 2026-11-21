@@ -52,10 +52,15 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
     - `src/lib.rs::a_command_past_chromiumoxides_wait_says_so_in_words`; QA e2e `e2e/qa/export.qa.mjs:"EXP-16"`
     - `src/lib.rs::the_browser_counts_as_gone_once_its_connection_is_lost_or_ends` (`drive`)
 13. A deck exports as its slides look: the vector PDF page is the paper (13.333 in), the page's own
-    `@page` size is overridden (`script::print_slides`); the editable PPTX background is the first box
+    `@page` size is overridden, every slide prints with the display the deck's active classes give (pinned, a deck script may take the classes off), unbroken, holding its
+    own `position: fixed` boxes (`contain: size layout`), under ancestors without an inline width,
+    held again after a deck script answers the classes (`script::print_slides`, `show_slide`); the editable PPTX background is the first box
     from the slide up with an opaque paint (its colour, else a gradient's first opaque stop), and every
     colour goes out as `rgb()` (`od-export/src/pptx_layout.js:paint`, `rgb`).
     - `tests/deck_framework.rs::a_framework_deck_exports_as_the_user_sees_it` (real Chrome, the shipped deck skeleton, oklch)
+    - `tests/deck_templates.rs::bundled_deck_templates_print_as_their_slides_look` (real Chrome, PDF pages rasterised
+      against the slide screenshots; a sample and a deck with `fixed` boxes in contained slides by default, `OD_DECK_TEMPLATES=all`
+      for every bundled deck in `content/design-templates` and `content/skills`)
 
 ## Traps
 - Headless Chrome as our child woke GoogleUpdater, and macOS asked for App Management on every update.
@@ -74,6 +79,14 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
   a deck's `@page { size: 1920px 1080px }` came out at 2/3 of the page (QA-120).
 - `getComputedStyle` keeps `oklch()`, `lab()`, `color(srgb …)` as written; only the browser can turn them into
   sRGB, so convert in the page script, not in Rust (QA-121).
+- A print probe that renders a template's `example.html` straight from its folder sees no `assets/`: the renderer
+  lets only the page itself load. Bundle it first (`standalone::bundle`), as the export route does.
+- Counting filled rectangles in the PDF misses white and gradient backgrounds; compare rasterised pages with the
+  slide screenshots instead (`tests/deck_templates.rs`).
+- Decks run scripts that answer the classes we move (`kami-deck` watches `.slide.active` and sets its strip's
+  inline `transform`), and that write replaces our inline `!important`. A stylesheet `!important` rule did not
+  help: Chrome kept the stale value after the inline write. Set the ancestors' overrides again after
+  `odFinishAnimations` (`script::print_slides`, `show_slide`; review of #285).
 - On a coloured slide a gradient is mostly texture (ruled lines, soft spots): taking its first stop as the
   background broke 6 bundled decks. Only a box painted by a gradient alone covers its ancestors (#283 review).
 
