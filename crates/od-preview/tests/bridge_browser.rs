@@ -88,6 +88,37 @@ struct Harness {
     /// Bound of each step: [`STEP_LIMIT`], less in a test of the bound.
     step_limit: Duration,
     _profile: tempfile::TempDir,
+    /// Holds the host page file.
+    _host: tempfile::TempDir,
+}
+
+/// The `file://` URL of `path` (absolute; on Windows `C:\…` gives `file:///C:/…`).
+fn file_url(path: &Path) -> String {
+    let s = path.to_string_lossy().replace('\\', "/");
+    let mut url = String::from("file://");
+    if !s.starts_with('/') {
+        url.push('/');
+    }
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"/-._~:".contains(&b) {
+            url.push(char::from(b));
+        } else {
+            url.push_str(&format!("%{b:02X}"));
+        }
+    }
+    url
+}
+
+#[test]
+fn file_urls_have_three_slashes_and_escape_the_rest() {
+    assert_eq!(
+        file_url(Path::new("/tmp/a b/h.html")),
+        "file:///tmp/a%20b/h.html"
+    );
+    assert_eq!(
+        file_url(Path::new(r"C:\Users\RUNNER~1\h.html")),
+        "file:///C:/Users/RUNNER~1/h.html"
+    );
 }
 
 impl Harness {
@@ -134,7 +165,13 @@ impl Harness {
         let host = HOST
             .replace("__W__", &FRAME_W.to_string())
             .replace("__H__", &FRAME_H.to_string());
-        within("loading the host page", page.set_content(host))
+        // From a file, not `set_content` on `about:blank`: there Chrome 158
+        // on macOS stops once the sandboxed frame is created
+        // (`a_sandboxed_frame_leaves_chrome_running`).
+        let host_dir = tempfile::tempdir().unwrap();
+        let host_file = host_dir.path().join("host.html");
+        std::fs::write(&host_file, host).unwrap();
+        within("loading the host page", page.goto(file_url(&host_file)))
             .await
             .unwrap();
         Some(Self {
@@ -143,6 +180,7 @@ impl Harness {
             chrome_pid,
             step_limit: STEP_LIMIT,
             _profile: profile,
+            _host: host_dir,
         })
     }
 
@@ -449,6 +487,35 @@ async fn a_page_promise_that_never_settles_fails_in_time() {
     if let Ok(h) = std::sync::Arc::try_unwrap(h) {
         h.close().await;
     }
+}
+
+/// The host page is on a real origin (`file://`), as the app's UI is on
+/// `http://127.0.0.1`, never on `about:blank`: Chrome 158 on macOS stops
+/// its browser process (a CHECK on the main thread) as soon as a page on
+/// `about:blank` creates a sandboxed frame, so every step after the first
+/// `__load` stalled (macos-15 image 20261118, nightly 2026-11-21). A frame
+/// loads there and Chrome still answers afterwards.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_sandboxed_frame_leaves_chrome_running() {
+    let Some(h) = Harness::start().await else {
+        return;
+    };
+    assert_eq!(h.eval("location.protocol").await, json!("file:"));
+    let loaded = h
+        .eval(
+            "new Promise((resolve) => { \
+               document.getElementById('f').onload = () => resolve(true); \
+               window.__load('<!doctype html><p>hi</p>'); })",
+        )
+        .await;
+    assert_eq!(loaded, json!(true));
+    // Chrome 158 stopped within a second of the frame; a stopped Chrome
+    // fails the step as `stalled:`, with its process state.
+    for _ in 0..4 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(h.eval("1 + 1").await, json!(2));
+    }
+    h.close().await;
 }
 
 async fn bridge_pass() {
