@@ -55,7 +55,8 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
     `@page` size is overridden, every slide prints with the display the deck's active classes give (pinned, a deck script may take the classes off), unbroken, holding its
     own `position: fixed` boxes (`contain: size layout`), exactly `w`×`h` with its padding and border inside (`border-box`),
     under ancestors without an inline width, margin, padding, border or `min-height` (screenshots: without
-    `transition` or `will-change`),
+    `transition` or any property that holds a `fixed` box: transforms, `perspective`, `transform-style`, `filter`,
+    `backdrop-filter`, `contain`, `content-visibility`, `will-change`),
     held again after a deck script answers the classes (`script::print_slides`, `show_slide`); the deck's own `@media print`
     rules still apply (`<deck-stage>` needs them); the editable PPTX background is the first box
     from the slide up with an opaque paint (its colour, else a gradient's first opaque stop), and every
@@ -92,11 +93,14 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
   `odFinishAnimations` (`script::print_slides`, `show_slide`; review of #285).
 - Holding an ancestor's `transform: none` while it has `transition: transform` starts a transition, and a running
   transition outranks inline `!important`: the strip stayed at the slide's offset (`kami-deck`). Hold `transition: none`
-  with it. `will-change: transform` captures `position: fixed` and stacking like a transform (`ib-pitch-book`).
+  with it. `will-change: transform` captures `position: fixed` and stacking like a transform (`ib-pitch-book`);
+  so do `translate`/`rotate`/`scale`, `perspective`, `preserve-3d`, `backdrop-filter`, `content-visibility`
+  (`tests/deck_templates.rs` `containing-chain`). `container-type` does not in Chrome (probed, review of #287).
 - A light slide captured blank (page background only) differs from its page by under 5 %: the cell compare misses it.
   Decks written in `tests/deck_templates.rs` check each slide's background colour on both sides.
 - Emulating screen media for the PDF broke `<deck-stage>` decks (1 page for 11 slides); a deck that prints unlike
-  its screen on purpose (`ib-pitch-book`'s `@media print`) keeps doing so.
+  its screen on purpose (`ib-pitch-book`'s `@media print`) keeps doing so, listed with why in
+  `tests/deck_templates.rs` `OWN_PRINT_LAYOUT` (decided on review of #287).
 - On a coloured slide a gradient is mostly texture (ruled lines, soft spots): taking its first stop as the
   background broke 6 bundled decks. Only a box painted by a gradient alone covers its ancestors (#283 review).
 

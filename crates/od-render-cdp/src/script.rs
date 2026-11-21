@@ -111,10 +111,13 @@ const ACTIVE_CLASSES: &str = r#"["active", "is-active", "current", "present"]"#;
 /// Shows exactly slide `i`, pinned to the top-left `w`×`h` box (padding and
 /// border inside: `w`×`h` is the measured `offsetWidth`/`offsetHeight`), then
 /// ends the animations that showing it started and waits two frames.
-/// Ancestors lose transforms and `will-change` (either captures `position:
-/// fixed` and the slide's stacking: `ib-pitch-book` drew its banner and
-/// controls over the slide), and the deck's own "active" classes move to
-/// slide `i`. The ancestors are held again after the animations end: a deck
+/// Ancestors lose every property that makes a box hold `position: fixed`
+/// and the slide's stacking: transforms (`transform`, `translate`,
+/// `rotate`, `scale`, `perspective`, `transform-style: preserve-3d`),
+/// `filter`, `backdrop-filter`, `contain`, `content-visibility` and
+/// `will-change` (`ib-pitch-book`'s `will-change` drew its banner and
+/// controls over the slide; review of #287). `container-type` holds none in
+/// Chrome (probed). The deck's own "active" classes move to slide `i`. The ancestors are held again after the animations end: a deck
 /// script that follows the classes can set its strip's inline `transform` in
 /// between (`kami-deck`; review of #285). They lose their `transition` too:
 /// holding `transform: none` would start one, and a running transition
@@ -152,11 +155,14 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
   const slide = slides[{i}];
   const hold = () => {{
     for (let a = slide && slide.parentElement; a; a = a.parentElement) {{
-      a.style.setProperty('transition', 'none', 'important');
-      a.style.setProperty('transform', 'none', 'important');
-      a.style.setProperty('filter', 'none', 'important');
-      a.style.setProperty('will-change', 'auto', 'important');
-      a.style.setProperty('contain', 'none', 'important');
+      // Each of these but `transition` makes `a` hold the slide's `position:
+      // fixed` (and its stacking); a held transform would start a transition.
+      for (const [p, v] of [['transition', 'none'], ['transform', 'none'], ['translate', 'none'], ['rotate', 'none'],
+          ['scale', 'none'], ['perspective', 'none'], ['transform-style', 'flat'], ['filter', 'none'],
+          ['backdrop-filter', 'none'], ['contain', 'none'], ['content-visibility', 'visible'],
+          ['will-change', 'auto']]) {{
+        a.style.setProperty(p, v, 'important');
+      }}
     }}
   }};
   if (slide) {{

@@ -48,6 +48,17 @@ const SAMPLE: &[&str] = &[
     "html-ppt-graphify-dark-graph",
 ];
 
+/// Bundled decks that print unlike their screen on purpose, with why: their
+/// pages still count and keep the slide's shape, but are not compared with
+/// the screenshots.
+const OWN_PRINT_LAYOUT: &[(&str, &str)] = &[(
+    "ib-pitch-book",
+    "its `@media print` lays each slide's card full-bleed (100 % × 100 %, no \
+     scale, no shadow) where the screen shows a centred 1320×820 card. The PDF \
+     keeps the deck's print design (review of #287): ignoring print rules \
+     broke `<deck-stage>` decks (1 page for 11 slides).",
+)];
+
 /// Folders under `content/` that hold bundled decks.
 const GROUPS: &[&str] = &["design-templates", "skills"];
 
@@ -181,6 +192,36 @@ html,body{margin:0;height:100%;overflow:hidden;background:#222}
 <section class="slide s3">Three</section>
 </div></div><div class="nav"></div></body></html>"#;
 
+/// [`WILL_CHANGE_STRIP`] with every other property that makes a box hold
+/// its descendants' `position: fixed`, one per nested parent (review of
+/// #287): the screenshot must keep the slide at the viewport's corner past
+/// each of them. `container-type` is left out: Chrome no longer gives a
+/// container layout containment, so it holds no fixed box (probed).
+const CONTAINING_CHAIN: &str = r#"<!doctype html><html><head><style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#222}
+.deck{display:flex;flex-direction:column;width:100vw;height:100vh}
+.banner{flex:0 0 160px;background:#111}
+.chain{flex:1;min-height:0}.chain div{height:100%}
+.c-transform{transform:translateX(0)}.c-translate{translate:0px}.c-rotate{rotate:0deg}.c-scale{scale:1}
+.c-perspective{perspective:1000px}.c-filter{filter:blur(0)}.c-backdrop{backdrop-filter:blur(1px)}
+.c-contain{contain:paint}.c-visibility{content-visibility:auto}
+.c-will-change{will-change:transform}.c-preserve{transform-style:preserve-3d}
+.chain .stage{display:flex}
+.slide{min-width:100vw;height:100%;position:relative;overflow:hidden;font:72px sans-serif;padding:64px}
+.s1{background:#f4efe6;color:#1c1b1a}.s2{background:#e8f0e0;color:#1c1b1a}.s3{background:#f0e0e8;color:#1c1b1a}
+.nav{position:fixed;right:40px;bottom:40px;width:300px;height:120px;background:#111;z-index:10}
+</style></head><body><div class="deck"><div class="banner"></div><div class="chain">
+<div class="c-transform"><div class="c-translate"><div class="c-rotate"><div class="c-scale">
+<div class="c-perspective"><div class="c-filter"><div class="c-backdrop"><div class="c-contain">
+<div class="c-visibility"><div class="c-will-change"><div class="c-preserve">
+<div class="stage">
+<section class="slide s1">One</section>
+<section class="slide s2">Two</section>
+<section class="slide s3">Three</section>
+</div></div></div></div></div></div></div></div></div></div></div></div>
+</div></div><div class="nav"></div></body></html>"#;
+
 /// [`SCRIPT_FOLLOWS_ACTIVE`] with the strip's move animated
 /// (`transition: transform`) and navigation dots whose transitions the
 /// script sets off with it, as `kami-deck` has: the export ended both,
@@ -232,6 +273,7 @@ const CELL_TOLERANCE: f64 = 40.0;
 const PAGE_TOLERANCE: f64 = 0.05;
 
 /// A deck to print: its HTML, bundled, and where it came from.
+#[derive(Clone)]
 struct Deck {
     name: String,
     html: String,
@@ -284,6 +326,10 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
             ));
             continue;
         }
+        let own_layout = OWN_PRINT_LAYOUT.iter().find(|(n, _)| n == name);
+        if let Some((_, why)) = own_layout {
+            eprintln!("{name}: pages not compared with the slides: {why}");
+        }
         let mut worst = 0.0_f64;
         for (i, (page, png)) in pages.iter().zip(&slides.images).enumerate() {
             let n = i + 1;
@@ -314,6 +360,9 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
                     }
                 }
             }
+            if own_layout.is_some() {
+                continue;
+            }
             let off = differing(&page.cells, &shot);
             worst = worst.max(off);
             if off > PAGE_TOLERANCE {
@@ -323,11 +372,15 @@ async fn bundled_deck_templates_print_as_their_slides_look() {
                 ));
             }
         }
-        eprintln!(
-            "{name}: {} pages, worst {:.1} % off",
-            pages.len(),
-            worst * 100.0
-        );
+        if own_layout.is_some() {
+            eprintln!("{name}: {} pages, not compared", pages.len());
+        } else {
+            eprintln!(
+                "{name}: {} pages, worst {:.1} % off",
+                pages.len(),
+                worst * 100.0
+            );
+        }
     }
     assert!(
         wrong.is_empty(),
@@ -387,6 +440,11 @@ fn decks() -> Vec<Deck> {
                 vec![[27, 58, 92], [244, 239, 230], [122, 46, 46]],
             ),
             (
+                "containing-chain",
+                CONTAINING_CHAIN,
+                vec![[244, 239, 230], [232, 240, 224], [240, 224, 232]],
+            ),
+            (
                 "will-change-strip",
                 WILL_CHANGE_STRIP,
                 vec![[244, 239, 230], [232, 240, 224], [240, 224, 232]],
@@ -405,11 +463,11 @@ fn decks() -> Vec<Deck> {
             .chain(written())
             .collect(),
         Some(list) if !list.trim().is_empty() => {
-            let mut written: Vec<Deck> = written().into();
+            let written = written();
             list.split(',')
                 .map(str::trim)
-                .map(|n| match written.iter().position(|d| d.name == n) {
-                    Some(at) => written.swap_remove(at),
+                .map(|n| match written.iter().find(|d| d.name == n) {
+                    Some(deck) => deck.clone(),
                     None => load(n, &pick(n)),
                 })
                 .collect()
