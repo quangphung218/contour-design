@@ -207,6 +207,52 @@ impl AssetSource for StoreSource {
     }
 }
 
+/// A [`StoreSource`] that notes every file the bundler reads.
+struct Recording {
+    inner: StoreSource,
+    read: std::cell::RefCell<std::collections::BTreeSet<String>>,
+}
+
+impl AssetSource for Recording {
+    fn stat(&self, path: &str) -> std::io::Result<Option<AssetMeta>> {
+        self.inner.stat(path)
+    }
+
+    fn read(&self, path: &str) -> std::io::Result<Vec<u8>> {
+        let bytes = self.inner.read(path)?;
+        self.read.borrow_mut().insert(path.to_owned());
+        Ok(bytes)
+    }
+}
+
+/// Every local file the page `entry` (content `html`) under `root` loads, at
+/// any depth, as the one-file export walks it: stylesheets and their
+/// `url()`/`@import`, scripts, modules, images, iframes. A reference to a
+/// missing file or out of `root` is skipped. Paths are relative to `root`,
+/// sorted, without `entry` itself unless the page loads it.
+///
+/// What a project made from bundled content copies beside its entry, so it
+/// opens and exports as the bundled page does.
+///
+/// # Errors
+/// The export's limits (graph size, asset size) and unreadable files.
+pub(crate) fn page_files(
+    root: &ProjectRoot,
+    entry: &str,
+    html: &str,
+) -> Result<Vec<String>, StandaloneError> {
+    let source = Recording {
+        inner: StoreSource { root: root.clone() },
+        read: std::cell::RefCell::default(),
+    };
+    let options = Options {
+        lenient: true,
+        ..Options::default()
+    };
+    standalone::bundle(entry, html, &source, &options)?;
+    Ok(source.read.into_inner().into_iter().collect())
+}
+
 /// Body shared by every `export/*` route (original `ExportRequest` fields).
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]

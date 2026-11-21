@@ -9,7 +9,8 @@
 //! - `POST   /api/templates/:id/use` `{name?, prompt?}`: a new project
 //!   with the template's files.
 //! - `POST   /api/design-templates/:id/remix` `{name?, prompt?}`: a new
-//!   project bound to the template whose `index.html` is its example.
+//!   project bound to the template whose `index.html` is its example,
+//!   with the files beside it that the example loads (`assets/…`).
 
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
@@ -301,6 +302,32 @@ fn remix_metadata(kind: Option<ProjectKind>) -> ProjectMetadata {
     }
 }
 
+/// A bundled example page and the files beside it that it loads
+/// (`assets/styles.css`, an iframe's page…), by their paths relative to
+/// the page's folder, so a project made from it opens and exports as the
+/// gallery page does.
+fn example_with_files(example: &std::path::Path) -> Result<(String, SideFiles), StoreError> {
+    let html = std::fs::read_to_string(example)?;
+    let (Some(dir), Some(name)) = (example.parent(), example.file_name()) else {
+        return Ok((html, Vec::new()));
+    };
+    let root = od_store::files::ProjectRoot {
+        dir: dir.to_path_buf(),
+        imported: true,
+    };
+    let entry = name.to_string_lossy();
+    let mut side = Vec::new();
+    for path in crate::routes::export::page_files(&root, &entry, &html)
+        .map_err(|e| StoreError::Io(std::io::Error::other(e.to_string())))?
+    {
+        let (_, bytes) = od_store::files::read_file(&root, &path)?;
+        side.push((path, bytes));
+    }
+    Ok((html, side))
+}
+
+type SideFiles = Vec<(String, Vec<u8>)>;
+
 pub async fn remix(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -316,9 +343,6 @@ pub async fn remix(
     let example = entry
         .example_html()
         .ok_or_else(|| ApiErr::not_found("this template has no example to remix"))?;
-    let html = tokio::fs::read(&example)
-        .await
-        .map_err(|e| ApiErr::internal(e.to_string()))?;
     // Named as the card reads (QA-056): the UI sends it in its language;
     // without one, the English display name, then the id.
     let name = non_empty(body.name)
@@ -335,6 +359,7 @@ pub async fn remix(
     let skill_id = entry.info.id.clone();
     let (project, conversation_id) = state
         .blocking(move |s| {
+            let (html, side) = example_with_files(&example)?;
             let req = CreateProjectRequest {
                 id: None,
                 name,
@@ -345,8 +370,12 @@ pub async fn remix(
                 custom_instructions: None,
                 conversation_id: None,
             };
+            // The page last: a side file at its name never replaces it.
             let (project, cid, _) = s.create_project_with(req, |project, _| {
-                s.write_file(&project.id, "index.html", &html, true, None)
+                for (path, bytes) in &side {
+                    s.write_file(&project.id, path, bytes, true, None)?;
+                }
+                s.write_file(&project.id, "index.html", html.as_bytes(), true, None)
             })?;
             Ok((project, cid))
         })

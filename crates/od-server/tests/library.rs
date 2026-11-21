@@ -627,6 +627,227 @@ async fn motion_templates_preview_and_remix() {
     }
 }
 
+/// Relative `src`/`href` values of an HTML page, read here with a plain
+/// pattern so the check does not lean on the code under test.
+fn relative_refs(html: &str) -> Vec<String> {
+    let re = regex::Regex::new(r#"(?i)\b(?:src|href)\s*=\s*["']([^"']+)["']"#).unwrap();
+    let mut out: Vec<String> = re
+        .captures_iter(html)
+        .map(|c| c[1].split(['#', '?']).next().unwrap_or("").to_owned())
+        .filter(|r| {
+            !r.is_empty()
+                && !r.starts_with('/')
+                && !r.contains("{{")
+                && !r.contains(':')
+                && !r.starts_with("..")
+        })
+        .map(|r| r.trim_start_matches("./").to_owned())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Remix of a template whose example loads files beside it (`assets/…`)
+/// brings those files: the project opens as the template does, and its
+/// one-file HTML export is the template's own, byte for byte.
+#[tokio::test]
+async fn remix_brings_every_file_its_example_uses() {
+    let d = daemon().await;
+    let mut with_files = Vec::new();
+    let mut dirs: Vec<PathBuf> = std::fs::read_dir(content_root().join("design-templates"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    dirs.sort();
+    for dir in dirs {
+        let Ok(example) = std::fs::read_to_string(dir.join("example.html")) else {
+            continue;
+        };
+        let refs = relative_refs(&example);
+        if refs.is_empty() {
+            continue;
+        }
+        let id = dir.file_name().unwrap().to_string_lossy().into_owned();
+        with_files.push(id.clone());
+        let (s, v) = call(
+            &d,
+            "POST",
+            &format!("/api/design-templates/{id}/remix"),
+            None,
+        )
+        .await;
+        assert_eq!(s, 200, "{id}: {v}");
+        let pid = v["project"]["id"].as_str().unwrap().to_owned();
+        for r in &refs {
+            let want = std::fs::read(dir.join(r)).unwrap_or_else(|e| panic!("{id}: {r}: {e}"));
+            let res = d
+                .http
+                .get(format!("{}/api/projects/{pid}/raw/{r}", d.base))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                res.status().as_u16(),
+                200,
+                "{id}: {r} is not in the project"
+            );
+            assert_eq!(res.bytes().await.unwrap().as_ref(), want, "{id}: {r}");
+        }
+
+        // Exported, it is the template's page with the same files inlined.
+        let res = d
+            .http
+            .post(format!("{}/api/projects/{pid}/export/html", d.base))
+            .json(&json!({ "fileName": "index.html" }))
+            .send()
+            .await
+            .unwrap();
+        let status = res.status().as_u16();
+        let got = res.text().await.unwrap();
+        assert_eq!(status, 200, "{id}: {got}");
+        let root = od_store::files::ProjectRoot {
+            dir: dir.clone(),
+            imported: true,
+        };
+        let want = od_export::standalone::bundle(
+            "example.html",
+            &example,
+            &TemplateDir(root),
+            &od_export::Options::default(),
+        )
+        .unwrap_or_else(|e| panic!("{id}: {e}"));
+        assert_eq!(
+            got, want.html,
+            "{id}: the export differs from the template's"
+        );
+    }
+    for id in [
+        "html-ppt-zhangzara-pin-and-paper",
+        "html-ppt-zhangzara-soft-editorial",
+        "html-ppt-zhangzara-creative-mode",
+        "flowai-live-dashboard-template",
+    ] {
+        assert!(with_files.iter().any(|w| w == id), "{id}: {with_files:?}");
+    }
+}
+
+/// Remix copies what the example loads, at any depth, and nothing else:
+/// a stylesheet's own `url()`, an iframe's page and its script come; a
+/// missing file is skipped without failing the remix; a file out of the
+/// template folder, the template's notes and an unused skeleton stay.
+#[tokio::test]
+async fn remix_copies_only_what_the_example_loads() {
+    let root = tempfile::tempdir().unwrap();
+    let t = root.path().join("design-templates/side-files");
+    std::fs::create_dir_all(t.join("assets/img")).unwrap();
+    std::fs::create_dir_all(t.join("assets/frame")).unwrap();
+    std::fs::write(
+        t.join("SKILL.md"),
+        "---\nname: side-files\ndescription: Side files.\nod:\n  mode: deck\n---\n\n# Side files\n",
+    )
+    .unwrap();
+    std::fs::write(
+        t.join("example.html"),
+        concat!(
+            "<!doctype html><link rel=\"stylesheet\" href=\"assets/site.css?v=2\">",
+            "<script src=\"./assets/deck.js\"></script>",
+            "<iframe src=\"assets/frame/page.html\"></iframe>",
+            "<img src=\"assets/gone.png\"><img src=\"../outside.png\">",
+            "<a href=\"assets/notes.md\">notes</a><iframe src=\"index.html\"></iframe>",
+            "<h1>Deck</h1>",
+        ),
+    )
+    .unwrap();
+    std::fs::write(t.join("assets/site.css"), "h1{background:url(img/dot.png)}").unwrap();
+    std::fs::write(t.join("assets/img/dot.png"), PNG).unwrap();
+    std::fs::write(t.join("assets/deck.js"), "window.deck = 1;").unwrap();
+    std::fs::write(
+        t.join("assets/frame/page.html"),
+        "<script src=\"frame.js\"></script>",
+    )
+    .unwrap();
+    std::fs::write(t.join("assets/frame/frame.js"), "1;").unwrap();
+    std::fs::write(t.join("assets/template.html"), "<p>skeleton</p>").unwrap();
+    std::fs::write(t.join("assets/notes.md"), "notes").unwrap();
+    std::fs::write(t.join("index.html"), "<p>an old index</p>").unwrap();
+    std::fs::write(root.path().join("design-templates/outside.png"), PNG).unwrap();
+
+    let d = daemon_with(Options {
+        content_root: Some(root.path().to_path_buf()),
+        ..Options::default()
+    })
+    .await;
+    let (s, v) = call(&d, "POST", "/api/design-templates/side-files/remix", None).await;
+    assert_eq!(s, 200, "{v}");
+    let pid = v["project"]["id"].as_str().unwrap();
+    let files = d.get_json(&format!("/api/projects/{pid}/files")).await;
+    let mut names: Vec<&str> = files["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "assets/deck.js",
+            "assets/frame/frame.js",
+            "assets/frame/page.html",
+            "assets/img/dot.png",
+            "assets/site.css",
+            "index.html",
+        ]
+    );
+    let png = d
+        .http
+        .get(format!(
+            "{}/api/projects/{pid}/raw/assets/img/dot.png",
+            d.base
+        ))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(png.as_ref(), PNG, "a binary file comes byte for byte");
+    let page = d
+        .http
+        .get(format!("{}/api/projects/{pid}/raw/index.html", d.base))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        page.contains("<h1>Deck</h1>"),
+        "a side file replaced the page: {page}"
+    );
+}
+
+/// A template folder read as the export reads a project.
+struct TemplateDir(od_store::files::ProjectRoot);
+
+impl od_export::AssetSource for TemplateDir {
+    fn stat(&self, path: &str) -> std::io::Result<Option<od_export::AssetMeta>> {
+        Ok(od_store::files::stat_file(&self.0, path)
+            .ok()
+            .map(|(f, _)| od_export::AssetMeta {
+                mime: f.mime,
+                size: f.size,
+            }))
+    }
+
+    fn read(&self, path: &str) -> std::io::Result<Vec<u8>> {
+        od_store::files::read_file(&self.0, path)
+            .map(|(_, b)| b)
+            .map_err(|e| std::io::Error::other(e.to_string()))
+    }
+}
+
 /// A 1×1 PNG.
 const PNG: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52, 0, 0, 0,

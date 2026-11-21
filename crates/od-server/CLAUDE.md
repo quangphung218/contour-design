@@ -68,6 +68,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 13. A run that fails logs one `run failed` line in its span and becomes the last failure diagnostics lead with
     (`src/routes/runs.rs:persist_run`, `src/request_id.rs:remember_failed`).
     - `tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
+14. A project made from bundled content (Remix) gets the files its page loads, as the one-file export
+    walks them (`src/routes/export/mod.rs:page_files`), not the page alone.
+    - `tests/library.rs::remix_brings_every_file_its_example_uses`, `tests/library.rs::remix_copies_only_what_the_example_loads`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).
@@ -79,6 +82,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 - A new listing or export that ships files must filter draft images; handoff was missed once (#200).
 - A `tokio::spawn` or `spawn_blocking` drops the request's span: use `crate::spawn`, or its lines lose the id (the static test refuses it).
 - Two fmt layers with the same field formatter share a span's formatted fields; the file got the console's colors.
+- Remix copied only `example.html`; 10 templates load `assets/…` (#PR). A new route that copies a bundled page uses `page_files`.
 - A GET that does more than read (starts a process, writes a file) can be set off by an `<img>` with no `Origin`; make it a POST (#271).
 
 ## Check
