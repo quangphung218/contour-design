@@ -8,6 +8,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.52] - 2026-11-21
+
+### Highlights
+
+- **Gemini CLI as an agent.** Contour finds `gemini` on your PATH and runs it in a project like the other agents.
+- **Deck PDFs match the slides.** Every bundled deck prints one full-size slide per page, with its layout, text and colours.
+- **Remix brings the whole template.** The styles, scripts and pages a template uses come into the new project with their names.
+- **OpenCode 2 works.** It writes in the project folder and its thinking shows in the chat.
+
 ### Added
 
 - Add Gemini CLI as an agent: Contour finds `gemini` on your PATH and runs it over ACP (#280).
@@ -1339,7 +1348,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.51...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.52...HEAD
+[0.2.0-beta.52]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.51...v0.2.0-beta.52
 [0.2.0-beta.51]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.50...v0.2.0-beta.51
 [0.2.0-beta.50]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.49...v0.2.0-beta.50
 [0.2.0-beta.49]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.48...v0.2.0-beta.49
