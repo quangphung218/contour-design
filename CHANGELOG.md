@@ -16,6 +16,7 @@ All notable changes to Contour are recorded here. The format follows
 
 - Print each deck slide on one PDF page and capture every slide, fixing extra pages and blank slide images (#287).
 - Bring a template's `assets/` files into a project made with Remix; 10 decks and dashboards opened without styles or scripts (#286).
+- Keep file names exact when using a saved template, so pages still find their styles (#288).
 - Print every slide of a bundled deck template to PDF as it looks; 14 of 47 lost layout or text (#285).
 - Fill each PDF page with its slide; decks were printed at two thirds of the page (#283).
 - Keep a deck's background and text colours in the editable PowerPoint export (#283).
