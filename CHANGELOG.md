@@ -8,6 +8,12 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.54] - 2026-11-23
+
+### Highlights
+
+- **Editable PowerPoint keeps icons.** Sprite icons keep their shape and colour, and text no longer sits on top of the icon before it.
+
 ### Fixed
 
 - Keep sprite icons (`<use href="#id">`) and their colour in the editable PowerPoint export; they came out empty (#293).
@@ -1354,7 +1360,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.53...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.54...HEAD
+[0.2.0-beta.54]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.53...v0.2.0-beta.54
 [0.2.0-beta.53]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.51...v0.2.0-beta.53
 [0.2.0-beta.51]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.50...v0.2.0-beta.51
 [0.2.0-beta.50]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.49...v0.2.0-beta.50
