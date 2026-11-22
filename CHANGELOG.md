@@ -11,7 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Keep sprite icons (`<use href="#id">`) and their colour in the editable PowerPoint export; they came out empty (#293).
-- Update `url` to 2.5.9, which fixes a stack overflow on nested `blob:` URLs (RUSTSEC-2026-0592).
+- Update `url` to 2.5.9, which fixes a stack overflow on nested `blob:` URLs (RUSTSEC-2026-0592) (#295).
 
 ## [0.2.0-beta.53] - 2026-11-21
 
