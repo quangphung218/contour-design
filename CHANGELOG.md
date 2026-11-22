@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep sprite icons (`<use href="#id">`) and their colour in the editable PowerPoint export; they came out empty (#PR).
+
 ## [0.2.0-beta.53] - 2026-11-21
 
 ### Highlights

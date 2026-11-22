@@ -143,3 +143,59 @@ async fn chrome_measures_slides_into_native_objects() {
     assert!(!slide1.contains("secret notes"));
     assert!(slide1.contains("<a:t>HELLO TEA</a:t>"));
 }
+
+/// Centre pixel (RGBA) of a `data:image/png;base64,` picture.
+fn centre_pixel(src: &str) -> [u8; 4] {
+    let b64 = src.strip_prefix("data:image/png;base64,").unwrap();
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+    let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
+        .read_info()
+        .unwrap();
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buf).unwrap();
+    assert_eq!(info.color_type, png::ColorType::Rgba);
+    let at = ((info.height / 2 * info.width + info.width / 2) * 4) as usize;
+    [buf[at], buf[at + 1], buf[at + 2], buf[at + 3]]
+}
+
+/// QA-124: an icon drawn with `<use href="#id">` from a sprite `<symbol>`
+/// elsewhere in the page came out as an empty picture; it keeps its shape
+/// and its `currentColor`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sprite_icons_keep_their_symbol_and_colour() {
+    if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+        eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
+        return;
+    }
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("deck.html");
+    std::fs::write(
+        &path,
+        r##"<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0}
+.slide{position:relative;width:1920px;height:1080px;background:#f6efe2}
+.icon{position:absolute;left:200px;top:200px;width:300px;height:300px;color:#c33}
+</style></head><body>
+<svg style="display:none"><defs><linearGradient id="g"><stop offset="0" stop-color="#2a6"/></linearGradient></defs><symbol id="pin" viewBox="0 0 10 10"><rect width="10" height="10" fill="currentColor"/></symbol><symbol id="dot" viewBox="0 0 10 10"><use href="#pin"/></symbol></svg>
+<section class="slide active"><svg class="icon"><use href="#dot"/></svg></section>
+</body></html>"##,
+    )
+    .unwrap();
+    let layouts = renderer
+        .extract_layouts(&RenderTarget::new(path))
+        .await
+        .unwrap();
+    let images: Vec<&str> = layouts[0]
+        .elements
+        .iter()
+        .filter_map(|e| match e {
+            Element::Image { src, .. } => Some(src.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(images.len(), 1, "{:#?}", layouts[0].elements);
+    assert_eq!(centre_pixel(images[0]), [204, 51, 51, 255]);
+}
