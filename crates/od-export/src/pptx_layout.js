@@ -65,6 +65,34 @@
           const clone = el.cloneNode(true);
           clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
           clone.setAttribute('width', r.width); clone.setAttribute('height', r.height);
+          // The picture is drawn alone, so `<use href="#id">`, `url(#id)`
+          // fills and `currentColor` would find nothing (QA-124): copy each
+          // referenced element in, following references inside the copies.
+          clone.style.color = getComputedStyle(el).color;
+          const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          const seen = new Set();
+          const refs = (n) => {
+            const ids = [];
+            for (const e of [n, ...n.querySelectorAll('*')]) {
+              for (const a of e.attributes || []) {
+                const m = /^#([^\s)]+)$/.exec(a.value) || /url\(\s*["']?#([^"')\s]+)/.exec(a.value);
+                if (m) ids.push(m[1]);
+              }
+            }
+            return ids;
+          };
+          const queue = refs(clone);
+          while (queue.length) {
+            const id = queue.shift();
+            if (seen.has(id) || clone.querySelector('#' + CSS.escape(id))) continue;
+            seen.add(id);
+            const target = document.getElementById(id);
+            if (!target || target.closest('svg') === el) continue;
+            const copy = target.cloneNode(true);
+            defs.appendChild(copy);
+            queue.push(...refs(copy));
+          }
+          if (defs.childNodes.length) clone.insertBefore(defs, clone.firstChild);
           src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(clone));
         } else {
           src = el.currentSrc || el.src;
