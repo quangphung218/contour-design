@@ -127,6 +127,7 @@
   // own text box). `<br>` becomes a newline.
   const collectRuns = (block) => {
     const runs = [];
+    runs.nodes = [];
     const walk = (node) => {
       for (const child of node.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
@@ -136,6 +137,7 @@
           if (!st.pre) text = text.replace(/\s+/g, ' ');
           if (st.transform === 'uppercase') text = text.toUpperCase();
           else if (st.transform === 'lowercase') text = text.toLowerCase();
+          if (text.trim()) runs.nodes.push(child);
           if (text) runs.push({ text, size: st.size, color: st.color, bold: st.bold, italic: st.italic, underline: st.underline, font: st.font });
         } else if (child.nodeType === Node.ELEMENT_NODE) {
           if (child.tagName === 'BR') { runs.push({ text: '\n', size: runStyle(node).size }); continue; }
@@ -188,6 +190,19 @@
         const bl = parseFloat(cs.borderLeftWidth) || 0, bt = parseFloat(cs.borderTopWidth) || 0;
         const inner = { left: r.left + pl + bl, top: r.top + pt + bt, width: Math.max(1, r.width - pl - pr - 2 * bl), height: Math.max(1, r.height - pt - pb - 2 * bt) };
         // Fonts render a little wider in PowerPoint: give the box 3 % slack.
+        // An inline icon or picture before the text gets its own image:
+        // start the box where the text starts so they do not overlap (QA-125).
+        const pictures = [...el.children].some((c) => /^(IMG|CANVAS)$/.test(c.tagName) || c instanceof SVGSVGElement);
+        if (pictures && runs.nodes.length && /^(start|left|justify)$/.test(cs.textAlign)) {
+          let left = Infinity;
+          for (const n of runs.nodes) {
+            const range = document.createRange();
+            range.selectNodeContents(n);
+            for (const q of range.getClientRects()) left = Math.min(left, q.left);
+          }
+          const right = inner.left + inner.width;
+          if (left > inner.left && left < right) { inner.left = left; inner.width = right - left; }
+        }
         inner.width *= 1.03;
         const lh = parseFloat(cs.lineHeight);
         const size = parseFloat(cs.fontSize) || 16;
