@@ -199,3 +199,54 @@ html,body{margin:0}
     assert_eq!(images.len(), 1, "{:#?}", layouts[0].elements);
     assert_eq!(centre_pixel(images[0]), [204, 51, 51, 255]);
 }
+
+/// QA-125: the text box of a line that starts with an inline icon covered
+/// the icon's picture; it starts where the text starts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn text_after_an_inline_icon_starts_after_it() {
+    if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+        eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
+        return;
+    }
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("deck.html");
+    std::fs::write(
+        &path,
+        r##"<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0}
+.slide{position:relative;width:1920px;height:1080px;background:#fff;font:40px Helvetica,Arial,sans-serif}
+p{position:absolute;left:100px;top:100px;width:800px;margin:0}
+svg{vertical-align:middle;margin-right:20px}
+</style></head><body>
+<section class="slide active"><p><svg width="60" height="40"><rect width="60" height="40" fill="#c33"/></svg>Pinned note</p></section>
+</body></html>"##,
+    )
+    .unwrap();
+    let layouts = renderer
+        .extract_layouts(&RenderTarget::new(path))
+        .await
+        .unwrap();
+    let els = &layouts[0].elements;
+    let icon = els
+        .iter()
+        .find_map(|e| match e {
+            Element::Image { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .unwrap();
+    let text = els
+        .iter()
+        .find_map(|e| match e {
+            Element::Text { rect, .. } => Some(*rect),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(texts(els), ["Pinned note"]);
+    assert!(
+        text.x >= icon.x + icon.w,
+        "text box at {} overlaps the icon ending at {}",
+        text.x,
+        icon.x + icon.w
+    );
+}

@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Keep sprite icons (`<use href="#id">`) and their colour in the editable PowerPoint export; they came out empty (#293).
+- Start a text box after the icon that opens its line in the editable PowerPoint export, instead of over it.
 
 ## [0.2.0-beta.53] - 2026-11-21
 
