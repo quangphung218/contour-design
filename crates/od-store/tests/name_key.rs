@@ -6,8 +6,13 @@
 //! one on a Mac, on a Mac a file written over (#225, #242, #94).
 //!
 //! This test scans every `.rs` under `crates/*/src` and `apps/*/src` for
-//! such checks. Each one found either goes through `name_key`, or is
-//! listed in [`KEPT`] with why it is no check whether a name is taken.
+//! such checks, a statement at a time (rustfmt splits a long compare over
+//! lines). Each one found either goes through `name_key`, or is listed in
+//! [`KEPT`] with why it is no check whether a name is taken.
+//!
+//! A write in `od-store/src/files.rs` spells its target as on disk first
+//! (`as_on_disk`, `renamed_as`), else `logo.png` lands beside `Logo.png`
+//! on Linux: [`Rule::UnspelledWrite`].
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
@@ -22,9 +27,14 @@ enum Rule {
     /// A lowercased value looked up in or put into a set or map, or
     /// searched for: `seen.insert(path.to_lowercase(), …)`.
     LowercaseKey,
-    /// Two names folded by hand: `a.eq_ignore_ascii_case(b)`,
-    /// `a.to_lowercase() == b…`, on a line about a path, name or file.
+    /// Two values folded by hand: `a.eq_ignore_ascii_case(b)`,
+    /// `a.to_lowercase() == b…`. Whatever they name: one that is no file
+    /// name goes in [`KEPT`].
     FoldedCompare,
+    /// A function of `od-store/src/files.rs` that writes (resolves a
+    /// target, creates, renames) before spelling the name as on disk.
+    /// Found by its signature.
+    UnspelledWrite,
 }
 
 /// `(file from the repo root, text on the line, rule, why it may stay)`.
@@ -86,6 +96,146 @@ const KEPT: &[(&str, &str, Rule, &str)] = &[
         "a host name, not a file",
     ),
     (
+        "crates/od-contracts/src/agent_w3.rs",
+        "r.as_str().eq_ignore_ascii_case(raw.trim())",
+        Rule::FoldedCompare,
+        "a role word parsed into its enum, not a file",
+    ),
+    (
+        "crates/od-contracts/src/next_step.rs",
+        "o.to_lowercase() == s.to_lowercase()",
+        Rule::FoldedCompare,
+        "two suggested next steps (reply text), not files",
+    ),
+    (
+        "crates/od-contracts/src/next_step.rs",
+        "text[start..].eq_ignore_ascii_case(&OPEN[..n])",
+        Rule::FoldedCompare,
+        "a tag in a reply's text, not a file",
+    ),
+    (
+        "crates/od-mcp/src/tools.rs",
+        "n.to_lowercase() == lower",
+        Rule::FoldedCompare,
+        "a project's display name the agent asked for, not a file",
+    ),
+    (
+        "crates/od-mcp/src/tools.rs",
+        "a.eq_ignore_ascii_case(b) => go(",
+        Rule::FoldedCompare,
+        "`glob_match` searches the listed files: finds names, never \
+         decides whether one is taken",
+    ),
+    (
+        "crates/od-preview/src/source_patch.rs",
+        "target.tag.eq_ignore_ascii_case(expected.trim())",
+        Rule::FoldedCompare,
+        "an HTML tag name, not a file",
+    ),
+    (
+        "crates/od-preview/src/source_patch.rs",
+        "p.eq_ignore_ascii_case(&key)",
+        Rule::FoldedCompare,
+        "a CSS property name, not a file",
+    ),
+    (
+        "crates/od-preview/src/still.rs",
+        "s.eq_ignore_ascii_case(tag)",
+        Rule::FoldedCompare,
+        "an HTML tag name, not a file",
+    ),
+    (
+        "crates/od-runtime/src/detect.rs",
+        "w.eq_ignore_ascii_case(e)",
+        Rule::FoldedCompare,
+        "a program extension (`.exe`) read as Windows reads it, not \
+         whether a name is taken",
+    ),
+    (
+        "crates/od-server/src/routes/genui.rs",
+        "i.to_lowercase() == sid",
+        Rule::FoldedCompare,
+        "a UI surface id, not a file",
+    ),
+    (
+        "crates/od-server/src/routes/w3/reference.rs",
+        "head.eq_ignore_ascii_case(scheme)",
+        Rule::FoldedCompare,
+        "a URL scheme, not a file",
+    ),
+    (
+        "crates/od-store/src/memory.rs",
+        "m.text.eq_ignore_ascii_case(&text)",
+        Rule::FoldedCompare,
+        "the text of a memory note, not a file",
+    ),
+    (
+        "crates/od-ui/src/app/native_shell.rs",
+        "p.eq_ignore_ascii_case(s)",
+        Rule::FoldedCompare,
+        "a URL scheme, not a file",
+    ),
+    (
+        "crates/od-ui/src/highlight.rs",
+        "hay[i..i + n.len()].eq_ignore_ascii_case(n)",
+        Rule::FoldedCompare,
+        "a word searched for in code text, not a file",
+    ),
+    (
+        "crates/od-ui/src/i18n.rs",
+        "l.tag().eq_ignore_ascii_case(tag)",
+        Rule::FoldedCompare,
+        "a language tag, not a file",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn ensure_exists(",
+        Rule::UnspelledWrite,
+        "creates the project folder itself, named by the app",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn stat_file(",
+        Rule::UnspelledWrite,
+        "reads: makes nothing on disk",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn write_atomic(",
+        Rule::UnspelledWrite,
+        "the write itself: every caller spells its target first",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn place_new(",
+        Rule::UnspelledWrite,
+        "part of `write_atomic`, on the target its caller spelled",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn replace_atomic(",
+        Rule::UnspelledWrite,
+        "app files (history manifests, snapshots) the app names",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn delete_file(",
+        Rule::UnspelledWrite,
+        "deletes the file at the name; makes no second file",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn delete_folder(",
+        Rule::UnspelledWrite,
+        "deletes the folder at the name; makes no second folder",
+    ),
+    (
+        "crates/od-store/src/files.rs",
+        "fn put_back(",
+        Rule::UnspelledWrite,
+        "moves a file back to the name it had on disk a moment ago",
+    ),
+    (
         "crates/od-ui/src/app/api.rs",
         "self.message.to_lowercase().contains(&hint.to_lowercase())",
         Rule::LowercaseKey,
@@ -93,18 +243,14 @@ const KEPT: &[(&str, &str, Rule, &str)] = &[
     ),
 ];
 
-/// Words on a line that make a folded compare one about files.
-const FILE_WORDS: &[&str] = &[
-    "path", "name", "file", "dir", "folder", "segment", "existing", "entry", "rel", "have",
-];
-
-/// What `rule` finds on `line` (comments left out by the caller).
-fn finds(rule: Rule, line: &str) -> bool {
+/// What `rule` finds in `stmt`, one statement (comments left out and its
+/// lines joined by the caller).
+fn finds(rule: Rule, stmt: &str) -> bool {
     let lower_call = |s: &str| s.contains("to_lowercase()") || s.contains("to_ascii_lowercase()");
     match rule {
         Rule::OwnNormalization => [".nfc()", ".nfd()", ".nfkc()", ".nfkd()"]
             .iter()
-            .any(|n| line.contains(n)),
+            .any(|n| stmt.contains(n)),
         Rule::LowercaseKey => [
             ".insert(",
             ".contains(",
@@ -115,18 +261,105 @@ fn finds(rule: Rule, line: &str) -> bool {
         ]
         .iter()
         .any(|call| {
-            line.match_indices(call)
-                .any(|(at, _)| lower_call(call_args(&line[at + call.len()..])))
+            stmt.match_indices(call)
+                .any(|(at, _)| lower_call(call_args(&stmt[at + call.len()..])))
         }),
         Rule::FoldedCompare => {
-            let fold = line.match_indices("eq_ignore_ascii_case(").any(|(at, m)| {
+            stmt.match_indices("eq_ignore_ascii_case(").any(|(at, m)| {
                 // A fixed string (`"index.html"`, `"t"`) is no user name.
-                !line[at + m.len()..].starts_with('"')
-            }) || (lower_call(line) && (line.contains("==") || line.contains("!=")));
-            let lower = line.to_lowercase();
-            fold && FILE_WORDS.iter().any(|w| lower.contains(w))
+                !stmt[at + m.len()..].starts_with('"')
+            }) || ["==", "!="].iter().any(|op| {
+                stmt.match_indices(op).any(|(at, _)| {
+                    lower_call(left_operand(&stmt[..at]))
+                        || lower_call(right_operand(&stmt[at + op.len()..]))
+                })
+            })
+        }
+        Rule::UnspelledWrite => false,
+    }
+}
+
+/// Files whose functions [`Rule::UnspelledWrite`] checks: the raw disk ops
+/// every write of a user's file goes through.
+const WRITES_CHECKED: &[&str] = &["crates/od-store/src/files.rs"];
+
+/// Calls that pick or change a path on disk.
+const WRITE_CALLS: &[&str] = &[
+    "root.resolve(",
+    "write_atomic(",
+    "fs::write(",
+    "fs::rename(",
+    "fs::create_dir",
+    "fs::copy(",
+    "File::create(",
+    ".create_new(",
+];
+
+/// Calls that spell a name as the entry on disk.
+const SPELL_CALLS: &[&str] = &["as_on_disk(", "renamed_as("];
+
+/// The signature line of each function in `lines` that makes a
+/// [`WRITE_CALLS`] call before any [`SPELL_CALLS`] call.
+fn unspelled_writes(lines: &[&str]) -> Vec<String> {
+    let is_fn = |l: &str| {
+        let l = l.trim_start();
+        ["fn ", "pub fn ", "pub(crate) fn ", "pub(super) fn "]
+            .iter()
+            .any(|p| l.starts_with(p))
+    };
+    let first = |body: &str, calls: &[&str]| {
+        calls
+            .iter()
+            .flat_map(|c| body.match_indices(c).map(|(at, _)| at))
+            // `fn write_atomic(` is the definition, no call.
+            .filter(|&at| !body[..at].ends_with("fn "))
+            .min()
+    };
+    let starts: Vec<usize> = (0..lines.len()).filter(|&i| is_fn(lines[i])).collect();
+    let mut out = Vec::new();
+    for (n, &at) in starts.iter().enumerate() {
+        let end = starts.get(n + 1).copied().unwrap_or(lines.len());
+        let body = lines[at..end].join("\n");
+        if let Some(write) = first(&body, WRITE_CALLS)
+            && first(&body, SPELL_CALLS).is_none_or(|spell| spell > write)
+        {
+            out.push(lines[at].trim().to_owned());
         }
     }
+    out
+}
+
+/// The operand that ends `before`: back to an open bracket, `,`, `;`,
+/// `{`, `|`, `&` or `=` outside brackets.
+fn left_operand(before: &str) -> &str {
+    let mut depth = 0usize;
+    for (i, c) in before.char_indices().rev() {
+        match c {
+            ')' | ']' => depth += 1,
+            '(' | '[' if depth == 0 => return &before[i + 1..],
+            '(' | '[' => depth -= 1,
+            ',' | ';' | '{' | '|' | '&' | '=' if depth == 0 => return &before[i + 1..],
+            _ => {}
+        }
+    }
+    before
+}
+
+/// The operand that starts `after`: up to a close bracket, `,`, `;`,
+/// `{`, `}`, `|` or `&&` outside brackets.
+fn right_operand(after: &str) -> &str {
+    let mut depth = 0usize;
+    for (i, c) in after.char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' if depth == 0 => return &after[..i],
+            ')' | ']' => depth -= 1,
+            ',' | ';' | '{' | '}' | '|' if depth == 0 => return &after[..i],
+            '&' if depth == 0 && after[i + 1..].starts_with('&') => return &after[..i],
+            _ => {}
+        }
+    }
+    after
 }
 
 /// The text up to the `)` that closes a call whose `(` was just read.
@@ -166,11 +399,48 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// The code of a source file, without its `#[cfg(test)]` module and
 /// files of tests: a test may set up two names alike on purpose.
 fn code_lines(text: &str) -> impl Iterator<Item = &str> {
-    let end = text.find("#[cfg(test)]\nmod ").unwrap_or(text.len());
+    // Any line end: a Windows checkout has `\r\n`.
+    let end = text
+        .match_indices("#[cfg(test)]")
+        .map(|(at, m)| at + m.len())
+        .find(|&after| text[after..].trim_start().starts_with("mod "))
+        .map_or(text.len(), |after| after - "#[cfg(test)]".len());
     text[..end]
         .lines()
         .map(|l| l.split("//").next().unwrap_or(""))
         .filter(|l| !l.trim().is_empty())
+}
+
+/// `lines` joined into statements: a line ending in `;`, `{` or `}`, or in
+/// `,` outside brackets (a match arm, a field), ends one. A compare that
+/// rustfmt put on two lines (`a.to_lowercase()` / `== b`) is one text.
+fn statements<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stmt = String::new();
+    let mut depth = 0i32;
+    for line in lines {
+        let line = line.trim();
+        if !stmt.is_empty() {
+            stmt.push(' ');
+        }
+        stmt.push_str(line);
+        for c in line.chars() {
+            match c {
+                '(' | '[' => depth += 1,
+                ')' | ']' => depth -= 1,
+                _ => {}
+            }
+        }
+        let ends = line.ends_with([';', '{', '}']) || (line.ends_with(',') && depth <= 0);
+        if ends {
+            out.push(std::mem::take(&mut stmt));
+            depth = 0;
+        }
+    }
+    if !stmt.is_empty() {
+        out.push(stmt);
+    }
+    out
 }
 
 /// Every hand-written check found: `(file, rule)` → the lines.
@@ -195,14 +465,23 @@ fn scan(repo: &Path) -> BTreeMap<(String, Rule), Vec<String>> {
             continue;
         }
         let text = std::fs::read_to_string(&file).unwrap();
-        for line in code_lines(&text) {
+        for stmt in statements(code_lines(&text)) {
             for rule in RULES {
-                if finds(rule, line) {
+                if finds(rule, &stmt) {
                     found
                         .entry((rel.clone(), rule))
                         .or_default()
-                        .push(line.trim().to_owned());
+                        .push(stmt.clone());
                 }
+            }
+        }
+        if WRITES_CHECKED.contains(&rel.as_str()) {
+            let lines: Vec<&str> = code_lines(&text).collect();
+            for sig in unspelled_writes(&lines) {
+                found
+                    .entry((rel.clone(), Rule::UnspelledWrite))
+                    .or_default()
+                    .push(sig);
             }
         }
     }
@@ -303,9 +582,104 @@ fn each_rule_finds_its_pattern() {
             "key.eq_ignore_ascii_case(\"t\") && name",
             false,
         ),
-        (Rule::FoldedCompare, "a.eq_ignore_ascii_case(b)", false),
+        (Rule::FoldedCompare, "a.eq_ignore_ascii_case(b)", true),
+        (
+            Rule::FoldedCompare,
+            "v.to_string_lossy().to_lowercase() == n.to_string_lossy().to_lowercase()",
+            true,
+        ),
+        (Rule::FoldedCompare, "a.to_lowercase() != b", true),
+        (Rule::FoldedCompare, "x == y.to_ascii_lowercase()", true),
+        (
+            Rule::FoldedCompare,
+            "p.category == cat).filter(|p| p.name.to_lowercase().contains(&q))",
+            false,
+        ),
+        (
+            Rule::FoldedCompare,
+            "name_key(&v.to_string_lossy()) == name_key(&n.to_string_lossy())",
+            false,
+        ),
     ];
     for (rule, line, want) in cases {
         assert_eq!(finds(*rule, line), *want, "{rule:?} on {line}");
+    }
+}
+
+/// A compare rustfmt split over lines is one statement to the scan.
+#[test]
+fn a_compare_over_lines_is_one_statement() {
+    let text =
+        "let same = v.to_string_lossy().to_lowercase()\n    == n.to_lowercase();\nlet x = 1;\n";
+    let stmts = statements(code_lines(text));
+    assert_eq!(stmts.len(), 2, "{stmts:?}");
+    assert!(finds(Rule::FoldedCompare, &stmts[0]));
+    assert!(!finds(Rule::FoldedCompare, &stmts[1]));
+    // A match arm ends at its `,`, so arms are not read as one.
+    let arms = "A => a.to_lowercase(),\nB => b == c,\n";
+    assert!(
+        statements(code_lines(arms))
+            .iter()
+            .all(|s| !finds(Rule::FoldedCompare, s))
+    );
+}
+
+/// A write in `files.rs` that picks its target before spelling it as on
+/// disk is found; spelling first, or no write, is not.
+#[test]
+fn a_write_before_the_name_is_spelled_is_found() {
+    let text = "\
+pub fn raw(root: &ProjectRoot, name: &str) -> Result<()> {
+    fs::write(root.dir.join(name), b\"x\")?;
+    Ok(())
+}
+pub fn late(root: &ProjectRoot, name: &str) -> Result<()> {
+    let target = root.resolve(name)?;
+    let rel = as_on_disk(&root.dir, name);
+    Ok(())
+}
+pub fn spelled(root: &ProjectRoot, name: &str) -> Result<()> {
+    let rel = as_on_disk(&root.dir, name);
+    let target = root.resolve(&rel)?;
+    write_atomic(&target, b\"x\", Place::CreateNew)
+}
+fn write_atomic(target: &Path, bytes: &[u8], place: Place) -> Result<()> {
+    Ok(())
+}
+";
+    let lines: Vec<&str> = code_lines(text).collect();
+    assert_eq!(
+        unspelled_writes(&lines),
+        [
+            "pub fn raw(root: &ProjectRoot, name: &str) -> Result<()> {",
+            "pub fn late(root: &ProjectRoot, name: &str) -> Result<()> {",
+        ]
+    );
+}
+
+/// Each file [`Rule::UnspelledWrite`] checks is there: a moved file would
+/// leave the rule checking nothing.
+#[test]
+fn every_file_whose_writes_are_checked_is_there() {
+    for file in WRITES_CHECKED {
+        assert!(repo().join(file).is_file(), "{file} is gone");
+    }
+}
+
+/// The `#[cfg(test)]` module is left out on a Windows checkout too, whose
+/// lines end in `\r\n`: its tests write files by any name.
+#[test]
+fn a_test_module_is_left_out_whatever_the_line_end() {
+    for end in ["\n", "\r\n"] {
+        let text = [
+            "fn code() {}",
+            "#[cfg(test)]",
+            "mod tests {",
+            "fn t() {}",
+            "}",
+        ]
+        .join(end);
+        let lines: Vec<&str> = code_lines(&text).collect();
+        assert_eq!(lines, ["fn code() {}"], "{end:?}");
     }
 }

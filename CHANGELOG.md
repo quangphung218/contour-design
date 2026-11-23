@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Treat names differing only in case or Unicode form as one file on every OS; changing a folder name's case works on macOS (#307).
+- Open the right page after importing a ZIP whose folder is spelled in two cases, like `A/` and `a/` (#309).
 - Refuse installing a plugin whose id differs only in case from an installed one, instead of deleting it (#308).
 
 ## [0.2.0-beta.56] - 2026-11-23
