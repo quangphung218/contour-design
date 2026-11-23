@@ -167,7 +167,15 @@ async fn wrong_values(
     path: &str,
     checks: &[Check],
 ) -> Vec<String> {
-    let source = skill(path);
+    wrong_values_in(renderer, path, skill(path), checks).await
+}
+
+async fn wrong_values_in(
+    renderer: &od_render_cdp::CdpRenderer,
+    path: &str,
+    source: PathBuf,
+    checks: &[Check],
+) -> Vec<String> {
     let html =
         std::fs::read_to_string(&source).unwrap_or_else(|e| panic!("{}: {e}", source.display()));
     assert!(
@@ -235,5 +243,44 @@ async fn the_inlined_motion_runtime_moves_films_as_gsap_does() {
         )
         .await,
     );
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// A stagger seeked straight into its middle on the timeline's first render:
+/// GSAP leaves a target whose part has not started alone (opacity stays 1
+/// here, `immediateRender: false`). Before the fix the runtime read
+/// `round(NaN)` as 0 on the first render and drew `#y` at its start value.
+const FIRST_RENDER: &[Check] = &[
+    check(0.5, "#x", 0, "opacity", 0.6),
+    check(0.5, "#y", 0, "opacity", 1.0),
+];
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_first_seek_leaves_targets_whose_part_has_not_started() {
+    if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+        eprintln!("OD_SKIP_CHROME_TESTS=1: skipping real-browser tests");
+        return;
+    }
+    let template =
+        std::fs::read_to_string(skill("8-bit-orbit-video-template/assets/template.html")).unwrap();
+    let start = template.find("<script>").unwrap();
+    let end = start + template[start..].find("</script>").unwrap() + "</script>".len();
+    let runtime = &template[start..end];
+    assert!(runtime.contains("/* Motion runtime written for Contour"));
+    let page = format!(
+        r##"<!DOCTYPE html><html><head>{runtime}</head>
+<body><div data-composition-id="main" data-width="320" data-height="180" data-duration="3">
+<div id="x" style="width:10px;height:10px"></div><div id="y" style="width:10px;height:10px"></div>
+</div><script>
+const tl = gsap.timeline({{ paused: true }});
+tl.fromTo("#x, #y", {{ opacity: 0.2 }}, {{ opacity: 1, duration: 1, ease: "none", stagger: 1, immediateRender: false }});
+window.__timelines = {{ main: tl }};
+</script></body></html>"##
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("index.html");
+    std::fs::write(&source, page).unwrap();
+    let renderer = common::renderer(&find_chrome().expect("Chrome is required"));
+    let wrong = wrong_values_in(&renderer, "first-render", source, FIRST_RENDER).await;
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
