@@ -27,3 +27,11 @@ test-group = 'watcher'
 [[profile.default.overrides]]
 filter = 'package(od-preview) & binary(bridge_browser) & test(=bridge_in_headless_chrome)'
 slow-timeout = { period = "60s", terminate-after = 6 }
+
+# Prints every bundled deck (76) to PDF and compares each page with its
+# slide in one Chrome, so its time grows with the decks: 122 s on a Mac
+# mini, 199 s on macos-15 (beta.56), past 240 s twice on macos-15 (beta.57,
+# run 45195494442). Eight minutes; a hang still ends under its own name.
+[[profile.default.overrides]]
+filter = 'package(od-render-cdp) & binary(deck_templates) & test(=bundled_deck_templates_print_as_their_slides_look)'
+slow-timeout = { period = "60s", terminate-after = 8 }
