@@ -10,7 +10,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
-- Upload every file attached in the chat when the Studio is left while the first one uploads, and save a drawing attached just before the draw tool closes; both were lost (#300).
+- Upload every file attached in the chat even if the Studio is left while the first one uploads (#300).
+- Save and attach a drawing even if the draw tool closes right after Attach (#300).
 
 ## [0.2.0-beta.55] - 2026-11-23
 
