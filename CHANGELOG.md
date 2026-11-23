@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.57] - 2026-11-23
+
 ### Fixed
 
 - Treat names differing only in case or Unicode form as one file on every OS; changing a folder name's case works on macOS (#307).
@@ -1383,7 +1385,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.56...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.57...HEAD
+[0.2.0-beta.57]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.56...v0.2.0-beta.57
 [0.2.0-beta.56]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.55...v0.2.0-beta.56
 [0.2.0-beta.55]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.54...v0.2.0-beta.55
 [0.2.0-beta.54]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.53...v0.2.0-beta.54
