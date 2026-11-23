@@ -10,7 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
-- Keep deck controls off slide pictures in PowerPoint and image exports when the deck's wrapper sets `opacity`, `z-index` or `isolation`.
+- Keep deck controls off slide pictures in PowerPoint and image exports when the deck's wrapper sets `opacity`, `z-index` or `isolation` (#297).
 
 ## [0.2.0-beta.54] - 2026-11-23
 
