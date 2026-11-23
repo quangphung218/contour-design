@@ -300,6 +300,20 @@ fn refuse_case_twin(user_root: &Path, id: &str, what: &str) -> Result<(), WriteE
     Ok(())
 }
 
+/// Whether `user_root` holds a skill folder named `id`, in any case or
+/// Unicode form (one folder on macOS and Windows). Hidden folders (an
+/// install in progress) do not count.
+#[must_use]
+pub fn user_skill_exists(user_root: &Path, id: &str) -> bool {
+    let key = od_contracts::name_key(id);
+    std::fs::read_dir(user_root).is_ok_and(|entries| {
+        entries.flatten().any(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            !name.starts_with('.') && e.path().is_dir() && od_contracts::name_key(&name) == key
+        })
+    })
+}
+
 /// Copies `source` into `<user_root>/<id>`, replacing an older copy: built
 /// in a hidden folder, then renamed into place. Nothing is left behind on
 /// failure.
@@ -674,5 +688,20 @@ mod tests {
         assert_eq!(names(&user), ["foo"]);
         let text = std::fs::read_to_string(user.join("foo/SKILL.md")).unwrap();
         assert!(text.contains("Mine."));
+    }
+
+    #[test]
+    fn a_user_skill_exists_in_any_case_and_not_while_it_installs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("skills");
+        assert!(!user_skill_exists(&user, "tea-house"), "no folder yet");
+        std::fs::create_dir_all(user.join("tea-house")).unwrap();
+        std::fs::create_dir_all(user.join(".installing-brew-1")).unwrap();
+        std::fs::write(user.join("notes"), "x").unwrap();
+        assert!(user_skill_exists(&user, "tea-house"));
+        assert!(user_skill_exists(&user, "Tea-House"));
+        assert!(!user_skill_exists(&user, "tea-house-2"));
+        assert!(!user_skill_exists(&user, ".installing-brew-1"));
+        assert!(!user_skill_exists(&user, "notes"), "a file is no skill");
     }
 }

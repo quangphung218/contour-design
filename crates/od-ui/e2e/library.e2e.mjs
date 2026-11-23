@@ -405,20 +405,66 @@ try {
   await page.locator('.plus-menu').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   await page.screenshot({ path: join(OUT, 'save-as-skill-menu.png') });
   const runReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
+  const deliverableChecks = [];
+  const onDeliverable = (r) => r.url().includes('/deliverable') && deliverableChecks.push(r.url());
+  page.on('request', onDeliverable);
   await saveSkill.click();
-  const sent = JSON.parse((await runReq).postData()).message;
+  const sentReq = await runReq;
+  const sentBody = JSON.parse(sentReq.postData());
+  const sent = sentBody.message;
   assert.ok(sent.includes('generated-skill/<id>/SKILL.md') && sent.includes('od skill install'), 'the prepared turn is sent');
   assert.ok(sent.includes('"Tea house"'), 'it names the project');
+  assert.equal(sentBody.shownMessage, 'Save as skill');
   assert.equal(await teaComposer.inputValue(), '', 'the composer is left alone');
+  // The chat shows the action's name, not the instructions to the agent.
+  const bubble = page.getByTestId('user-msg').last();
+  await until(async () => (await bubble.textContent()).trim() === 'Save as skill', 'the bubble shows the name');
+  const skillRun = (await (await sentReq.response()).json()).runId;
   const skillTurn = page.getByTestId('assistant-msg').last();
   await until(async () => (await skillTurn.getAttribute('data-state')) === 'succeeded', 'save-as-skill turn ends', 30_000);
   await skillTurn.filter({ hasText: 'Installed: {id:tea-house}' }).waitFor();
   assert.ok(existsSync(join(data, 'skills', 'tea-house', 'assets', 'tokens.css')), 'side file installed');
+  // A turn that wrote only its skill is no design turn: its entry is not
+  // checked, so no "did not update index.html" warning.
+  // The check goes out as the turn ends; give it 3 s to show up.
+  const checked = () => deliverableChecks.some((u) => u.includes(`/api/runs/${skillRun}/deliverable`));
+  await until(async () => checked(), 'a deliverable check', 3_000).catch(() => {});
+  page.off('request', onDeliverable);
+  const warned = checked() && (await page.getByTestId('deliverable-warning').waitFor({ timeout: 5_000 }).then(() => true, () => false));
+  assert.ok(!checked() && !warned, `no entry check or warning after a skill turn (warned: ${warned})`);
+  assert.equal(await page.getByTestId('deliverable-warning').count(), 0);
+  await page.screenshot({ path: join(OUT, 'save-as-skill-turn.png') });
+  // Opened again, the conversation still shows the name.
+  await settleStudio(false);
+  await page.reload();
+  await until(async () => (await page.getByTestId('user-msg').count()) === 3, 'the conversation loads again');
+  const shownTexts = await page.getByTestId('user-msg').allTextContents();
+  assert.equal(shownTexts[2].trim(), 'Save as skill');
+  assert.ok(!shownTexts.join(' ').includes('curl') && !shownTexts.join(' ').includes('OD_DAEMON_URL'), 'no instructions in the chat');
+  const firstSkill = readFileSync(join(data, 'skills', 'tea-house', 'SKILL.md'), 'utf8');
+
+  // Another project with the same name saved as a skill: the agent gets a
+  // 409 for `tea-house` and installs `tea-house-2`; the first stays.
+  const teaProject2 = (await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: 'Tea house' }) })).project.id;
+  await settleStudio(false);
+  await page.goto(`${BASE}/projects/${teaProject2}`);
+  await teaComposer.waitFor();
+  await teaComposer.fill('calm tea house landing');
+  await page.getByTestId('send').click();
+  await until(async () => (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', 'second project turn ends', 30_000);
+  await plusMenu.click();
+  await until(async () => !(await saveSkill.isDisabled()), 'on in the second project');
+  await saveSkill.click();
+  const skillTurn2 = page.getByTestId('assistant-msg').last();
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 2 && (await skillTurn2.getAttribute('data-state')) === 'succeeded', 'second save ends', 30_000);
+  await skillTurn2.filter({ hasText: 'Installed: {id:tea-house-2}' }).waitFor();
+  assert.equal(readFileSync(join(data, 'skills', 'tea-house', 'SKILL.md'), 'utf8'), firstSkill, 'the first skill is untouched');
   await settleStudio(false);
   await page.goto(BASE + '/plugins');
   await page.getByTestId('kind-skills').click();
   await page.getByTestId('scope-personal').click();
   await page.locator('[data-testid="skill-row"][data-id="tea-house"]').waitFor();
+  await page.locator('[data-testid="skill-row"][data-id="tea-house-2"]').waitFor();
   await page.screenshot({ path: join(OUT, 'save-as-skill-personal.png') });
   results.saveAsSkill = 'ok';
 

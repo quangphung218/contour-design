@@ -92,6 +92,17 @@ pub fn find(id: &str) -> Option<&'static Action> {
 /// Where a "Save as skill" turn writes the skill, relative to the project.
 pub const SKILL_DIR: &str = "generated-skill";
 
+/// Whether a turn wrote files only inside [`SKILL_DIR`]: a "Save as
+/// skill" turn, which is not meant to touch the design's entry page.
+#[must_use]
+pub fn wrote_only_a_skill(written: &[String]) -> bool {
+    !written.is_empty()
+        && written.iter().all(|f| {
+            f.strip_prefix(SKILL_DIR)
+                .is_some_and(|rest| rest.starts_with('/'))
+        })
+}
+
 /// The turn "Save as skill" sends: the agent reads this project's chat and
 /// files, writes a reusable skill under [`SKILL_DIR`] and installs it
 /// through the daemon (`od skill install`, else `POST /api/skills/install`),
@@ -126,8 +137,12 @@ pub fn skill_authoring_prompt(project_name: &str, locale: Locale) -> String {
          Install the folder (absolute path) with `od skill install \"$PWD/{SKILL_DIR}/<id>\"`, \
          or if `od` is not on PATH: `curl -sS -X POST \"$OD_DAEMON_URL/api/skills/install\" \
          -H 'content-type: application/json' -d \"{{\\\"path\\\": \\\"$PWD/{SKILL_DIR}/<id>\\\"}}\"`. \
-         If the answer is 409 (a built-in skill has that id), pick another id and install \
-         again. Report the skill id when done."
+         If the answer is 409, a built-in skill or another of the user's skills has that \
+         id: never replace it. List the ids taken with `curl -sS \"$OD_DAEMON_URL/api/skills\"`, \
+         pick one not in the list by adding `-2`, `-3`… to yours, rename the folder and \
+         `name` to match, and install again. Only to install again the skill this turn \
+         installed itself, add `--replace` to `od skill install`, or `\\\"replace\\\": true` \
+         to the curl body. Report the skill id when done."
     )
 }
 
@@ -159,5 +174,29 @@ mod tests {
         );
         assert!(p.contains("$OD_DAEMON_URL/api/skills/install"));
         assert!(p.contains("Tiếng Việt (vi)"));
+        // A taken id gets a new one; replacing is only for this turn's own.
+        assert!(p.contains("curl -sS \"$OD_DAEMON_URL/api/skills\""), "{p}");
+        assert!(p.contains("`-2`, `-3`"));
+        assert!(p.contains("never replace it"));
+        assert!(
+            p.contains("--replace") && p.contains("\\\"replace\\\": true"),
+            "{p}"
+        );
+    }
+
+    #[test]
+    fn only_a_turn_that_wrote_inside_the_skill_folder_is_a_skill_turn() {
+        let v = |fs: &[&str]| fs.iter().map(|f| (*f).to_owned()).collect::<Vec<_>>();
+        assert!(wrote_only_a_skill(&v(&[
+            "generated-skill/tea/SKILL.md",
+            "generated-skill/tea/assets/tokens.css"
+        ])));
+        assert!(!wrote_only_a_skill(&v(&[])));
+        assert!(!wrote_only_a_skill(&v(&[
+            "generated-skill/tea/SKILL.md",
+            "index.html"
+        ])));
+        assert!(!wrote_only_a_skill(&v(&["generated-skill-old/x.md"])));
+        assert!(!wrote_only_a_skill(&v(&["generated-skill"])));
     }
 }

@@ -638,7 +638,8 @@ pub fn SaveAsSkill(ctx: StudioCtx) -> impl IntoView {
                 menu.set(false);
                 let name = ctx.project.with_untracked(|p| p.as_ref().map(|p| p.name.clone())).unwrap_or_default();
                 let locale = shell.locale.get_untracked();
-                ctx.send(crate::toolbox::skill_authoring_prompt(&name, locale), shell);
+                let prompt = crate::toolbox::skill_authoring_prompt(&name, locale);
+                ctx.send_shown(prompt, t(T::SaveAsSkill).to_owned(), shell);
             }>
             {icon(Glyph::Sparkle)}{t(T::SaveAsSkill)}
         </button>

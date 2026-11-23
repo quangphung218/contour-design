@@ -74,13 +74,21 @@ case "$line" in *"# Design system revision"*)
 ;; esac
 # "Save as skill": write a skill folder with a side file under
 # generated-skill/ and install it the way the prompt says when `od` is not
-# on PATH (curl to the daemon, absolute path).
+# on PATH (curl to the daemon, absolute path). A 409 (the id is taken)
+# moves on to tea-house-2, then -3, as the prompt says.
 case "$line" in *"generated-skill/"*)
-  mkdir -p generated-skill/tea-house/assets
-  printf -- '---\nname: tea-house\ndescription: Calm tea house pages.\ntriggers:\n  - tea house\n---\n\n## When to use\n\nTea brands.\n' > generated-skill/tea-house/SKILL.md
-  printf ':root { --accent: #2f6b3a; }\n' > generated-skill/tea-house/assets/tokens.css
-  answer=$(curl -sS -X POST "$OD_DAEMON_URL/api/skills/install" -H 'content-type: application/json' \
-    -d "{\"path\": \"$PWD/generated-skill/tea-house\"}" 2>&1 | tr -d '"\\\n')
+  answer=""
+  for id in tea-house tea-house-2 tea-house-3; do
+    rm -rf generated-skill
+    mkdir -p "generated-skill/$id/assets"
+    printf -- '---\nname: %s\ndescription: Calm tea house pages.\ntriggers:\n  - tea house\n---\n\n## When to use\n\nTea brands.\n' "$id" > "generated-skill/$id/SKILL.md"
+    printf ':root { --accent: #2f6b3a; }\n' > "generated-skill/$id/assets/tokens.css"
+    reply=$(curl -sS -w '\n%{http_code}' -X POST "$OD_DAEMON_URL/api/skills/install" \
+      -H 'content-type: application/json' -d "{\"path\": \"$PWD/generated-skill/$id\"}" 2>&1)
+    code=$(printf '%s\n' "$reply" | tail -n 1)
+    answer=$(printf '%s\n' "$reply" | sed '$d' | tr -d '"\\\n')
+    [ "$code" = 409 ] || break
+  done
   printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
   printf '{"type":"assistant","message":{"id":"skill-%s","role":"assistant","content":[{"type":"text","text":"Installed: %s"}]}}\n' "$$" "$answer"
   printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'

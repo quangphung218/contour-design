@@ -274,13 +274,23 @@ async fn skills_install_from_a_folder() {
     );
     let (s, v) = call(&d, "POST", "/api/skills/install", Some(install(&twin))).await;
     assert_eq!(s, 409, "{v}");
-    // Installing the same id again replaces it.
+    // The same id again: a personal skill is never lost unasked (another
+    // project saved under the same name), only replaced on `replace`.
     std::fs::write(
         tea.join("SKILL.md"),
         "---\nname: tea-house\n---\nUse jade.\n",
     )
     .unwrap();
     let (s, v) = call(&d, "POST", "/api/skills/install", Some(install(&tea))).await;
+    assert_eq!(s, 409, "{v}");
+    let kept = d.get_json("/api/skills/tea-house").await;
+    assert!(
+        kept["body"].as_str().unwrap().contains("Use cream"),
+        "{kept}"
+    );
+    let mut replace = install(&tea);
+    replace["replace"] = json!(true);
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(replace)).await;
     assert_eq!(s, 200, "{v}");
     let detail = d.get_json("/api/skills/tea-house").await;
     assert!(

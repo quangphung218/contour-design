@@ -7,10 +7,11 @@
 //!   user override of a bundled one (side files copied once).
 //! - `DELETE /api/skills/:id`: removes a user skill or override; the
 //!   bundled skill shows again.
-//! - `POST   /api/skills/install` `{path}`: copies a local skill folder
-//!   (`SKILL.md` and its side files) into `<data>/skills/<id>`, replacing
-//!   a user skill with that id; 409 for a bundled id. "Save as skill" in
-//!   the Studio has the agent call it.
+//! - `POST   /api/skills/install` `{path, replace?}`: copies a local skill
+//!   folder (`SKILL.md` and its side files) into `<data>/skills/<id>`; 409
+//!   for a bundled id, and for a user skill's id unless `replace` is set
+//!   (a skill of another project is never lost). "Save as skill" in the
+//!   Studio has the agent call it.
 
 use super::write_and_reload;
 use crate::error::{ApiErr, ApiJson, ApiResult};
@@ -75,6 +76,10 @@ pub async fn create(
 #[derive(Debug, Deserialize)]
 pub struct InstallBody {
     path: String,
+    /// Replace a user skill with the same id (the agent reinstalling what
+    /// its own turn installed).
+    #[serde(default)]
+    replace: bool,
 }
 
 pub async fn install(
@@ -82,6 +87,7 @@ pub async fn install(
     ApiJson(body): ApiJson<InstallBody>,
 ) -> ApiResult<Json<Value>> {
     let source = std::path::PathBuf::from(body.path.trim());
+    let replace = body.replace;
     if !source.is_absolute() {
         return Err(ApiErr::bad_request("path must be an absolute folder path"));
     }
@@ -94,7 +100,10 @@ pub async fn install(
             .into_iter()
             .map(|e| name_key(&e.info.id))
             .collect();
-        let taken = |id: &str| bundled.contains(&name_key(id));
+        let taken = |id: &str| {
+            bundled.contains(&name_key(id))
+                || (!replace && user_content::user_skill_exists(&root, id))
+        };
         Ok(user_content::install_skill(&source, &root, taken)?)
     })
     .await?;

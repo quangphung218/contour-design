@@ -939,12 +939,18 @@ impl StudioCtx {
         });
     }
 
-    /// After a successful run: warn when it did not deliver its entry. A
+    /// After a successful run: warn when it did not deliver its entry
+    /// (not after a turn that only wrote a skill). A
     /// run that wrote another page instead (a deck next to `index.html`)
     /// delivered that page: it opens, with no warning. `written`: the
     /// files the run wrote, project-relative.
     pub fn check_deliverable(self, run_id: String, written: Vec<String>) {
         let tools = self.tools;
+        // A "Save as skill" turn writes its skill, not the design.
+        if crate::toolbox::wrote_only_a_skill(&written) {
+            tools.deliverable.set(None);
+            return;
+        }
         self.tasks.spawn(async move {
             let url = format!("/api/runs/{}/deliverable", api::seg(&run_id));
             if let Ok(d) = api::get::<DeliverableResponse>(&url).await {

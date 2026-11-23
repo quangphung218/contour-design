@@ -39,6 +39,9 @@ pub struct ChatItem {
     pub kind: ItemKind,
     /// Files sent with a user message (`attachments`), for a retry.
     pub attachments: Vec<String>,
+    /// The request a user message sent when the chat shows another text
+    /// (a prepared turn shows its name), for a retry.
+    pub sent: Option<String>,
 }
 
 #[derive(Clone)]
@@ -53,6 +56,7 @@ impl ChatItem {
             id,
             kind: ItemKind::User(text),
             attachments: Vec::new(),
+            sent: None,
         }
     }
 
@@ -62,11 +66,31 @@ impl ChatItem {
         self
     }
 
+    #[must_use]
+    pub fn with_sent(mut self, sent: Option<String>) -> Self {
+        self.sent = sent;
+        self
+    }
+
+    /// What a retry of this user message sends: the request, the text the
+    /// chat showed for it when that differs, and its files.
+    #[must_use]
+    pub fn retry(&self) -> Option<(String, Option<String>, Vec<String>)> {
+        let ItemKind::User(text) = &self.kind else {
+            return None;
+        };
+        Some(match &self.sent {
+            Some(sent) => (sent.clone(), Some(text.clone()), self.attachments.clone()),
+            None => (text.clone(), None, self.attachments.clone()),
+        })
+    }
+
     pub fn assistant(id: String, turn: RwSignal<AssistantTurn>) -> Self {
         Self {
             id,
             kind: ItemKind::Assistant(turn),
             attachments: Vec::new(),
+            sent: None,
         }
     }
 }
@@ -1082,14 +1106,12 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     let navigate = super::leave_guard::use_leave();
     let tasks = Tasks::here();
     let item_id = StoredValue::new(item_id);
-    // The user message this turn answered, and its files, for a retry.
+    // The user message this turn answered, and its files, for a retry:
+    // what it sent and, when that is a prepared turn, the name it showed.
     let asked = move || {
         ctx.items.with_untracked(|items| {
             let i = items.iter().position(|i| i.id == item_id.get_value())?;
-            items[..i].iter().rev().find_map(|i| match &i.kind {
-                ItemKind::User(text) => Some((text.clone(), i.attachments.clone())),
-                ItemKind::Assistant(_) => None,
-            })
+            items[..i].iter().rev().find_map(ChatItem::retry)
         })
     };
     // The lint of the page the turn wrote, again when the page changes.
@@ -1199,9 +1221,12 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                             Followup::Variations => t(T::FollowupVariations),
                                         }.to_owned()),
                                         NextStep::Retry => {
-                                            if let Some((text, files)) = asked() {
+                                            if let Some((text, shown, files)) = asked() {
                                                 ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, files));
-                                                ctx.send(text, shell);
+                                                match shown {
+                                                    Some(shown) => ctx.send_shown(text, shown, shell),
+                                                    None => ctx.send(text, shell),
+                                                }
                                             }
                                         }
                                         _ => navigate("/settings"),
@@ -1535,7 +1560,27 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
 
 #[cfg(test)]
 mod tests {
-    use super::{ToolCall, process_summary, tool_label, tool_texts};
+    use super::{ChatItem, ToolCall, process_summary, tool_label, tool_texts};
+
+    #[test]
+    fn a_retry_sends_the_request_and_shows_the_name_again() {
+        let plain = ChatItem::user("u1".into(), "make a page".into())
+            .with_attachments(vec!["a.png".into()]);
+        assert_eq!(
+            plain.retry(),
+            Some(("make a page".into(), None, vec!["a.png".into()]))
+        );
+        let prepared = ChatItem::user("u2".into(), "Save as skill".into())
+            .with_sent(Some("# Save this project as a skill …".into()));
+        assert_eq!(
+            prepared.retry(),
+            Some((
+                "# Save this project as a skill …".into(),
+                Some("Save as skill".into()),
+                Vec::new()
+            ))
+        );
+    }
 
     #[test]
     fn the_process_line_says_how_long_and_how_many_steps() {

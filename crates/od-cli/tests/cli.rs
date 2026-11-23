@@ -591,8 +591,16 @@ fn skill_install_copies_a_folder_into_the_user_skills() {
     );
     let installed = d._tmp.path().join("data/skills/tea-house");
     assert!(installed.join("assets/tokens.css").is_file());
-    // --json gives the id; installing again replaces the copy.
-    let res = od_json(&d, &["skill", "install", dir.to_str().unwrap()]);
+    // The same id again keeps the installed skill, unless --replace.
+    let out = od(&d, &["skill", "install", dir.to_str().unwrap()]);
+    assert!(
+        !out.status.success(),
+        "a personal skill is not replaced unasked"
+    );
+    let res = od_json(
+        &d,
+        &["skill", "install", "--replace", dir.to_str().unwrap()],
+    );
     assert_eq!(res["id"], "tea-house");
     // The bundled `demo` keeps its id.
     std::fs::write(dir.join("SKILL.md"), "---\nname: demo\n---\nMine.\n").unwrap();

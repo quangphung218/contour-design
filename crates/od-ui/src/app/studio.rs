@@ -780,14 +780,32 @@ impl StudioCtx {
 
     /// Sends a user turn, or queues it while a run is going.
     pub fn send(self, text: String, shell: Shell) {
-        self.send_at(text, shell, js_sys::Date::now() as i64, false, None);
+        self.send_at(text, shell, js_sys::Date::now() as i64, false, None, None);
+    }
+
+    /// Sends a prepared turn: the agent gets `text`, the chat shows and
+    /// keeps `shown` (`ChatRequest.shown_message`). Not queued behind a
+    /// running turn, as the queue keeps only what it shows.
+    pub fn send_shown(self, text: String, shown: String, shell: Shell) {
+        if self.live_run.get_untracked().is_some() {
+            return;
+        }
+        self.send_at(
+            text,
+            shell,
+            js_sys::Date::now() as i64,
+            false,
+            None,
+            Some(shown),
+        );
     }
 
     /// [`Self::send`] for a turn the user sent at `sent_at` (epoch ms):
     /// a queued message keeps its own time for Recent projects, and
     /// `from_queue` marks it as not sent by the reader just now. `clear`, a
     /// patch of the project, goes to the server first, in the same work as
-    /// the run (the brief from Home: see [`Self::load`]).
+    /// the run (the brief from Home: see [`Self::load`]). `shown`: what
+    /// the chat shows instead of `text` ([`Self::send_shown`]).
     fn send_at(
         self,
         text: String,
@@ -795,6 +813,7 @@ impl StudioCtx {
         sent_at: i64,
         from_queue: bool,
         clear: Option<serde_json::Value>,
+        shown: Option<String>,
     ) {
         let text = text.trim().to_owned();
         if text.is_empty() {
@@ -823,7 +842,12 @@ impl StudioCtx {
         let turn = RwSignal::new(AssistantTurn::new());
         let files = self.tools.attachments.get_untracked();
         self.items.update(|items| {
-            items.push(ChatItem::user(user_id.clone(), text.clone()).with_attachments(files));
+            let bubble = shown.clone().unwrap_or_else(|| text.clone());
+            items.push(
+                ChatItem::user(user_id.clone(), bubble)
+                    .with_attachments(files)
+                    .with_sent(shown.is_some().then(|| text.clone())),
+            );
             items.push(ChatItem::assistant(assistant_id.clone(), turn));
         });
         if from_queue {
@@ -851,6 +875,7 @@ impl StudioCtx {
         let req = ChatRequest {
             agent_id,
             message: extras.message,
+            shown_message: shown.clone(),
             project_id: self.project_id.get_value(),
             conversation_id: self.conversation_id.get_untracked(),
             user_message_id: Some(user_id),
@@ -924,7 +949,7 @@ impl StudioCtx {
                         .update(|c| c.retain(|x| !staged.contains(x)));
                     self.conversation_id.set(Some(res.conversation_id));
                     turn.update(|t| t.run_id = Some(res.run_id.clone()));
-                    self.attach(res.run_id, turn, Some(text));
+                    self.attach(res.run_id, turn, Some(shown.unwrap_or(text)));
                     // The daemon moves them to applying, then resolved or
                     // back to attached when the run ends; mirror it here.
                     self.comments.update(|list| {
@@ -1087,7 +1112,7 @@ impl StudioCtx {
             .queue
             .try_update(|q| (!q.is_empty()).then(|| q.remove(0)));
         if let Some(Some(next)) = next {
-            self.send_at(next.text, shell, next.sent_at, auto, None);
+            self.send_at(next.text, shell, next.sent_at, auto, None, None);
         }
     }
 
@@ -1714,7 +1739,7 @@ impl StudioCtx {
                 self.chat.context.set(context);
             }
             let now = js_sys::Date::now() as i64;
-            self.send_at(prompt, shell, now, false, Some(patch));
+            self.send_at(prompt, shell, now, false, Some(patch), None);
         }
     }
 }
