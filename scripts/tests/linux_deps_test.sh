@@ -107,7 +107,9 @@ SH
 chmod +x "$work/bin/apt-get"
 PATH="$work/bin:$PATH" APT_RETRY_SECONDS=0 APT_BUDGET_SECONDS=2 "$script" > "$work/out" 2>&1
 rc=$?
-check "APT_BUDGET_SECONDS: the first try gets the budget, not the step limit" '[ "$(sed -n "s/^limit //p" "$work/calls" | head -n1)" = 2 ]'
+# Bash's $SECONDS can tick between the start and the first try, so the
+# first try gets 2 or 1; the point is that it is not the 600 s step limit.
+check "APT_BUDGET_SECONDS: the first try gets the budget, not the step limit" 'case "$(sed -n "s/^limit //p" "$work/calls" | head -n1)" in 1|2) true;; *) false;; esac'
 check "APT_BUDGET_SECONDS: no try gets more than what is left" '! sed -n "s/^limit //p" "$work/calls" | awk "\$1 > 2 || \$1 < 1" | grep -q .'
 check "APT_BUDGET_SECONDS: spent, the script stops with an error about the mirror" '[ $rc -ne 0 ] && grep -q "^::error::linux-deps: apt-get update did not finish within APT_BUDGET_SECONDS=2: the Ubuntu package mirror is slow" "$work/out" && ! grep -q "apt-get .* install" "$work/calls"'
 rm -rf "$work"

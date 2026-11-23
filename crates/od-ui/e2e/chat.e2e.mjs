@@ -48,6 +48,8 @@ async function until(fn, label, timeout = 10_000) {
   throw new Error(`timed out waiting for ${label}`);
 }
 
+const expectPoll = (fn, want, label) => until(async () => (await fn()) === want, label);
+
 const api = async (path, init) => {
   const r = await fetch(BASE + path, init);
   return r.json();
@@ -421,6 +423,54 @@ try {
   await composer.fill('');
   results.quote = 'ok';
   await page.screenshot({ path: OUT + 'b3-studio-light.png' });
+
+  // 13c2. Skills suggested from the prompt's words (bundled triggers):
+  // nothing is staged until a chip is clicked, a dismissed one stays away
+  // while the draft lasts, and a taken one goes out in `skillIds`.
+  {
+    const turns = await page.getByTestId('assistant-msg').count();
+    const suggestion = (id) => page.locator(`[data-testid="skill-suggestion"][data-id="${id}"]`);
+    const prompt = 'make an interactive chart with d3 for sales';
+    await composer.fill('');
+    await composer.pressSequentially(prompt);
+    await page.getByTestId('skill-suggestion').first().waitFor();
+    assert.equal(await page.getByTestId('skill-suggestion').first().getAttribute('data-id'), 'd3-visualization');
+    assert.ok((await page.getByTestId('skill-suggestion').count()) <= 2, 'two chips at most');
+    assert.equal(await page.getByTestId('context-chip').count(), 0, 'a suggestion stages nothing');
+    assert.equal(await composer.inputValue(), prompt, 'a suggestion types nothing');
+    // The name of the chip is its visible text.
+    await page.getByRole('button', { name: 'Use skill: d3-visualization' }).waitFor();
+    // A short prompt suggests nothing.
+    await composer.fill('hello there');
+    await expectPoll(() => page.getByTestId('skill-suggestion').count(), 0, 'no chips for "hello there"');
+    // Dismissed: typing on (until another skill is offered, so the list
+    // was worked out again) does not bring it back.
+    await composer.fill(prompt);
+    await suggestion('d3-visualization').waitFor();
+    await suggestion('d3-visualization').getByTestId('skill-suggestion-dismiss').click();
+    await suggestion('d3-visualization').waitFor({ state: 'detached' });
+    await composer.press('End');
+    await composer.pressSequentially(', then redesign existing project pages');
+    await suggestion('redesign-existing-projects').waitFor();
+    assert.equal(await suggestion('d3-visualization').count(), 0, 'a dismissed skill stays away');
+    // A new draft offers it again; taking it mentions it like `@` does.
+    await composer.fill('');
+    await composer.pressSequentially(prompt);
+    await suggestion('d3-visualization').waitFor();
+    await page.screenshot({ path: OUT + 'skill-suggest-light.png' });
+    await suggestion('d3-visualization').getByTestId('skill-suggestion-take').click();
+    await page.locator('[data-testid="context-chip"][data-kind="skill"]', { hasText: 'd3-visualization' }).waitFor();
+    assert.equal(await composer.inputValue(), `${prompt} @d3-visualization `);
+    await suggestion('d3-visualization').waitFor({ state: 'detached' });
+    await composer.press('Enter');
+    await lastTurnDone(turns + 1);
+    assert.deepEqual(runBodies.at(-1).skillIds, ['d3-visualization']);
+    await expectPoll(() => page.getByTestId('skill-suggestion').count(), 0, 'chips gone with the sent draft');
+    while ((await page.getByTestId('context-chip').count()) > 0) {
+      await page.getByTestId('context-chip').first().locator('.chip-x').click();
+    }
+    results.skillSuggestions = 'ok';
+  }
 
   // 13d. Stick to the bottom: scrolled up while a run streams, new output
   // keeps the reader's place and offers "Jump to latest", which goes back
