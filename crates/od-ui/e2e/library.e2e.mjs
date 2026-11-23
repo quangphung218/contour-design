@@ -400,6 +400,20 @@ try {
   assert.ok(await saveSkill.isDisabled(), 'off while a turn runs');
   await plusMenu.click();
   await until(async () => (await teaTurn.getAttribute('data-state')) === 'succeeded', 'second tea turn ends', 30_000);
+  // The user's own draft: text, an @ skill chip and a file. Saving as a
+  // skill is not that message: it leaves all three in the composer.
+  const draftText = 'redo the hero with @web-cl';
+  await teaComposer.fill('');
+  await teaComposer.pressSequentially(draftText);
+  await page.locator('[data-testid="mention-item"]').first().filter({ hasText: 'web-clone' }).waitFor();
+  await teaComposer.press('Enter');
+  const draftChip = page.locator('[data-testid="context-chip"][data-kind="skill"]').getByText('web-clone');
+  await draftChip.waitFor();
+  const draftValue = await teaComposer.inputValue();
+  await page.getByTestId('file-input').setInputFiles({ name: 'draft-ref.png', mimeType: 'image/png', buffer: PNG });
+  // Uploaded, the file shows as an attachment of the draft.
+  const draftFile = page.locator('[data-testid="attachment-chip"][title*="draft-ref"]');
+  await draftFile.waitFor();
   await plusMenu.click();
   await until(async () => !(await saveSkill.isDisabled()), 'on after a finished turn');
   await page.locator('.plus-menu').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
@@ -415,7 +429,9 @@ try {
   assert.ok(sent.includes('generated-skill/<id>/SKILL.md') && sent.includes('od skill install'), 'the prepared turn is sent');
   assert.ok(sent.includes('"Tea house"'), 'it names the project');
   assert.equal(sentBody.shownMessage, 'Save as skill');
-  assert.equal(await teaComposer.inputValue(), '', 'the composer is left alone');
+  assert.deepEqual(sentBody.attachments ?? [], [], "the draft's file does not go with it");
+  assert.deepEqual(sentBody.skillIds ?? [], [], "the draft's @ skill does not go with it");
+  assert.deepEqual(sentBody.commentAttachments ?? [], [], 'no attached comment goes with it');
   // The chat shows the action's name, not the instructions to the agent.
   const bubble = page.getByTestId('user-msg').last();
   await until(async () => (await bubble.textContent()).trim() === 'Save as skill', 'the bubble shows the name');
@@ -423,6 +439,9 @@ try {
   const skillTurn = page.getByTestId('assistant-msg').last();
   await until(async () => (await skillTurn.getAttribute('data-state')) === 'succeeded', 'save-as-skill turn ends', 30_000);
   await skillTurn.filter({ hasText: 'Installed: {id:tea-house}' }).waitFor();
+  assert.equal(await teaComposer.inputValue(), draftValue, 'the draft text stays');
+  assert.ok(await draftChip.isVisible(), 'the @ chip stays');
+  assert.ok(await draftFile.isVisible(), 'the file stays');
   assert.ok(existsSync(join(data, 'skills', 'tea-house', 'assets', 'tokens.css')), 'side file installed');
   // A turn that wrote only its skill is no design turn: its entry is not
   // checked, so no "did not update index.html" warning.

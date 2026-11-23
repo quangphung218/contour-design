@@ -840,12 +840,20 @@ impl StudioCtx {
         let user_id = api::random_id();
         let assistant_id = api::random_id();
         let turn = RwSignal::new(AssistantTurn::new());
-        let files = self.tools.attachments.get_untracked();
+        // A prepared turn ([`Self::send_shown`]) is not the user's draft: it
+        // takes none of the composer's files, attached comments or @ chips,
+        // and leaves them all where they are for the user's own message.
+        let bare = shown.is_some();
+        let files = if bare {
+            Vec::new()
+        } else {
+            self.tools.attachments.get_untracked()
+        };
         self.items.update(|items| {
             let bubble = shown.clone().unwrap_or_else(|| text.clone());
             items.push(
                 ChatItem::user(user_id.clone(), bubble)
-                    .with_attachments(files)
+                    .with_attachments(files.clone())
                     .with_sent(shown.is_some().then(|| text.clone())),
             );
             items.push(ChatItem::assistant(assistant_id.clone(), turn));
@@ -864,14 +872,22 @@ impl StudioCtx {
                 .unwrap_or_default()
         });
         // Mentioned skills, plugin and MCP servers still in the text.
-        let staged = self.chat.context.get_untracked();
+        let staged = if bare {
+            Vec::new()
+        } else {
+            self.chat.context.get_untracked()
+        };
         let extras = crate::mention::extras(&staged, &text);
-        let attached: Vec<PreviewComment> = self.comments.with_untracked(|c| {
-            c.iter()
-                .filter(|c| c.status == CommentStatus::Attached)
-                .cloned()
-                .collect()
-        });
+        let attached: Vec<PreviewComment> = if bare {
+            Vec::new()
+        } else {
+            self.comments.with_untracked(|c| {
+                c.iter()
+                    .filter(|c| c.status == CommentStatus::Attached)
+                    .cloned()
+                    .collect()
+            })
+        };
         let req = ChatRequest {
             agent_id,
             message: extras.message,
@@ -897,7 +913,7 @@ impl StudioCtx {
             session_mode: Some(self.session_mode.get_untracked()),
             attachments: {
                 // Images on the attached comments go along too.
-                let mut files = self.tools.attachments.get_untracked();
+                let mut files = files.clone();
                 for path in attached_images(&attached) {
                     if !files.contains(&path) {
                         files.push(path);
