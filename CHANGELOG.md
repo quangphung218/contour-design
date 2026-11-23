@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep a page's history and comments when an agent renames, moves or deletes it by a name differing in case or Unicode form (#311).
+
 ## [0.2.0-beta.57] - 2026-11-23
 
 ### Fixed
@@ -15,7 +19,6 @@ All notable changes to Contour are recorded here. The format follows
 - Treat names differing only in case or Unicode form as one file on every OS; changing a folder name's case works on macOS (#307).
 - Open the right page after importing a ZIP whose folder is spelled in two cases, like `A/` and `a/` (#309).
 - Refuse installing a plugin whose id differs only in case from an installed one, instead of deleting it (#308).
-- Keep a page's history and comments when an agent renames, moves or deletes it by a name differing in case or Unicode form (#311).
 
 ## [0.2.0-beta.56] - 2026-11-23
 
