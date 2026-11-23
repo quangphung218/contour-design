@@ -222,6 +222,31 @@ html,body{margin:0;height:100%;overflow:hidden;background:#222}
 </div></div></div></div></div></div></div></div></div></div></div></div>
 </div></div><div class="nav"></div></body></html>"#;
 
+/// [`CONTAINING_CHAIN`] with the properties that start a stacking context
+/// but hold no fixed box, one per nested parent: inside one, the shown
+/// slide's `z-index` only counts within that parent, so a large deck
+/// control outside it (`.nav`, `z-index: 10`) drew over the screenshot.
+const STACKING_CHAIN: &str = r#"<!doctype html><html><head><style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#222}
+.deck{display:flex;flex-direction:column;width:100vw;height:100vh}
+.banner{flex:0 0 160px;background:#111}
+.chain{flex:1;min-height:0}.chain div{height:100%}
+.k-z{position:relative;z-index:1}.k-opacity{opacity:.999}.k-isolation{isolation:isolate}
+.k-clip{clip-path:inset(0)}.k-mask{mask-image:linear-gradient(#000,#000)}
+.chain .stage{display:flex}
+.slide{min-width:100vw;height:100%;position:relative;overflow:hidden;font:72px sans-serif;padding:64px}
+.s1{background:#f4efe6;color:#1c1b1a}.s2{background:#e8f0e0;color:#1c1b1a}.s3{background:#f0e0e8;color:#1c1b1a}
+.nav{position:fixed;right:40px;bottom:40px;width:800px;height:400px;background:#111;z-index:10}
+</style></head><body><div class="deck"><div class="banner"></div><div class="chain">
+<div class="k-z"><div class="k-opacity"><div class="k-isolation"><div class="k-clip"><div class="k-mask">
+<div class="stage">
+<section class="slide s1">One</section>
+<section class="slide s2">Two</section>
+<section class="slide s3">Three</section>
+</div></div></div></div></div></div>
+</div></div><div class="nav"></div></body></html>"#;
+
 /// [`SCRIPT_FOLLOWS_ACTIVE`] with the strip's move animated
 /// (`transition: transform`) and navigation dots whose transitions the
 /// script sets off with it, as `kami-deck` has: the export ended both,
@@ -442,6 +467,11 @@ fn decks() -> Vec<Deck> {
             (
                 "containing-chain",
                 CONTAINING_CHAIN,
+                vec![[244, 239, 230], [232, 240, 224], [240, 224, 232]],
+            ),
+            (
+                "stacking-chain",
+                STACKING_CHAIN,
                 vec![[244, 239, 230], [232, 240, 224], [240, 224, 232]],
             ),
             (

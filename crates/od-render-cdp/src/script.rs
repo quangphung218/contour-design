@@ -116,7 +116,9 @@ const ACTIVE_CLASSES: &str = r#"["active", "is-active", "current", "present"]"#;
 /// `rotate`, `scale`, `perspective`, `transform-style: preserve-3d`),
 /// `filter`, `backdrop-filter`, `contain`, `content-visibility` and
 /// `will-change` (`ib-pitch-book`'s `will-change` drew its banner and
-/// controls over the slide; review of #287). `container-type` holds none in
+/// controls over the slide; review of #287), and `opacity`, `isolation`,
+/// `z-index`, `mix-blend-mode`, `clip-path` and `mask`, which start a stacking
+/// context the slide's `z-index` cannot leave. `container-type` holds none in
 /// Chrome (probed). The deck's own "active" classes move to slide `i`. The ancestors are held again after the animations end: a deck
 /// script that follows the classes can set its strip's inline `transform` in
 /// between (`kami-deck`; review of #285). They lose their `transition` too:
@@ -156,11 +158,13 @@ pub fn show_slide(i: usize, w: u32, h: u32) -> String {
   const hold = () => {{
     for (let a = slide && slide.parentElement; a; a = a.parentElement) {{
       // Each of these but `transition` makes `a` hold the slide's `position:
-      // fixed` (and its stacking); a held transform would start a transition.
+      // fixed` or its stacking (from `opacity` on: a deck control outside `a`
+      // drew over the slide); a held transform would start a transition.
       for (const [p, v] of [['transition', 'none'], ['transform', 'none'], ['translate', 'none'], ['rotate', 'none'],
           ['scale', 'none'], ['perspective', 'none'], ['transform-style', 'flat'], ['filter', 'none'],
           ['backdrop-filter', 'none'], ['contain', 'none'], ['content-visibility', 'visible'],
-          ['will-change', 'auto']]) {{
+          ['will-change', 'auto'], ['opacity', '1'], ['isolation', 'auto'], ['z-index', 'auto'],
+          ['mix-blend-mode', 'normal'], ['clip-path', 'none'], ['mask', 'none']]) {{
         a.style.setProperty(p, v, 'important');
       }}
     }}
