@@ -272,10 +272,14 @@ pub fn is_markdown(path: &str) -> bool {
     lower.ends_with(".md") || lower.ends_with(".markdown")
 }
 
-/// `dir/stem.ext`, or `dir/stem-2.ext`… when taken in `existing`.
+/// `dir/stem.ext`, or `dir/stem-2.ext`… when taken in `existing`: by
+/// [`od_contracts::name_key`], as the daemon takes it on every disk
+/// (`Ébauche.md` is `ébauche.md`, NFC is NFD).
 #[must_use]
 pub fn free_name(existing: &[String], dir: &str, stem: &str, ext: &str) -> String {
-    let taken = |p: &str| existing.iter().any(|e| e.eq_ignore_ascii_case(p));
+    let existing: std::collections::HashSet<String> =
+        existing.iter().map(|e| od_contracts::name_key(e)).collect();
+    let taken = |p: &str| existing.contains(&od_contracts::name_key(p));
     let first = join(dir, &format!("{stem}.{ext}"));
     if !taken(&first) {
         return first;
@@ -437,6 +441,13 @@ mod tests {
             "docs/Brief-3.md"
         );
         assert_eq!(free_name(&existing, "", "Brief", "md"), "Brief.md");
+        // Not ASCII: case and Unicode form (NFD, as macOS sends) count too.
+        let existing = v(&["\u{c9}bauche.md", "Me\u{301}mo.md"]);
+        assert_eq!(free_name(&existing, "", "ébauche", "md"), "ébauche-2.md");
+        assert_eq!(
+            free_name(&existing, "", "M\u{e9}mo", "md"),
+            "M\u{e9}mo-2.md"
+        );
         assert_eq!(stem_of_title("  Launch plan: v2 "), "Launch-plan-v2");
         assert_eq!(stem_of_title("../"), "untitled");
     }

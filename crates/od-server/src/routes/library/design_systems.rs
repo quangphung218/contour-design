@@ -50,6 +50,7 @@ use od_contracts::{ContentSource, CreateProjectRequest, ProjectMetadata, RunStat
 use od_runs::RunMeta;
 use od_runtime::env::{RunEnv, agent_env};
 use od_runtime::{LaunchSpec, McpLaunch, PermissionMode};
+use od_store::paths::name_key;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
@@ -760,14 +761,6 @@ pub(crate) fn kept_name(raw: &str) -> Option<String> {
     (!base.is_empty() && !base.starts_with('.')).then(|| od_store::paths::upload_name(base))
 }
 
-/// The key two names are one file under: NFC (macOS may send `mẫu`
-/// decomposed, and APFS takes both forms as one name), ignoring case as
-/// macOS and Windows disks do.
-fn same_file_key(name: &str) -> String {
-    use unicode_normalization::UnicodeNormalization as _;
-    name.nfc().collect::<String>().to_lowercase()
-}
-
 /// Refuses a batch two of whose files would be kept under one name: the
 /// second would be written over the first (QA-107).
 pub(crate) fn refuse_same_name<'a>(
@@ -775,7 +768,7 @@ pub(crate) fn refuse_same_name<'a>(
 ) -> ApiResult<()> {
     let mut seen: HashMap<String, &str> = HashMap::new();
     for (raw, name) in names {
-        if let Some(first) = seen.insert(same_file_key(name), raw) {
+        if let Some(first) = seen.insert(name_key(name), raw) {
             return Err(ApiErr::bad_request(format!(
                 "{first} and {raw} would both be saved as {name}. Rename one, then try again."
             )));
@@ -867,7 +860,7 @@ fn replaced_asset(
     sent_names: &BTreeMap<String, String>,
     sent: &str,
 ) -> Option<String> {
-    let key = same_file_key(sent);
+    let key = name_key(sent);
     let mut on_disk: Vec<String> = std::fs::read_dir(assets)
         .ok()?
         .filter_map(Result::ok)
@@ -893,7 +886,7 @@ fn replaced_asset(
         .iter()
         .find(|n| sent_as(n) == sent)
         .or_else(|| on_disk.iter().find(|n| nfc(&sent_as(n)) == nfc(sent)))
-        .or_else(|| on_disk.iter().find(|n| same_file_key(&sent_as(n)) == key))
+        .or_else(|| on_disk.iter().find(|n| name_key(&sent_as(n)) == key))
         .cloned()
 }
 
@@ -990,7 +983,7 @@ pub async fn upload_assets(
             None => Target::New(name.clone()),
         });
     }
-    let batch: Vec<String> = parts.iter().map(|(_, n, _)| same_file_key(n)).collect();
+    let batch: Vec<String> = parts.iter().map(|(_, n, _)| name_key(n)).collect();
     // A write that fails half way keeps those before it, and their sent
     // names: Try again replaces them, adding none.
     let mut saved = Vec::with_capacity(parts.len());
@@ -1031,13 +1024,22 @@ async fn write_new_asset(
     bytes: &[u8],
 ) -> ApiResult<String> {
     use tokio::io::AsyncWriteExt as _;
-    let own = same_file_key(name);
+    let own = name_key(name);
     for candidate in candidate_names(name) {
-        let key = same_file_key(&candidate);
+        let key = name_key(&candidate);
         if key != own && batch.contains(&key) {
             continue;
         }
         let path = inside(dir, &format!("{ASSETS_DIR}/{candidate}"))?;
+        // Taken under another case or form (`Logo-1.png` on Linux): the
+        // next one, as a Mac's disk would refuse it.
+        if path
+            .parent()
+            .and_then(|assets| od_store::paths::entry_named(assets, &candidate))
+            .is_some()
+        {
+            continue;
+        }
         let opened = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

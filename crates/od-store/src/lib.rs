@@ -16,6 +16,8 @@ mod history_tests;
 pub mod manage;
 pub mod memory;
 pub mod memory_index;
+#[cfg(test)]
+mod name_key_tests;
 pub mod paths;
 pub mod setup;
 pub mod store;
