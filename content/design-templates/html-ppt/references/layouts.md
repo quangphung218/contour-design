@@ -32,10 +32,10 @@ Shared CSS (base, theme, animations) is already wired by `deck.html`.
 | `stat-highlight.html` | One giant number + subtitle (uses `.counter` animation). |
 | `kpi-grid.html` | 4 KPIs in a row with up/down deltas. |
 | `table.html` | Data table with hover rows, right-aligned numerics. |
-| `chart-bar.html` | Chart.js bar chart, theme-aware colors. |
-| `chart-line.html` | Chart.js dual-line chart with filled area. |
-| `chart-pie.html` | Chart.js doughnut + takeaways card. |
-| `chart-radar.html` | Chart.js radar comparing 2 products on 6 axes. |
+| `chart-bar.html` | Inline SVG bar chart, theme-aware colors. |
+| `chart-line.html` | Inline SVG dual-line chart with filled area. |
+| `chart-pie.html` | Inline SVG doughnut + takeaways card. |
+| `chart-radar.html` | Inline SVG radar comparing 2 products on 6 axes. |
 
 ## Code & terminal
 

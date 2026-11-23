@@ -52,6 +52,12 @@ html-ppt-retro-quarterly-review/
 └── example.html
 ```
 
+The motion in `assets/template.html` runs on a small runtime inlined in a
+`<script>` in its `<head>`: the GSAP calls the template makes (see its
+comment). Keep it inline and add no CDN `<script>`: the preview blocks every
+request outside the project. For more of GSAP, put `gsap.min.js` next to
+`index.html` and load it before the runtime, which then steps aside.
+
 ## Workflow
 
 1. Read active `DESIGN.md` first and map any requested token changes into CSS

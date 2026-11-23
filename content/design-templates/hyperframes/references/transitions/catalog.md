@@ -39,7 +39,8 @@ Shader setup, WebGL init, capture, and fragment shaders are handled by `@hyperfr
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <!-- GSAP from the project folder: the preview loads nothing from a CDN. -->
+    <script src="./gsap.min.js"></script>
     <style>
       body {
         margin: 0;

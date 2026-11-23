@@ -95,4 +95,4 @@ Each folder: `index.html`, scoped `style.css` (prefixed `.tpl-<name>`), `README.
 - Every template scopes its CSS under `.tpl-<name>` so two or more templates can load on the same page without collisions.
 - Swap demo content, but keep the structural classes — they are what gives each template its identity.
 - The shared runtime (`assets/runtime.js`) provides keyboard nav, fullscreen, overview grid, theme cycling — you don't need to add any JS.
-- Charts are hand-rolled SVG (no CDN dependency). Feel free to replace with chart.js / echarts if you need interactive data.
+- Charts are hand-rolled SVG (no CDN dependency). For interactive data, chart.js / echarts work only from a copy in the project folder: the preview loads nothing from a CDN.

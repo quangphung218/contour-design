@@ -58,18 +58,21 @@ COMP_REL=".hyperframes-cache/$(date +%s)-$(openssl rand -hex 2)"
 COMP="$OD_PROJECT_DIR/$COMP_REL"
 
 # 2. Get an immediately-renderable scaffold (hyperframes.json,
-#    meta.json, index.html with GSAP CDN + window.__timelines.main
-#    already registered). Open Design writes these files itself; it does
-#    not run `hyperframes init`, consult an npx cache, or install global skills.
+#    meta.json, index.html with a library-free timeline already
+#    registered as window.__timelines.main). Open Design writes these
+#    files itself; it does not run `hyperframes init`, consult an npx
+#    cache, or install global skills. Nothing loads from a CDN: the
+#    preview blocks it.
 "$OD_NODE_BIN" "$OD_BIN" media scaffold \
   --project "$OD_PROJECT_ID" \
   --composition-dir "$COMP_REL"
 
 # 3. Edit ONLY $COMP/index.html — change `data-duration` on the root
 #    if you need a non-default length, swap the placeholder palette
-#    in <style>, add 1–3 clip <div>s for text/imagery, and append the
-#    matching GSAP tweens inside the existing
-#    `window.__timelines["main"] = gsap.timeline({paused:true})` block.
+#    in <style>, add 1–3 clip <div>s for text/imagery, and draw them
+#    from `t` in the scaffold's `draw(t)`. GSAP is not bundled: use it
+#    only from a gsap.min.js next to index.html
+#    (`<script src="./gsap.min.js">`), never from a CDN.
 #    Keep edits minimal; the scaffold is already valid HF.
 
 # 4. Dispatch render through the OD daemon. Do NOT run HyperFrames
@@ -289,7 +292,8 @@ Sub-composition structure:
         /* scoped styles */
       }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <!-- GSAP from the project folder: the preview loads nothing from a CDN. -->
+    <script src="./gsap.min.js"></script>
     <script>
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
