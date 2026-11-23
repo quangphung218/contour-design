@@ -60,3 +60,8 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: scripts/commitlint.sh "$BASE" "$HEAD"
+      - name: CHANGELOG lines under [Unreleased]
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/changelog-placement.sh "$BASE" "$HEAD"

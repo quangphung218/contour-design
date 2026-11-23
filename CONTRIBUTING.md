@@ -54,7 +54,9 @@ Also:
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
 in the Angular style. CI checks every commit of a pull request with
 commitlint ([commitlint.config.mjs](commitlint.config.mjs)); run
-`make commitlint` to check your branch against `main` locally.
+`make commitlint` to check your branch against `main` locally. `make hooks`
+turns on a pre-push hook that runs commitlint, the CHANGELOG checks and,
+after a `Cargo.lock` change, `scripts/licenses.py check`.
 
 ```
 type(scope): subject
