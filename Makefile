@@ -21,7 +21,7 @@ BUNDLE_DIR = $(CARGO_TARGET_DIR)/$(1)/bundle
 
 .DEFAULT_GOAL := help
 .PHONY: help setup dev run quick check test e2e e2e-qa demo-gif lint fmt clippy clippy-wasm deny ui-dist ui-release \
-	app-debug app-release dmg install clean version ci links commitlint test-scripts licenses
+	app-debug app-release dmg install clean version ci links commitlint test-scripts licenses hooks
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -86,6 +86,9 @@ links: ## Check that relative links in the docs resolve
 
 commitlint: ## Check commit messages since main (Conventional Commits)
 	@scripts/commitlint.sh main HEAD
+
+hooks: ## Use .githooks (pre-push: commitlint, CHANGELOG, licenses) in this clone and its worktrees
+	@git config core.hooksPath .githooks && echo "hooks: .githooks/pre-push is on"
 
 # apps/desktop bundles crates/od-ui/dist (gitignored); build it once if missing.
 ui-dist:
