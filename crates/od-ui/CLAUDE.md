@@ -20,8 +20,8 @@ Paths below are relative to this folder.
    Only the UI part is guarded. Raw spawners are banned in `clippy.toml` (`disallowed-methods`).
    - `src/app/tasks.rs::work_runs_to_its_end_after_the_screen_went_and_ui_does_not`
    - `tests/task_kinds.rs` (source scan: a write a `spawn` task reaches only after another `await`;
-     a site that may stay is listed in `KEPT` with why), `src/app/tasks.rs::no_save_runs_in_a_task_that_ends_with_its_screen`
-   - e2e `e2e/qa/leave.qa.mjs:"LV-08"`
+     a site that may stay is listed in `KEPT` with the tasks that spawn it and why)
+   - e2e `e2e/qa/leave.qa.mjs:"LV-08"`, `"LV-19"`, `"LV-20"`
 2. A config save sends only the changed leaves: `next.patch_since(base)`, a dropped key as `null`, arrays whole.
    Never send `to_patch()` (`src/settings.rs:AppConfig::patch_since`).
    - `src/settings.rs::patch_since_sends_only_changed_keys`, `src/settings.rs::patch_since_clears_dropped_keys`
