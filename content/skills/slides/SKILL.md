@@ -7,6 +7,8 @@ triggers:
   - "pptxgenjs"
   - "sales deck"
   - "design showcase deck"
+  - "pitch deck"
+  - "investor deck"
 od:
   mode: deck
   category: slides

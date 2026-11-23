@@ -18,6 +18,11 @@ example_tagline: "X dark mode + 互动数据"
 example_desc: "一条金句推文 + 12.3K likes / 1.2K reposts + 蓝勾"
 example_source_url: "https://hyperframes.heygen.com/catalog"
 example_source_label: "hyperframes · x-post"
+triggers:
+  - "social post"
+  - "social media post"
+  - "tweet"
+  - "x post"
 od:
   mode: prototype
   surface: web

@@ -18,6 +18,12 @@ example_tagline: "8 帧自动播放, 含进度条 + 元数据"
 example_desc: "电影感动画脚本, 可直接喂给 Remotion 做成 mp4"
 example_source_url: "https://github.com/heygen-com/hyperframes"
 example_source_label: "heygen-com/hyperframes"
+triggers:
+  - "product video"
+  - "launch video"
+  - "promo video"
+  - "explainer video"
+  - "animated text"
 od:
   mode: video
   surface: video
