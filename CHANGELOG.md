@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.56] - 2026-11-23
+
 ### Fixed
 
 - Upload every file attached in the chat even if the Studio is left while the first one uploads (#300).
@@ -1374,7 +1376,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.55...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.56...HEAD
+[0.2.0-beta.56]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.55...v0.2.0-beta.56
 [0.2.0-beta.55]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.54...v0.2.0-beta.55
 [0.2.0-beta.54]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.53...v0.2.0-beta.54
 [0.2.0-beta.53]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.51...v0.2.0-beta.53
