@@ -7,6 +7,8 @@ triggers:
   - "improve current UI"
   - "premium redesign"
   - "audit UI"
+  - "redesign"
+  - "homepage redesign"
 od:
   mode: prototype
   surface: web

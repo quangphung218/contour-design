@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Added
 
 - Suggest up to two skills under the composer from words in the prompt that match their triggers; click to mention one.
+- Skill suggestions understand common Vietnamese topic words and cover decks, dashboards, onboarding, video, posters, resumes and logos.
 
 ## [0.2.0-beta.57] - 2026-11-23
 

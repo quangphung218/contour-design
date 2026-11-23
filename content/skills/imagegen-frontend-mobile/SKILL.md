@@ -7,6 +7,9 @@ triggers:
   - "mobile UI concept"
   - "ios app mockup"
   - "android app mockup"
+  - "onboarding"
+  - "onboarding flow"
+  - "app onboarding"
 od:
   mode: image
   surface: image

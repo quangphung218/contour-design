@@ -16,6 +16,10 @@ example_name: "极简简历 · 前端工程师"
 example_format: markdown
 example_tagline: "A4 单页, 可打印 / 导出 PDF"
 example_desc: "高级前端工程师简历, 两栏布局, 数字成就高亮"
+triggers:
+  - "resume"
+  - "cv"
+  - "curriculum vitae"
 od:
   mode: prototype
   surface: web

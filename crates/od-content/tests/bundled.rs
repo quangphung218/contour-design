@@ -172,13 +172,106 @@ fn assert_same(kind: &str, ours: &BTreeMap<String, Value>, theirs: &BTreeMap<Str
     );
 }
 
+/// Triggers Contour adds to bundled skills so the composer suggests them
+/// for common prompts (`od-ui/tests/skill_suggest.rs`); the original app
+/// never had them.
+const CONTOUR_TRIGGERS: [(&str, &[&str]); 12] = [
+    ("brandkit", &["logo", "logo design", "brand identity"]),
+    (
+        "copywriting",
+        &["marketing email", "email marketing", "newsletter email"],
+    ),
+    (
+        "data-report",
+        &["dashboard", "data report", "kpi report", "infographic"],
+    ),
+    ("frontend-design", &["wireframe"]),
+    (
+        "imagegen-frontend-mobile",
+        &["onboarding", "onboarding flow", "app onboarding"],
+    ),
+    (
+        "mockup-device-3d",
+        &["3d mockup", "device mockup", "iphone mockup"],
+    ),
+    ("poster-hero", &["poster", "share image"]),
+    (
+        "redesign-existing-projects",
+        &["redesign", "homepage redesign"],
+    ),
+    ("resume-modern", &["resume", "cv", "curriculum vitae"]),
+    ("slides", &["pitch deck", "investor deck"]),
+    (
+        "social-x-post-card",
+        &["social post", "social media post", "tweet", "x post"],
+    ),
+    (
+        "video-hyperframes",
+        &[
+            "product video",
+            "launch video",
+            "promo video",
+            "explainer video",
+            "animated text",
+        ],
+    ),
+];
+
+/// `(skill, original trigger, Contour's)`: original triggers Contour
+/// rewrote. "spring" alone suggested a UI animation skill for "spring sale".
+const REWRITTEN_TRIGGERS: [(&str, &str, &str); 1] =
+    [("ui-animation", "spring", "spring animation")];
+
+/// `ours` with Contour's triggers taken out and the rewritten ones put
+/// back as the original wrote them; fails when a listed trigger is not
+/// there, or the original already had it.
+fn as_original_triggers(
+    mut ours: BTreeMap<String, Value>,
+    theirs: &BTreeMap<String, Value>,
+) -> BTreeMap<String, Value> {
+    let list = |m: &BTreeMap<String, Value>, id: &str| -> Vec<Value> {
+        m.get(id)
+            .unwrap_or_else(|| panic!("{id} is a bundled skill"))["triggers"]
+            .as_array()
+            .unwrap()
+            .clone()
+    };
+    for (id, added) in CONTOUR_TRIGGERS {
+        let original = list(theirs, id);
+        let mut triggers = list(&ours, id);
+        for t in added {
+            assert!(
+                !original.contains(&Value::from(*t)),
+                "{id}: the original already has {t:?}"
+            );
+            let at = triggers
+                .iter()
+                .position(|v| v == t)
+                .unwrap_or_else(|| panic!("{id}: no Contour trigger {t:?}"));
+            triggers.remove(at);
+        }
+        ours.get_mut(id).unwrap()["triggers"] = Value::Array(triggers);
+    }
+    for (id, original, contour) in REWRITTEN_TRIGGERS {
+        let mut triggers = list(&ours, id);
+        let at = triggers
+            .iter()
+            .position(|v| v == contour)
+            .unwrap_or_else(|| panic!("{id}: no Contour trigger {contour:?}"));
+        triggers[at] = Value::from(original);
+        ours.get_mut(id).unwrap()["triggers"] = Value::Array(triggers);
+    }
+    ours
+}
+
 #[test]
 fn skills_match_original_loader() {
     let idx = index();
+    let theirs = golden("original-skills.json");
     assert_same(
         "skills",
-        &ours_skills(&idx.skills),
-        &golden("original-skills.json"),
+        &as_original_triggers(ours_skills(&idx.skills), &theirs),
+        &theirs,
     );
 }
 

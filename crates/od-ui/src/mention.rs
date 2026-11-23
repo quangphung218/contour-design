@@ -266,8 +266,10 @@ const SUGGEST_MIN_WORDS: usize = 3;
 /// The skills whose triggers the prompt `text` holds, best first, at most
 /// [`SUGGEST_MAX`]. A trigger matches when its words stand together in
 /// the prompt, case, diacritics and an English plural `s` aside (`d3`
-/// matches "D3 chart", not "d3x"; `animation` matches "animations"); a
-/// skill scores the length of its longest match. Skills in
+/// matches "D3 chart", not "d3x"; `animation` matches "animations"), or
+/// in the prompt with its Vietnamese topic words put in English
+/// ([`VI_EN`]: `chart` matches "biểu đồ"); a skill scores the length of
+/// its longest match. Skills in
 /// `skip` (staged, dismissed) and skills already `@`-mentioned are left
 /// out; `@` words never match. A prompt under three words gets none.
 #[must_use]
@@ -286,6 +288,9 @@ pub fn suggest(text: &str, skills: &[SkillRow], skip: &[String]) -> Vec<Candidat
     if words.len() < SUGGEST_MIN_WORDS {
         return Vec::new();
     }
+    // Triggers written in Vietnamese (a user's own skill) match the words
+    // as typed; the bundled English ones also match them put in English.
+    let english = in_english(words.clone());
     let mut scored: Vec<(usize, usize, &Candidate)> = skills
         .iter()
         .filter(|s| !skip.contains(&s.candidate.id))
@@ -295,7 +300,8 @@ pub fn suggest(text: &str, skills: &[SkillRow], skip: &[String]) -> Vec<Candidat
             let mut hits = 0;
             for trigger in &s.triggers {
                 let tw = words_of(trigger);
-                if !tw.is_empty() && words.windows(tw.len()).any(|w| w == tw.as_slice()) {
+                let holds = |ws: &[String]| ws.windows(tw.len()).any(|w| w == tw.as_slice());
+                if !tw.is_empty() && (holds(&words) || holds(&english)) {
                     hits += 1;
                     best = best
                         .max(tw.iter().map(|w| w.chars().count()).sum::<usize>() + tw.len() - 1);
@@ -314,6 +320,76 @@ pub fn suggest(text: &str, skills: &[SkillRow], skip: &[String]) -> Vec<Candidat
         .take(SUGGEST_MAX)
         .map(|(_, _, c)| c.clone())
         .collect()
+}
+
+/// Vietnamese topic words, as [`words_of`] gives them (lower case, no
+/// diacritics), and the English words the bundled triggers use for them.
+/// A prompt is matched with these put in English; triggers stay as written.
+const VI_EN: &[(&str, &str)] = &[
+    ("anh dong", "animated gif"),
+    ("ap phich", "poster"),
+    ("bai dang", "post"),
+    ("bai dang mang xa hoi", "social media post"),
+    ("bai thuyet trinh", "presentation"),
+    ("bai trinh bay", "presentation"),
+    ("ban phac thao giao dien", "wireframe"),
+    ("bang dieu khien", "dashboard"),
+    ("bao cao du lieu", "data report"),
+    ("bao cao so lieu", "data report"),
+    ("bieu do", "chart"),
+    ("bieu do tuong tac", "interactive chart"),
+    ("bieu tuong", "icon"),
+    ("bo nhan dien", "brand identity"),
+    ("chu chuyen dong", "animated text"),
+    ("do hoa thong tin", "infographic"),
+    ("email quang cao", "marketing email"),
+    ("ghi chu phat hanh", "release notes"),
+    ("goi von", "pitch"),
+    ("hieu ung chuyen dong", "animation"),
+    ("man hinh chao", "onboarding"),
+    ("mang xa hoi", "social media"),
+    ("mo hinh 3d", "3d mockup"),
+    ("nhan dien thuong hieu", "brand identity"),
+    ("phac thao giao dien", "wireframe"),
+    ("slide goi von", "pitch deck"),
+    ("so yeu ly lich", "resume"),
+    ("thiet ke lai", "redesign"),
+    ("thuong hieu", "brand"),
+    ("thuyet trinh", "presentation"),
+    ("trang chu", "homepage"),
+    ("trang dich", "landing page"),
+    ("video gioi thieu", "promo video"),
+];
+
+/// `words` with each [`VI_EN`] phrase in English, the longest phrase
+/// first at each word ("bieu do tuong tac" before "bieu do").
+fn in_english(words: Vec<String>) -> Vec<String> {
+    let mut out = Vec::with_capacity(words.len());
+    let mut i = 0;
+    while i < words.len() {
+        let best = VI_EN
+            .iter()
+            .filter_map(|(vi, en)| {
+                let n = vi.split(' ').count();
+                let here = words.get(i..i + n)?;
+                here.iter()
+                    .map(String::as_str)
+                    .eq(vi.split(' '))
+                    .then_some((n, en))
+            })
+            .max_by_key(|(n, _)| *n);
+        match best {
+            Some((n, en)) => {
+                out.extend(words_of(en));
+                i += n;
+            }
+            None => {
+                out.push(words[i].clone());
+                i += 1;
+            }
+        }
+    }
+    out
 }
 
 /// The words of `text`, lower case without diacritics (precomposed or
@@ -740,6 +816,54 @@ mod tests {
         let nfd =
             "ta\u{323}o ba\u{309}ng ma\u{300}u thu\u{31b}o\u{31b}\u{300}ng hie\u{302}\u{323}u";
         assert_eq!(ids(&suggest(nfd, &all, &[])), want);
+    }
+
+    #[test]
+    fn suggest_reads_vietnamese_topic_words_in_english() {
+        let all = catalogue();
+        // "biểu đồ tương tác" is the longer phrase: "interactive chart".
+        assert_eq!(
+            ids(&suggest("Làm biểu đồ tương tác cho doanh số", &all, &[])),
+            ["d3-visualization", "chart-basics"]
+        );
+        assert_eq!(
+            ids(&suggest("vẽ biểu đồ doanh số tháng này", &all, &[])),
+            ["chart-basics"]
+        );
+        // A phrase of two topic words: "slide gọi vốn" is a pitch deck.
+        assert_eq!(
+            ids(&suggest("làm bộ slide gọi vốn vòng seed", &all, &[])),
+            ["pitch-deck"]
+        );
+        // The words must stand together, as in a trigger.
+        assert!(suggest("biểu tượng đồ ăn cho quán", &all, &[]).is_empty());
+        // A Vietnamese trigger still matches the words as typed, though
+        // "thương hiệu" has an English word ("brand").
+        assert_eq!(
+            ids(&suggest("bảng màu thương hiệu mới", &all, &[])),
+            ["brand-vi"]
+        );
+    }
+
+    #[test]
+    fn in_english_takes_the_longest_phrase_and_keeps_the_rest() {
+        let w = |s: &str| words_of(s);
+        assert_eq!(
+            in_english(w("biểu đồ tương tác và biểu đồ")),
+            w("interactive chart va chart")
+        );
+        assert_eq!(
+            in_english(w("thiết kế lại trang chủ")),
+            w("redesign homepage")
+        );
+        // A phrase cut short at the end stays as typed.
+        assert_eq!(in_english(w("làm bảng điều")), w("lam bang dieu"));
+        // English goes through `words_of` as triggers do: "notes" → "note".
+        assert_eq!(in_english(w("ghi chú phát hành")), w("release notes"));
+        // Every Vietnamese phrase is written as `words_of` gives it.
+        for (vi, _) in VI_EN {
+            assert_eq!(words_of(vi).join(" "), *vi, "{vi}");
+        }
     }
 
     #[test]

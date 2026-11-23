@@ -8,6 +8,9 @@ triggers:
   - "ad copy"
   - "homepage copy"
   - "rewrite copy"
+  - "marketing email"
+  - "email marketing"
+  - "newsletter email"
 od:
   mode: design-system
   category: marketing-creative

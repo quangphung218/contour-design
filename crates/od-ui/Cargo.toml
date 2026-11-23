@@ -97,5 +97,8 @@ web-sys = { version = "0.3", features = [
     "Window",
 ] }
 
+[dev-dependencies]
+od-content.workspace = true
+
 [lints]
 workspace = true

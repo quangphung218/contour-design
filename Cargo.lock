@@ -4459,6 +4459,7 @@ dependencies = [
  "js-sys",
  "leptos",
  "leptos_router",
+ "od-content",
  "od-contracts",
  "pulldown-cmark",
  "send_wrapper",

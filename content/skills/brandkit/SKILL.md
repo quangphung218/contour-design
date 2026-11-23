@@ -7,6 +7,9 @@ triggers:
   - "brand guidelines board"
   - "logo system"
   - "identity board"
+  - "logo"
+  - "logo design"
+  - "brand identity"
 od:
   mode: image
   surface: image
