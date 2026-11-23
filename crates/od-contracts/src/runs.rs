@@ -283,7 +283,13 @@ pub enum SessionMode {
 #[serde(rename_all = "camelCase")]
 pub struct ChatRequest {
     pub agent_id: String,
+    /// What the agent gets as the user's request.
     pub message: String,
+    /// What the chat shows and keeps as the user's message, when it is not
+    /// `message`: a prepared turn (Save as skill) shows its short name, not
+    /// its instructions to the agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown_message: Option<String>,
     pub project_id: String,
     #[serde(default)]
     pub conversation_id: Option<String>,

@@ -1481,6 +1481,7 @@ AddMcpServer = MCP 서버 추가
 ReferenceProject = 다른 프로젝트 참조
 ReferenceProjectText = 프로젝트 “{0}”을(를) 참조로 사용하세요. 파일은 `{1}`에 있으며, 읽기만 하고 수정하지 마세요.
 LinkLocalCode = 로컬 코드 연결
+SaveAsSkill = 스킬로 저장
 LinkedFolders = 연결된 폴더
 Unlink = {0} 연결 해제
 MentionEmpty = 파일, 플러그인, 스킬, MCP 서버를 검색하세요.

@@ -1481,6 +1481,7 @@ AddMcpServer = إضافة خادم MCP
 ReferenceProject = الإشارة إلى مشروع آخر
 ReferenceProjectText = استخدم المشروع «{0}» كمرجع. ملفاته في `{1}`؛ اقرأها ولا تغيّرها.
 LinkLocalCode = ربط كود محلي
+SaveAsSkill = حفظ كمهارة
 LinkedFolders = المجلدات المرتبطة
 Unlink = فك ربط {0}
 MentionEmpty = ابحث في الملفات والإضافات والمهارات وخوادم MCP.

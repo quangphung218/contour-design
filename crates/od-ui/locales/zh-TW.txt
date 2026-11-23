@@ -1481,6 +1481,7 @@ AddMcpServer = 新增 MCP 伺服器
 ReferenceProject = 引用其他專案
 ReferenceProjectText = 以專案「{0}」作為參考。其檔案位於 `{1}`，請讀取但不要修改。
 LinkLocalCode = 連結本機程式碼
+SaveAsSkill = 儲存為技能
 LinkedFolders = 已連結的資料夾
 Unlink = 取消連結 {0}
 MentionEmpty = 搜尋檔案、外掛、技能與 MCP 伺服器。

@@ -612,6 +612,40 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
+/// "+" menu item of the Studio: sends a turn that has the agent turn this
+/// project into a skill and install it (`toolbox::skill_authoring_prompt`).
+/// Off until a turn of the open conversation has succeeded, and while one
+/// runs.
+#[component]
+pub fn SaveAsSkill(ctx: StudioCtx) -> impl IntoView {
+    let shell = Shell::get();
+    let menu = expect_context::<super::composer::PlusMenuOpen>().0;
+    let finished = move || {
+        ctx.items.with(|items| {
+            items.iter().any(|i| match &i.kind {
+                super::chat_view::ItemKind::Assistant(turn) => {
+                    turn.with(|t| t.state == TurnState::Succeeded)
+                }
+                super::chat_view::ItemKind::User(_) => false,
+            })
+        })
+    };
+    let off = move || !finished() || ctx.live_run.with(Option::is_some);
+    view! {
+        <button type="button" class="menu-item" role="menuitem" data-testid="save-as-skill"
+            disabled=off
+            on:click=move |_| {
+                menu.set(false);
+                let name = ctx.project.with_untracked(|p| p.as_ref().map(|p| p.name.clone())).unwrap_or_default();
+                let locale = shell.locale.get_untracked();
+                let prompt = crate::toolbox::skill_authoring_prompt(&name, locale);
+                ctx.send_shown(prompt, t(T::SaveAsSkill).to_owned(), shell);
+            }>
+            {icon(Glyph::Sparkle)}{t(T::SaveAsSkill)}
+        </button>
+    }
+}
+
 /// Links a picked folder; it then shows under "Linked folders" in "+".
 fn finish_link(ctx: StudioCtx, dir: String) {
     let (base, meta) = link_input(ctx);

@@ -479,6 +479,42 @@ async fn reused_client_request_id_returns_the_same_run() {
     assert_eq!(argv_lines(&d).len(), 1);
 }
 
+/// A prepared turn (Save as skill) keeps its short name as the user's
+/// message and run title; the agent still gets the whole request.
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_shown_message_is_what_the_chat_keeps_and_the_agent_gets_the_request() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_hello(&d.mocks));
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
+                      "message": "# Prepared\n\nRun curl $OD_DAEMON_URL/x", "shownMessage": "Save as skill"}))
+        .await;
+    d.events(&run.run_id, None).await;
+    let prompt = std::fs::read_to_string(d.mocks.join("prompts.log")).unwrap();
+    assert!(prompt.contains("Run curl $OD_DAEMON_URL/x"), "{prompt}");
+    let body = d
+        .get_json(&format!(
+            "/api/projects/{project}/conversations/{conversation}/messages"
+        ))
+        .await;
+    let user = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "user")
+        .cloned()
+        .unwrap();
+    assert_eq!(user["content"], "Save as skill");
+    let info = d.get_json(&format!("/api/runs/{}", run.run_id)).await;
+    assert!(!info.to_string().contains("OD_DAEMON_URL"), "{info}");
+    assert!(
+        info.to_string().contains("\"prompt\":\"Save as skill\""),
+        "{info}"
+    );
+}
+
 #[cfg(unix)] // the mock agent is a `sh` script
 #[tokio::test]
 async fn recorded_claude_stream_reaches_sse_as_the_golden_events() {

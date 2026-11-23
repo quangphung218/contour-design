@@ -23,7 +23,8 @@
 # A request containing `nextsteps` ends with follow-up markers: four keyed
 # with the key its prompt shows (the UI keeps three), one with another key
 # and one in a code fence. `twopages` writes index.html (with an emoji
-# icon, a lint finding) and about.html, then stops.
+# icon, a lint finding) and about.html, then stops. A "Save as skill" turn
+# (`generated-skill/`) writes a skill and installs it with curl.
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -67,6 +68,29 @@ case "$line" in *"# Design system revision"*)
   printf '\n## Revised by the agent\n\nWarmer greens.\n' >> DESIGN.md
   sed 's/--accent: [^;]*;/--accent: #aa5500;/' tokens.css > tokens.tmp && mv tokens.tmp tokens.css
   printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+  cat >/dev/null
+  exit 0
+;; esac
+# "Save as skill": write a skill folder with a side file under
+# generated-skill/ and install it the way the prompt says when `od` is not
+# on PATH (curl to the daemon, absolute path). A 409 (the id is taken)
+# moves on to tea-house-2, then -3, as the prompt says.
+case "$line" in *"generated-skill/"*)
+  answer=""
+  for id in tea-house tea-house-2 tea-house-3; do
+    rm -rf generated-skill
+    mkdir -p "generated-skill/$id/assets"
+    printf -- '---\nname: %s\ndescription: Calm tea house pages.\ntriggers:\n  - tea house\n---\n\n## When to use\n\nTea brands.\n' "$id" > "generated-skill/$id/SKILL.md"
+    printf ':root { --accent: #2f6b3a; }\n' > "generated-skill/$id/assets/tokens.css"
+    reply=$(curl -sS -w '\n%{http_code}' -X POST "$OD_DAEMON_URL/api/skills/install" \
+      -H 'content-type: application/json' -d "{\"path\": \"$PWD/generated-skill/$id\"}" 2>&1)
+    code=$(printf '%s\n' "$reply" | tail -n 1)
+    answer=$(printf '%s\n' "$reply" | sed '$d' | tr -d '"\\\n')
+    [ "$code" = 409 ] || break
+  done
+  printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+  printf '{"type":"assistant","message":{"id":"skill-%s","role":"assistant","content":[{"type":"text","text":"Installed: %s"}]}}\n' "$$" "$answer"
   printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
   cat >/dev/null
   exit 0

@@ -55,11 +55,22 @@ fn non_default(value: Option<&str>) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// The user's message as the chat shows and keeps it: `shownMessage` when
+/// the turn has one (a prepared turn), else the request itself.
+fn shown_message(req: &ChatRequest) -> &str {
+    req.shown_message
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&req.message)
+}
+
 /// Fingerprint of the logical request behind a `clientRequestId`.
 fn request_hash(req: &ChatRequest) -> String {
     let logical = json!({
         "agentId": req.agent_id,
         "message": req.message,
+        "shownMessage": req.shown_message,
         "projectId": req.project_id,
         "conversationId": req.conversation_id,
         "model": req.model,
@@ -140,7 +151,7 @@ pub async fn create(
         client_request_id: client_request_id.clone(),
         request_hash: Some(request_hash(&req)),
         created_at: od_runs::now_ms(),
-        prompt: od_runs::prompt_title(&req.message),
+        prompt: od_runs::prompt_title(shown_message(&req)),
     };
     let (run, reused) = match state.runs.registry.create_or_reuse(meta) {
         Ok(found) => found,
@@ -393,7 +404,7 @@ async fn prepare_and_launch(
                 conversation_id: &conversation,
                 user_message_id: &user_message,
                 assistant_message_id: &assistant,
-                content: &req2.message,
+                content: shown_message(&req2),
                 attachments: &req2.attachments,
                 agent_id: def.id,
                 run_id: &run_id,

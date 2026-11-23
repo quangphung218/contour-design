@@ -1481,6 +1481,7 @@ AddMcpServer = افزودن سرور MCP
 ReferenceProject = ارجاع به پروژه دیگر
 ReferenceProjectText = پروژه «{0}» را به‌عنوان مرجع استفاده کن. فایل‌هایش در `{1}` است؛ آن‌ها را بخوان و تغییر نده.
 LinkLocalCode = اتصال کد محلی
+SaveAsSkill = ذخیره به‌عنوان skill
 LinkedFolders = پوشه‌های متصل
 Unlink = قطع اتصال {0}
 MentionEmpty = جست‌وجوی فایل‌ها، پلاگین‌ها، مهارت‌ها و سرورهای MCP.

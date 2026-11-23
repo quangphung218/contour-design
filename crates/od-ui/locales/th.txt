@@ -1481,6 +1481,7 @@ AddMcpServer = เพิ่มเซิร์ฟเวอร์ MCP
 ReferenceProject = อ้างอิงโปรเจกต์อื่น
 ReferenceProjectText = ใช้โปรเจกต์ “{0}” เป็นข้อมูลอ้างอิง ไฟล์อยู่ที่ `{1}` ให้อ่านอย่างเดียว ห้ามแก้ไข
 LinkLocalCode = เชื่อมโค้ดในเครื่อง
+SaveAsSkill = บันทึกเป็นสกิล
 LinkedFolders = โฟลเดอร์ที่เชื่อมไว้
 Unlink = เลิกเชื่อม {0}
 MentionEmpty = ค้นหาไฟล์ ปลั๊กอิน สกิล และเซิร์ฟเวอร์ MCP

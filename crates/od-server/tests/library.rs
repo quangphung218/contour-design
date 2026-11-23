@@ -174,6 +174,170 @@ async fn skills_create_edit_override_delete() {
     assert!(skill(&d.get_json("/api/skills").await, "brand-voice").is_none());
 }
 
+/// A skill folder `<parent>/<folder>` with a `SKILL.md` and `assets/tokens.css`.
+fn skill_folder(parent: &Path, folder: &str, skill_md: &str) -> PathBuf {
+    let dir = parent.join(folder);
+    std::fs::create_dir_all(dir.join("assets")).unwrap();
+    std::fs::write(dir.join("SKILL.md"), skill_md).unwrap();
+    std::fs::write(
+        dir.join("assets/tokens.css"),
+        ":root { --accent: #2f6b3a; }",
+    )
+    .unwrap();
+    dir
+}
+
+/// Names in `<data>/skills`, hidden ones included.
+fn user_skill_folders(d: &Daemon) -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(d.data.join("skills"))
+        .map(|r| {
+            r.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}
+
+#[tokio::test]
+async fn skills_install_from_a_folder() {
+    let d = daemon().await;
+    let src = tempfile::tempdir().unwrap();
+    let install = |path: &Path| json!({ "path": path.to_string_lossy() });
+
+    let tea = skill_folder(
+        src.path(),
+        "tea",
+        "---\nname: tea-house\ndescription: Calm tea pages.\ntriggers:\n  - tea\n---\n\nUse cream and leaf green.\n",
+    );
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(install(&tea))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["id"], "tea-house");
+    assert!(d.data.join("skills/tea-house/assets/tokens.css").is_file());
+    let list = d.get_json("/api/skills").await;
+    let mine = skill(&list, "tea-house").unwrap();
+    assert_eq!(mine["source"], "user");
+    assert_eq!(mine["description"], "Calm tea pages.");
+
+    // Not a skill, or no absolute path: 400, and nothing left behind.
+    let empty = src.path().join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let unclosed = skill_folder(src.path(), "unclosed", "---\nname: unclosed\nBody.\n");
+    for body in [
+        install(&empty),
+        install(&unclosed),
+        json!({ "path": "relative/tea" }),
+    ] {
+        let (s, v) = call(&d, "POST", "/api/skills/install", Some(body.clone())).await;
+        assert_eq!(s, 400, "{body}: {v}");
+    }
+    assert_eq!(user_skill_folders(&d), ["tea-house"]);
+
+    // A bundled id is refused, also while the user has an override of it
+    // (the override hides the bundled skill from the index).
+    let bundled = list["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["source"] == "built-in" && !s["id"].as_str().unwrap().contains(':'))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let same = skill_folder(
+        &src.path().join("b"),
+        "x",
+        &format!("---\nname: {bundled}\n---\nMine.\n"),
+    );
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(install(&same))).await;
+    assert_eq!(s, 409, "{v}");
+    let (s, v) = call(
+        &d,
+        "PUT",
+        &format!("/api/skills/{bundled}"),
+        Some(json!({ "body": "Override body." })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(install(&same))).await;
+    assert_eq!(s, 409, "{v}");
+    let over =
+        std::fs::read_to_string(d.data.join("skills").join(&bundled).join("SKILL.md")).unwrap();
+    assert!(over.contains("Override body."), "the override stays");
+
+    // `Tea-House` beside the personal `tea-house`: one folder on macOS.
+    let twin = skill_folder(
+        &src.path().join("c"),
+        "x",
+        "---\nname: Tea-House\n---\nTwin.\n",
+    );
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(install(&twin))).await;
+    assert_eq!(s, 409, "{v}");
+    // The same id again: a personal skill is never lost unasked (another
+    // project saved under the same name), only replaced on `replace`.
+    std::fs::write(
+        tea.join("SKILL.md"),
+        "---\nname: tea-house\n---\nUse jade.\n",
+    )
+    .unwrap();
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(install(&tea))).await;
+    assert_eq!(s, 409, "{v}");
+    let kept = d.get_json("/api/skills/tea-house").await;
+    assert!(
+        kept["body"].as_str().unwrap().contains("Use cream"),
+        "{kept}"
+    );
+    let mut replace = install(&tea);
+    replace["replace"] = json!(true);
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(replace)).await;
+    assert_eq!(s, 200, "{v}");
+    let detail = d.get_json("/api/skills/tea-house").await;
+    assert!(
+        detail["body"].as_str().unwrap().contains("Use jade."),
+        "{detail}"
+    );
+    let mut want = vec![bundled, "tea-house".to_owned()];
+    want.sort();
+    assert_eq!(user_skill_folders(&d), want);
+}
+
+/// The agent of a "Save as skill" turn installs what it wrote with `curl`,
+/// as its prompt says when `od` is not on its PATH: no API token, only the
+/// run's environment.
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn an_agent_in_a_run_installs_its_skill_with_curl() {
+    let d = daemon().await;
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r###"{PROBES}
+IFS= read -r all
+mkdir -p generated-skill/tea-house/assets
+printf -- '---\nname: tea-house\ndescription: Calm tea pages.\n---\n\nUse cream.\n' > generated-skill/tea-house/SKILL.md
+printf ':root {{ --accent: #2f6b3a; }}\n' > generated-skill/tea-house/assets/tokens.css
+curl -sS -X POST "$OD_DAEMON_URL/api/skills/install" -H 'content-type: application/json' \
+  -d "{{\"path\": \"$PWD/generated-skill/tea-house\"}}" > install.json 2>&1
+printf '{{"type":"system","subtype":"init","session_id":"s1","model":"mock"}}\n'
+printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}}\n'
+"###
+        ),
+    );
+    let (pid, cid) = d.project().await;
+    d.start(
+        json!({ "agentId": "claude", "projectId": pid, "conversationId": cid, "message": "save" }),
+    )
+    .await;
+    let answer = wait_file(&d.data.join("projects").join(&pid).join("install.json")).await;
+    let answer: Value = serde_json::from_str(&answer).unwrap_or(Value::String(answer));
+    assert_eq!(answer["id"], "tea-house", "{answer}");
+    let list = d.get_json("/api/skills").await;
+    assert_eq!(skill(&list, "tea-house").unwrap()["source"], "user");
+    assert!(d.data.join("skills/tea-house/assets/tokens.css").is_file());
+}
+
 /// Mock `claude` that records whether its prompt carried the plugin block.
 fn plugin_agent(d: &Daemon) {
     write_mock(

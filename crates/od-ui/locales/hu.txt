@@ -1481,6 +1481,7 @@ AddMcpServer = MCP-szerver hozzáadása
 ReferenceProject = Másik projekt hivatkozásként
 ReferenceProjectText = Használd a(z) „{0}” projektet hivatkozásként. A fájljai itt vannak: `{1}`; olvasd őket, de ne módosítsd.
 LinkLocalCode = Helyi kód csatolása
+SaveAsSkill = Mentés skillként
 LinkedFolders = Csatolt mappák
 Unlink = {0} leválasztása
 MentionEmpty = Keress fájlok, pluginek, skillek és MCP-szerverek között.

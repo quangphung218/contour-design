@@ -12,6 +12,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Added
 
+- Save a Studio project as a personal skill from the "+" menu; `od skill install` installs a skill folder with its files.
 - Skill suggestions understand common Vietnamese topic words and cover decks, dashboards, onboarding, video, posters, resumes and logos.
 
 ## [0.2.0-beta.58] - 2026-11-24

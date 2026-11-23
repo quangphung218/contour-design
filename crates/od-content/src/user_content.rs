@@ -276,29 +276,135 @@ pub fn install_plugin(source: &Path, user_root: &Path) -> Result<PluginEntry, Wr
     if !crate::design_systems::is_valid_id(&id) || id.starts_with(['.', '_']) {
         return Err(WriteError::BadRequest(format!("invalid plugin id {id:?}")));
     }
+    refuse_case_twin(user_root, &id, "plugin")?;
+    place_copy(source, user_root, &id)?;
+    let dest = user_root.join(&id);
+    load_plugin(&dest, &id, "user")
+        .ok_or_else(|| WriteError::Io("the installed plugin did not load".to_owned()))
+}
+
+/// Refuses `id` when `user_root` holds a folder whose name differs from
+/// it only in case or Unicode form. macOS and Windows treat `Foo` and
+/// `foo` as one folder: installing `Foo` would delete the `foo` already
+/// there (Linux would keep both, which collide once synced). The same id
+/// is no clash: reinstalling replaces it.
+fn refuse_case_twin(user_root: &Path, id: &str, what: &str) -> Result<(), WriteError> {
     std::fs::create_dir_all(user_root).map_err(io)?;
-    // macOS and Windows treat `Foo` and `foo` as one folder: installing `Foo`
-    // would delete the `foo` plugin already there (Linux would keep both,
-    // which collide once synced). Reinstalling the same id still replaces it.
+    let key = od_contracts::name_key(id);
     for entry in std::fs::read_dir(user_root).map_err(io)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name != id && od_contracts::name_key(&name) == od_contracts::name_key(&id) {
-            return Err(WriteError::Exists(format!("plugin {name:?}")));
+        if name != id && od_contracts::name_key(&name) == key {
+            return Err(WriteError::Exists(format!("{what} {name:?}")));
         }
     }
+    Ok(())
+}
+
+/// Whether `user_root` holds a skill folder named `id`, in any case or
+/// Unicode form (one folder on macOS and Windows). Hidden folders (an
+/// install in progress) do not count.
+#[must_use]
+pub fn user_skill_exists(user_root: &Path, id: &str) -> bool {
+    let key = od_contracts::name_key(id);
+    std::fs::read_dir(user_root).is_ok_and(|entries| {
+        entries.flatten().any(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            !name.starts_with('.') && e.path().is_dir() && od_contracts::name_key(&name) == key
+        })
+    })
+}
+
+/// Copies `source` into `<user_root>/<id>`, replacing an older copy: built
+/// in a hidden folder, then renamed into place. Nothing is left behind on
+/// failure.
+fn place_copy(source: &Path, user_root: &Path, id: &str) -> Result<(), WriteError> {
     let tmp = user_root.join(format!(".installing-{id}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     if let Err(e) = copy_dir(source, &tmp, MAX_PLUGIN_BYTES) {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(e);
     }
-    let dest = user_root.join(&id);
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest).map_err(io)?;
+    let dest = user_root.join(id);
+    if dest.exists()
+        && let Err(e) = std::fs::remove_dir_all(&dest)
+    {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(io(e));
     }
-    std::fs::rename(&tmp, &dest).map_err(io)?;
-    load_plugin(&dest, &id, "user")
-        .ok_or_else(|| WriteError::Io("the installed plugin did not load".to_owned()))
+    std::fs::rename(&tmp, &dest).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp);
+        io(e)
+    })
+}
+
+/// Installs the skill in `source` (a local folder with a `SKILL.md` that
+/// has front matter) as `<user_root>/<id>`, side files (`assets/`…)
+/// included, replacing a user skill with the same id. The id is the
+/// front matter's `name`, else the folder name, as the index reads it.
+/// `taken` says an id belongs to a bundled skill.
+///
+/// # Errors
+/// [`WriteError::BadRequest`] for a folder that is not a skill or is too
+/// large, [`WriteError::Exists`] for a bundled id or a user skill whose
+/// name differs only in case, [`WriteError::Io`].
+pub fn install_skill(
+    source: &Path,
+    user_root: &Path,
+    taken: impl Fn(&str) -> bool,
+) -> Result<String, WriteError> {
+    if !source.is_dir() {
+        return Err(WriteError::BadRequest(format!(
+            "{} is not a folder",
+            source.display()
+        )));
+    }
+    let skill_md = source.join("SKILL.md");
+    // A link is refused here: `copy_dir` skips links, so the copy would
+    // have no SKILL.md.
+    let raw = match std::fs::symlink_metadata(&skill_md) {
+        Ok(m) if m.is_file() => std::fs::read_to_string(&skill_md)
+            .map_err(|e| WriteError::BadRequest(format!("SKILL.md cannot be read: {e}")))?,
+        _ => {
+            return Err(WriteError::BadRequest(
+                "the folder has no SKILL.md".to_owned(),
+            ));
+        }
+    };
+    let front = skill_front_matter(&raw)?;
+    let id = match front.get("name") {
+        Some(serde_json::Value::String(s)) if !s.is_empty() => s.clone(),
+        _ => source
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    };
+    if !crate::design_systems::is_valid_id(&id) || id.starts_with(['.', '_']) {
+        return Err(WriteError::BadRequest(format!(
+            "invalid skill id {id:?}: use letters, digits and -"
+        )));
+    }
+    if taken(&id) {
+        return Err(WriteError::Exists(format!("skill {id:?}")));
+    }
+    refuse_case_twin(user_root, &id, "skill")?;
+    place_copy(source, user_root, &id)?;
+    Ok(id)
+}
+
+/// The front matter of a `SKILL.md`; text without one, or with one that
+/// does not close or parse, is refused (the index would skip it or read
+/// it all as body).
+fn skill_front_matter(raw: &str) -> Result<serde_json::Map<String, serde_json::Value>, WriteError> {
+    let text = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+    let (front, body) = frontmatter::parse(text)
+        .map_err(|e| WriteError::BadRequest(format!("SKILL.md front matter: {e}")))?;
+    // No block, or one that does not close, parses as all body.
+    if front.is_empty() && body.len() == text.len() {
+        return Err(WriteError::BadRequest(
+            "SKILL.md needs front matter between --- lines".to_owned(),
+        ));
+    }
+    Ok(front)
 }
 
 #[cfg(test)]
@@ -438,5 +544,164 @@ mod tests {
             "---\nname: tea-plugin\n---\nOld.\n"
         );
         assert_eq!(std::fs::read_dir(&user).unwrap().count(), 1);
+    }
+
+    fn skill_dir(root: &Path, folder: &str, skill_md: &str) -> PathBuf {
+        let dir = root.join(folder);
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::write(dir.join("SKILL.md"), skill_md).unwrap();
+        std::fs::write(dir.join("assets/tokens.css"), ":root{--accent:#2f6b3a}").unwrap();
+        dir
+    }
+
+    /// Names in `root`, hidden ones included (a leftover `.installing-*`).
+    fn names(root: &Path) -> Vec<String> {
+        let mut out: Vec<String> = std::fs::read_dir(root)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn install_skill_copies_side_files_and_replaces_its_own_copy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = skill_dir(
+            &tmp.path().join("src"),
+            "folder-name",
+            "---\nname: tea-house\ndescription: Calm tea pages.\n---\n\nUse cream.\n",
+        );
+        std::fs::create_dir_all(src.join(".git")).unwrap();
+        let user = tmp.path().join("skills");
+        assert_eq!(install_skill(&src, &user, |_| false).unwrap(), "tea-house");
+        assert!(user.join("tea-house/assets/tokens.css").is_file());
+        assert!(!user.join("tea-house/.git").exists());
+        // The index reads it back under the same id, as a user skill.
+        let listed = crate::skills::list_skills(std::slice::from_ref(&user), true);
+        assert_eq!(listed[0].info.id, "tea-house");
+        // Saving again replaces the copy; a file gone from the source goes.
+        std::fs::remove_file(src.join("assets/tokens.css")).unwrap();
+        std::fs::write(
+            src.join("SKILL.md"),
+            "---\nname: tea-house\n---\n\nUse green.\n",
+        )
+        .unwrap();
+        install_skill(&src, &user, |_| false).unwrap();
+        let text = std::fs::read_to_string(user.join("tea-house/SKILL.md")).unwrap();
+        assert!(text.contains("Use green."));
+        assert!(!user.join("tea-house/assets/tokens.css").exists());
+        assert_eq!(names(&user), ["tea-house"]);
+    }
+
+    #[test]
+    fn install_skill_takes_the_folder_name_without_a_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = skill_dir(
+            tmp.path(),
+            "brand-voice",
+            "---\ndescription: x\n---\nBody.\n",
+        );
+        let user = tmp.path().join("skills");
+        assert_eq!(
+            install_skill(&src, &user, |_| false).unwrap(),
+            "brand-voice"
+        );
+    }
+
+    #[test]
+    fn install_skill_refuses_what_is_not_a_skill_and_leaves_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("skills");
+        let bad = |dir: &Path| {
+            let res = install_skill(dir, &user, |_| false);
+            assert!(
+                matches!(res, Err(WriteError::BadRequest(_))),
+                "{dir:?}: {res:?}"
+            );
+        };
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        bad(&empty);
+        bad(&tmp.path().join("missing"));
+        bad(&skill_dir(tmp.path(), "no-front", "Just a body.\n"));
+        bad(&skill_dir(
+            tmp.path(),
+            "unclosed",
+            "---\nname: unclosed\nBody.\n",
+        ));
+        bad(&skill_dir(
+            tmp.path(),
+            "spaced",
+            "---\nname: Brand Voice\n---\nBody.\n",
+        ));
+        bad(&skill_dir(
+            tmp.path(),
+            "hidden",
+            "---\nname: .hidden\n---\nBody.\n",
+        ));
+        let big = skill_dir(tmp.path(), "big", "---\nname: big\n---\nBody.\n");
+        let f = std::fs::File::create(big.join("assets/huge.bin")).unwrap();
+        f.set_len(MAX_PLUGIN_BYTES + 1).unwrap();
+        bad(&big);
+        assert!(names(&user).is_empty(), "left behind: {:?}", names(&user));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_skill_refuses_a_skill_md_that_is_a_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside.md");
+        std::fs::write(&outside, "---\nname: linked\n---\nBody.\n").unwrap();
+        let src = tmp.path().join("linked");
+        std::fs::create_dir_all(&src).unwrap();
+        std::os::unix::fs::symlink(&outside, src.join("SKILL.md")).unwrap();
+        let user = tmp.path().join("skills");
+        assert!(matches!(
+            install_skill(&src, &user, |_| false),
+            Err(WriteError::BadRequest(_))
+        ));
+        assert!(!user.join("linked").exists());
+    }
+
+    #[test]
+    fn install_skill_refuses_a_bundled_id_and_a_case_twin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("skills");
+        let deck = skill_dir(
+            &tmp.path().join("src"),
+            "deck",
+            "---\nname: deck\n---\nB.\n",
+        );
+        assert!(matches!(
+            install_skill(&deck, &user, |id| id == "deck"),
+            Err(WriteError::Exists(_))
+        ));
+        let mine = skill_dir(&tmp.path().join("a"), "foo", "---\nname: foo\n---\nMine.\n");
+        install_skill(&mine, &user, |_| false).unwrap();
+        let twin = skill_dir(&tmp.path().join("b"), "Foo", "---\nname: Foo\n---\nTwin.\n");
+        assert!(matches!(
+            install_skill(&twin, &user, |_| false),
+            Err(WriteError::Exists(_))
+        ));
+        assert_eq!(names(&user), ["foo"]);
+        let text = std::fs::read_to_string(user.join("foo/SKILL.md")).unwrap();
+        assert!(text.contains("Mine."));
+    }
+
+    #[test]
+    fn a_user_skill_exists_in_any_case_and_not_while_it_installs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("skills");
+        assert!(!user_skill_exists(&user, "tea-house"), "no folder yet");
+        std::fs::create_dir_all(user.join("tea-house")).unwrap();
+        std::fs::create_dir_all(user.join(".installing-brew-1")).unwrap();
+        std::fs::write(user.join("notes"), "x").unwrap();
+        assert!(user_skill_exists(&user, "tea-house"));
+        assert!(user_skill_exists(&user, "Tea-House"));
+        assert!(!user_skill_exists(&user, "tea-house-2"));
+        assert!(!user_skill_exists(&user, ".installing-brew-1"));
+        assert!(!user_skill_exists(&user, "notes"), "a file is no skill");
     }
 }
