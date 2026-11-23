@@ -142,6 +142,6 @@ retrying alternate Chrome commands.
   `data-theme-base` pointing to the themes directory relative to the HTML
   file.
 - **Fonts fall back**: make sure `fonts.css` is linked before the theme.
-- **Chart.js colors wrong**: charts read CSS vars in JS; make sure they run
-  after the DOM is ready (`addEventListener('DOMContentLoaded', …)`).
+- **Chart colors wrong**: the SVG charts take CSS vars; a script that reads
+  them must run after the DOM is ready (`addEventListener('DOMContentLoaded', …)`).
 - **PNG too small**: bump `--viewport-size` in `scripts/render.sh`.

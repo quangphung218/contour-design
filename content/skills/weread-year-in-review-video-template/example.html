@@ -28,7 +28,7 @@
     .stage {
       height: calc(100% - 53px);
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       min-height: 0;
     }
     .pane {
@@ -36,27 +36,22 @@
       border-right: 1px solid rgba(36, 54, 73, 0.14);
       background: #f6f5ef;
     }
-    .pane:last-child { border-right: 0; background: #111; }
-    iframe, video {
+    iframe {
       width: 100%;
       height: 100%;
       border: 0;
       display: block;
     }
-    video { object-fit: contain; background: #000; }
   </style>
 </head>
 <body>
   <div class="top">
     <b>WEREAD YEAR IN REVIEW · HYPERFRAMES VIDEO TEMPLATE</b>
-    <span>Left: editable HTML template · Right: rendered MP4 showcase</span>
+    <span>Editable HTML template · render it to MP4 from the project</span>
   </div>
   <div class="stage">
     <div class="pane">
       <iframe src="./assets/template.html" title="WeRead Year in Review template preview"></iframe>
-    </div>
-    <div class="pane">
-      <video controls preload="metadata" src="https://repo-assets.open-design.ai/resources/videos/skills/weread-year-in-review-video-template/default-showcase.mp4"></video>
     </div>
   </div>
 </body>

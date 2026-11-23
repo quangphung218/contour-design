@@ -3,7 +3,334 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=1080, height=1920" />
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+  /* Motion runtime written for Contour: the part of GSAP 3's API this page
+     uses (gsap.timeline, to/from/fromTo/set/add, stagger, repeat/yoyo, power,
+     expo, sine and back eases), so the page loads nothing from a CDN. It is
+     not GSAP: a feature not listed here is missing. A local gsap.min.js
+     loaded before this script takes over. */
+  (function () {
+    if (window.gsap) return;
+    var UNITLESS = { opacity: 1, scale: 1, scaleX: 1, scaleY: 1, zIndex: 1, rotation: 0 };
+    var TRANSFORM = { x: 1, y: 1, xPercent: 1, yPercent: 1, rotation: 1, scale: 1, scaleX: 1, scaleY: 1 };
+    var RESERVED = { duration: 1, ease: 1, stagger: 1, repeat: 1, yoyo: 1, delay: 1, immediateRender: 1, overwrite: 1, onUpdate: 1, onComplete: 1, onStart: 1, transformOrigin: 1, paused: 1, defaults: 1 };
+
+    function power(n) {
+      return { "in": function (p) { return Math.pow(p, n + 1); }, out: function (p) { return 1 - Math.pow(1 - p, n + 1); },
+        inOut: function (p) { return p < 0.5 ? Math.pow(2 * p, n + 1) / 2 : 1 - Math.pow(2 * (1 - p), n + 1) / 2; } };
+    }
+    function family(fin) {
+      return { "in": fin, out: function (p) { return 1 - fin(1 - p); }, inOut: function (p) { return p < 0.5 ? fin(2 * p) / 2 : 1 - fin(2 * (1 - p)) / 2; } };
+    }
+    var EASES = {
+      power0: family(function (p) { return p; }), linear: family(function (p) { return p; }), none: family(function (p) { return p; }),
+      power1: power(1), power2: power(2), power3: power(3), power4: power(4),
+      quad: power(1), cubic: power(2), quart: power(3), quint: power(4),
+      sine: family(function (p) { return p === 1 ? 1 : 1 - Math.cos(p * Math.PI / 2); }),
+      expo: family(function (p) { return p ? Math.pow(2, 10 * (p - 1)) : 0; }),
+      circ: family(function (p) { return 1 - Math.sqrt(1 - p * p); })
+    };
+    function ease(name) {
+      if (typeof name === "function") return name;
+      var m = /^(\w+)(?:\.(in|out|inOut))?(?:\(([\d.]+)\))?$/.exec(name || "power1.out") || [];
+      var type = m[2] || "out";
+      if (m[1] === "back") {
+        var s = m[3] ? parseFloat(m[3]) : 1.70158;
+        return family(function (p) { return p * p * ((s + 1) * p - s); })[type];
+      }
+      var f = EASES[m[1]] || EASES.power1;
+      return f[type];
+    }
+
+    function targets(t) {
+      if (typeof t === "string") return Array.prototype.slice.call(document.querySelectorAll(t));
+      if (t && (t.length !== undefined) && !t.nodeType && !(t instanceof Window)) return Array.prototype.slice.call(t);
+      return t ? [t] : [];
+    }
+    function isEl(t) { return t && t.nodeType === 1; }
+
+    // Current values of every element touched: transform parts and CSS
+    // values; the element's style is written from them.
+    var store = new Map();
+    var probe;
+    function normalize(prop, v) {
+      if (!probe) { probe = document.createElement("div"); probe.style.display = "none"; document.documentElement.appendChild(probe); }
+      probe.style[prop] = ""; probe.style[prop] = v;
+      var out = getComputedStyle(probe)[prop];
+      return out || String(v);
+    }
+    function entry(el) {
+      var e = store.get(el);
+      if (!e) {
+        e = { base: {}, cur: {} };
+        if (isEl(el)) {
+          var cs = getComputedStyle(el), tf = cs.transform;
+          var m = tf && tf !== "none" ? tf.match(/-?[\d.e]+/g).map(Number) : [1, 0, 0, 1, 0, 0];
+          e.matrix = [m[0], m[1], m[2], m[3]];
+          e.tx = m[4]; e.ty = m[5];
+        }
+        store.set(el, e);
+      }
+      return e;
+    }
+    function baseOf(el, prop) {
+      var e = entry(el);
+      if (!(prop in e.base)) {
+        if (!isEl(el)) e.base[prop] = el[prop];
+        else if (TRANSFORM[prop]) e.base[prop] = /^scale/.test(prop) ? 1 : 0;
+        else if (prop === "autoAlpha") e.base[prop] = parseFloat(getComputedStyle(el).opacity);
+        else {
+          var v = getComputedStyle(el)[prop];
+          e.base[prop] = UNITLESS[prop] ? parseFloat(v) : v;
+        }
+        if (!(prop in e.cur)) e.cur[prop] = e.base[prop];
+      }
+      return e.base[prop];
+    }
+    function get(el, prop) { baseOf(el, prop); return entry(el).cur[prop]; }
+    function put(el, prop, v) { baseOf(el, prop); entry(el).cur[prop] = v; }
+
+    function write(el) {
+      var e = entry(el), c = e.cur;
+      if (!isEl(el)) { for (var k in c) el[k] = c[k]; return; }
+      var hasTf = false;
+      for (var p in c) {
+        if (TRANSFORM[p]) { hasTf = true; continue; }
+        if (p === "autoAlpha") { el.style.opacity = c[p]; el.style.visibility = c[p] <= 0 ? "hidden" : "inherit"; continue; }
+        el.style[p] = typeof c[p] === "number" && !UNITLESS[p] ? c[p] + "px" : c[p];
+      }
+      if (hasTf) {
+        var n = function (k, d) { return k in c ? c[k] : d; };
+        var s = n("scale", 1), m = e.matrix;
+        var t = "translate(" + n("xPercent", 0) + "%, " + n("yPercent", 0) + "%) translate(" + (e.tx + n("x", 0)) + "px, " + (e.ty + n("y", 0)) + "px)";
+        if (n("rotation", 0)) t += " rotate(" + n("rotation", 0) + "deg)";
+        t += " scale(" + s * n("scaleX", 1) + ", " + s * n("scaleY", 1) + ")";
+        if (m[0] !== 1 || m[1] !== 0 || m[2] !== 0 || m[3] !== 1) t += " matrix(" + m.join(", ") + ", 0, 0)";
+        el.style.transform = t;
+      }
+    }
+
+    var NUM = /-?\d*\.?\d+(?:e[-+]?\d+)?/gi;
+    function mix(a, b, k, el, prop) {
+      if (typeof a === "number" && typeof b === "number") return a + (b - a) * k;
+      if (!isEl(el)) return k < 1 ? a : b;
+      var sa = String(a), sb = String(b);
+      if (typeof b === "number") sb = b + "px";
+      var na = sa.match(NUM) || [], nb = sb.match(NUM) || [];
+      if (na.length !== nb.length) {
+        // `none` to a shadow: start from the same shape at zero, transparent.
+        if (/none/.test(sa) || !na.length) { na = nb.map(function () { return 0; }); }
+        else return k < 1 ? a : b;
+      }
+      var i = 0;
+      return sb.replace(NUM, function (x) { var v = +na[i] + (+x - +na[i]) * k; i++; return /\./.test(x) || k < 1 ? String(Math.round(v * 1000) / 1000) : x; });
+    }
+    // Times rounded as GSAP does, so 2.72 + 0.18 lands on 2.9.
+    function round(t) { return Math.round(t * 1e7) / 1e7 || 0; }
+    function resolve(v, i, el, list) { return typeof v === "function" ? v(i, el, list) : v; }
+    function cssValue(el, prop, v) {
+      if (!isEl(el) || TRANSFORM[prop] || prop === "autoAlpha" || UNITLESS[prop]) return typeof v === "string" && !isNaN(v) ? +v : v;
+      if (typeof v === "number") return v;
+      return /^-?[\d.]+(px|%|em|rem|vw|vh|deg)?$/.test(v) ? v : normalize(prop, v);
+    }
+
+    // A tween: one vars object over several targets, staggered.
+    function Tween(kind, t, fromVars, toVars, defaults) {
+      var vars = {}, k;
+      for (k in defaults || {}) vars[k] = defaults[k];
+      for (k in toVars || {}) vars[k] = toVars[k];
+      this.kind = kind; this.targets = targets(t); this.vars = vars;
+      this.fromVars = fromVars || {};
+      this.dur = kind === "set" ? 0 : (vars.duration === undefined ? 0.5 : vars.duration);
+      var st = vars.stagger;
+      this.each = typeof st === "number" ? st : st && st.each !== undefined ? st.each : st && st.amount ? st.amount / Math.max(1, this.targets.length - 1) : 0;
+      this.repeat = vars.repeat || 0; this.yoyo = !!vars.yoyo;
+      this.ease = ease(vars.ease);
+      this.immediate = (kind === "from" || kind === "fromTo") && vars.immediateRender !== false;
+      this.start = 0;
+      this.props = [];
+      for (k in vars) if (!RESERVED[k]) this.props.push(k);
+      for (k in this.fromVars) if (!RESERVED[k] && this.props.indexOf(k) < 0) this.props.push(k);
+      var self = this;
+      this.durs = this.targets.map(function (el, i) { return resolve(self.dur, i, el, self.targets); });
+      if (vars.transformOrigin) this.targets.forEach(function (el) { if (isEl(el)) el.style.transformOrigin = vars.transformOrigin; });
+      this.ends = null; this.starts = null;
+      if (this.immediate) { this.capture(); this.lastLt = 1e9; this.applyAt(-1); this.lastLt = undefined; this.targets.forEach(write); }
+    }
+    Tween.prototype.total = function () {
+      var self = this, end = 0;
+      this.targets.forEach(function (el, i) { end = Math.max(end, i * self.each + self.durs[i] * (self.repeat + 1)); });
+      return end;
+    };
+    // Start and end values for every target, read from the values now.
+    Tween.prototype.capture = function () {
+      var self = this;
+      this.starts = []; this.ends = [];
+      this.targets.forEach(function (el, i) {
+        var s = {}, e = {};
+        self.props.forEach(function (p) {
+          var now = get(el, p);
+          var to = p in self.vars ? cssValue(el, p, resolve(self.vars[p], i, el, self.targets)) : now;
+          var from = p in self.fromVars ? cssValue(el, p, resolve(self.fromVars[p], i, el, self.targets)) : now;
+          if (self.kind === "from") { s[p] = to; e[p] = now; }
+          else if (self.kind === "fromTo") { s[p] = from; e[p] = p in self.vars ? to : now; }
+          else { s[p] = now; e[p] = to; }
+        });
+        self.starts.push(s); self.ends.push(e);
+      });
+    };
+    // Writes the values at local time `lt` into the store; returns whether
+    // anything was written. Like GSAP, a tween reads its start values the
+    // first time it renders, and one never rendered leaves its targets alone.
+    Tween.prototype.applyAt = function (lt) {
+      var self = this, any = false;
+      // Before its start (each target's, with the stagger) a tween renders
+      // only when the playhead moves back across it, to its start values;
+      // `immediateRender` drew those once already.
+      var last = this.lastLt;
+      this.lastLt = lt;
+      if (lt < 0 && !(last >= 0)) return false;
+      if (!this.starts) this.capture();
+      this.targets.forEach(function (el, i) {
+        var tt = lt - i * self.each, d = self.durs[i], k;
+        if (tt < 0) {
+          if (self.kind === "set" || !(last - i * self.each >= 0)) return;
+          k = 0;
+        } else if (d <= 0) k = 1;
+        else {
+          var cycles = self.repeat + 1, c = Math.floor(tt / d);
+          if (c >= cycles) { k = self.yoyo && cycles % 2 === 0 ? 0 : 1; }
+          else {
+            var p = (tt - c * d) / d;
+            k = self.yoyo && c % 2 === 1 ? self.ease(1 - p) : self.ease(p);
+          }
+        }
+        self.props.forEach(function (p) { put(el, p, mix(self.starts[i][p], self.ends[i][p], k, el, p)); });
+        any = true;
+      });
+      return any;
+    };
+
+    // A timeline: every render runs its children in start order at the new
+    // time, callbacks among them, as GSAP does.
+    function Timeline(vars) {
+      vars = vars || {};
+      this.children = []; this._time = 0; this._paused = !!vars.paused;
+      this.defaults = vars.defaults || {}; this.last = null; this.dirty = true;
+      this.onUpdate = vars.onUpdate;
+      if (!this._paused) this._tick();
+    }
+    var T = Timeline.prototype;
+    T._pos = function (pos) {
+      var end = this.duration();
+      if (pos === undefined || pos === null) return end;
+      if (typeof pos === "number") return pos;
+      var m = /^([<>]?)(?:([+-])=([\d.]+))?$/.exec(String(pos).trim());
+      if (!m) return end;
+      var base = m[1] === "<" ? (this.last ? this.last.start : 0) : m[1] === ">" ? (this.last ? this.last.start + this.last.total() : 0) : end;
+      var off = m[2] ? (m[2] === "+" ? 1 : -1) * parseFloat(m[3]) : 0;
+      return Math.max(0, base + off);
+    };
+    T._insert = function (child, pos) {
+      child.start = round(this._pos(pos) + (child.vars && child.vars.delay || 0));
+      child.order = this.children.length;
+      this.children.push(child); this.last = child; this.dirty = true;
+      return this;
+    };
+    T.to = function (t, v, pos) { return this._insert(new Tween("to", t, null, v, this.defaults), pos); };
+    T.from = function (t, v, pos) { return this._insert(new Tween("from", t, null, v, this.defaults), pos); };
+    T.fromTo = function (t, f, v, pos) { return this._insert(new Tween("fromTo", t, f, v, this.defaults), pos); };
+    T.set = function (t, v, pos) { return this._insert(new Tween("set", t, null, v, {}), pos); };
+    T.call = function (fn, args, pos) { return this._insert({ call: fn, args: args || [], total: function () { return 0; } }, pos); };
+    T.add = function (child, pos) {
+      if (typeof child === "function") return this.call(child, [], pos);
+      if (child instanceof Timeline || child instanceof Tween) {
+        if (child.solo) { child.solo.kill(); child = child.solo.children[0]; }
+        if (child instanceof Timeline) { child.pause(); var tl = child; child = { timeline: tl, total: function () { return tl.duration(); } }; }
+        return this._insert(child, pos);
+      }
+      return this;
+    };
+    T.duration = function () {
+      var d = 0;
+      this.children.forEach(function (c) { d = Math.max(d, c.start + c.total()); });
+      return d;
+    };
+    T.totalDuration = T.duration;
+    T._sorted = function () {
+      if (this.dirty) {
+        this.sorted = this.children.slice().sort(function (a, b) { return a.start - b.start || a.order - b.order; });
+        this.dirty = false;
+      }
+      return this.sorted;
+    };
+    T._render = function (t, events, force) {
+      var prev = this._time, list = this._sorted(), self = this;
+      var now = round(Math.max(0, Math.min(t, this.duration())));
+      // Like GSAP, a render at the time it already shows does nothing.
+      if (now === prev && !force) return this;
+      this._time = now;
+      list.forEach(function (c) {
+        if (c instanceof Tween) {
+          if (c.applyAt(now - c.start)) {
+            c.targets.forEach(write);
+            if (c.vars.onUpdate && (now >= c.start)) c.vars.onUpdate.call(c);
+          }
+        } else if (c.timeline) c.timeline._render(now - c.start, events);
+        else if (c.call && events) {
+          var at = c.start;
+          if ((prev < at && at <= now) || (now < at && at <= prev)) c.call.apply(self, c.args);
+        }
+      });
+      if (this.onUpdate) this.onUpdate.call(this);
+      return this;
+    };
+    T.seek = function (t, suppressEvents) { return this._render(Number(t) || 0, suppressEvents === false); };
+    T.time = function (t, suppressEvents) { if (t === undefined) return this._time; return this.seek(t, suppressEvents); };
+    T.totalTime = T.time;
+    T.progress = function (p) { if (p === undefined) return this.duration() ? this._time / this.duration() : 0; return this.seek(p * this.duration()); };
+    T.pause = function (t, suppressEvents) { this._paused = true; if (t !== undefined) this.seek(t, suppressEvents === false); return this; };
+    T.paused = function (v) { if (v === undefined) return this._paused; return v ? this.pause() : this.play(); };
+    T.play = function (t) { if (t !== undefined) this.seek(t); this._paused = false; this._tick(); return this; };
+    T.resume = function () { return this.play(); };
+    T.restart = function () { this._render(0, true, true); return this.play(); };
+    T.isActive = function () { return !this._paused && this._time < this.duration(); };
+    T.kill = function () { this._paused = true; this.killed = true; return this; };
+    T._tick = function () {
+      var self = this;
+      if (this.ticking) return;
+      this.ticking = true;
+      var last = null;
+      requestAnimationFrame(function step(ts) {
+        if (self._paused || self.killed) { self.ticking = false; return; }
+        if (last !== null) self._render(self._time + (ts - last) / 1000, true);
+        else self._render(self._time, true);
+        last = ts;
+        if (self._time >= self.duration()) { self.ticking = false; if (self.onComplete) self.onComplete(); return; }
+        requestAnimationFrame(step);
+      });
+    };
+
+    // A tween on its own plays at once on a timeline of its own; added to a
+    // timeline, it becomes that timeline's child instead.
+    function solo(kind, t, f, v) {
+      var tl = new Timeline({ paused: true });
+      var tw = new Tween(kind, t, f, v, {});
+      tl._insert(tw, v && v.delay || 0);
+      tw.solo = tl;
+      tl.play();
+      return tw;
+    }
+    window.gsap = {
+      timeline: function (vars) { return new Timeline(vars); },
+      to: function (t, v) { return solo("to", t, null, v); },
+      from: function (t, v) { return solo("from", t, null, v); },
+      fromTo: function (t, f, v) { return solo("fromTo", t, f, v); },
+      set: function (t, v) { var tw = new Tween("set", t, null, v, {}); tw.capture(); tw.applyAt(0); tw.targets.forEach(write); return tw; },
+      utils: { toArray: targets }
+    };
+  })();
+  </script>
   <title>WeRead Year in Review Video Template</title>
   <style>
     :root {

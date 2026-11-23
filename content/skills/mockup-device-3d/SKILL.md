@@ -48,7 +48,7 @@ od:
 【屏幕内容来源】
 - 用户提供的是文本/数据 → 自动渲染为一个 mock app 界面 (顶部 status bar + 标题 + body + 底部 tab bar 或 home indicator)。
 - 用户提供的是 HTML → 原样嵌入屏幕 div 内 (注意缩放 transform 让它适配屏幕宽高)。
-- 屏幕内 UI 用 Tailwind, 字号要按 mobile 真实尺寸 (text-sm / text-base, 不要 text-9xl)。
+- 屏幕内 UI 的样式写在 `<style>` 里 (不从 CDN 加载 Tailwind, 预览会拦截; example.html 已内联它用到的 Tailwind 类, 新类要自己写规则), 字号要按 mobile 真实尺寸 (14–16px, 不要超大字)。
 
 【可选附加元素】
 - 右下角 "product slug" 角标: 大 logo + 一行 tagline + 副标 hairline。
@@ -59,5 +59,5 @@ od:
 - **绝不**: 用外部 mockup 图片 URL (任何 unsplash / dribbble link), 全部用 CSS / SVG 绘制设备。
 - 字体: 设备外的 caption / logo 用 `Inter Tight` / `SF Pro` 风格; 设备内根据用户内容自适应。
 - 背景可选 4 套调色: charcoal / pearl / midnight blue / mocha; 不要彩虹渐变。
-- 单文件 HTML; iframe 不要用 srcdoc 嵌套 (容易出问题), 用 `<div class="screen">` + Tailwind 渲染内容。
+- 单文件 HTML; iframe 不要用 srcdoc 嵌套 (容易出问题), 用 `<div class="screen">` + 内联样式渲染内容。
 - 必须用用户真实数据填充屏幕内容, 严禁 lorem ipsum 或 "Your text here"。

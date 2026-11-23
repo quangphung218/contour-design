@@ -48,7 +48,7 @@ od:
    - 80 行 inline JS, 用 `requestAnimationFrame` 画 metaballs 或 simplex noise field。
    - 性能允许时启用, `prefers-reduced-motion` 时降回静态截图。
 3. **WebGL fragment shader** (高阶, 慎用):
-   - 用 jsdelivr CDN 引 `regl` 或 inline plain WebGL。
+   - 只用 inline plain WebGL; 不从 CDN 引 `regl` 等库 (预览会拦截外部请求)。
    - shader 写 domain-warp noise; 单个 quad, 一个 uniform `u_time`。
 
 【顶层文字层】
