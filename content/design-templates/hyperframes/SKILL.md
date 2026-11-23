@@ -292,7 +292,9 @@ Sub-composition structure:
         /* scoped styles */
       }
     </style>
-    <!-- GSAP from the project folder: the preview loads nothing from a CDN. -->
+    <!-- Only when gsap.min.js is already in the project: GSAP is not bundled and a
+         missing local script fails the render. Otherwise drive the timeline from
+         the scaffold's draw(t). Never load GSAP from a CDN. -->
     <script src="./gsap.min.js"></script>
     <script>
       window.__timelines = window.__timelines || {};
