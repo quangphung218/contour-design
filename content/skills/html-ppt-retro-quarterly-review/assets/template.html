@@ -134,6 +134,19 @@
         return /^-?[\d.]+(px|%|em|rem|vw|vh|deg)?$/.test(v) ? v : normalize(prop, v);
       }
 
+      // A length in px going to another unit (`4px` to `61%`) is first put in
+      // that unit, as GSAP does: 4px of a 1164px track is 0.34 %, not 4 %.
+      var LENGTH = /^(-?\d*\.?\d+(?:e[-+]?\d+)?)([a-z%]+)$/i;
+      function inUnitOf(el, prop, v, like) {
+        var a = LENGTH.exec(v), b = LENGTH.exec(like);
+        if (!a || !b || a[2] !== "px" || b[2] === "px") return v;
+        var old = el.style[prop];
+        el.style[prop] = "100" + b[2];
+        var full = getComputedStyle(el)[prop];
+        el.style[prop] = old;
+        return /px$/.test(full) && parseFloat(full) ? +a[1] * 100 / parseFloat(full) + b[2] : v;
+      }
+
       // A tween: one vars object over several targets, staggered.
       function Tween(kind, t, fromVars, toVars, defaults) {
         var vars = {}, k;
@@ -154,7 +167,7 @@
         var self = this;
         this.durs = this.targets.map(function (el, i) { return resolve(self.dur, i, el, self.targets); });
         if (vars.transformOrigin) this.targets.forEach(function (el) { if (isEl(el)) el.style.transformOrigin = vars.transformOrigin; });
-        this.ends = null; this.starts = null;
+        this.ends = null; this.starts = null; this.shown = [];
         if (this.immediate) { this.capture(); this.lastLt = 1e9; this.applyAt(-1); this.lastLt = undefined; this.targets.forEach(write); }
       }
       Tween.prototype.total = function () {
@@ -164,24 +177,28 @@
       };
       // Start and end values for every target, read from the values now.
       Tween.prototype.capture = function () {
-        var self = this;
-        this.starts = []; this.ends = [];
-        this.targets.forEach(function (el, i) {
-          var s = {}, e = {};
-          self.props.forEach(function (p) {
-            var now = get(el, p);
-            var to = p in self.vars ? cssValue(el, p, resolve(self.vars[p], i, el, self.targets)) : now;
-            var from = p in self.fromVars ? cssValue(el, p, resolve(self.fromVars[p], i, el, self.targets)) : now;
-            if (self.kind === "from") { s[p] = to; e[p] = now; }
-            else if (self.kind === "fromTo") { s[p] = from; e[p] = p in self.vars ? to : now; }
-            else { s[p] = now; e[p] = to; }
-          });
-          self.starts.push(s); self.ends.push(e);
+        for (var i = 0; i < this.targets.length; i++) this.captureAt(i);
+      };
+      // Start and end values for target `i`. Like GSAP, a staggered target
+      // reads them when its own part first renders, not when the first's does.
+      Tween.prototype.captureAt = function (i) {
+        var self = this, el = this.targets[i], s = {}, e = {};
+        if (!this.starts) { this.starts = []; this.ends = []; }
+        this.props.forEach(function (p) {
+          var now = get(el, p);
+          var to = p in self.vars ? cssValue(el, p, resolve(self.vars[p], i, el, self.targets)) : now;
+          var from = p in self.fromVars ? cssValue(el, p, resolve(self.fromVars[p], i, el, self.targets)) : now;
+          if (self.kind === "from") { s[p] = to; e[p] = now; }
+          else if (self.kind === "fromTo") { s[p] = from; e[p] = p in self.vars ? to : now; }
+          else { s[p] = now; e[p] = to; }
+          if (isEl(el) && !TRANSFORM[p] && !UNITLESS[p]) { s[p] = inUnitOf(el, p, s[p], e[p]); e[p] = inUnitOf(el, p, e[p], s[p]); }
         });
+        this.starts[i] = s; this.ends[i] = e;
       };
       // Writes the values at local time `lt` into the store; returns whether
-      // anything was written. Like GSAP, a tween reads its start values the
-      // first time it renders, and one never rendered leaves its targets alone.
+      // anything was written. Like GSAP, each target's part of a tween reads
+      // its start values the first time it renders, and one never rendered
+      // leaves its target alone.
       Tween.prototype.applyAt = function (lt) {
         var self = this, any = false;
         // Before its start (each target's, with the stagger) a tween renders
@@ -190,11 +207,17 @@
         var last = this.lastLt;
         this.lastLt = lt;
         if (lt < 0 && !(last >= 0)) return false;
-        if (!this.starts) this.capture();
+        if (!this.starts) { this.starts = []; this.ends = []; }
         this.targets.forEach(function (el, i) {
-          var tt = lt - i * self.each, d = self.durs[i], k;
+          var tt = round(lt - i * self.each), d = self.durs[i], k;
+          // Like GSAP, a target whose part shows the same time as at its last
+          // render (before its start, or done) is not written again, so a
+          // tween still running on it has the last word.
+          var at = tt < 0 ? -1 : Math.min(tt, Math.max(0, d) * (self.repeat + 1));
+          if (at === self.shown[i]) return;
+          self.shown[i] = at;
           if (tt < 0) {
-            if (self.kind === "set" || !(last - i * self.each >= 0)) return;
+            if (self.kind === "set" || !(round(last - i * self.each) >= 0)) return;
             k = 0;
           } else if (d <= 0) k = 1;
           else {
@@ -205,6 +228,7 @@
               k = self.yoyo && c % 2 === 1 ? self.ease(1 - p) : self.ease(p);
             }
           }
+          if (!self.starts[i]) self.captureAt(i);
           self.props.forEach(function (p) { put(el, p, mix(self.starts[i][p], self.ends[i][p], k, el, p)); });
           any = true;
         });
@@ -272,7 +296,7 @@
         this._time = now;
         list.forEach(function (c) {
           if (c instanceof Tween) {
-            if (c.applyAt(now - c.start)) {
+            if (c.applyAt(round(now - c.start))) {
               c.targets.forEach(write);
               if (c.vars.onUpdate && (now >= c.start)) c.vars.onUpdate.call(c);
             }

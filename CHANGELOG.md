@@ -14,6 +14,7 @@ All notable changes to Contour are recorded here. The format follows
 - Save and attach a drawing even if the draw tool closes right after Attach (#300).
 - Save text typed in the preview right after it reloads even if the Studio is left before editing is ready (#302).
 - Show bundled skill examples with their styles, charts and animations in the preview; they no longer load Tailwind, GSAP or Chart.js from a CDN (#301).
+- Animate bars, wipes and stacked fades in the bundled video skill templates as GSAP does; some started early or stopped part way (#304).
 
 ## [0.2.0-beta.55] - 2026-11-23
 

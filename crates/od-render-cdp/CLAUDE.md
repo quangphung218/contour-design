@@ -65,6 +65,9 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
     - `tests/deck_templates.rs::bundled_deck_templates_print_as_their_slides_look` (real Chrome, PDF pages rasterised
       against the slide screenshots; a sample and a deck with `fixed` boxes in contained slides by default, `OD_DECK_TEMPLATES=all`
       for every bundled deck in `content/design-templates` and `content/skills`)
+14. The motion runtime inlined in the bundled video skills (`/* Motion runtime written for Contour`, five copies kept
+    equal by od-content) moves a film as GSAP 3 does when the frame bridge seeks it: values read from GSAP 3.12.5.
+    - `tests/motion_runtime.rs::the_inlined_motion_runtime_moves_films_as_gsap_does` (real Chrome)
 
 ## Traps
 - Headless Chrome as our child woke GoogleUpdater, and macOS asked for App Management on every update.
@@ -103,6 +106,10 @@ Renders pages with the Chrome / Edge / Chromium already installed, over CDP. Imp
   `tests/deck_templates.rs` `OWN_PRINT_LAYOUT` (decided on review of #287).
 - On a coloured slide a gradient is mostly texture (ruled lines, soft spots): taking its first stop as the
   background broke 6 bundled decks. Only a box painted by a gradient alone covers its ancestors (#283 review).
+- GSAP details the inline motion runtime has to copy (each moved a bundled film, found against GSAP 3.12.5): a
+  staggered target reads its start values when its own part starts; times are rounded (5.44 + 4 × 0.04 is 5.6, not
+  later); a px start going to `%` is converted first (`4px` → 0.34 %, not 4 %); a tween done on a target is not
+  drawn again, so another tween still running on it ends it. Check a runtime change against GSAP frame by frame.
 
 ## Check
 - Most launch tests run only on macOS. CI runs them in the `chrome-macos` job of `../../.github/workflows/ci.yml`,
