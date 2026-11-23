@@ -789,7 +789,14 @@ impl Store {
         if records_version(&uploaded.name, bytes)
             && let Err(err) = versions::refuse_linked_history(&root.dir, &uploaded.name)
         {
-            let _ = files::delete_file(root, &uploaded.path);
+            // Only while it holds what was written, read under the name
+            // the delete takes: an agent's file put there since stays.
+            let path = crate::paths::as_on_disk(&root.dir, &uploaded.path);
+            if crate::drafts::holds(root, &path, &crate::drafts::content_ident(bytes))
+                == crate::drafts::Holds::Same
+            {
+                let _ = files::delete_file(root, &path);
+            }
             return Err(err);
         }
         // Not a draft's until the caller records it so.
@@ -877,6 +884,8 @@ impl Store {
     /// holds the bytes written. The caller holds [`Self::versions_guard`].
     fn undo_uploads_held(&self, root: &ProjectRoot, project_id: &str, written: &[(String, &[u8])]) {
         for (path, bytes) in written {
+            // Read under the name the delete takes ([`files::delete_file`]).
+            let path = &crate::paths::as_on_disk(&root.dir, path);
             let ident = crate::drafts::content_ident(bytes);
             if crate::drafts::holds(root, path, &ident) != crate::drafts::Holds::Same {
                 tracing::info!(file = %path, "a failed upload's path holds another file or none: kept");

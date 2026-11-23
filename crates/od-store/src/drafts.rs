@@ -16,6 +16,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::files::{self, ProjectRoot};
+use crate::paths::as_on_disk;
 use crate::store::Store;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashSet;
@@ -354,6 +355,7 @@ struct Foretold {
 }
 
 fn foretell(root: &ProjectRoot, path: &str, ident: Option<&str>, uploaded_at: i64) -> Foretold {
+    let path = &as_on_disk(&root.dir, path);
     let stamp = file_ident(root, path);
     let fate = fate(root, path, ident, uploaded_at);
     Foretold { fate, stamp }
@@ -372,6 +374,11 @@ fn delete_foretold(
     uploaded_at: i64,
     told: Foretold,
 ) -> bool {
+    // Spelled once, as the delete spells it ([`files::delete_file`]): the
+    // fate is told of the file that would go. With the draft's
+    // `comments/a.png` gone, the user's `comments/A.png` is read, found
+    // another file and kept, also where the disk tells case apart.
+    let path = &as_on_disk(&root.dir, path);
     let fate = match told.stamp {
         Some(stamp) if file_ident(root, path).is_some_and(|now| now == stamp) => told.fate,
         _ => fate(root, path, ident, uploaded_at),
@@ -822,6 +829,37 @@ mod tests {
             Ok(())
         })
         .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// A draft's `comments/a.png` gone (the agent, Finder) and the user's
+    /// `comments/A.png` there: a release, a sweep or the release of all
+    /// leaves `A.png`. Where the disk tells case apart (Linux), the draft's
+    /// fate and its delete must look at the same file.
+    #[test]
+    fn a_users_file_alike_to_a_gone_draft_image_stays() {
+        let release: [fn(&Store, &str); 3] = [
+            |s, p| drop(s.release_draft_session(p, "s1")),
+            |s, _| {
+                age(s, DRAFT_MAX_AGE_MS + 1);
+                drop(s.sweep_draft_uploads(DRAFT_MAX_AGE_MS));
+            },
+            |s, _| drop(s.release_all_draft_uploads()),
+        ];
+        for (n, release) in release.into_iter().enumerate() {
+            let (_tmp, s, p, _) = store();
+            let (draft, _) = upload(&s, &p, "s1", "a.png");
+            assert_eq!(draft, "comments/a.png");
+            let full = s.stat_file(&p, &draft).unwrap_or_else(|e| panic!("{e}")).1;
+            std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+            let users = full.with_file_name("A.png");
+            std::fs::write(&users, b"the user's").unwrap_or_else(|e| panic!("{e}"));
+            release(&s, &p);
+            assert_eq!(
+                std::fs::read(&users).ok().as_deref(),
+                Some(b"the user's".as_slice()),
+                "release {n}: the user's A.png went"
+            );
+        }
     }
 
     #[test]
