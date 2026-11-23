@@ -5,7 +5,9 @@
 // accept, download, delete, create from a brand's website with phases, from
 // CSS variables); Plugins (use a plugin with its inputs form → the run gets
 // the plugin; install from a folder, uninstall; create with agent; skills:
-// detail, edit as an override, new skill, delete; Save as skill from the
+// detail, edit as an override, new skill, delete; a folder with only
+// SKILL.md installs as a skill; From agent CLI: the skills of a temp HOME,
+// two imported, a bundled id refused by its row; Save as skill from the
 // Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
@@ -70,10 +72,20 @@ const PROVIDER = `http://127.0.0.1:${provider.address().port}/v1`;
 
 const data = mkdtempSync(join(tmpdir(), 'od-e2e-lib-'));
 const fixtures = mkdtempSync(join(tmpdir(), 'od-e2e-lib-fx-'));
+// HOME of the daemon and its agents: the agent CLI skills it lists.
+const home = mkdtempSync(join(tmpdir(), 'od-e2e-lib-home-'));
+const agentSkill = (rel, md) => {
+  mkdirSync(join(home, rel, 'assets'), { recursive: true });
+  writeFileSync(join(home, rel, 'SKILL.md'), md);
+  writeFileSync(join(home, rel, 'assets', 'tokens.css'), ':root { --accent: #2f6b3a; }');
+};
+agentSkill('.claude/skills/tea-a', '---\nname: tea-a\ndescription: Tea house pages.\n---\nUse cream.\n');
+agentSkill('.codex/skills/tea-b', '---\nname: tea-b\ndescription: Tea menus.\n---\nUse leaf green.\n');
+agentSkill('.agents/skills/ad-creative', '---\nname: ad-creative\ndescription: Mine.\n---\nMine.\n');
 mkdirSync(OUT, { recursive: true });
 const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
   stdio: ['ignore', 'inherit', 'inherit'],
-  env: { ...process.env, OD_DATA_DIR: data, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true', SHELL: '/bin/sh' },
+  env: { ...process.env, OD_DATA_DIR: data, HOME: home, PATH: `${MOCK_AGENTS}:/usr/bin:/bin`, OD_OPEN_COMMAND: '/usr/bin/true', SHELL: '/bin/sh' },
 });
 let browser;
 const results = {};
@@ -372,6 +384,67 @@ try {
   await page.getByTestId('skill-use').click();
   await page.getByTestId('home-skill').waitFor();
   results.skills = 'ok';
+
+  // Install from folder: a folder with only SKILL.md is a skill.
+  const bare = join(fixtures, 'tea-bare');
+  mkdirSync(bare, { recursive: true });
+  writeFileSync(join(bare, 'SKILL.md'), '---\nname: tea-bare\n---\nBare.\n');
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-folder').click();
+  await page.getByTestId('plugin-path').fill(bare);
+  await page.getByTestId('plugin-install').click();
+  await page.getByTestId('skill-detail').locator('h2', { hasText: 'tea-bare' }).waitFor();
+  assert.ok(existsSync(join(data, 'skills', 'tea-bare', 'SKILL.md')), 'in the skills');
+  assert.ok(!existsSync(join(data, 'plugins', 'tea-bare')), 'not in the plugins');
+  results.bareSkill = 'ok';
+
+  // From agent CLI: pick three; the bundled id fails by its row, the two
+  // others are copied in and listed under Personal.
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-agent-cli').click();
+  const agentRows = page.getByTestId('agent-skill');
+  await until(async () => (await agentRows.count()) === 3, 'three agent skills');
+  assert.deepEqual(
+    await agentRows.evaluateAll((rows) => rows.map((r) => `${r.dataset.agent}/${r.dataset.id}`)),
+    ['claude/tea-a', 'agents/ad-creative', 'codex/tea-b'],
+  );
+  const agentRow = (id) => page.locator(`[data-testid="agent-skill"][data-id="${id}"]`);
+  await page.getByTestId('agent-skills-filter').fill('menus');
+  await until(async () => (await agentRows.count()) === 1, 'the filter narrows the list');
+  await agentRow('tea-b').getByTestId('agent-skill-pick').check();
+  await page.getByTestId('agent-skills-filter').fill('');
+  await until(async () => (await agentRows.count()) === 3, 'the filter clears');
+  await agentRow('tea-a').getByTestId('agent-skill-pick').check();
+  await agentRow('ad-creative').getByTestId('agent-skill-pick').check();
+  assert.equal((await page.getByTestId('agent-skills-import').textContent()).trim(), 'Import (3)');
+  await page.getByTestId('agent-skills-import').click();
+  await agentRow('ad-creative').getByTestId('agent-skill-error').waitFor();
+  assert.equal((await agentRow('ad-creative').getByTestId('agent-skill-error').textContent()).trim(), 'A skill named ad-creative already exists');
+  await agentRow('tea-a').getByTestId('agent-skill-imported').waitFor();
+  await agentRow('tea-b').getByTestId('agent-skill-imported').waitFor();
+  assert.ok(existsSync(join(data, 'skills', 'tea-a', 'assets', 'tokens.css')));
+  assert.ok(existsSync(join(data, 'skills', 'tea-b', 'SKILL.md')));
+  assert.ok(!existsSync(join(data, 'skills', 'ad-creative')), 'the bundled skill is not overwritten');
+  assert.ok(existsSync(join(home, '.claude/skills/tea-a/SKILL.md')), 'the agent folder stays');
+  await page.screenshot({ path: join(OUT, 'agent-skills.png') });
+  // The close button: focus left the dialog with the Import button that
+  // was off while it ran, so Escape would not reach it.
+  await page.getByTestId('plugin-create').getByRole('button', { name: 'Close' }).click();
+  await page.getByTestId('plugin-create').waitFor({ state: 'detached' });
+  await page.locator('[data-testid="skill-row"][data-id="tea-a"]').waitFor();
+  await page.locator('[data-testid="skill-row"][data-id="tea-b"]').waitFor();
+  const userSkills = (await api('/api/skills')).skills.filter((sk) => sk.source === 'user').map((sk) => sk.id);
+  assert.ok(userSkills.includes('tea-a') && userSkills.includes('tea-b'), 'the composer lists them for @');
+  // Opened again: both read as imported and cannot be picked again.
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-agent-cli').click();
+  await agentRow('tea-a').getByTestId('agent-skill-imported').waitFor();
+  await agentRow('tea-b').getByTestId('agent-skill-imported').waitFor();
+  assert.equal(await agentRow('tea-a').getByTestId('agent-skill-pick').isDisabled(), true);
+  await page.getByTestId('plugin-create').getByRole('button', { name: 'Close' }).click();
+  results.agentSkills = 'ok';
 
   // ------------------------------------------------------ save as skill
   // "+" ▸ Save as skill: off before a turn has finished and while one
@@ -682,4 +755,5 @@ try {
   await sleep(300);
   rmSync(data, { recursive: true, force: true });
   rmSync(fixtures, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
 }

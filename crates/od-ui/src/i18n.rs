@@ -1220,9 +1220,15 @@ messages! {
     PluginBrief => "What should the plugin do?", "Plugin cần làm gì?";
     PluginBriefPlaceholder => "Turn a recipe into a printable card with a photo and steps", "Biến công thức nấu ăn thành thẻ in được có ảnh và các bước";
     StartWithAgent => "Start with agent", "Bắt đầu với agent";
-    InstallFromFolderHint => "A folder with SKILL.md or open-design.json. It is copied into your plugins.", "Thư mục có SKILL.md hoặc open-design.json. Thư mục được chép vào plugin của tôi.";
+    InstallFromFolderHint => "A folder with SKILL.md or open-design.json. A folder with only SKILL.md is copied into your skills, others into your plugins.", "Thư mục có SKILL.md hoặc open-design.json. Thư mục chỉ có SKILL.md được chép vào skill của tôi, còn lại vào plugin của tôi.";
     PluginPathPlaceholder => "/Users/me/plugins/recipe-cards", "/Users/me/plugins/recipe-cards";
     UsingSkill => "Skill: {0}", "Skill: {0}";
+    FromAgentCli => "From agent CLI", "Từ agent CLI";
+    ImportCount => "Import ({0})", "Nhập ({0})";
+    Imported => "Imported", "Đã nhập";
+    NoAgentSkills => "No skills found", "Không thấy skill nào";
+    SkillNameTaken => "A skill named {0} already exists", "Đã có skill tên {0}";
+    AgentSkillsFailed => "Could not read the agent skills: {0}", "Không đọc được skill của agent: {0}";
     MediaPageSub => "Every image, video and audio file across projects. Generate more with the providers you configured.", "Mọi ảnh, video và âm thanh trong các project. Sinh thêm bằng provider đã cấu hình.";
     GenerateMedia => "Generate", "Sinh media";
     Library => "Library", "Thư viện";

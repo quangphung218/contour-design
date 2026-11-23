@@ -358,6 +358,21 @@ pub fn install_skill(
             source.display()
         )));
     }
+    let (id, _) = read_skill(source)?;
+    if taken(&id) {
+        return Err(WriteError::Exists(format!("skill {id:?}")));
+    }
+    refuse_case_twin(user_root, &id, "skill")?;
+    place_copy(source, user_root, &id)?;
+    Ok(id)
+}
+
+/// The id and front matter of the skill in `source`: the front matter's
+/// `name`, else the folder name, as the index reads it. Install and the
+/// agent CLI listing share it, so a listed id is the id installed.
+fn read_skill(
+    source: &Path,
+) -> Result<(String, serde_json::Map<String, serde_json::Value>), WriteError> {
     let skill_md = source.join("SKILL.md");
     // A link is refused here: `copy_dir` skips links, so the copy would
     // have no SKILL.md.
@@ -383,12 +398,102 @@ pub fn install_skill(
             "invalid skill id {id:?}: use letters, digits and -"
         )));
     }
-    if taken(&id) {
-        return Err(WriteError::Exists(format!("skill {id:?}")));
+    Ok((id, front))
+}
+
+/// Whether `source` is a bare skill: a `SKILL.md` and no plugin manifest
+/// (`open-design.json`, `.claude-plugin/`). "Install from folder" puts
+/// one in the skills, not the plugins.
+#[must_use]
+pub fn is_bare_skill(source: &Path) -> bool {
+    std::fs::symlink_metadata(source.join("SKILL.md")).is_ok_and(|m| m.is_file())
+        && !source.join("open-design.json").exists()
+        && !source.join(".claude-plugin").exists()
+}
+
+/// Where agent CLIs keep their skills, under `home`: `(agent, folder)`.
+/// Only these are listed; nothing else in the home folder is read.
+#[must_use]
+pub fn agent_skill_roots(home: &Path) -> Vec<(String, PathBuf)> {
+    [
+        ("claude", ".claude/skills"),
+        ("agents", ".agents/skills"),
+        ("codex", ".codex/skills"),
+        ("gemini", ".gemini/skills"),
+        ("opencode", ".config/opencode/skill"),
+        ("opencode", ".config/opencode/skills"),
+    ]
+    .into_iter()
+    .map(|(agent, rel)| (agent.to_owned(), home.join(rel)))
+    .collect()
+}
+
+/// A skill folder found in an agent CLI's skills.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LocalSkill {
+    pub path: PathBuf,
+    pub agent: String,
+    /// The id it installs as; the folder name when `error` is set.
+    pub id: String,
+    pub description: String,
+    /// A user skill with this id exists (any case or Unicode form).
+    pub imported: bool,
+    /// Why it cannot be imported (front matter, id).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// The skill folders one level under each root, by agent then id. A root
+/// that does not exist is skipped. Hidden entries and links are skipped
+/// (`~/.claude/skills` often links into `~/.agents/skills`), so are
+/// folders without a `SKILL.md`; a `SKILL.md` that would not install is
+/// listed with its `error`. Nothing is written.
+#[must_use]
+pub fn scan_agent_skills(roots: &[(String, PathBuf)], user_root: &Path) -> Vec<LocalSkill> {
+    let mut out = Vec::new();
+    for (agent, root) in roots {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            continue;
+        };
+        let mut found: Vec<LocalSkill> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let folder = entry.file_name().to_string_lossy().into_owned();
+                let kind = entry.file_type().ok()?;
+                if folder.starts_with('.') || !kind.is_dir() {
+                    return None;
+                }
+                let path = entry.path();
+                std::fs::symlink_metadata(path.join("SKILL.md")).ok()?;
+                Some(match read_skill(&path) {
+                    Ok((id, front)) => LocalSkill {
+                        imported: user_skill_exists(user_root, &id),
+                        description: front
+                            .get("description")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .trim()
+                            .to_owned(),
+                        path,
+                        agent: agent.clone(),
+                        id,
+                        error: None,
+                    },
+                    Err(e) => LocalSkill {
+                        path,
+                        agent: agent.clone(),
+                        id: folder,
+                        description: String::new(),
+                        imported: false,
+                        error: Some(e.to_string()),
+                    },
+                })
+            })
+            .collect();
+        found.sort_by(|a, b| a.id.cmp(&b.id));
+        out.extend(found);
     }
-    refuse_case_twin(user_root, &id, "skill")?;
-    place_copy(source, user_root, &id)?;
-    Ok(id)
+    out
 }
 
 /// The front matter of a `SKILL.md`; text without one, or with one that
@@ -703,5 +808,89 @@ mod tests {
         assert!(!user_skill_exists(&user, "tea-house-2"));
         assert!(!user_skill_exists(&user, ".installing-brew-1"));
         assert!(!user_skill_exists(&user, "notes"), "a file is no skill");
+    }
+
+    #[test]
+    fn agent_skills_are_listed_one_level_deep_by_agent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let user = tmp.path().join("user");
+        let roots = agent_skill_roots(&home);
+        // No agent folder at all: nothing, no error.
+        assert!(scan_agent_skills(&roots, &user).is_empty());
+
+        let claude = home.join(".claude/skills");
+        let codex = home.join(".codex/skills");
+        skill_dir(
+            &claude,
+            "tea",
+            "---\nname: tea-house\ndescription: Calm.\n---\nBody.\n",
+        );
+        skill_dir(&claude, "plain", "---\ndescription: x\n---\nBody.\n");
+        skill_dir(&codex, "brew", "---\nname: brew\n---\nBody.\n");
+        // Not listed: hidden, no SKILL.md, a file, deeper than one level.
+        skill_dir(&claude, ".hidden", "---\nname: hidden\n---\n");
+        std::fs::create_dir_all(claude.join("notes")).unwrap();
+        std::fs::write(claude.join("README.md"), "x").unwrap();
+        skill_dir(&claude.join("group"), "deep", "---\nname: deep\n---\n");
+        // Listed with an error: no front matter, an id that cannot install.
+        skill_dir(&codex, "loose", "Just text.\n");
+        skill_dir(&codex, "bad", "---\nname: \"a b\"\n---\nBody.\n");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(codex.join("brew"), claude.join("linked")).unwrap();
+        // Imported: a user skill with the same id in another case.
+        std::fs::create_dir_all(user.join("Brew")).unwrap();
+
+        let got = scan_agent_skills(&roots, &user);
+        let rows: Vec<(&str, &str, bool, bool)> = got
+            .iter()
+            .map(|s| {
+                (
+                    s.agent.as_str(),
+                    s.id.as_str(),
+                    s.imported,
+                    s.error.is_some(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("claude", "plain", false, false),
+                ("claude", "tea-house", false, false),
+                ("codex", "bad", false, true),
+                ("codex", "brew", true, false),
+                ("codex", "loose", false, true),
+            ]
+        );
+        assert_eq!(got[1].description, "Calm.");
+        assert_eq!(got[1].path, claude.join("tea"));
+        // What is listed installs under the id listed.
+        let id = install_skill(&got[1].path, &user, |_| false).unwrap();
+        assert_eq!(id, got[1].id);
+        assert!(scan_agent_skills(&roots, &user)[1].imported);
+        // Nothing was written in the agent folders.
+        let mut left = names(&claude);
+        left.retain(|n| n != "linked");
+        assert_eq!(
+            left,
+            [".hidden", "README.md", "group", "notes", "plain", "tea"]
+        );
+    }
+
+    #[test]
+    fn a_bare_skill_has_no_plugin_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bare = skill_dir(tmp.path(), "bare", "---\nname: bare\n---\n");
+        assert!(is_bare_skill(&bare));
+        let od = skill_dir(tmp.path(), "od", "---\nname: od\n---\n");
+        std::fs::write(od.join("open-design.json"), "{}").unwrap();
+        assert!(!is_bare_skill(&od));
+        let cc = skill_dir(tmp.path(), "cc", "---\nname: cc\n---\n");
+        std::fs::create_dir_all(cc.join(".claude-plugin")).unwrap();
+        assert!(!is_bare_skill(&cc));
+        let none = tmp.path().join("none");
+        std::fs::create_dir_all(&none).unwrap();
+        assert!(!is_bare_skill(&none));
     }
 }

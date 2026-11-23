@@ -302,6 +302,107 @@ async fn skills_install_from_a_folder() {
     assert_eq!(user_skill_folders(&d), want);
 }
 
+/// "From agent CLI": the skill folders of the agents' `HOME`, one level,
+/// with what is imported already; one that does not parse is listed with
+/// its error and the list still answers.
+#[tokio::test]
+async fn agent_cli_skills_are_listed_from_the_agents_home() {
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    // No agent folder yet: an empty list.
+    let (s, v) = call(&d, "GET", "/api/skills/local-sources", None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["sources"], json!([]));
+
+    let a = skill_folder(
+        &home.path().join(".claude/skills"),
+        "a",
+        "---\nname: tea-a\ndescription: Tea A.\n---\nA.\n",
+    );
+    skill_folder(
+        &home.path().join(".codex/skills"),
+        "b",
+        "---\nname: tea-b\n---\nB.\n",
+    );
+    skill_folder(
+        &home.path().join(".codex/skills"),
+        "broken",
+        "No front matter.\n",
+    );
+    let (s, v) = call(&d, "GET", "/api/skills/local-sources", None).await;
+    assert_eq!(s, 200, "{v}");
+    let rows: Vec<(String, String, bool, bool)> = v["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["agent"].as_str().unwrap().to_owned(),
+                r["id"].as_str().unwrap().to_owned(),
+                r["imported"].as_bool().unwrap(),
+                r.get("error").is_some(),
+            )
+        })
+        .collect();
+    let row = |agent: &str, id: &str, imported: bool, error: bool| {
+        (agent.to_owned(), id.to_owned(), imported, error)
+    };
+    assert_eq!(
+        rows,
+        [
+            row("claude", "tea-a", false, false),
+            row("codex", "broken", false, true),
+            row("codex", "tea-b", false, false),
+        ]
+    );
+    assert_eq!(v["sources"][0]["description"], "Tea A.");
+
+    // Imported through the install route: a copy, listed as imported; the
+    // agent's folder is left as it was.
+    let path = v["sources"][0]["path"].as_str().unwrap().to_owned();
+    let (s, r) = call(
+        &d,
+        "POST",
+        "/api/skills/install",
+        Some(json!({ "path": path })),
+    )
+    .await;
+    assert_eq!(s, 200, "{r}");
+    assert!(d.data.join("skills/tea-a/assets/tokens.css").is_file());
+    assert!(a.join("SKILL.md").is_file());
+    let again = d.get_json("/api/skills/local-sources").await;
+    assert_eq!(again["sources"][0]["imported"], true);
+    assert_eq!(again["sources"][2]["imported"], false);
+}
+
+/// "Install from folder": a bare skill goes to the skills; a plugin folder
+/// is left to the plugin install (`{id: null}`, nothing written).
+#[tokio::test]
+async fn a_bare_only_install_leaves_plugin_folders_alone() {
+    let d = daemon().await;
+    let src = tempfile::tempdir().unwrap();
+    let bare = skill_folder(src.path(), "bare", "---\nname: tea-bare\n---\nBare.\n");
+    let plugin = skill_folder(src.path(), "plugin", "---\nname: tea-plugin\n---\nP.\n");
+    std::fs::write(plugin.join("open-design.json"), "{}").unwrap();
+    let body = |p: &Path| json!({ "path": p.to_string_lossy(), "bareOnly": true });
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(body(&plugin))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["id"], Value::Null);
+    assert!(user_skill_folders(&d).is_empty());
+    let (s, v) = call(&d, "POST", "/api/skills/install", Some(body(&bare))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["id"], "tea-bare");
+    assert_eq!(user_skill_folders(&d), ["tea-bare"]);
+}
+
 /// The agent of a "Save as skill" turn installs what it wrote with `curl`,
 /// as its prompt says when `od` is not on its PATH: no API token, only the
 /// run's environment.
