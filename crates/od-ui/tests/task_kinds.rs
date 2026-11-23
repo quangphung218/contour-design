@@ -25,23 +25,28 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-/// `(file under src, the late writes of the task joined by "+", times,
-/// why it may stay)`.
-const KEPT: &[(&str, &str, usize, &str)] = &[
+/// `(file under src, the tasks that spawn it (`ctx.tasks`, `tasks`…), the
+/// late writes of the task joined by "+", times, why it may stay)`. The
+/// receiver says whose task it is: the same write in the task of a panel
+/// that goes first (`tasks` of the draw layer) is not kept.
+const KEPT: &[Kept] = &[
     (
         "app/automations.rs",
+        "screen",
         "api::post",
         1,
         "apply or reject: two branches, each one request at the task's first await",
     ),
     (
         "app/capture.rs",
+        "tasks",
         "mark_exported",
         1,
         "counted after a download that itself needs the Studio: no download, no export",
     ),
     (
         "app/capture.rs",
+        "tasks",
         "save_png",
         1,
         "the menu goes only with the preview frame (code view, a file not HTML, a \
@@ -49,6 +54,7 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "app/chat_ops.rs",
+        "ctx.tasks",
         "new_conversation",
         1,
         "the delete goes first; a fresh conversation after the last one went is \
@@ -56,6 +62,7 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "app/chat_ops.rs",
+        "ctx.tasks",
         "finish_link",
         1,
         "the folder comes from the desktop's modal picker: the window takes no \
@@ -63,6 +70,7 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "app/comments_panel.rs",
+        "ctx.tasks",
         "drop_draft_images",
         1,
         "deletes images of a draft cancelled meanwhile; with the Studio gone its \
@@ -70,12 +78,14 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "app/files_panel.rs",
+        "ctx.tasks",
         "mark_exported",
         2,
         "counted after a ZIP download that itself needs the Studio: no download, no export",
     ),
     (
         "app/manual_edit.rs",
+        "self.tasks",
         "manual_save_content",
         1,
         "the upload goes first; putting it in the page reads the panel's selected \
@@ -83,19 +93,22 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "app/preview_tools.rs",
+        "ctx.tasks",
         "attach_annotation",
         1,
         "the Studio's task: the snapshot reads the Studio's preview and the image \
          lands in its composer; the draw layer going does not stop it",
     ),
-    (
-        "app/preview_tools.rs",
-        "write_text_edit",
-        1,
-        "text edits typed in the frame before its edit key came: written with the \
-         key, which only the Studio's frame has",
-    ),
 ];
+
+/// A site that may stay: see [`KEPT`].
+type Kept = (
+    &'static str,
+    &'static str,
+    &'static str,
+    usize,
+    &'static str,
+);
 
 /// The calls that send a write to the daemon.
 const WRITES: &[&str] = &[
@@ -404,15 +417,35 @@ fn fixpoint(
     }
 }
 
-/// `(file, line, late writes joined by "+")` of every task that may drop a
-/// write.
-fn late_tasks(sources: &[(String, String)]) -> Vec<(String, usize, String)> {
-    let masked: Vec<(String, String)> = sources.iter().map(|(f, s)| (f.clone(), mask(s))).collect();
-    let fns = functions(&masked);
+/// The functions that write (`writers`), and the async ones that may wait
+/// before they do (`waiting`), of masked `sources`.
+fn writers_and_waiting(masked: &[(String, String)]) -> (BTreeSet<String>, BTreeSet<String>) {
+    let fns = functions(masked);
     let writers = fixpoint(&fns, |f, w| !writes_in(&f.body, w).is_empty());
     let waiting = fixpoint(&fns, |f, wait| {
         f.is_async && !late_writes(&f.body, &writers, wait).is_empty()
     });
+    (writers, waiting)
+}
+
+/// A task that may drop a write: `file`, `line`, the tasks that spawn it
+/// (`ctx.tasks`), its late writes joined by "+".
+type Site = (String, usize, String, String);
+
+/// The expression a method called at `at` (a `.`) is called on: the path
+/// of names and dots before it (`ctx.tasks`, `self.tasks`, `tasks`).
+fn receiver(src: &str, at: usize) -> String {
+    let start = src[..at]
+        .bytes()
+        .rposition(|c| !(is_ident(c) || c == b'.'))
+        .map_or(0, |i| i + 1);
+    src[start..at].to_owned()
+}
+
+/// Every task that may drop a write.
+fn late_tasks(sources: &[(String, String)]) -> Vec<Site> {
+    let masked: Vec<(String, String)> = sources.iter().map(|(f, s)| (f.clone(), mask(s))).collect();
+    let (writers, waiting) = writers_and_waiting(&masked);
     let mut found = Vec::new();
     for (file, src) in &masked {
         for spawner in SPAWNERS {
@@ -434,7 +467,7 @@ fn late_tasks(sources: &[(String, String)]) -> Vec<(String, usize, String)> {
                 if !late.is_empty() {
                     let line = src[..at].matches('\n').count() + 1;
                     let names: Vec<String> = late.into_iter().collect();
-                    found.push((file.clone(), line, names.join("+")));
+                    found.push((file.clone(), line, receiver(src, at), names.join("+")));
                 }
             }
         }
@@ -444,36 +477,36 @@ fn late_tasks(sources: &[(String, String)]) -> Vec<(String, usize, String)> {
 
 /// Problems with `found` against `kept`: a site not listed, more of one
 /// than listed, or a listed one no longer there.
-fn unlisted(found: &[(String, usize, String)], kept: &[(&str, &str, usize, &str)]) -> Vec<String> {
-    let mut by_key: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
-    for (file, line, names) in found {
-        by_key.entry((file, names)).or_default().push(*line);
+fn unlisted(found: &[Site], kept: &[Kept]) -> Vec<String> {
+    let mut by_key: BTreeMap<(&str, &str, &str), Vec<usize>> = BTreeMap::new();
+    for (file, line, recv, names) in found {
+        by_key.entry((file, recv, names)).or_default().push(*line);
     }
-    let listed: BTreeMap<(&str, &str), usize> = kept
+    let listed: BTreeMap<(&str, &str, &str), usize> = kept
         .iter()
-        .map(|&(f, n, times, _)| ((f, n), times))
+        .map(|&(f, r, n, times, _)| ((f, r, n), times))
         .collect();
     let mut problems = Vec::new();
-    for (&(file, names), lines) in &by_key {
+    for (&(file, recv, names), lines) in &by_key {
         let at = lines
             .iter()
             .map(|l| format!("{file}:{l}"))
             .collect::<Vec<_>>()
             .join(", ");
-        match listed.get(&(file, names)) {
-            None => problems.push(format!("{at}: {names} (not in KEPT)")),
+        match listed.get(&(file, recv, names)) {
+            None => problems.push(format!("{at}: {recv} {names} (not in KEPT)")),
             Some(&allowed) if lines.len() > allowed => problems.push(format!(
-                "{at}: {names} ({} times, KEPT allows {allowed})",
+                "{at}: {recv} {names} ({} times, KEPT allows {allowed})",
                 lines.len()
             )),
             Some(_) => {}
         }
     }
-    for (&(file, names), &allowed) in &listed {
-        let times = by_key.get(&(file, names)).map_or(0, Vec::len);
+    for (&(file, recv, names), &allowed) in &listed {
+        let times = by_key.get(&(file, recv, names)).map_or(0, Vec::len);
         if times < allowed {
             problems.push(format!(
-                "{file}: {names} (KEPT says {allowed}, src has {times}: update KEPT)"
+                "{file}: {recv} {names} (KEPT says {allowed}, src has {times}: update KEPT)"
             ));
         }
     }
@@ -511,6 +544,22 @@ fn work_the_user_asked_for_is_not_dropped_with_its_screen() {
     );
 }
 
+/// The config saves wait for the window's turn, so a `spawn` that calls
+/// them anywhere is found. A second function of the same name that does
+/// not wait would take the name out of `waiting` and hide them; this
+/// says so.
+#[test]
+fn the_config_saves_count_as_waiting() {
+    let masked: Vec<(String, String)> = sources()
+        .iter()
+        .map(|(f, s)| (f.clone(), mask(s)))
+        .collect();
+    let (_, waiting) = writers_and_waiting(&masked);
+    for save in ["save_config", "add_recent_dir"] {
+        assert!(waiting.contains(save), "{save} no longer counts as waiting");
+    }
+}
+
 fn src(file: &str, lines: &[&str]) -> (String, String) {
     (file.to_owned(), lines.join("\n"))
 }
@@ -518,7 +567,7 @@ fn src(file: &str, lines: &[&str]) -> (String, String) {
 fn late(sources: &[(String, String)]) -> Vec<String> {
     late_tasks(sources)
         .into_iter()
-        .map(|(f, l, n)| format!("{f}:{l} {n}"))
+        .map(|(f, l, r, n)| format!("{f}:{l} {r} {n}"))
         .collect()
 }
 
@@ -553,7 +602,7 @@ fn a_write_after_another_await_is_found() {
             "}",
         ],
     );
-    assert_eq!(late(&[s]), ["a.rs:2 api::post"]);
+    assert_eq!(late(&[s]), ["a.rs:2 ctx.tasks api::post"]);
 }
 
 #[test]
@@ -587,9 +636,9 @@ fn a_helper_that_waits_before_it_sends_is_found_anywhere() {
     assert_eq!(
         late(&[helper, task]),
         [
-            "a.rs:2 save_config",
-            "a.rs:3 upload_all",
-            "a.rs:5 save_config"
+            "a.rs:2 tasks save_config",
+            "a.rs:3 tasks upload_all",
+            "a.rs:5 tasks save_config"
         ]
     );
 }
@@ -631,23 +680,59 @@ fn a_name_defined_twice_writes_only_if_both_do() {
 
 #[test]
 fn the_scan_catches_a_new_site_and_a_listed_one_gone() {
-    let kept = [("a.rs", "save_png", 1, "why")];
-    let one = vec![("a.rs".to_owned(), 3, "save_png".to_owned())];
-    assert!(unlisted(&one, &kept).is_empty());
-    let two = vec![
-        ("a.rs".to_owned(), 3, "save_png".to_owned()),
-        ("a.rs".to_owned(), 9, "save_png".to_owned()),
-    ];
+    let site = |line, recv: &str| {
+        (
+            "a.rs".to_owned(),
+            line,
+            recv.to_owned(),
+            "save_png".to_owned(),
+        )
+    };
+    let kept = [("a.rs", "ctx.tasks", "save_png", 1, "why")];
+    assert!(unlisted(&[site(3, "ctx.tasks")], &kept).is_empty());
     assert_eq!(
-        unlisted(&two, &kept),
-        ["a.rs:3, a.rs:9: save_png (2 times, KEPT allows 1)"]
+        unlisted(&[site(3, "ctx.tasks"), site(9, "ctx.tasks")], &kept),
+        ["a.rs:3, a.rs:9: ctx.tasks save_png (2 times, KEPT allows 1)"]
     );
-    let other = vec![("b.rs".to_owned(), 1, "upload_all".to_owned())];
+    let other = [(
+        "b.rs".to_owned(),
+        1,
+        "tasks".to_owned(),
+        "upload_all".to_owned(),
+    )];
     assert_eq!(
         unlisted(&other, &kept),
         [
-            "b.rs:1: upload_all (not in KEPT)",
-            "a.rs: save_png (KEPT says 1, src has 0: update KEPT)"
+            "b.rs:1: tasks upload_all (not in KEPT)",
+            "a.rs: ctx.tasks save_png (KEPT says 1, src has 0: update KEPT)"
+        ]
+    );
+}
+
+/// The same write in the task of a panel that goes first (the draw
+/// layer's `tasks`) is not the kept one of the Studio (`ctx.tasks`).
+#[test]
+fn a_kept_site_moved_to_another_owner_is_found() {
+    let task = |recv: &str| {
+        src(
+            "a.rs",
+            &[
+                "fn f(ctx: Ctx, tasks: Tasks) {",
+                &format!("    {recv}.spawn(async move {{"),
+                "        snap(ctx).await;",
+                "        api::post_form::<V>(&path, png).await;",
+                "    });",
+                "}",
+            ],
+        )
+    };
+    let kept = [("a.rs", "ctx.tasks", "api::post", 1, "why")];
+    assert!(unlisted(&late_tasks(&[task("ctx.tasks")]), &kept).is_empty());
+    assert_eq!(
+        unlisted(&late_tasks(&[task("tasks")]), &kept),
+        [
+            "a.rs:2: tasks api::post (not in KEPT)",
+            "a.rs: ctx.tasks api::post (KEPT says 1, src has 0: update KEPT)"
         ]
     );
 }

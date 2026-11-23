@@ -22,7 +22,9 @@ use od_contracts::{
     LintResponse, LintSeverity, SourceEdit, SourceEditRequest, SourceEditResponse,
     WriteFileRequest,
 };
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 
 /// What the pointer does over the preview, or which side panel is open.
@@ -111,8 +113,10 @@ pub struct Tools {
     /// source must carry it.
     edit_key: StoredValue<Option<String>>,
     /// Text edits the bridge sent before that key came back: written once
-    /// it does, so typing right after a reload is not lost.
-    early_text_edits: StoredValue<Vec<pb::TextEdit>>,
+    /// it does, so typing right after a reload is not lost. One list per
+    /// load, shared with the task that asks for its key: that task writes
+    /// them even if the Studio is left meanwhile.
+    early_text_edits: StoredValue<EarlyEdits, LocalStorage>,
     /// Text edits the source did not take, kept to try again (QA-087).
     pub failed_text: RwSignal<Vec<FailedText>>,
     pub manual: super::manual_edit::Manual,
@@ -241,7 +245,7 @@ impl Tools {
             frame_kid: StoredValue::new(String::new()),
             claimed_kid: StoredValue::new(String::new()),
             edit_key: StoredValue::new(None),
-            early_text_edits: StoredValue::new(Vec::new()),
+            early_text_edits: StoredValue::new_local(EarlyEdits::default()),
             failed_text: RwSignal::new(Vec::new()),
             manual: super::manual_edit::Manual::new(),
         }
@@ -253,7 +257,7 @@ impl Tools {
         let kid = format!("load-{:08x}{:08x}{:08x}", part(), part(), part());
         self.frame_kid.set_value(kid.clone());
         self.edit_key.set_value(None);
-        self.early_text_edits.set_value(Vec::new());
+        self.early_text_edits.set_value(EarlyEdits::default());
         kid
     }
 
@@ -453,6 +457,58 @@ fn accepted_text_edit(
         && e.doc.as_deref() == active
 }
 
+/// Text edits typed into a load of the frame before its edit key came.
+type EarlyEdits = Rc<RefCell<Vec<pb::TextEdit>>>;
+
+/// A write of the text `e` typed, whose element has `before` in the source.
+fn text_edit(e: &pb::TextEdit, before: String) -> SourceEdit {
+    SourceEdit {
+        selector: e.selector.clone(),
+        text: Some(e.text.clone()),
+        expect_text: Some(before),
+        ..SourceEdit::default()
+    }
+}
+
+/// Writes the text edits typed into a load before its `key` came, and
+/// those typed while they are written, to the files they were typed in.
+/// It reads the Studio's state only with `try_`, so it runs to its end
+/// once the Studio went.
+async fn write_early_text(
+    base: &str,
+    key: &str,
+    early: &EarlyEdits,
+    failed: RwSignal<Vec<FailedText>>,
+) -> Vec<(
+    SourceEditRequest,
+    Result<SourceEditResponse, api::HttpError>,
+)> {
+    let path = format!("{base}/source-edits");
+    let mut out = Vec::new();
+    loop {
+        let edits = early.take();
+        if edits.is_empty() {
+            return out;
+        }
+        for e in edits {
+            let Some(file) = e.doc.clone().filter(|_| keyed(e.key.as_deref(), Some(key))) else {
+                continue;
+            };
+            let before = failed
+                .try_with_untracked(|f| source_text(f, &file, &e).to_owned())
+                .unwrap_or_else(|| e.before.clone());
+            let req = SourceEditRequest {
+                file,
+                edits: vec![text_edit(&e, before)],
+                label: None,
+                claim: Vec::new(),
+            };
+            let res = api::post::<_, SourceEditResponse>(&path, &req).await;
+            out.push((req, res));
+        }
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct EditKeyResponse {
     key: String,
@@ -581,18 +637,35 @@ impl StudioCtx {
         // Take this load's edit key, then re-read the inspected element
         // (its answer counts only with the key).
         tools.claimed_kid.set_value(kid.clone());
-        self.tasks.spawn(async move {
-            let url = format!("{}/edit-keys/{}", self.base(), api::seg(&kid));
-            let res = api::post::<_, EditKeyResponse>(&url, &serde_json::json!({})).await;
-            if let Ok(r) = res
-                && tools.frame_kid.get_value() == kid
+        let early = tools.early_text_edits.get_value();
+        let base = self.base();
+        // Text typed before the key came is the user's work: written even
+        // if the Studio is left meanwhile.
+        let work = async move {
+            let url = format!("{base}/edit-keys/{}", api::seg(&kid));
+            let key = api::post::<_, EditKeyResponse>(&url, &serde_json::json!({}))
+                .await
+                .ok()
+                .map(|r| r.key);
+            // A newer load took over: this one's key and edits are void.
+            // With the Studio gone (`None`), none did.
+            let current = || tools.frame_kid.try_get_value().is_none_or(|k| k == kid);
+            let mut saved = Vec::new();
+            if let Some(key) = &key
+                && current()
             {
-                tools.edit_key.set_value(Some(r.key));
-                for e in tools
-                    .early_text_edits
-                    .try_update_value(std::mem::take)
-                    .unwrap_or_default()
-                {
+                saved = write_early_text(&base, key, &early, tools.failed_text).await;
+            }
+            (key.filter(|_| current()), saved)
+        };
+        self.tasks.spawn_then(work, move |(key, saved)| {
+            for (req, res) in saved {
+                self.edits_saved(false, &req, res);
+            }
+            if let Some(key) = key {
+                tools.edit_key.set_value(Some(key));
+                // Typed while the ones before were written.
+                for e in tools.early_text_edits.with_value(|l| l.take()) {
                     self.write_text_edit(&e);
                 }
             }
@@ -634,7 +707,15 @@ impl StudioCtx {
             }
             BridgeMsg::TextEdit(e) => {
                 if tools.edit_key.with_value(Option::is_none) {
-                    tools.early_text_edits.update_value(|l| l.push(e.clone()));
+                    // Checked now, with the key it brings: the Studio may
+                    // be gone by the time the frame's key comes.
+                    let active = self.active_untracked();
+                    let tool = tools.tool.get_untracked();
+                    if accepted_text_edit(e, tool, active.as_deref(), e.key.as_deref()) {
+                        tools
+                            .early_text_edits
+                            .with_value(|l| l.borrow_mut().push(e.clone()));
+                    }
                 } else {
                     self.write_text_edit(e);
                 }
@@ -733,15 +814,7 @@ impl StudioCtx {
                 .tools
                 .failed_text
                 .with_untracked(|f| source_text(f, &active, e).to_owned());
-            self.save_edits(
-                vec![SourceEdit {
-                    selector: e.selector.clone(),
-                    text: Some(e.text.clone()),
-                    expect_text: Some(before),
-                    ..SourceEdit::default()
-                }],
-                false,
-            );
+            self.save_edits(vec![text_edit(e, before)], false);
         }
     }
 
@@ -785,7 +858,6 @@ impl StudioCtx {
             label: None,
             claim: Vec::new(),
         };
-        let tools = self.tools;
         let path = format!("{}/source-edits", self.base());
         // The write lands even if the Studio is left meanwhile; the tools
         // show it only while the Studio is there.
@@ -793,12 +865,27 @@ impl StudioCtx {
             let res = api::post::<_, SourceEditResponse>(&path, &req).await;
             (req, res)
         };
-        self.tasks.spawn_then(work, move |(req, res)| {
-            let res = res
-                .map(|r| (r.file.path, r.version.version))
-                .map_err(|e| self.failed_to(T::SaveFailed, &e));
-            after_save(tools, self.active_untracked().as_deref(), styles, &req, res);
-        });
+        self.tasks
+            .spawn_then(work, move |(req, res)| self.edits_saved(styles, &req, res));
+    }
+
+    /// Shows how a write of `req` went.
+    fn edits_saved(
+        self,
+        styles: bool,
+        req: &SourceEditRequest,
+        res: Result<SourceEditResponse, api::HttpError>,
+    ) {
+        let res = res
+            .map(|r| (r.file.path, r.version.version))
+            .map_err(|e| self.failed_to(T::SaveFailed, &e));
+        after_save(
+            self.tools,
+            self.active_untracked().as_deref(),
+            styles,
+            req,
+            res,
+        );
     }
 
     fn save_overrides(self) {
@@ -1710,6 +1797,8 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
         let (w, h) = (canvas.width().max(1), canvas.height().max(1));
         // The Studio's task: the drawing is attached even if the draw tool
         // closes meanwhile; only the layer's own state waits for the layer.
+        // Closing the tool does too: a layer opened again meanwhile is not
+        // this one, and stays open (leave.qa.mjs LV-19).
         ctx.tasks.spawn(async move {
             let res = attach_annotation(ctx, list, w, h).await;
             let layer = tasks.alive();

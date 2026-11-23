@@ -316,9 +316,10 @@ test('LV-18', 'Every file attached in the chat reaches the project even if the S
     .catch(async () => assert.fail(`files after leaving: ${(await listFiles(d, id)).join(', ')}`));
 });
 
-test('LV-19', 'A drawing attached just before the draw tool closes is saved and attached', async ({ d, newPage }) => {
-  const { page, id } = await studio(newPage, d, 'Draw then close');
+test('LV-19', 'A drawing attached just before the draw tool closes is saved and attached; a draw layer opened meanwhile stays open', async ({ d, newPage }) => {
+  const { page, id, errors } = await studio(newPage, d, 'Draw then close');
   await frame(page).locator('#title').waitFor();
+  const h = await hold(page, (u, r) => u.pathname === `/api/projects/${id}/files` && r.method() === 'POST');
   await page.getByTestId('draw-mode').click();
   await stroke(page);
   // Attach, then close the tool in the same tick: the layer goes while
@@ -328,9 +329,42 @@ test('LV-19', 'A drawing attached just before the draw tool closes is saved and 
     document.querySelector('[data-testid="draw-mode"]').click();
   });
   await page.getByTestId('draw-canvas').waitFor({ state: 'detached' });
+  await until(() => h.held.length > 0, 'the drawing on its way');
+  // Draw again while the first drawing saves: its task closes the tool
+  // only for the layer that attached it, not for this one.
+  await page.getByTestId('draw-mode').click();
+  await stroke(page);
+  await h.release();
   await until(async () => (await listFiles(d, id)).some((f) => /^annotations\/annotation-.*\.png$/.test(f)), 'the drawing saved', 10_000)
     .catch(async () => assert.fail(`files after closing the tool: ${(await listFiles(d, id)).join(', ')}`));
   await page.getByTestId('attachment-chip').waitFor();
+  assert.equal(await page.getByTestId('draw-canvas').count(), 1, 'the first drawing closed the new draw layer');
+  assert.ok(await page.getByTestId('draw-undo').isEnabled(), 'the stroke of the new layer was lost');
+  assert.deepEqual(errors, []);
+});
+
+test('LV-20', 'Text typed in the preview before its edit key came is saved even if the Studio is left meanwhile', async ({ d, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Text then leave');
+  const title = frame(page).locator('#title');
+  await title.waitFor();
+  await page.getByTestId('edit-mode').click();
+  // The next load's key waits: what is typed now waits with it.
+  const h = await hold(page, (u, r) => u.pathname.startsWith(`/api/projects/${id}/edit-keys/`) && r.method() === 'POST');
+  await writeFile(d, id, 'index.html', PAGE.replace('Hello leave', 'Hello again'));
+  await frame(page).locator('#title', { hasText: 'Hello again' }).waitFor();
+  await until(() => h.held.length > 0, 'the edit key asked for');
+  await until(async () => {
+    await title.click();
+    return (await title.getAttribute('contenteditable')) !== null;
+  }, 'the title is editable');
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('Chữ gõ sớm lv20');
+  await page.keyboard.press('Enter');
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  await page.waitForURL('**/projects');
+  await h.release();
+  await until(async () => (await raw(d, id, 'index.html')).includes('>Chữ gõ sớm lv20</h1>'), 'the text saved', 10_000)
+    .catch(async () => assert.fail(`index.html after leaving: ${await raw(d, id, 'index.html')}`));
 });
 
 // A loopback stand-in for OpenAI Images whose answer waits for `release()`.
