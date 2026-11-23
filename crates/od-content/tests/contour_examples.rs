@@ -1,8 +1,9 @@
 //! Gallery examples written for Contour (`od.origin: contour` in
 //! SKILL.md): ten WebGL pages, fourteen decks and six landing pages. Each
 //! one parses, is filed under the right type, ships a preview page and
-//! Contour's Apache-2.0 LICENSE. No design template, Contour's or copied,
-//! loads anything from outside loopback.
+//! Contour's Apache-2.0 LICENSE. No bundled design template or skill,
+//! Contour's or copied, loads anything from outside loopback, in the pages
+//! it ships or the snippets its instructions hand the agent.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
@@ -186,20 +187,41 @@ fn served_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+fn skills_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content/skills")
+}
+
+/// Every bundled folder with a SKILL.md: design templates and skills. An
+/// agent copies pages from both into the project it previews.
+fn bundled_folders() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for root in [templates_root(), skills_root()] {
+        for entry in std::fs::read_dir(&root).unwrap() {
+            let dir = entry.unwrap().path();
+            if dir.join("SKILL.md").is_file() {
+                out.push(dir);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// The preview CSP blocks every request outside loopback, so a CDN script,
 /// stylesheet, web font or image would show as broken. Links point at `#`.
 #[test]
-fn no_template_loads_anything_from_outside_loopback() {
+fn no_bundled_page_loads_anything_from_outside_loopback() {
     let mut hits = Vec::new();
-    let mut checked = 0;
-    for entry in std::fs::read_dir(templates_root()).unwrap() {
-        let dir = entry.unwrap().path();
-        if !dir.join("SKILL.md").is_file() {
-            continue;
-        }
+    let (mut templates, mut skills) = (0, 0);
+    for dir in bundled_folders() {
+        let is_skill = dir.starts_with(skills_root());
         for path in served_files(&dir) {
             let text = std::fs::read_to_string(&path).unwrap();
-            checked += 1;
+            if is_skill {
+                skills += 1;
+            } else {
+                templates += 1;
+            }
             for u in external_urls(&text) {
                 hits.push(format!("{}: {u}", path.display()));
             }
@@ -208,8 +230,187 @@ fn no_template_loads_anything_from_outside_loopback() {
             }
         }
     }
-    assert!(checked >= 200, "only {checked} files checked");
+    assert!(templates >= 200, "only {templates} template files checked");
+    assert!(skills >= 50, "only {skills} skill files checked");
     assert!(hits.is_empty(), "{} external URLs: {hits:#?}", hits.len());
+}
+
+/// Info strings of fenced code blocks an agent writes into a page. A block
+/// with no language counts too; shell, JSON and prose blocks do not.
+const PAGE_CODE: [&str; 15] = [
+    "",
+    "html",
+    "htm",
+    "xhtml",
+    "svg",
+    "xml",
+    "css",
+    "scss",
+    "js",
+    "javascript",
+    "mjs",
+    "jsx",
+    "ts",
+    "tsx",
+    "vue",
+];
+
+/// What a page loads from outside loopback in the fenced HTML, CSS and JS
+/// blocks of a Markdown file: `<script src>`, `<link href>`, `@import`,
+/// `url()` and ES `import`. Prose and Markdown links may name any URL; an
+/// agent copies code blocks into the page.
+fn code_block_loads(md: &str) -> Vec<String> {
+    let fence = Regex::new(r"^\s{0,3}(`{3,}|~{3,})\s*([^\s`{]*)").unwrap();
+    let load = Regex::new(
+        r#"(?i)<script\b[^>]*?\bsrc\s*=\s*["']?([^"'\s>]+)|<link\b[^>]*?\bhref\s*=\s*["']?([^"'\s>]+)|@import\s+(?:url\(\s*)?["']?([^"'\s);]+)|\burl\(\s*["']?([^"'\s)]+)|\bimport\b[^;\n]*?\bfrom\s*["']([^"']+)|\bimport\s*\(?\s*["']([^"']+)"#,
+    )
+    .unwrap();
+    let remote = Regex::new(r"(?i)^(?:(?:https?|wss?):)?//").unwrap();
+    let mut out = Vec::new();
+    // (fence marker, whether the block is page code)
+    let mut open: Option<(String, bool)> = None;
+    for (n, line) in md.lines().enumerate() {
+        if let Some(c) = fence.captures(line) {
+            let marker = &c[1];
+            match &open {
+                None => {
+                    let lang = c[2].to_ascii_lowercase();
+                    open = Some((marker.to_owned(), PAGE_CODE.contains(&lang.as_str())));
+                    continue;
+                }
+                Some((m, _)) if marker.starts_with(m.as_str()) && c[2].is_empty() => {
+                    open = None;
+                    continue;
+                }
+                Some(_) => {}
+            }
+        }
+        if !matches!(open, Some((_, true))) {
+            continue;
+        }
+        for c in load.captures_iter(line) {
+            let url = c.iter().skip(1).flatten().next().unwrap().as_str();
+            if remote.is_match(url)
+                && !["localhost", "127.0.0.1", "[::1]"].contains(&host_of(url).as_str())
+            {
+                out.push(format!("line {}: {url}", n + 1));
+            }
+        }
+    }
+    out
+}
+
+/// SKILL.md and every Markdown file under `references/`.
+fn instruction_files(dir: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for path in entries.map(|e| e.unwrap().path()) {
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "md") {
+                out.push(path);
+            }
+        }
+    }
+    let mut out = vec![dir.join("SKILL.md")];
+    walk(&dir.join("references"), &mut out);
+    out.sort();
+    out
+}
+
+/// What SKILL.md and `references/` tell the agent to paste in is what the
+/// preview loads: a CDN in a snippet ends up blocked in the project.
+#[test]
+fn no_skill_snippet_loads_anything_from_outside_loopback() {
+    let mut hits = Vec::new();
+    let mut checked = 0;
+    for dir in bundled_folders() {
+        for path in instruction_files(&dir) {
+            let text = std::fs::read_to_string(&path).unwrap();
+            checked += 1;
+            for h in code_block_loads(&text) {
+                hits.push(format!("{} {h}", path.display()));
+            }
+        }
+    }
+    assert!(checked >= 450, "only {checked} Markdown files checked");
+    assert!(hits.is_empty(), "{} snippets load: {hits:#?}", hits.len());
+}
+
+#[test]
+fn the_snippet_check_reads_code_blocks_and_spares_prose() {
+    let md = |lang: &str, body: &str| format!("Intro\n\n```{lang}\n{body}\n```\n");
+    for (lang, body) in [
+        (
+            "html",
+            r#"<script src="https://cdn.example.net/gsap.min.js"></script>"#,
+        ),
+        ("", r#"<script defer src=//cdn.example.net/a.js></script>"#),
+        (
+            "HTML",
+            r#"<link rel="stylesheet" href="https://fonts.example.com/x.css">"#,
+        ),
+        ("css", r#"@import url("https://fonts.example.com/x.css");"#),
+        ("css", "@import 'https://fonts.example.com/x.css';"),
+        (
+            "css",
+            "body { background: url(https://img.example.com/bg.png) }",
+        ),
+        ("js", "import gsap from 'https://esm.example.sh/gsap';"),
+        (
+            "js",
+            "const m = await import(\"https://esm.example.sh/three\");",
+        ),
+        (
+            "jsx",
+            r#"<img style={{background: "url('//img.example.com/a.png')"}} />"#,
+        ),
+    ] {
+        assert_eq!(code_block_loads(&md(lang, body)).len(), 1, "{lang}: {body}");
+    }
+    assert_eq!(
+        code_block_loads(&md("html", r#"<script src="https://a.example.net/x.js">"#)),
+        ["line 4: https://a.example.net/x.js"]
+    );
+    // Spared: prose, Markdown links, shell and JSON blocks, loopback, files
+    // next to the page, and links that load nothing.
+    for text in [
+        "See <script src=\"https://cdn.example.net/a.js\"> in the docs.".to_owned(),
+        "[GSAP docs](https://gsap.com/docs/) and https://cdn.example.net/a.js".to_owned(),
+        md(
+            "bash",
+            r#"curl -O https://cdn.example.net/a.js # <script src="https://cdn.example.net/a.js">"#,
+        ),
+        md("json", r#"{"url": "url(https://img.example.com/a.png)"}"#),
+        md(
+            "html",
+            r#"<script src="http://127.0.0.1:7456/x.js"></script>"#,
+        ),
+        md(
+            "html",
+            r#"<script src="./gsap.min.js"></script><link href="style.css">"#,
+        ),
+        md(
+            "css",
+            "body { background: url(assets/bg.png) } @import 'base.css';",
+        ),
+        md("html", r#"<a href="https://example.com/">site</a>"#),
+        md("js", "import { gsap } from 'gsap';"),
+    ] {
+        assert!(code_block_loads(&text).is_empty(), "{text}");
+    }
+    // A fence of four backticks holds a three-backtick line without closing.
+    let nested = "````md\n```html\n<script src=\"https://a.example.net/x.js\">\n```\n````\n";
+    assert!(code_block_loads(nested).is_empty());
+    // After a non-page block closes, the next html block is read again.
+    let after = format!(
+        "{}{}",
+        md("bash", "ls"),
+        md("html", r#"<script src="https://a.example.net/x.js">"#)
+    );
+    assert_eq!(code_block_loads(&after).len(), 1);
 }
 
 #[test]
