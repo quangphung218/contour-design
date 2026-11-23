@@ -375,3 +375,210 @@ fn a_rename_into_a_folder_of_another_case_checks_its_history_first() {
             .is_none()
     );
 }
+
+/// `mẩu.html` composed (NFC) and decomposed (NFD).
+const MAU_HTML_NFC: &str = "m\u{1ea9}u.html";
+const MAU_HTML_NFD: &str = "ma\u{302}\u{309}u.html";
+
+/// Each pair is `(name on disk, the same name as an agent may send it)`:
+/// in another case, or in another Unicode form.
+const SENT_ALIKE: [(&str, &str); 2] = [("b.html", "B.html"), (MAU_HTML_NFD, MAU_HTML_NFC)];
+
+impl Project {
+    /// Page `rel` written by the app twice, so it has a history; it is put
+    /// on disk first, so the name keeps its Unicode form.
+    fn page_with_history(&self, rel: &str) {
+        self.put(rel, b"<p>0</p>");
+        for bytes in [b"<p>1</p>", b"<p>2</p>"] {
+            self.store
+                .write_file(&self.id, rel, bytes, true, None)
+                .unwrap_or_else(|e| panic!("{rel}: {e}"));
+        }
+    }
+
+    /// How many versions page `rel` lists.
+    fn versions(&self, rel: &str) -> usize {
+        self.store
+            .list_versions(&self.id, rel)
+            .unwrap_or_else(|e| panic!("{rel}: {e}"))
+            .versions
+            .len()
+    }
+
+    /// A comment on page `rel`.
+    fn comment_on(&self, rel: &str) {
+        self.store
+            .create_comment(
+                &self.id,
+                &self.conversation,
+                CreateCommentRequest {
+                    file_path: rel.into(),
+                    selector: "p".into(),
+                    label: "p".into(),
+                    note: "Make it red".into(),
+                    ..CreateCommentRequest::default()
+                },
+            )
+            .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// The pages the comments are on.
+    fn commented(&self) -> Vec<String> {
+        self.store
+            .list_comments(&self.id, &self.conversation)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .into_iter()
+            .map(|c| c.file_path)
+            .collect()
+    }
+}
+
+/// A rename sent as `B.html` (or NFC) of the page `b.html` (or NFD) on
+/// disk takes the page's history and comments along to the new name.
+#[test]
+fn a_file_renamed_by_a_name_alike_takes_its_history() {
+    for (on_disk, sent) in SENT_ALIKE {
+        let p = project();
+        p.page_with_history(on_disk);
+        p.comment_on(on_disk);
+        let had = p.versions(on_disk);
+        assert!(had >= 2, "{on_disk}: {had}");
+        let file = p
+            .store
+            .rename_file(&p.id, sent, "c.html")
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert_eq!(file.path, "c.html");
+        assert_eq!(p.names(""), ["c.html"], "{sent}");
+        assert_eq!(
+            p.versions("c.html"),
+            had,
+            "{sent}: the history stayed behind"
+        );
+        assert_eq!(p.commented(), ["c.html"], "{sent}");
+    }
+}
+
+/// A move sent as `pages` (or NFC) of the folder `Pages` (or NFD) on
+/// disk takes the histories of the pages in it along.
+#[test]
+fn a_folder_moved_by_a_name_alike_takes_its_histories() {
+    for (on_disk, sent) in [("Pages", "pages"), (MAU_HTML_NFD, MAU_HTML_NFC)] {
+        let p = project();
+        let page = format!("{on_disk}/b.html");
+        p.page_with_history(&page);
+        p.comment_on(&page);
+        let had = p.versions(&page);
+        let (folder, moved) = p
+            .store
+            .move_folder(&p.id, sent, "docs")
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert_eq!((folder.as_str(), moved), ("docs", 1));
+        assert_eq!(p.names(""), ["docs"], "{sent}");
+        assert_eq!(
+            p.versions("docs/b.html"),
+            had,
+            "{sent}: the history stayed behind"
+        );
+        assert_eq!(p.commented(), ["docs/b.html"], "{sent}");
+    }
+}
+
+/// A delete sent as `B.html` (or NFC) closes the history of `b.html` (or
+/// NFD) on disk and drops its comments: a new page there starts afresh.
+#[test]
+fn a_file_deleted_by_a_name_alike_closes_its_history() {
+    for (on_disk, sent) in SENT_ALIKE {
+        let p = project();
+        p.page_with_history(on_disk);
+        p.comment_on(on_disk);
+        p.store
+            .delete_file(&p.id, sent)
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert!(p.names("").is_empty(), "{sent}: {:?}", p.names(""));
+        assert!(p.commented().is_empty(), "{sent}: {:?}", p.commented());
+        p.put(on_disk, b"<p>new</p>");
+        assert_eq!(p.versions(on_disk), 1, "{sent}: the old history is open");
+    }
+}
+
+/// A folder delete sent as `pages` (or NFC) closes the histories of the
+/// pages in `Pages` (or NFD) on disk.
+#[test]
+fn a_folder_deleted_by_a_name_alike_closes_its_histories() {
+    for (on_disk, sent) in [("Pages", "pages"), (MAU_HTML_NFD, MAU_HTML_NFC)] {
+        let p = project();
+        let page = format!("{on_disk}/b.html");
+        p.page_with_history(&page);
+        p.comment_on(&page);
+        let folder = p
+            .store
+            .delete_folder(&p.id, sent)
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert_eq!(folder, on_disk);
+        assert!(p.names("").is_empty(), "{sent}: {:?}", p.names(""));
+        assert!(p.commented().is_empty(), "{sent}: {:?}", p.commented());
+        p.put(&page, b"<p>new</p>");
+        assert_eq!(p.versions(&page), 1, "{sent}: the old history is open");
+    }
+}
+
+/// A rename sent as `B.html` checks the history of `b.html`, the page on
+/// disk, before the file moves (invariant 3).
+#[cfg(unix)]
+#[test]
+fn a_rename_by_a_name_alike_checks_its_history_first() {
+    let p = project();
+    p.put("b.html", b"<p>b</p>");
+    let elsewhere = p._tmp.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap_or_else(|e| panic!("{e}"));
+    link_history(&p, "b.html", &elsewhere);
+    let changed = || {
+        use std::os::unix::fs::MetadataExt as _;
+        let m = fs::metadata(p.dir.join("b.html")).unwrap_or_else(|e| panic!("{e}"));
+        (m.ctime(), m.ctime_nsec())
+    };
+    let before = changed();
+    let res = p.store.rename_file(&p.id, "B.html", "c.html");
+    // Refused for its history, not taken for a file that is not there.
+    assert!(
+        res.as_ref()
+            .is_err_and(|e| !matches!(e, StoreError::FileNotFound)),
+        "{res:?}"
+    );
+    assert_eq!(changed(), before, "moved, then put back");
+    assert_eq!(p.names(""), ["b.html"]);
+}
+
+/// A move sent as `pages` whose histories cannot follow puts the folder
+/// back as it was on disk, `Pages` (invariant 7).
+#[cfg(unix)]
+#[test]
+fn a_folder_moved_by_a_name_alike_goes_back_under_its_own_name() {
+    let p = project();
+    p.put("Pages/b.html", b"<p>b</p>");
+    let elsewhere = p._tmp.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap_or_else(|e| panic!("{e}"));
+    link_history(&p, "Pages/b.html", &elsewhere);
+    let res = p.store.move_folder(&p.id, "pages", "docs");
+    assert!(
+        res.as_ref()
+            .is_err_and(|e| !matches!(e, StoreError::FileNotFound)),
+        "{res:?}"
+    );
+    assert_eq!(p.names(""), ["Pages"]);
+    assert_eq!(p.bytes("Pages/b.html"), b"<p>b</p>");
+}
+
+/// A delete sent as `pages/b.html` of a page gone already from `Pages/`
+/// (the agent's shell, Finder) still drops the comments on `Pages/b.html`.
+#[test]
+fn a_file_gone_and_deleted_by_a_name_alike_drops_its_comments() {
+    let p = project();
+    p.put("Pages/a.css", b"a{}");
+    p.page_with_history("Pages/b.html");
+    p.comment_on("Pages/b.html");
+    fs::remove_file(p.dir.join("Pages/b.html")).unwrap_or_else(|e| panic!("{e}"));
+    let res = p.store.delete_file(&p.id, "pages/b.html");
+    assert!(matches!(res, Err(StoreError::FileNotFound)), "{res:?}");
+    assert!(p.commented().is_empty(), "{:?}", p.commented());
+}

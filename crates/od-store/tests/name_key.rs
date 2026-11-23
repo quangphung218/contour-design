@@ -12,7 +12,10 @@
 //!
 //! A write in `od-store/src/files.rs` spells its target as on disk first
 //! (`as_on_disk`, `renamed_as`), else `logo.png` lands beside `Logo.png`
-//! on Linux: [`Rule::UnspelledWrite`].
+//! on Linux: [`Rule::UnspelledWrite`]. So does each name it is sent, the
+//! source of a rename, move or delete too, before it is used, else what is
+//! recorded by that name (history, comments) stays behind on a Mac:
+//! [`Rule::UnspelledName`].
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
@@ -35,6 +38,12 @@ enum Rule {
     /// target, creates, renames) before spelling the name as on disk.
     /// Found by its signature.
     UnspelledWrite,
+    /// A name checked by `validate_project_path`/`sanitize_path` in
+    /// `od-store/src/files.rs` that is used before it is spelled as on disk:
+    /// `B.html` renamed while the disk has `b.html` moves the file, but the
+    /// history of `b.html` stays behind. Found by the function's signature
+    /// and the statement that uses it.
+    UnspelledName,
 }
 
 /// `(file from the repo root, text on the line, rule, why it may stay)`.
@@ -219,15 +228,9 @@ const KEPT: &[(&str, &str, Rule, &str)] = &[
     ),
     (
         "crates/od-store/src/files.rs",
-        "fn delete_file(",
+        "fn write_named(",
         Rule::UnspelledWrite,
-        "deletes the file at the name; makes no second file",
-    ),
-    (
-        "crates/od-store/src/files.rs",
-        "fn delete_folder(",
-        Rule::UnspelledWrite,
-        "deletes the folder at the name; makes no second folder",
+        "its callers spell the name first, which `UnspelledName` checks",
     ),
     (
         "crates/od-store/src/files.rs",
@@ -275,7 +278,7 @@ fn finds(rule: Rule, stmt: &str) -> bool {
                 })
             })
         }
-        Rule::UnspelledWrite => false,
+        Rule::UnspelledWrite | Rule::UnspelledName => false,
     }
 }
 
@@ -324,6 +327,125 @@ fn unspelled_writes(lines: &[&str]) -> Vec<String> {
             && first(&body, SPELL_CALLS).is_none_or(|spell| spell > write)
         {
             out.push(lines[at].trim().to_owned());
+        }
+    }
+    out
+}
+
+/// Calls that check a name the caller sent and give it back as sent.
+const NAME_CALLS: &[&str] = &["validate_project_path(", "sanitize_path("];
+
+/// Whether `at` in `body` lies in the name a [`SPELL_CALLS`] call spells:
+/// its last argument (`as_on_disk(dir, NAME)`, `renamed_as(root, old,
+/// NAME)`; the `old` of `renamed_as` is not spelled by it).
+fn in_spelled_argument(body: &str, at: usize) -> bool {
+    SPELL_CALLS.iter().any(|call| {
+        body.match_indices(call).any(|(q, m)| {
+            let start = q + m.len();
+            let args = call_args(&body[start..]);
+            let mut depth = 0usize;
+            let mut last = 0;
+            for (i, c) in args.char_indices() {
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' | ']' | '}' => depth = depth.saturating_sub(1),
+                    ',' if depth == 0 => last = i + 1,
+                    _ => {}
+                }
+            }
+            (start + last..start + args.len()).contains(&at)
+        })
+    })
+}
+
+/// The `let NAME =` whose statement holds `at`: the closest `let` before
+/// it with no `;` between them outside braces opened since. Returns the
+/// name and where its statement ends.
+fn binding_at(body: &str, at: usize) -> Option<(&str, usize)> {
+    let let_at = body[..at].rfind("let ")?;
+    let after = body[let_at + 4..].trim_start_matches("mut ");
+    let name_len = after
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(after.len());
+    let name_at = body.len() - after.len();
+    if name_len == 0 || !body[name_at + name_len..].trim_start().starts_with('=') {
+        return None;
+    }
+    let mut depth = 0i32;
+    for (i, c) in body[let_at..].char_indices() {
+        match c {
+            '{' | '(' | '[' => depth += 1,
+            '}' | ')' | ']' => depth -= 1,
+            ';' if depth <= 0 => {
+                let end = let_at + i;
+                return (end > at).then_some((&body[name_at..name_at + name_len], end));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Where `name` is next mentioned in `body` from `from` on, as a whole
+/// word, leaving out a new `let name` (which only shadows it).
+fn next_mention(body: &str, name: &str, from: usize) -> Option<usize> {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    body[from..]
+        .match_indices(name)
+        .map(|(i, _)| from + i)
+        .find(|&i| {
+            !body[..i].ends_with(word)
+                && !body[i + name.len()..].starts_with(word)
+                && !body[..i].ends_with("let ")
+                && !body[..i].ends_with("let mut ")
+        })
+}
+
+/// Each use of a [`NAME_CALLS`] result in `lines` before it is spelled,
+/// as `"<signature> <statement>"`: the call is in the spelled argument of
+/// a [`SPELL_CALLS`] call, or bound by `let x =` and `x` next mentioned
+/// there; else the name is used as sent.
+fn unspelled_names(lines: &[&str]) -> Vec<String> {
+    let is_fn = |l: &str| {
+        let l = l.trim_start();
+        ["fn ", "pub fn ", "pub(crate) fn ", "pub(super) fn "]
+            .iter()
+            .any(|p| l.starts_with(p))
+    };
+    let starts: Vec<usize> = (0..lines.len()).filter(|&i| is_fn(lines[i])).collect();
+    let mut out = Vec::new();
+    for (n, &at) in starts.iter().enumerate() {
+        let end = starts.get(n + 1).copied().unwrap_or(lines.len());
+        let body = lines[at + 1..end]
+            .iter()
+            .map(|l| l.trim())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let calls = NAME_CALLS
+            .iter()
+            .flat_map(|c| body.match_indices(c).map(|(i, _)| i))
+            .filter(|&i| !body[..i].ends_with("fn "));
+        for call in calls {
+            if in_spelled_argument(&body, call) {
+                continue;
+            }
+            let used = match binding_at(&body, call) {
+                Some((name, stmt_end)) => {
+                    next_mention(&body, name, stmt_end).filter(|&i| !in_spelled_argument(&body, i))
+                }
+                None => Some(call),
+            };
+            if let Some(i) = used {
+                let stmt_start = body[..i].rfind([';', '{', '}']).map_or(0, |s| s + 1);
+                let stmt_end = body[i..]
+                    .find([';', '{', '}'])
+                    .map_or(body.len(), |e| i + e);
+                out.push(format!(
+                    "{} {}",
+                    lines[at].trim(),
+                    body[stmt_start..stmt_end].trim()
+                ));
+            }
         }
     }
     out
@@ -443,6 +565,29 @@ fn statements<'a>(lines: impl Iterator<Item = &'a str>) -> Vec<String> {
     out
 }
 
+/// What one source file `rel` (from the repo root) holding `text` is
+/// found to do: `(rule, line)`.
+fn scan_file(rel: &str, text: &str) -> Vec<(Rule, String)> {
+    let mut found = Vec::new();
+    for stmt in statements(code_lines(text)) {
+        for rule in RULES {
+            if finds(rule, &stmt) {
+                found.push((rule, stmt.clone()));
+            }
+        }
+    }
+    if WRITES_CHECKED.contains(&rel) {
+        let lines: Vec<&str> = code_lines(text).collect();
+        for sig in unspelled_writes(&lines) {
+            found.push((Rule::UnspelledWrite, sig));
+        }
+        for site in unspelled_names(&lines) {
+            found.push((Rule::UnspelledName, site));
+        }
+    }
+    found
+}
+
 /// Every hand-written check found: `(file, rule)` → the lines.
 fn scan(repo: &Path) -> BTreeMap<(String, Rule), Vec<String>> {
     let mut files = Vec::new();
@@ -465,24 +610,8 @@ fn scan(repo: &Path) -> BTreeMap<(String, Rule), Vec<String>> {
             continue;
         }
         let text = std::fs::read_to_string(&file).unwrap();
-        for stmt in statements(code_lines(&text)) {
-            for rule in RULES {
-                if finds(rule, &stmt) {
-                    found
-                        .entry((rel.clone(), rule))
-                        .or_default()
-                        .push(stmt.clone());
-                }
-            }
-        }
-        if WRITES_CHECKED.contains(&rel.as_str()) {
-            let lines: Vec<&str> = code_lines(&text).collect();
-            for sig in unspelled_writes(&lines) {
-                found
-                    .entry((rel.clone(), Rule::UnspelledWrite))
-                    .or_default()
-                    .push(sig);
-            }
+        for (rule, site) in scan_file(&rel, &text) {
+            found.entry((rel.clone(), rule)).or_default().push(site);
         }
     }
     found
@@ -616,12 +745,9 @@ fn a_compare_over_lines_is_one_statement() {
     assert!(finds(Rule::FoldedCompare, &stmts[0]));
     assert!(!finds(Rule::FoldedCompare, &stmts[1]));
     // A match arm ends at its `,`, so arms are not read as one.
-    let arms = "A => a.to_lowercase(),\nB => b == c,\n";
-    assert!(
-        statements(code_lines(arms))
-            .iter()
-            .all(|s| !finds(Rule::FoldedCompare, s))
-    );
+    let arms = statements(code_lines("A => a.to_lowercase(),\nB => b == c,\n"));
+    assert_eq!(arms.len(), 2, "{arms:?}");
+    assert!(arms.iter().all(|s| !finds(Rule::FoldedCompare, s)));
 }
 
 /// A write in `files.rs` that picks its target before spelling it as on
@@ -631,6 +757,14 @@ fn a_write_before_the_name_is_spelled_is_found() {
     let text = "\
 pub fn raw(root: &ProjectRoot, name: &str) -> Result<()> {
     fs::write(root.dir.join(name), b\"x\")?;
+    Ok(())
+}
+pub fn copied(root: &ProjectRoot, name: &str) -> Result<()> {
+    fs::copy(root.dir.join(\"a\"), root.dir.join(name))?;
+    Ok(())
+}
+pub fn created(root: &ProjectRoot, name: &str) -> Result<()> {
+    File::create(root.dir.join(name))?;
     Ok(())
 }
 pub fn late(root: &ProjectRoot, name: &str) -> Result<()> {
@@ -652,9 +786,88 @@ fn write_atomic(target: &Path, bytes: &[u8], place: Place) -> Result<()> {
         unspelled_writes(&lines),
         [
             "pub fn raw(root: &ProjectRoot, name: &str) -> Result<()> {",
+            "pub fn copied(root: &ProjectRoot, name: &str) -> Result<()> {",
+            "pub fn created(root: &ProjectRoot, name: &str) -> Result<()> {",
             "pub fn late(root: &ProjectRoot, name: &str) -> Result<()> {",
         ]
     );
+}
+
+/// A name sent that is used before it is spelled as on disk is found,
+/// each one apart: spelling the target does not cover the source.
+#[test]
+fn a_name_used_before_it_is_spelled_is_found() {
+    let text = "\
+pub fn direct(root: &ProjectRoot, name: &str) -> Result<()> {
+    if through_link(&root.dir, &validate_project_path(name)?) {
+        return Err(StoreError::FileNotFound);
+    }
+    Ok(())
+}
+pub fn bound(root: &ProjectRoot, path: &str) -> Result<()> {
+    let rel = validate_project_path(path)?;
+    let full = root.resolve(&rel)?;
+    Ok(())
+}
+pub fn source(root: &ProjectRoot, from: &str, to: &str) -> Result<()> {
+    let old = validate_project_path(from)?;
+    let new = renamed_as(root, &old, &sanitize_path(to)?);
+    Ok(())
+}
+pub fn spelled(root: &ProjectRoot, from: &str, to: &str) -> Result<()> {
+    let old = as_on_disk(&root.dir, &validate_project_path(from)?);
+    let new = renamed_as(root, &old, &sanitize_path(to)?);
+    let rel = sanitize_path(to)?;
+    let rel = as_on_disk(&root.dir, &rel);
+    let dir = match to {
+        \"\" => String::new(),
+        d => {
+            check(d)?;
+            as_on_disk(&root.dir, &sanitize_path(d)?)
+        }
+    };
+    Ok(())
+}
+";
+    let lines: Vec<&str> = code_lines(text).collect();
+    let found = unspelled_names(&lines);
+    let fns: Vec<&str> = found
+        .iter()
+        .map(|f| f.split('(').next().unwrap_or(f))
+        .collect();
+    assert_eq!(
+        fns,
+        ["pub fn direct", "pub fn bound", "pub fn source"],
+        "{found:#?}"
+    );
+    assert!(
+        found[1].ends_with("let full = root.resolve(&rel)?"),
+        "{found:#?}"
+    );
+    assert!(found[2].contains("renamed_as(root, &old,"), "{found:#?}");
+}
+
+/// A file whose writes are checked is scanned by both of its rules, and
+/// another file by neither.
+#[test]
+fn a_checked_file_is_scanned_for_unspelled_writes_and_names() {
+    let text = "\
+pub fn delete(root: &ProjectRoot, name: &str) -> Result<()> {
+    fs::rename(root.dir.join(validate_project_path(name)?), root.dir.join(\"x\"))?;
+    Ok(())
+}
+";
+    let rules = |rel: &str| {
+        scan_file(rel, text)
+            .into_iter()
+            .map(|(rule, _)| rule)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        rules(WRITES_CHECKED[0]),
+        [Rule::UnspelledWrite, Rule::UnspelledName]
+    );
+    assert_eq!(rules("crates/od-store/src/store.rs"), []);
 }
 
 /// Each file [`Rule::UnspelledWrite`] checks is there: a moved file would

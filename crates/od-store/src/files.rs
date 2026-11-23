@@ -287,8 +287,10 @@ pub fn write_file(
     artifact_manifest: Option<&Value>,
 ) -> Result<ProjectFile> {
     assert_visible_for_import(name, root.imported)?;
-    let safe_name = sanitize_path(name)?;
-    write_named(root, safe_name, bytes, overwrite, artifact_manifest)
+    // `logo.png` over `Logo.png` writes `Logo.png` (or is refused, when
+    // new) on every disk, as on the Mac: never a second file beside it.
+    let rel = as_on_disk(&root.dir, &sanitize_path(name)?);
+    write_named(root, rel, bytes, overwrite, artifact_manifest)
 }
 
 /// Overwrites the file at exactly `name` (validated, not sanitized). For
@@ -298,7 +300,7 @@ pub fn write_file(
 /// # Errors
 /// Path or I/O errors.
 pub fn write_file_exact(root: &ProjectRoot, name: &str, bytes: &[u8]) -> Result<ProjectFile> {
-    let exact = validate_project_path(name)?;
+    let exact = as_on_disk(&root.dir, &validate_project_path(name)?);
     write_named(root, exact, bytes, true, None)
 }
 
@@ -309,10 +311,11 @@ pub fn write_file_exact(root: &ProjectRoot, name: &str, bytes: &[u8]) -> Result<
 /// Path or I/O errors, [`StoreError::FileExists`] when the path is taken.
 pub fn create_file_exact(root: &ProjectRoot, name: &str, bytes: &[u8]) -> Result<ProjectFile> {
     assert_visible_for_import(name, root.imported)?;
-    let exact = validate_project_path(name)?;
+    let exact = as_on_disk(&root.dir, &validate_project_path(name)?);
     write_named(root, exact, bytes, false, None)
 }
 
+/// Writes `rel`, spelled as on disk by the caller ([`as_on_disk`]).
 fn write_named(
     root: &ProjectRoot,
     rel: String,
@@ -321,9 +324,6 @@ fn write_named(
     artifact_manifest: Option<&Value>,
 ) -> Result<ProjectFile> {
     root.ensure_exists()?;
-    // `logo.png` over `Logo.png` writes `Logo.png` (or is refused, when
-    // new) on every disk, as on the Mac: never a second file beside it.
-    let rel = as_on_disk(&root.dir, &rel);
     let target = root.resolve(&rel)?;
     if target.is_dir() {
         return Err(StoreError::BadRequest("path is a directory".to_owned()));
@@ -357,10 +357,13 @@ fn write_named(
 /// # Errors
 /// Path errors or [`StoreError::FileNotFound`].
 pub fn delete_file(root: &ProjectRoot, name: &str) -> Result<String> {
-    let full = root.resolve(name)?;
+    // `B.html` sent for `b.html` deletes `b.html` on every disk, and the
+    // name returned is that one, whose history closes.
+    let rel = as_on_disk(&root.dir, &validate_project_path(name)?);
+    let full = root.resolve(&rel)?;
     // A link, or a file in a linked folder, is not listed: deleting it
     // would delete the file it points to.
-    if through_link(&root.dir, &validate_project_path(name)?) {
+    if through_link(&root.dir, &rel) {
         return Err(StoreError::FileNotFound);
     }
     let meta = fs::symlink_metadata(&full).map_err(StoreError::from_file_io)?;
@@ -391,7 +394,9 @@ pub fn rename_file(
     to: &str,
 ) -> Result<(String, ProjectFile, bool)> {
     assert_visible_for_import(to, root.imported)?;
-    let old_name = validate_project_path(from)?;
+    // `B.html` sent for `b.html`: what is recorded by path follows from
+    // `b.html`, the name on disk.
+    let old_name = as_on_disk(&root.dir, &validate_project_path(from)?);
     let new_name = renamed_as(root, &old_name, &sanitize_path(to)?);
     let source = root.resolve(&old_name)?;
     let source_meta = fs::metadata(&source).map_err(StoreError::from_file_io)?;
@@ -544,16 +549,12 @@ pub fn upload_file(
     let rel_dir = match dir.map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => {
             assert_visible_for_import(d, root.imported)?;
-            sanitize_path(d)?
+            // `Assets` where `assets` is: that folder, on every disk.
+            as_on_disk(&root.dir, &sanitize_path(d)?)
         }
         None => String::new(),
     };
     root.ensure_exists()?;
-    let rel_dir = if rel_dir.is_empty() {
-        rel_dir
-    } else {
-        as_on_disk(&root.dir, &rel_dir)
-    };
     if !rel_dir.is_empty() {
         let full = root.resolve(&rel_dir)?;
         refuse_link(root, &rel_dir)?;
@@ -649,7 +650,8 @@ pub fn create_folder(root: &ProjectRoot, path: &str) -> Result<String> {
 /// Path errors, [`StoreError::FileNotFound`] when it is not a folder,
 /// [`StoreError::ReservedPath`] for hidden folders (app state lives there).
 pub fn delete_folder(root: &ProjectRoot, path: &str) -> Result<(String, Vec<String>)> {
-    let rel = validate_project_path(path)?;
+    // `pages` sent for `Pages`: the files it held are named under `Pages`.
+    let rel = as_on_disk(&root.dir, &validate_project_path(path)?);
     if rel.split('/').any(|s| s.starts_with('.')) {
         return Err(StoreError::ReservedPath);
     }
@@ -682,7 +684,8 @@ pub fn move_folder(
     from: &str,
     to: &str,
 ) -> Result<(String, Vec<(String, String)>)> {
-    let from = validate_project_path(from)?;
+    // `pages` sent for `Pages`: the files it held move from `Pages/…`.
+    let from = as_on_disk(&root.dir, &validate_project_path(from)?);
     let to = renamed_as(root, &from, &validate_project_path(to)?);
     if [&from, &to]
         .iter()
