@@ -11,6 +11,7 @@ triggers:
   - "landing page"
   - "dashboard design"
   - "react component design"
+  - "wireframe"
 license: Complete terms in LICENSE.txt
 od:
   mode: prototype

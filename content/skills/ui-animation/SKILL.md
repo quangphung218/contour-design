@@ -13,7 +13,7 @@ triggers:
   - "录屏"
   - "动效复刻"
   - "缓动"
-  - "spring"
+  - "spring animation"
   - "easing"
   - "gesture"
 license: MIT

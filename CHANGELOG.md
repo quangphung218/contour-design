@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Skill suggestions understand common Vietnamese topic words and cover decks, dashboards, onboarding, video, posters, resumes and logos.
+
 ## [0.2.0-beta.58] - 2026-11-24
 
 ### Added
