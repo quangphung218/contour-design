@@ -12,7 +12,7 @@ All notable changes to Contour are recorded here. The format follows
 
 - Upload every file attached in the chat even if the Studio is left while the first one uploads (#300).
 - Save and attach a drawing even if the draw tool closes right after Attach (#300).
-- Save text typed in the preview right after it reloads even if the Studio is left before editing is ready.
+- Save text typed in the preview right after it reloads even if the Studio is left before editing is ready (#302).
 
 ## [0.2.0-beta.55] - 2026-11-23
 
