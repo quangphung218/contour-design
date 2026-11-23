@@ -277,6 +277,15 @@ pub fn install_plugin(source: &Path, user_root: &Path) -> Result<PluginEntry, Wr
         return Err(WriteError::BadRequest(format!("invalid plugin id {id:?}")));
     }
     std::fs::create_dir_all(user_root).map_err(io)?;
+    // macOS and Windows treat `Foo` and `foo` as one folder: installing `Foo`
+    // would delete the `foo` plugin already there (Linux would keep both,
+    // which collide once synced). Reinstalling the same id still replaces it.
+    for entry in std::fs::read_dir(user_root).map_err(io)?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name != id && od_contracts::name_key(&name) == od_contracts::name_key(&id) {
+            return Err(WriteError::Exists(format!("plugin {name:?}")));
+        }
+    }
     let tmp = user_root.join(format!(".installing-{id}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     if let Err(e) = copy_dir(source, &tmp, MAX_PLUGIN_BYTES) {
@@ -402,5 +411,32 @@ mod tests {
             install_plugin(&empty, &user),
             Err(WriteError::BadRequest(_))
         ));
+    }
+
+    #[test]
+    fn install_refuses_an_id_that_differs_only_in_case() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("plugins");
+        let installed = user.join("tea-plugin");
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::write(
+            installed.join("SKILL.md"),
+            "---\nname: tea-plugin\n---\nOld.\n",
+        )
+        .unwrap();
+        let src = tmp.path().join("src/Tea");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("SKILL.md"), "---\nname: Tea-Plugin\n---\nNew.\n").unwrap();
+        // macOS and Windows see one folder; installing must not delete the
+        // plugin already there, and Linux must not end up with two.
+        assert!(matches!(
+            install_plugin(&src, &user),
+            Err(WriteError::Exists(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(installed.join("SKILL.md")).unwrap(),
+            "---\nname: tea-plugin\n---\nOld.\n"
+        );
+        assert_eq!(std::fs::read_dir(&user).unwrap().count(), 1);
     }
 }
