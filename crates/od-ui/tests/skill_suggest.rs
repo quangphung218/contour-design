@@ -168,12 +168,37 @@ const NEW_VI: [(&str, &[&str]); 10] = [
     ("Làm đồ hoạ thông tin về lượng tiêu thụ cà phê", INFOGRAPHIC),
 ];
 
-/// Prompts about no design topic: any suggestion is off topic.
-const NONE: [(&str, &[&str]); 4] = [
-    ("Fix the failing unit test in the parser", &[]),
-    ("Sửa lỗi đăng nhập trên server của em", &[]),
-    ("Rename the variable in this function please", &[]),
-    ("Giải thích đoạn code này làm gì", &[]),
+/// Everyday chat and work on no design topic: any suggestion is off
+/// topic. Several read, without diacritics, like a phrase of `VI_EN` that
+/// was left out ("anh đồng ý" / "ảnh động") or hold a word a trigger
+/// uses in another sense ("resume the run").
+const NONE: [&str; 26] = [
+    "Anh đồng ý, làm tiếp phần còn lại đi",
+    "ok em cứ làm tiếp đi",
+    "Đồng hồ chạy sai giờ rồi",
+    "Thêm ảnh đồng hồ vào trang sản phẩm",
+    "Chụp ảnh đồng phục cho nhân viên",
+    "Anh Đông nhờ em xem lại cái này",
+    "Bài đang viết dở, em viết tiếp nhé",
+    "Mở trang dịch thuật của app",
+    "Mở bảng điều khiển cài đặt của máy",
+    "Người ta thường hiểu sai chỗ này",
+    "Hôm nay cv nhiều quá, mai làm tiếp",
+    "sửa lỗi build trên Windows giúp anh",
+    "merge PR này khi CI xanh",
+    "xong chưa em ơi",
+    "Sửa lỗi đăng nhập trên server của em",
+    "Giải thích đoạn code này làm gì",
+    "Resume the run from where it stopped",
+    "Resume where we left off on the checkout page",
+    "Make the upload resume after a network error",
+    "Fix the failing unit test in the parser",
+    "Rename the variable in this function please",
+    "Merge this PR when CI is green",
+    "Is it done yet?",
+    "ok go ahead and continue",
+    "Thanks, that works now",
+    "Why is the build failing on Windows?",
 ];
 
 /// The skill rows the composer builds from `/api/skills`.
@@ -245,7 +270,8 @@ fn common_prompts_get_a_skill_of_their_topic() {
     let vi = run(&skills, &VI_OLD, &mut wrong, &mut table);
     let new_en = run(&skills, &NEW_EN, &mut wrong, &mut table);
     let new_vi = run(&skills, &NEW_VI, &mut wrong, &mut table);
-    run(&skills, &NONE, &mut wrong, &mut table);
+    let none: Vec<(&str, &[&str])> = NONE.iter().map(|p| (*p, &[][..])).collect();
+    run(&skills, &none, &mut wrong, &mut table);
     let total = en + vi + new_en + new_vi;
     let all = 40;
     println!("{}", table.join("\n"));

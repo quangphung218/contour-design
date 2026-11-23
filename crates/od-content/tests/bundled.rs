@@ -199,7 +199,18 @@ const CONTOUR_TRIGGERS: [(&str, &[&str]); 12] = [
         "redesign-existing-projects",
         &["redesign", "homepage redesign"],
     ),
-    ("resume-modern", &["resume", "cv", "curriculum vitae"]),
+    (
+        "resume-modern",
+        &[
+            "resume design",
+            "resume template",
+            "one-page resume",
+            "my resume",
+            "cv template",
+            "my cv",
+            "curriculum vitae",
+        ],
+    ),
     ("slides", &["pitch deck", "investor deck"]),
     (
         "social-x-post-card",

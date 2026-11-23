@@ -325,15 +325,15 @@ pub fn suggest(text: &str, skills: &[SkillRow], skip: &[String]) -> Vec<Candidat
 /// Vietnamese topic words, as [`words_of`] gives them (lower case, no
 /// diacritics), and the English words the bundled triggers use for them.
 /// A prompt is matched with these put in English; triggers stay as written.
+/// Without diacritics two Vietnamese words can read the same ("ảnh động"
+/// and "anh đồng ý"): a phrase that reads as everyday chat stays out
+/// (`tests/skill_suggest.rs` holds such chat in `NONE`).
 const VI_EN: &[(&str, &str)] = &[
-    ("anh dong", "animated gif"),
     ("ap phich", "poster"),
-    ("bai dang", "post"),
     ("bai dang mang xa hoi", "social media post"),
     ("bai thuyet trinh", "presentation"),
     ("bai trinh bay", "presentation"),
     ("ban phac thao giao dien", "wireframe"),
-    ("bang dieu khien", "dashboard"),
     ("bao cao du lieu", "data report"),
     ("bao cao so lieu", "data report"),
     ("bieu do", "chart"),
@@ -352,12 +352,11 @@ const VI_EN: &[(&str, &str)] = &[
     ("nhan dien thuong hieu", "brand identity"),
     ("phac thao giao dien", "wireframe"),
     ("slide goi von", "pitch deck"),
-    ("so yeu ly lich", "resume"),
+    ("so yeu ly lich", "resume template"),
     ("thiet ke lai", "redesign"),
     ("thuong hieu", "brand"),
     ("thuyet trinh", "presentation"),
     ("trang chu", "homepage"),
-    ("trang dich", "landing page"),
     ("video gioi thieu", "promo video"),
 ];
 
@@ -857,7 +856,7 @@ mod tests {
             w("redesign homepage")
         );
         // A phrase cut short at the end stays as typed.
-        assert_eq!(in_english(w("làm bảng điều")), w("lam bang dieu"));
+        assert_eq!(in_english(w("làm biểu đồ tương")), w("lam chart tuong"));
         // English goes through `words_of` as triggers do: "notes" → "note".
         assert_eq!(in_english(w("ghi chú phát hành")), w("release notes"));
         // Every Vietnamese phrase is written as `words_of` gives it.
