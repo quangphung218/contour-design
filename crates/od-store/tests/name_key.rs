@@ -399,7 +399,12 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// The code of a source file, without its `#[cfg(test)]` module and
 /// files of tests: a test may set up two names alike on purpose.
 fn code_lines(text: &str) -> impl Iterator<Item = &str> {
-    let end = text.find("#[cfg(test)]\nmod ").unwrap_or(text.len());
+    // Any line end: a Windows checkout has `\r\n`.
+    let end = text
+        .match_indices("#[cfg(test)]")
+        .map(|(at, m)| at + m.len())
+        .find(|&after| text[after..].trim_start().starts_with("mod "))
+        .map_or(text.len(), |after| after - "#[cfg(test)]".len());
     text[..end]
         .lines()
         .map(|l| l.split("//").next().unwrap_or(""))
@@ -658,5 +663,23 @@ fn write_atomic(target: &Path, bytes: &[u8], place: Place) -> Result<()> {
 fn every_file_whose_writes_are_checked_is_there() {
     for file in WRITES_CHECKED {
         assert!(repo().join(file).is_file(), "{file} is gone");
+    }
+}
+
+/// The `#[cfg(test)]` module is left out on a Windows checkout too, whose
+/// lines end in `\r\n`: its tests write files by any name.
+#[test]
+fn a_test_module_is_left_out_whatever_the_line_end() {
+    for end in ["\n", "\r\n"] {
+        let text = [
+            "fn code() {}",
+            "#[cfg(test)]",
+            "mod tests {",
+            "fn t() {}",
+            "}",
+        ]
+        .join(end);
+        let lines: Vec<&str> = code_lines(&text).collect();
+        assert_eq!(lines, ["fn code() {}"], "{end:?}");
     }
 }
