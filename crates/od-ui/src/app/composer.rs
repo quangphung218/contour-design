@@ -8,7 +8,7 @@ use super::icons::{Glyph, icon};
 use super::tasks::{self, Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
-use crate::mention::{self, Candidate, MentionKind, Slash, Trigger};
+use crate::mention::{self, Candidate, MentionKind, SkillRow, Slash, Trigger};
 use crate::models::{self, Selection};
 use leptos::ev;
 use leptos::html::{Div, Input, Textarea};
@@ -363,7 +363,8 @@ fn drops_a_folder(dt: &web_sys::DataTransfer) -> bool {
 /// What the `@` palette can mention, loaded once per composer.
 #[derive(Clone, Copy)]
 pub struct Sources {
-    skills: LocalResource<Vec<Candidate>>,
+    /// Skills with their triggers, for the palette and the suggestions.
+    skills: LocalResource<Vec<SkillRow>>,
     plugins: LocalResource<Vec<Candidate>>,
     mcp: LocalResource<Vec<Candidate>>,
     /// Media library assets (track C2), offered where the composer can
@@ -380,15 +381,23 @@ impl Sources {
                 .map(|r| r.skills)
                 .unwrap_or_default()
                 .into_iter()
-                .map(|s| Candidate {
-                    kind: MentionKind::Skill,
-                    label: s.info.id.clone(),
-                    detail: crate::i18n::rebrand(&s.info.description)
-                        .chars()
-                        .take(90)
+                .map(|s| SkillRow {
+                    triggers: s
+                        .info
+                        .triggers
+                        .iter()
+                        .filter_map(|t| t.as_str().map(str::to_owned))
                         .collect(),
-                    id: s.info.id,
-                    inputs: None,
+                    candidate: Candidate {
+                        kind: MentionKind::Skill,
+                        label: s.info.id.clone(),
+                        detail: crate::i18n::rebrand(&s.info.description)
+                            .chars()
+                            .take(90)
+                            .collect(),
+                        id: s.info.id,
+                        inputs: None,
+                    },
                 })
                 .collect()
         });
@@ -445,7 +454,9 @@ impl Sources {
 
     fn of(self, kind: MentionKind) -> Vec<Candidate> {
         match kind {
-            MentionKind::Skill => self.skills.get().unwrap_or_default(),
+            MentionKind::Skill => self
+                .skills
+                .with(|s| s.iter().flatten().map(|r| r.candidate.clone()).collect()),
             MentionKind::Plugin => self.plugins.get().unwrap_or_default(),
             MentionKind::Mcp => self.mcp.get().unwrap_or_default(),
             MentionKind::Library => self.library.get().unwrap_or_default(),
@@ -800,7 +811,106 @@ pub fn MentionArea(
                 let rows = rows_now.get();
                 view! { <Palette slash=slash query=trigger.query rows=rows index=index pick=Callback::new(pick)/> }
             })}
+            <SkillSuggestions draft=draft sources=sources context=context/>
         </div>
+    }
+}
+
+/// How long typing pauses before the suggestions follow the draft.
+const SUGGEST_DEBOUNCE_MS: u32 = 300;
+
+/// Skills whose triggers the draft holds ([`mention::suggest`]), offered
+/// under the field: a click mentions the skill as `@` would, the cross
+/// hides it until the draft is emptied (sent or cleared). Nothing is
+/// staged unless clicked.
+#[component]
+fn SkillSuggestions(
+    draft: RwSignal<String>,
+    sources: Sources,
+    context: RwSignal<Vec<Candidate>>,
+) -> impl IntoView {
+    let tasks = Tasks::here();
+    let settled = RwSignal::new(String::new());
+    let dismissed = RwSignal::new(Vec::<String>::new());
+    let seq = StoredValue::new(0u32);
+    Effect::new(move |_| {
+        let text = draft.get();
+        seq.update_value(|n| *n += 1);
+        let mine = seq.get_value();
+        if text.trim().is_empty() {
+            // A new draft: what was dismissed may be offered again.
+            dismissed.set(Vec::new());
+            settled.set(String::new());
+            return;
+        }
+        tasks.spawn(async move {
+            gloo_timers::future::TimeoutFuture::new(SUGGEST_DEBOUNCE_MS).await;
+            if seq.get_value() == mine {
+                settled.set(text);
+            }
+        });
+    });
+    let shown = Memo::new(move |_| {
+        let text = settled.get();
+        let mut skip = dismissed.get();
+        context.with(|c| {
+            skip.extend(
+                c.iter()
+                    .filter(|c| c.kind == MentionKind::Skill)
+                    .map(|c| c.id.clone()),
+            );
+        });
+        sources.skills.with(|rows| {
+            rows.as_ref()
+                .map(|rows| mention::suggest(&text, rows, &skip))
+                .unwrap_or_default()
+        })
+    });
+    move || {
+        let list = shown.get();
+        (!list.is_empty()).then(|| {
+            view! {
+                <div class="skill-suggestions" role="group" aria-label=t(T::SkillSuggestions) data-testid="skill-suggestions">
+                    {list
+                        .into_iter()
+                        .map(|c| {
+                            let id = c.id.clone();
+                            let label = c.label.clone();
+                            let (data_id, detail) = (c.id.clone(), c.detail.clone());
+                            view! {
+                                <span class="chip skill-suggestion" data-testid="skill-suggestion" data-id=data_id title=detail>
+                                    // The name comes from the visible text (WCAG 2.5.3).
+                                    <button
+                                        type="button"
+                                        class="skill-suggestion-take"
+                                        data-testid="skill-suggestion-take"
+                                        on:mousedown=|ev| ev.prevent_default()
+                                        on:click=move |_| {
+                                            draft.update(|d| *d = mention::append_token(d, &c));
+                                            stage(context, c.clone());
+                                            super::chat_view::focus_selector("[data-od-composer]");
+                                        }
+                                    >
+                                        {icon(Glyph::Magic)}
+                                        {tf(T::UseSkillNamed, &[&label])}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="chip-x"
+                                        data-testid="skill-suggestion-dismiss"
+                                        aria-label=tf(T::DismissNamed, &[&label])
+                                        on:mousedown=|ev| ev.prevent_default()
+                                        on:click=move |_| dismissed.update(|d| d.push(id.clone()))
+                                    >
+                                        {icon(Glyph::Close)}
+                                    </button>
+                                </span>
+                            }
+                        })
+                        .collect_view()}
+                </div>
+            }
+        })
     }
 }
 
@@ -1096,7 +1206,13 @@ pub fn apply_toolbox(
     context: RwSignal<Vec<Candidate>>,
     draft: RwSignal<String>,
 ) {
-    let skills = sources.skills.get_untracked().unwrap_or_default();
+    let skills: Vec<Candidate> = sources
+        .skills
+        .get_untracked()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| r.candidate)
+        .collect();
     let ids: Vec<String> = skills.iter().map(|c| c.id.clone()).collect();
     let skill = crate::toolbox::skill_for(action, &ids)
         .and_then(|id| skills.iter().find(|c| c.id == id).cloned());
@@ -1147,12 +1263,7 @@ pub fn PlusMenu(
     let children = StoredValue::new(children);
     let add = move |c: Candidate| {
         open.set(false);
-        draft.update(|d| {
-            if !d.is_empty() && !d.ends_with(char::is_whitespace) {
-                d.push(' ');
-            }
-            d.push_str(&mention::token(&c));
-        });
+        draft.update(|d| *d = mention::append_token(d, &c));
         stage(context, c);
         super::chat_view::focus_selector("[data-od-composer]");
     };
