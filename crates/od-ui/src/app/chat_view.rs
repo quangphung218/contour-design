@@ -74,10 +74,12 @@ impl ChatItem {
 /// Uploads the composer's staged files; a project deleted meanwhile is
 /// marked gone by the upload's answer (QA-076).
 fn upload_staged(ctx: StudioCtx) {
-    ctx.tasks.spawn(async move {
-        let base = ctx.base();
-        upload_all(base, ctx.chat.uploads, ctx.tools.attachments).await;
-    });
+    upload_all(
+        ctx.tasks,
+        ctx.base(),
+        ctx.chat.uploads,
+        ctx.tools.attachments,
+    );
 }
 
 #[component]

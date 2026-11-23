@@ -16,7 +16,12 @@
 //!    upload) runs to its end whatever the screen does; only the update of
 //!    the view with its result is skipped once its owner went
 //!    ([`Tasks::spawn_then`]). Work with no view to update at all goes
-//!    through [`detached`].
+//!    through [`detached`]. A request starts inside the step that calls it,
+//!    so a write that is a [`Tasks::spawn`] task's first `await` goes out;
+//!    one it reaches only after another `await`, in a loop that awaits, or
+//!    through a helper that waits first (`Shell::save_config`) does not.
+//!    `tests/task_kinds.rs` finds those in every `spawn`; a site that may
+//!    stay is listed there with why.
 //! 3. A component's helpers (`StudioCtx` methods and the like) touch its
 //!    signals, so they are not called after an `await` once it went: they
 //!    go in the `ui` part, or the task's [`Tasks::spawn`].
