@@ -267,16 +267,23 @@ async fn upload(base: &str, file: &web_sys::File) -> Result<String, (u16, String
 /// Uploads the queued files one by one; each uploaded path goes into
 /// `ready` and its card leaves `uploads`, a failed one stays with its error.
 /// A card removed meanwhile is not attached. A project deleted meanwhile
-/// is marked gone by the upload's answer (QA-076).
-pub async fn upload_all(
+/// is marked gone by the upload's answer (QA-076). Every file goes up even
+/// if the screen of `tasks` is left meanwhile; only the cards wait for it.
+pub fn upload_all(
+    tasks: Tasks,
     base: String,
     uploads: RwSignal<Vec<Upload>>,
     ready: RwSignal<Vec<String>>,
 ) {
-    for item in claim_uploads(uploads) {
-        let result = upload(&base, &item.file).await;
-        settle_upload(uploads, ready, SentFile { item, result });
-    }
+    let todo = claim_uploads(uploads);
+    tasks::detached(async move {
+        for item in todo {
+            let result = upload(&base, &item.file).await;
+            if tasks.alive() {
+                settle_upload(uploads, ready, SentFile { item, result });
+            }
+        }
+    });
 }
 
 /// One file sent by [`upload_files`]: its card, and the project-relative
