@@ -15,7 +15,10 @@
 //! on Linux: [`Rule::UnspelledWrite`]. So does each name it is sent, the
 //! source of a rename, move or delete too, before it is used, else what is
 //! recorded by that name (history, comments) stays behind on a Mac:
-//! [`Rule::UnspelledName`].
+//! [`Rule::UnspelledName`], in `files.rs` and in the store's doors to it
+//! (`store.rs`, `edit.rs`, `comments.rs`, `drafts.rs`). A function there
+//! that decides on a file (what it holds, its history) and then writes or
+//! deletes it gives both steps one name, spelled: [`Rule::DecidedApart`].
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
@@ -44,6 +47,15 @@ enum Rule {
     /// history of `b.html` stays behind. Found by the function's signature
     /// and the statement that uses it.
     UnspelledName,
+    /// A function of the store that decides on a file ([`DECIDE_CALLS`]:
+    /// what it holds, its stat, its history) and writes or deletes it
+    /// ([`ACT_CALLS`]) under names that differ, or under one that is
+    /// neither its parameter nor spelled as on disk where it is bound: a
+    /// history read for `B.html` while `b.html` is written. Also every
+    /// call of `fate(`, which reads one name: a draft's row with no ident
+    /// tells its file only by that name, so where the name on disk differs
+    /// it must decide through `fate_spelled`, which sees both.
+    DecidedApart,
 }
 
 /// `(file from the repo root, text on the line, rule, why it may stay)`.
@@ -244,6 +256,56 @@ const KEPT: &[(&str, &str, Rule, &str)] = &[
         Rule::LowercaseKey,
         "finds a hint in an error message, not a file",
     ),
+    (
+        "crates/od-store/src/store.rs",
+        "pub fn write_file(",
+        Rule::DecidedApart,
+        "decides on `name` sanitized and spelled; `files::write_file` \
+         sanitizes and spells `name` the same way itself (`UnspelledName` \
+         holds it in files.rs)",
+    ),
+    (
+        "crates/od-store/src/store.rs",
+        "pub fn create_file_exact(",
+        Rule::DecidedApart,
+        "decides on `name` spelled; `files::create_file_exact` spells \
+         `name` the same way itself",
+    ),
+    (
+        "crates/od-store/src/store.rs",
+        "pub fn rename_file(",
+        Rule::DecidedApart,
+        "two names, source and target, each spelled as `files::rename_file` \
+         spells them (`as_on_disk`, `renamed_as`)",
+    ),
+    (
+        "crates/od-store/src/store.rs",
+        "pub fn move_folder(",
+        Rule::DecidedApart,
+        "decides on the source spelled; `files::move_folder` spells it the \
+         same way itself",
+    ),
+    (
+        "crates/od-store/src/store.rs",
+        "fn upload_file_held(",
+        Rule::DecidedApart,
+        "the history is refused by the name `files::upload_file` just wrote \
+         (spelled there); what it holds and the delete share `path`",
+    ),
+    (
+        "crates/od-store/src/store.rs",
+        "pub fn duplicate_project(",
+        Rule::DecidedApart,
+        "copies each file under the name `files::list_files` read from \
+         disk: spelled as on disk already",
+    ),
+    (
+        "crates/od-store/src/drafts.rs",
+        "fn fate_spelled(",
+        Rule::DecidedApart,
+        "the one call of `fate`, on the spelled name, after a row with no \
+         ident whose name differs on disk is told another file",
+    ),
 ];
 
 /// What `rule` finds in `stmt`, one statement (comments left out and its
@@ -278,7 +340,7 @@ fn finds(rule: Rule, stmt: &str) -> bool {
                 })
             })
         }
-        Rule::UnspelledWrite | Rule::UnspelledName => false,
+        Rule::UnspelledWrite | Rule::UnspelledName | Rule::DecidedApart => false,
     }
 }
 
@@ -335,6 +397,189 @@ fn unspelled_writes(lines: &[&str]) -> Vec<String> {
 /// Calls that check a name the caller sent and give it back as sent.
 const NAME_CALLS: &[&str] = &["validate_project_path(", "sanitize_path("];
 
+/// Files whose functions [`Rule::UnspelledName`] checks: the raw disk ops,
+/// and the store's functions that take a name from a caller.
+const NAMES_CHECKED: &[&str] = &[
+    "crates/od-store/src/files.rs",
+    "crates/od-store/src/store.rs",
+    "crates/od-store/src/edit.rs",
+    "crates/od-store/src/comments.rs",
+    "crates/od-store/src/drafts.rs",
+];
+
+/// Files whose functions [`Rule::DecidedApart`] checks.
+const DECIDED_CHECKED: &[&str] = &[
+    "crates/od-store/src/store.rs",
+    "crates/od-store/src/edit.rs",
+    "crates/od-store/src/comments.rs",
+    "crates/od-store/src/drafts.rs",
+];
+
+/// Calls that decide on a file, and which argument (from 0) names it.
+const DECIDE_CALLS: &[(&str, usize)] = &[
+    ("files::stat_file(", 1),
+    ("files::read_file(", 1),
+    ("versions::read_version(", 1),
+    ("versions::list_versions(", 1),
+    ("versions::refuse_linked_history(", 1),
+    ("self.away_before(", 1),
+    ("holds(", 1),
+    ("file_ident(", 1),
+    ("fate_spelled(", 2),
+];
+
+/// Calls that write or delete a file or its history, and which argument
+/// names it.
+const ACT_CALLS: &[(&str, usize)] = &[
+    ("files::write_file(", 1),
+    ("files::write_file_exact(", 1),
+    ("files::create_file_exact(", 1),
+    ("files::delete_file(", 1),
+    ("files::rename_file(", 1),
+    ("files::move_folder(", 1),
+    ("files::delete_folder(", 1),
+    ("self.delete_file_held(", 2),
+    ("versions::ensure_current_version(", 1),
+    ("settle(", 1),
+];
+
+/// Calls that decide on one name only: never where a recorded name and
+/// the name on disk may differ ([`Rule::DecidedApart`]).
+const ONE_NAME_CALLS: &[&str] = &["fate("];
+
+/// The functions of `lines`: `(signature, body)`, the signature up to the
+/// `{` that opens the body.
+fn functions(lines: &[&str]) -> Vec<(String, String)> {
+    let is_fn = |l: &str| {
+        let l = l.trim_start();
+        ["fn ", "pub fn ", "pub(crate) fn ", "pub(super) fn "]
+            .iter()
+            .any(|p| l.starts_with(p))
+    };
+    let starts: Vec<usize> = (0..lines.len()).filter(|&i| is_fn(lines[i])).collect();
+    starts
+        .iter()
+        .enumerate()
+        .map(|(n, &at)| {
+            let end = starts.get(n + 1).copied().unwrap_or(lines.len());
+            let text = lines[at..end]
+                .iter()
+                .map(|l| l.trim())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let open = text.find('{').unwrap_or(text.len());
+            (text[..open].to_owned(), text[open..].to_owned())
+        })
+        .collect()
+}
+
+/// Each call of `call` in `body` (not its definition, not the tail of a
+/// longer name) and its argument `index`, without `&` and spaces.
+fn calls_of(body: &str, call: &str, index: usize) -> Vec<(usize, String)> {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    body.match_indices(call)
+        .filter(|&(at, _)| !body[..at].ends_with("fn ") && !body[..at].ends_with(word))
+        .map(|(at, m)| {
+            let args = call_args(&body[at + m.len()..]);
+            let mut depth = 0usize;
+            let mut parts = vec![String::new()];
+            for c in args.chars() {
+                match c {
+                    '(' | '[' | '{' | '<' => depth += 1,
+                    ')' | ']' | '}' | '>' => depth = depth.saturating_sub(1),
+                    ',' if depth == 0 => {
+                        parts.push(String::new());
+                        continue;
+                    }
+                    _ => {}
+                }
+                if let Some(last) = parts.last_mut() {
+                    last.push(c);
+                }
+            }
+            let arg = parts.get(index).map_or("", |a| a.trim());
+            (at, arg.trim_start_matches('&').trim().to_owned())
+        })
+        .collect()
+}
+
+/// Whether `name` is a parameter of the function `sig`, or bound in
+/// `body` by a `let` whose statement spells it ([`SPELL_CALLS`]).
+fn is_spelled(sig: &str, body: &str, name: &str) -> bool {
+    let param = [format!("({name}:"), format!(" {name}:")];
+    if param.iter().any(|p| sig.contains(p.as_str())) {
+        return true;
+    }
+    [format!("let {name} ="), format!("let mut {name} =")]
+        .iter()
+        .flat_map(|l| body.match_indices(l.as_str()).map(|(at, _)| at))
+        .any(|at| {
+            let stmt = &body[at..body[at..].find(';').map_or(body.len(), |e| at + e)];
+            SPELL_CALLS.iter().any(|c| stmt.contains(c))
+        })
+}
+
+/// Each function of `lines` that decides on a file under one name and
+/// writes or deletes it under another, or under one not spelled, and
+/// each call of a [`ONE_NAME_CALLS`] call: `"<signature> <what>"`.
+fn decided_apart(lines: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (sig, body) in functions(lines) {
+        let head = sig.split('(').next().unwrap_or(&sig).to_owned() + "(";
+        for call in ONE_NAME_CALLS {
+            for (_, arg) in calls_of(&body, call, 1) {
+                out.push(format!("{head} {call}{arg}, ..)"));
+            }
+        }
+        let acts: Vec<(usize, String)> = ACT_CALLS
+            .iter()
+            .flat_map(|(c, i)| calls_of(&body, c, *i))
+            .collect();
+        if acts.is_empty() {
+            continue;
+        }
+        let mut names: Vec<String> = DECIDE_CALLS
+            .iter()
+            .flat_map(|(c, i)| calls_of(&body, c, *i))
+            .chain(acts)
+            .map(|(_, arg)| arg)
+            .collect();
+        names.sort();
+        names.dedup();
+        if names.len() > 1 {
+            out.push(format!("{head} decides and acts on {names:?}"));
+        } else if let Some(name) = names.first()
+            && !is_spelled(&sig, &body, name)
+        {
+            out.push(format!("{head} acts on `{name}`, not spelled"));
+        }
+    }
+    out
+}
+
+/// Where the name of the call at `at` is first used, when the call is
+/// followed by `.map(|x| …)` (after `?`, `.ok()`): the first mention of
+/// `x` in it. `None` with no such closure.
+/// `sanitize_path(to).ok().map(|to| renamed_as(root, from, &to))`.
+fn closure_use(body: &str, at: usize) -> Option<usize> {
+    let open = at + body[at..].find('(').map_or(0, |i| i + 1);
+    let mut rest = &body[open + call_args(&body[open..]).len() + 1..];
+    loop {
+        let r = rest.trim_start();
+        if let Some(r) = r.strip_prefix('?').or_else(|| r.strip_prefix(".ok()")) {
+            rest = r;
+        } else {
+            rest = r;
+            break;
+        }
+    }
+    let closure = rest.strip_prefix(".map(|")?;
+    let bar = closure.find('|')?;
+    let name = closure[..bar].trim();
+    let from = body.len() - closure.len() + bar + 1;
+    next_mention(body, name, from)
+}
+
 /// Whether `at` in `body` lies in the name a [`SPELL_CALLS`] call spells:
 /// its last argument (`as_on_disk(dir, NAME)`, `renamed_as(root, old,
 /// NAME)`; the `old` of `renamed_as` is not spelled by it).
@@ -349,7 +594,8 @@ fn in_spelled_argument(body: &str, at: usize) -> bool {
                 match c {
                     '(' | '[' | '{' => depth += 1,
                     ')' | ']' | '}' => depth = depth.saturating_sub(1),
-                    ',' if depth == 0 => last = i + 1,
+                    // A comma rustfmt puts after the last argument starts none.
+                    ',' if depth == 0 && !args[i + 1..].trim().is_empty() => last = i + 1,
                     _ => {}
                 }
             }
@@ -429,12 +675,12 @@ fn unspelled_names(lines: &[&str]) -> Vec<String> {
             if in_spelled_argument(&body, call) {
                 continue;
             }
-            let used = match binding_at(&body, call) {
-                Some((name, stmt_end)) => {
-                    next_mention(&body, name, stmt_end).filter(|&i| !in_spelled_argument(&body, i))
-                }
-                None => Some(call),
-            };
+            let used = match (closure_use(&body, call), binding_at(&body, call)) {
+                (Some(i), _) => Some(i),
+                (None, Some((name, stmt_end))) => next_mention(&body, name, stmt_end),
+                (None, None) => Some(call),
+            }
+            .filter(|&i| !in_spelled_argument(&body, i));
             if let Some(i) = used {
                 let stmt_start = body[..i].rfind([';', '{', '}']).map_or(0, |s| s + 1);
                 let stmt_end = body[i..]
@@ -576,13 +822,20 @@ fn scan_file(rel: &str, text: &str) -> Vec<(Rule, String)> {
             }
         }
     }
+    let lines: Vec<&str> = code_lines(text).collect();
     if WRITES_CHECKED.contains(&rel) {
-        let lines: Vec<&str> = code_lines(text).collect();
         for sig in unspelled_writes(&lines) {
             found.push((Rule::UnspelledWrite, sig));
         }
+    }
+    if NAMES_CHECKED.contains(&rel) {
         for site in unspelled_names(&lines) {
             found.push((Rule::UnspelledName, site));
+        }
+    }
+    if DECIDED_CHECKED.contains(&rel) {
+        for site in decided_apart(&lines) {
+            found.push((Rule::DecidedApart, site));
         }
     }
     found
@@ -816,6 +1069,10 @@ pub fn source(root: &ProjectRoot, from: &str, to: &str) -> Result<()> {
 }
 pub fn spelled(root: &ProjectRoot, from: &str, to: &str) -> Result<()> {
     let old = as_on_disk(&root.dir, &validate_project_path(from)?);
+    forget(&as_on_disk(
+        &root.dir,
+        &validate_project_path(from)?,
+    ));
     let new = renamed_as(root, &old, &sanitize_path(to)?);
     let rel = sanitize_path(to)?;
     let rel = as_on_disk(&root.dir, &rel);
@@ -867,14 +1124,123 @@ pub fn delete(root: &ProjectRoot, name: &str) -> Result<()> {
         rules(WRITES_CHECKED[0]),
         [Rule::UnspelledWrite, Rule::UnspelledName]
     );
-    assert_eq!(rules("crates/od-store/src/store.rs"), []);
+    assert_eq!(rules("crates/od-store/src/store.rs"), [Rule::UnspelledName]);
+    assert_eq!(rules("crates/od-server/src/routes/files.rs"), []);
+    let apart = "\
+fn delete(root: &ProjectRoot, path: &str, spelled: &str) -> bool {
+    let fate = fate(root, spelled, None, 0);
+    if file_ident(root, spelled).is_none() {}
+    settle(root, path, fate)
+}
+";
+    let rules = |rel: &str| {
+        scan_file(rel, apart)
+            .into_iter()
+            .map(|(rule, _)| rule)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        rules("crates/od-store/src/drafts.rs"),
+        [Rule::DecidedApart, Rule::DecidedApart]
+    );
+    assert_eq!(rules(WRITES_CHECKED[0]), []);
 }
 
-/// Each file [`Rule::UnspelledWrite`] checks is there: a moved file would
-/// leave the rule checking nothing.
+/// A name spelled in a closure the call is mapped through is spelled; one
+/// the closure uses as sent is not.
+#[test]
+fn a_name_spelled_in_its_closure_is_spelled() {
+    let text = "\
+pub fn mapped(root: &ProjectRoot, name: &str) -> Result<()> {
+    let safe = sanitize_path(name).ok().map(|safe| as_on_disk(&root.dir, &safe));
+    if let Ok(exact) = validate_project_path(name).map(|exact| as_on_disk(&root.dir, &exact)) {}
+    let to = sanitize_path(name)?.map(|to| renamed_as(root, &old, &to));
+    Ok(())
+}
+pub fn used(root: &ProjectRoot, name: &str) -> Result<()> {
+    let safe = sanitize_path(name).ok().map(|safe| stat_file(root, &safe));
+    Ok(())
+}
+pub fn source(root: &ProjectRoot, name: &str) -> Result<()> {
+    let old = sanitize_path(name).ok().map(|old| renamed_as(root, &old, &new));
+    Ok(())
+}
+";
+    let lines: Vec<&str> = code_lines(text).collect();
+    let fns: Vec<String> = unspelled_names(&lines)
+        .iter()
+        .map(|f| f.split('(').next().unwrap_or(f).to_owned())
+        .collect();
+    assert_eq!(fns, ["pub fn used", "pub fn source"]);
+}
+
+/// A function that decides on a file and acts on it under two names, or
+/// under one not spelled, is found, and so is every call of `fate(`; one
+/// name spelled or a parameter is not.
+#[test]
+fn a_decision_apart_from_its_act_is_found() {
+    let text = "\
+fn same(root: &ProjectRoot, path: &str) -> bool {
+    let spelled = as_on_disk(&root.dir, path);
+    if file_ident(root, &spelled).is_some() {}
+    let fate = fate_spelled(root, path, &spelled, None, 0);
+    settle(root, &spelled, fate)
+}
+fn apart(root: &ProjectRoot, path: &str) -> bool {
+    let spelled = as_on_disk(&root.dir, path);
+    let fate = fate_spelled(root, path, &spelled, None, 0);
+    settle(root, path, fate)
+}
+pub fn unspelled(&self, root: &ProjectRoot, name: &str) -> Result<()> {
+    let safe = validate_project_path(name)?;
+    let (_, now) = files::read_file(&root, &safe)?;
+    files::write_file_exact(&root, &safe, now.as_bytes())?;
+    Ok(())
+}
+fn one_name(root: &ProjectRoot, path: &str) -> bool {
+    let spelled = as_on_disk(&root.dir, path);
+    let fate = fate(root, &spelled, None, 0);
+    settle(root, &spelled, fate)
+}
+fn param(root: &ProjectRoot, name: &str, before: Option<&[u8]>) -> Result<()> {
+    match before {
+        Some(bytes) => files::write_file_exact(root, name, bytes).map(drop),
+        None => files::delete_file(root, name).map(drop),
+    }
+}
+fn history(root: &ProjectRoot, name: &str) -> Result<()> {
+    let safe = validate_project_path(name)?;
+    versions::ensure_current_version(&root.dir, &safe, \"\", manual())?;
+    Ok(())
+}
+fn decides_only(root: &ProjectRoot, a: &str, b: &str) -> bool {
+    files::stat_file(root, a).is_ok() && holds(root, b, \"x\") == Holds::Same
+}
+";
+    let lines: Vec<&str> = code_lines(text).collect();
+    let found = decided_apart(&lines);
+    let fns: Vec<&str> = found
+        .iter()
+        .map(|f| f.split('(').next().unwrap_or(f))
+        .collect();
+    assert_eq!(
+        fns,
+        ["fn apart", "pub fn unspelled", "fn one_name", "fn history"],
+        "{found:#?}"
+    );
+    assert!(found[0].ends_with(r#"["path", "spelled"]"#), "{found:#?}");
+    assert!(found[2].contains("fate(spelled"), "{found:#?}");
+}
+
+/// Each file a rule checks by function is there: a moved file would leave
+/// the rule checking nothing.
 #[test]
 fn every_file_whose_writes_are_checked_is_there() {
-    for file in WRITES_CHECKED {
+    for file in WRITES_CHECKED
+        .iter()
+        .chain(NAMES_CHECKED)
+        .chain(DECIDED_CHECKED)
+    {
         assert!(repo().join(file).is_file(), "{file} is gone");
     }
 }

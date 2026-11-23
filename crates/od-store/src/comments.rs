@@ -2,7 +2,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::files;
-use crate::paths::validate_project_path;
+use crate::paths::{as_on_disk, validate_project_path};
 use crate::store::Store;
 use od_contracts::{
     CommentImage, CommentRect, CommentStatus, CreateCommentRequest, FileKind, MAX_COMMENT_IMAGES,
@@ -197,7 +197,10 @@ impl Store {
         req: CreateCommentRequest,
     ) -> Result<PreviewComment> {
         self.get_conversation(project_id, conversation_id)?;
-        let file_path = validate_project_path(&req.file_path)?;
+        let root = self.root_for(project_id)?;
+        // As on disk: a comment sent on `B.html` is about `b.html`, and
+        // follows its rename and delete.
+        let file_path = as_on_disk(&root.dir, &validate_project_path(&req.file_path)?);
         let note = clip(&req.note, MAX_NOTE);
         if note.is_empty() {
             return Err(StoreError::BadRequest("note required".into()));
@@ -227,21 +230,14 @@ impl Store {
         };
         let position = serde_json::to_string(&comment.position)?;
         let images: Vec<String> = comment.attachments.iter().map(|a| a.path.clone()).collect();
-        let root = if images.is_empty() {
-            None
-        } else {
-            Some(self.root_for(project_id)?)
-        };
         self.with_conn(|conn| {
             let conn = conn.unchecked_transaction()?;
             // Its images are the comment's now: no release takes them.
             // One a release took since they were checked is gone: the
             // comment is refused rather than kept pointing to nothing.
             crate::drafts::claim(&conn, project_id, &images)?;
-            if let Some(root) = &root {
-                for path in &images {
-                    files::stat_file(root, path)?;
-                }
+            for path in &images {
+                files::stat_file(&root, path)?;
             }
             conn.execute(
                 &format!(
@@ -293,7 +289,7 @@ impl Store {
         paths
             .iter()
             .map(|raw| {
-                let path = validate_project_path(raw)?;
+                let path = as_on_disk(&root.dir, &validate_project_path(raw)?);
                 let (file, _) = files::stat_file(&root, &path)?;
                 if file.kind != FileKind::Image {
                     return Err(StoreError::BadRequest(format!("{path} is not an image")));
