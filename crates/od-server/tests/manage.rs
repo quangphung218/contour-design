@@ -210,6 +210,24 @@ async fn claude_design_zip_becomes_a_project() {
     assert_eq!(before, after, "failed imports leave no project");
 }
 
+/// A ZIP whose folder is spelled two ways (`A/logo.png`, `a/index.html`)
+/// is written into the first folder on every disk, so the entry page is
+/// `A/index.html`: the name on disk, not the one in the archive.
+#[tokio::test]
+async fn zip_entry_is_the_name_written_on_disk() {
+    let d = common::daemon().await;
+    let bytes = zip_of(&[("A/logo.png", b"png"), ("a/index.html", b"<p>hi</p>")]);
+    let res = import_zip(&d, "Cases.zip", bytes).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["files"], json!(["A/logo.png", "A/index.html"]));
+    assert_eq!(body["entryFile"], "A/index.html");
+    assert_eq!(body["project"]["metadata"]["entryFile"], "A/index.html");
+    let id = body["project"]["id"].as_str().unwrap().to_owned();
+    let project = d.get_json(&format!("/api/projects/{id}")).await;
+    assert_eq!(project["project"]["metadata"]["entryFile"], "A/index.html");
+}
+
 #[tokio::test]
 async fn zip_entries_keep_their_names() {
     let d = common::daemon().await;

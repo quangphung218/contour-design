@@ -481,7 +481,10 @@ impl Store {
     ) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
-        if let Ok(exact) = validate_project_path(name)
+        // The history of the page as written: `Pages/x.html` when sent
+        // as `pages/x.html` (as `write_file`).
+        if let Ok(exact) =
+            validate_project_path(name).map(|exact| crate::paths::as_on_disk(&root.dir, &exact))
             && records_version(&exact, bytes)
         {
             versions::refuse_linked_history(&root.dir, &exact)?;
@@ -501,10 +504,14 @@ impl Store {
         // A history that cannot follow is refused before the file moves;
         // undoing the move below stays for the errors only moving finds.
         // A file gone is not found, whatever its history (as a delete).
-        for name in [validate_project_path(from), crate::paths::sanitize_path(to)]
-            .into_iter()
-            .flatten()
-        {
+        // The target is the name the file moves to on disk.
+        let from_rel = validate_project_path(from);
+        let to_rel = from_rel.as_ref().ok().and_then(|from| {
+            crate::paths::sanitize_path(to)
+                .ok()
+                .map(|to| files::renamed_as(&root, from, &to))
+        });
+        for name in [from_rel.ok(), to_rel].into_iter().flatten() {
             versions::refuse_linked_history(&root.dir, &name).map_err(
                 |err| match files::stat_file(&root, from) {
                     Err(StoreError::FileNotFound) => StoreError::FileNotFound,

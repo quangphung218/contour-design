@@ -180,6 +180,32 @@ pub fn import(
         for (path, (_, data)) in paths.iter().zip(&entries) {
             files.push(store.create_file_exact(&project.id, path, data)?.name);
         }
+        // The entry as written: `a/index.html` lands in `A/` when
+        // `A/logo.png` came first, on every disk.
+        let entry = paths
+            .iter()
+            .position(|p| *p == entry)
+            .and_then(|i| files.get(i))
+            .cloned()
+            .unwrap_or(entry);
+        let project = if project
+            .metadata
+            .as_ref()
+            .and_then(|m| m.entry_file.as_deref())
+            == Some(entry.as_str())
+        {
+            project.clone()
+        } else {
+            let mut metadata = project.metadata.clone().unwrap_or_default();
+            metadata.entry_file = Some(entry.clone());
+            store.update_project(
+                &project.id,
+                od_contracts::UpdateProjectRequest {
+                    metadata: Some(Some(metadata)),
+                    ..od_contracts::UpdateProjectRequest::default()
+                },
+            )?
+        };
         store.update_conversation(
             &project.id,
             &conversation_id,
@@ -188,10 +214,10 @@ pub fn import(
                 session_mode: None,
             },
         )?;
-        Ok::<_, StoreError>(files)
+        Ok::<_, StoreError>((project, entry, files))
     })();
     match written {
-        Ok(files) => Ok(ImportZipResponse {
+        Ok((project, entry, files)) => Ok(ImportZipResponse {
             project,
             conversation_id,
             entry_file: entry,

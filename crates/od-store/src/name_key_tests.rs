@@ -308,3 +308,70 @@ fn a_folder_made_as_another_in_other_case_is_that_folder() {
     assert_eq!(folder, "assets");
     assert_eq!(p.names(""), ["assets"]);
 }
+
+/// Makes the history folder of page `name` a link to `elsewhere` (an
+/// agent's shell can), as `versions::refuse_linked_history` finds it.
+#[cfg(unix)]
+fn link_history(p: &Project, name: &str, elsewhere: &std::path::Path) {
+    use sha2::Digest as _;
+    let root = p.dir.join(crate::versions::VERSION_ROOT);
+    fs::create_dir_all(&root).unwrap_or_else(|e| panic!("{e}"));
+    let digest = hex::encode(sha2::Sha256::digest(name.as_bytes()));
+    std::os::unix::fs::symlink(elsewhere, root.join(&digest[..24]))
+        .unwrap_or_else(|e| panic!("{e}"));
+}
+
+/// A new page sent as `pages/x.html` is written at `Pages/x.html`: the
+/// history checked before writing is that page's, so a linked one is
+/// refused before the page is on disk (invariant 3).
+#[cfg(unix)]
+#[test]
+fn a_new_page_in_a_folder_of_another_case_checks_its_history_first() {
+    let p = project();
+    p.put("Pages/a.css", b"a{}");
+    let elsewhere = p._tmp.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap_or_else(|e| panic!("{e}"));
+    link_history(&p, "Pages/x.html", &elsewhere);
+    let res = p
+        .store
+        .create_file_exact(&p.id, "pages/x.html", b"<p>x</p>");
+    assert!(res.is_err(), "{res:?}");
+    assert_eq!(p.names("Pages"), ["a.css"], "written, then refused");
+    assert!(
+        fs::read_dir(&elsewhere)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .next()
+            .is_none()
+    );
+}
+
+/// A rename to `pages/b.html` lands at `Pages/b.html`: that history is
+/// the one checked before the file moves (invariant 3).
+#[cfg(unix)]
+#[test]
+fn a_rename_into_a_folder_of_another_case_checks_its_history_first() {
+    let p = project();
+    p.put("Pages/a.css", b"a{}");
+    p.put("b.html", b"<p>b</p>");
+    let elsewhere = p._tmp.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap_or_else(|e| panic!("{e}"));
+    link_history(&p, "Pages/b.html", &elsewhere);
+    // A rename sets the file's ctime, also when it is put back after.
+    let changed = || {
+        use std::os::unix::fs::MetadataExt as _;
+        let m = fs::metadata(p.dir.join("b.html")).unwrap_or_else(|e| panic!("{e}"));
+        (m.ctime(), m.ctime_nsec())
+    };
+    let before = changed();
+    let res = p.store.rename_file(&p.id, "b.html", "pages/b.html");
+    assert!(res.is_err(), "{res:?}");
+    assert_eq!(changed(), before, "moved, then put back");
+    assert_eq!(p.bytes("b.html"), b"<p>b</p>");
+    assert_eq!(p.names("Pages"), ["a.css"]);
+    assert!(
+        fs::read_dir(&elsewhere)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .next()
+            .is_none()
+    );
+}

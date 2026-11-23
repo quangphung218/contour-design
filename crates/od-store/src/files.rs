@@ -469,7 +469,7 @@ pub fn rename_file(
 /// as asked when it names `old` itself (`a.html` → `A.html` changes the
 /// case), else as on disk (`logo.png` where `Logo.png` is: that name,
 /// which the caller then finds taken).
-fn renamed_as(root: &ProjectRoot, old: &str, new: &str) -> String {
+pub(crate) fn renamed_as(root: &ProjectRoot, old: &str, new: &str) -> String {
     let on_disk = as_on_disk(&root.dir, new);
     if on_disk != as_on_disk(&root.dir, old) {
         return on_disk;

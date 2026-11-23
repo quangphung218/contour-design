@@ -60,7 +60,8 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     An upload takes `-1`, a new file or rename onto a name alike is `FileExists`, an overwrite writes the file there,
     a rename to its own name in another case is allowed.
     - `src/name_key_tests.rs` (all ops; run with `TMPDIR` on a case-sensitive volume to see Linux)
-    - `tests/name_key.rs` (source scan: no name check by hand in `crates/*/src`, exceptions in `KEPT`)
+    - `tests/name_key.rs` (source scan by statement: no name check by hand in `crates/*/src`; in `src/files.rs` no write
+      before `as_on_disk`/`renamed_as`; exceptions in `KEPT`)
 
 ## Traps
 - Each per-op fix patched one op × state cell and broke a neighbour; add a matrix cell
