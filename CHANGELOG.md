@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.59] - 2026-11-24
+
 ### Added
 
 - Skill suggestions understand common Vietnamese topic words and cover decks, dashboards, onboarding, video, posters, resumes and logos.
@@ -1397,7 +1399,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.58...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.59...HEAD
+[0.2.0-beta.59]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.58...v0.2.0-beta.59
 [0.2.0-beta.58]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.56...v0.2.0-beta.58
 [0.2.0-beta.56]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.55...v0.2.0-beta.56
 [0.2.0-beta.55]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.54...v0.2.0-beta.55
