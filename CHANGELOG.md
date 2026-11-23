@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.55] - 2026-11-23
+
 ### Fixed
 
 - Keep deck controls off slide pictures in PowerPoint and image exports when the deck's wrapper sets `opacity`, `z-index` or `isolation` (#297).
@@ -1364,7 +1366,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.54...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.55...HEAD
+[0.2.0-beta.55]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.54...v0.2.0-beta.55
 [0.2.0-beta.54]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.53...v0.2.0-beta.54
 [0.2.0-beta.53]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.51...v0.2.0-beta.53
 [0.2.0-beta.51]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.50...v0.2.0-beta.51
