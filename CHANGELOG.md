@@ -10,7 +10,9 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
-- Show bundled skill examples with their styles, charts and animations in the preview; they no longer load Tailwind, GSAP or Chart.js from a CDN.
+- Upload every file attached in the chat even if the Studio is left while the first one uploads (#300).
+- Save and attach a drawing even if the draw tool closes right after Attach (#300).
+- Show bundled skill examples with their styles, charts and animations in the preview; they no longer load Tailwind, GSAP or Chart.js from a CDN (#301).
 
 ## [0.2.0-beta.55] - 2026-11-23
 

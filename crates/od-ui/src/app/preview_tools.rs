@@ -1708,10 +1708,13 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
         }
         busy.set(true);
         let (w, h) = (canvas.width().max(1), canvas.height().max(1));
-        tasks.spawn(async move {
-            match attach_annotation(ctx, list, w, h).await {
+        // The Studio's task: the drawing is attached even if the draw tool
+        // closes meanwhile; only the layer's own state waits for the layer.
+        ctx.tasks.spawn(async move {
+            let res = attach_annotation(ctx, list, w, h).await;
+            let layer = tasks.alive();
+            match res {
                 Ok(with_snapshot) => {
-                    history.set(History::default());
                     tools.note(
                         t(if with_snapshot {
                             T::DrawAttached
@@ -1720,11 +1723,16 @@ pub fn DrawLayer(ctx: StudioCtx) -> impl IntoView {
                         })
                         .to_owned(),
                     );
-                    ctx.set_tool(None);
+                    if layer {
+                        history.set(History::default());
+                        ctx.set_tool(None);
+                    }
                 }
                 Err(e) => tools.note(e),
             }
-            busy.set(false);
+            if layer {
+                busy.set(false);
+            }
         });
     };
     view! {

@@ -618,6 +618,8 @@ Bugs: [bugs-web-beta34.md](bugs-web-beta34.md).
 | LV-06 | History closed while its list loads | 2 versions | Open History (held), close it, let it in, open again | The list shows, no error | P2 | auto |
 | LV-07 | History A → B → A quickly | a.html 2 versions, b.html 1 | b.html's list held back; pick A again; let it in | A's list | P1 | auto |
 | LV-08 | Upload, then the Studio left | Studio | Upload `bìa sách.png` (held), go to Projects, let it in | The file is in the project | P0 | auto |
+| LV-18 | Chat files, then the Studio left | Studio | Attach 2 files in the chat (first held), go to Projects, let it in | Both files are in the project | P0 | auto |
+| LV-19 | Draw attached, then the tool closed | index.html, Draw | Draw, Attach and close Draw in one tick | The drawing is saved under `annotations/` and attached | P1 | auto |
 | LV-09 | Media generate, then Library and Home | A fake image provider that answers late | Generate, Library, Home, answer, back to Media | The image is in the Library, the task "done" in Queue | P1 | auto |
 | LV-17 | The daemon stops while a tab is open | Home open | SIGTERM the daemon | It stops within 2 s | P2 | auto (QA-092) |
 

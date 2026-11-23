@@ -297,6 +297,42 @@ test('LV-08', 'A file uploaded in the Files panel reaches the project even if th
     .catch(async () => assert.fail(`files after leaving: ${(await listFiles(d, id)).join(', ')}`));
 });
 
+test('LV-18', 'Every file attached in the chat reaches the project even if the Studio is left while the first uploads', async ({ d, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Chat upload leave');
+  const h = await hold(page, (u, r) => u.pathname === `/api/projects/${id}/upload` && r.method() === 'POST');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId('plus-menu').click();
+  await page.getByTestId('attach-files').click();
+  await (await chooser).setFiles([
+    { name: 'một.png', mimeType: 'image/png', buffer: PNG },
+    { name: 'hai.png', mimeType: 'image/png', buffer: PNG },
+  ]);
+  await until(() => h.held.length > 0, 'the first upload sent');
+  await page.getByRole('link', { name: 'Projects' }).first().click();
+  await page.waitForURL('**/projects');
+  await h.release();
+  const both = (files) => files.some((f) => /^một.*\.png$/.test(f)) && files.some((f) => /^hai.*\.png$/.test(f));
+  await until(async () => both(await listFiles(d, id)), 'both uploads landed', 10_000)
+    .catch(async () => assert.fail(`files after leaving: ${(await listFiles(d, id)).join(', ')}`));
+});
+
+test('LV-19', 'A drawing attached just before the draw tool closes is saved and attached', async ({ d, newPage }) => {
+  const { page, id } = await studio(newPage, d, 'Draw then close');
+  await frame(page).locator('#title').waitFor();
+  await page.getByTestId('draw-mode').click();
+  await stroke(page);
+  // Attach, then close the tool in the same tick: the layer goes while
+  // the snapshot is on its way.
+  await page.evaluate(() => {
+    document.querySelector('[data-testid="draw-attach"]').click();
+    document.querySelector('[data-testid="draw-mode"]').click();
+  });
+  await page.getByTestId('draw-canvas').waitFor({ state: 'detached' });
+  await until(async () => (await listFiles(d, id)).some((f) => /^annotations\/annotation-.*\.png$/.test(f)), 'the drawing saved', 10_000)
+    .catch(async () => assert.fail(`files after closing the tool: ${(await listFiles(d, id)).join(', ')}`));
+  await page.getByTestId('attachment-chip').waitFor();
+});
+
 // A loopback stand-in for OpenAI Images whose answer waits for `release()`.
 async function slowImages() {
   let release;
