@@ -486,6 +486,10 @@ try {
   await page.locator('[data-testid="skill-row"][data-id="tea-house-2"]').waitFor();
   await page.screenshot({ path: join(OUT, 'save-as-skill-personal.png') });
   results.saveAsSkill = 'ok';
+  // The draft's file is a real file of the project, and Media lists every
+  // image across projects: the media section below starts from none.
+  const draftGone = await fetch(`${BASE}/api/projects/${teaProject}/files/draft-ref.png`, { method: 'DELETE' });
+  assert.ok(draftGone.ok, `draft-ref.png deleted (${draftGone.status})`);
 
   // ------------------------------------------------------------- media
   await page.locator('nav a[href="/media"]').click();
