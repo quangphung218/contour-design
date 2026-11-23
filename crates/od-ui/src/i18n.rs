@@ -1716,6 +1716,9 @@ messages! {
     AttachFiles => "Attach files", "Đính file";
     Uploading => "Uploading…", "Đang tải lên…";
     RemoveNamed => "Remove {0}", "Bỏ {0}";
+    SkillSuggestions => "Suggested skills", "Skill gợi ý";
+    UseSkillNamed => "Use skill: {0}", "Dùng skill: {0}";
+    DismissNamed => "Dismiss {0}", "Bỏ qua {0}";
     PreviewNamed => "Preview {0}", "Xem {0}";
     FolderNotAttachable => "Folders can't be attached here. Attach the files inside instead.", "Không đính được cả thư mục. Hãy đính các file bên trong.";
     TooManyFiles => "Attach up to {0} files at a time.", "Mỗi lần đính tối đa {0} file.";

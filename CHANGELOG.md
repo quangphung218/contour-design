@@ -11,6 +11,11 @@ All notable changes to Contour are recorded here. The format follows
 ### Added
 
 - Save a Studio project as a personal skill from the "+" menu; `od skill install` installs a skill folder with its files.
+- Suggest up to two skills under the composer from words in the prompt that match their triggers; click to mention one.
+
+### Fixed
+
+- Keep a page's history and comments when an agent renames, moves or deletes it by a name differing in case or Unicode form (#311).
 
 ## [0.2.0-beta.57] - 2026-11-23
 

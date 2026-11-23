@@ -56,12 +56,14 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 11. Opening the store sweeps day-old draft images.
     - `src/drafts.rs::opening_the_store_sweeps_day_old_draft_images`
 12. A user's file names compare by `paths::name_key` (NFC, case ignored) on every disk, as on macOS:
-    every target of a write, upload, rename, move or new folder is spelled as on disk first (`paths::as_on_disk`).
+    every target of a write, upload, rename, move or new folder, and every source of a rename, move or delete, is
+    spelled as on disk first (`paths::as_on_disk`): `B.html` sent for `b.html` takes the history of `b.html` along.
     An upload takes `-1`, a new file or rename onto a name alike is `FileExists`, an overwrite writes the file there,
     a rename to its own name in another case is allowed.
     - `src/name_key_tests.rs` (all ops; run with `TMPDIR` on a case-sensitive volume to see Linux)
     - `tests/name_key.rs` (source scan by statement: no name check by hand in `crates/*/src`; in `src/files.rs` no write
-      before `as_on_disk`/`renamed_as`; exceptions in `KEPT`)
+      before `as_on_disk`/`renamed_as`, and no name from `validate_project_path`/`sanitize_path` used before it is
+      spelled; exceptions in `KEPT`)
 
 ## Traps
 - Each per-op fix patched one op × state cell and broke a neighbour; add a matrix cell

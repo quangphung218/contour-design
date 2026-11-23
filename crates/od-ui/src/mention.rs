@@ -237,6 +237,141 @@ pub fn token(c: &Candidate) -> String {
     format!("@{} ", c.label)
 }
 
+/// `draft` with `c`'s token at the end, after a space when the draft does
+/// not end in one: a staged mention only counts while its token is in the
+/// text ([`prune`]).
+#[must_use]
+pub fn append_token(draft: &str, c: &Candidate) -> String {
+    let mut out = draft.to_owned();
+    if !out.is_empty() && !out.ends_with(char::is_whitespace) {
+        out.push(' ');
+    }
+    out.push_str(&token(c));
+    out
+}
+
+/// A skill the composer can suggest: its palette row and the `triggers`
+/// of its SKILL.md.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillRow {
+    pub candidate: Candidate,
+    pub triggers: Vec<String>,
+}
+
+/// Most skills suggested at once.
+pub const SUGGEST_MAX: usize = 2;
+/// Fewer words than this suggest nothing.
+const SUGGEST_MIN_WORDS: usize = 3;
+
+/// The skills whose triggers the prompt `text` holds, best first, at most
+/// [`SUGGEST_MAX`]. A trigger matches when its words stand together in
+/// the prompt, case, diacritics and an English plural `s` aside (`d3`
+/// matches "D3 chart", not "d3x"; `animation` matches "animations"); a
+/// skill scores the length of its longest match. Skills in
+/// `skip` (staged, dismissed) and skills already `@`-mentioned are left
+/// out; `@` words never match. A prompt under three words gets none.
+#[must_use]
+pub fn suggest(text: &str, skills: &[SkillRow], skip: &[String]) -> Vec<Candidate> {
+    let mut mentioned = Vec::new();
+    let mut prose = String::with_capacity(text.len());
+    for w in text.split_whitespace() {
+        if let Some(m) = w.strip_prefix('@') {
+            mentioned.push(m.trim_end_matches(|c: char| !c.is_alphanumeric()));
+        } else {
+            prose.push_str(w);
+            prose.push(' ');
+        }
+    }
+    let words = words_of(&prose);
+    if words.len() < SUGGEST_MIN_WORDS {
+        return Vec::new();
+    }
+    let mut scored: Vec<(usize, usize, &Candidate)> = skills
+        .iter()
+        .filter(|s| !skip.contains(&s.candidate.id))
+        .filter(|s| !mentioned.contains(&s.candidate.id.as_str()))
+        .filter_map(|s| {
+            let mut best = 0;
+            let mut hits = 0;
+            for trigger in &s.triggers {
+                let tw = words_of(trigger);
+                if !tw.is_empty() && words.windows(tw.len()).any(|w| w == tw.as_slice()) {
+                    hits += 1;
+                    best = best
+                        .max(tw.iter().map(|w| w.chars().count()).sum::<usize>() + tw.len() - 1);
+                }
+            }
+            (hits > 0).then_some((best, hits, &s.candidate))
+        })
+        .collect();
+    scored.sort_by(|a, b| {
+        b.0.cmp(&a.0)
+            .then(b.1.cmp(&a.1))
+            .then_with(|| a.2.id.cmp(&b.2.id))
+    });
+    scored
+        .into_iter()
+        .take(SUGGEST_MAX)
+        .map(|(_, _, c)| c.clone())
+        .collect()
+}
+
+/// The words of `text`, lower case without diacritics (precomposed or
+/// combining) and in the singular, split at anything not a letter or digit.
+fn words_of(text: &str) -> Vec<String> {
+    let folded: String = text
+        .chars()
+        .filter(|c| !('\u{300}'..='\u{36f}').contains(c))
+        .flat_map(char::to_lowercase)
+        .map(fold)
+        .collect();
+    folded
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(singular)
+        .collect()
+}
+
+/// An English word without its plural `s` ("slides" → "slide"); short
+/// words and the endings `ss`, `us`, `is` ("css", "status", "analysis")
+/// stay. Both the prompt and the triggers go through it, so a word that
+/// only looks plural still matches itself.
+fn singular(w: &str) -> String {
+    let plural =
+        w.len() > 3 && w.ends_with('s') && !["ss", "us", "is"].iter().any(|e| w.ends_with(e));
+    if plural { &w[..w.len() - 1] } else { w }.to_owned()
+}
+
+/// A lower-case Latin letter without its diacritics (Vietnamese and the
+/// common European ones); other chars as given. Combining marks (text
+/// typed decomposed) are dropped by [`words_of`] before this.
+fn fold(c: char) -> char {
+    const TABLE: &[(char, &str)] = &[
+        ('a', "àáâãäåāăąạảấầẩẫậắằẳẵặ"),
+        ('e', "èéêëēĕėęěẹẻẽếềểễệ"),
+        ('i', "ìíîïĩīĭįıỉị"),
+        ('o', "òóôõöøōŏőơọỏốồổỗộớờởỡợ"),
+        ('u', "ùúûüũūŭůűųưụủứừửữự"),
+        ('y', "ýÿŷỳỵỷỹ"),
+        ('d', "đď"),
+        ('c', "çćĉċč"),
+        ('n', "ñńņň"),
+        ('s', "śŝşšș"),
+        ('t', "ţťț"),
+        ('z', "źżž"),
+        ('g', "ğ"),
+        ('l', "ł"),
+        ('r', "ř"),
+    ];
+    if c.is_ascii() {
+        return c;
+    }
+    TABLE
+        .iter()
+        .find(|(_, marked)| marked.contains(c))
+        .map_or(c, |(base, _)| *base)
+}
+
 /// Keeps only the staged mentions whose `@label` is still in the draft, so
 /// deleting the text drops the context too.
 pub fn prune(staged: &mut Vec<Candidate>, text: &str) {
@@ -525,6 +660,126 @@ mod tests {
         assert!(p.starts_with("Research this topic: Tea shop trends 2026!"));
         assert!(p.contains("`research/tea-shop-trends-2026.md`"));
         assert_eq!(outgoing("hello"), Outgoing::Send("hello".into()));
+    }
+
+    fn skill(id: &str, triggers: &[&str]) -> SkillRow {
+        SkillRow {
+            candidate: cand(MentionKind::Skill, id),
+            triggers: triggers.iter().map(|t| (*t).to_owned()).collect(),
+        }
+    }
+
+    fn ids(c: &[Candidate]) -> Vec<&str> {
+        c.iter().map(|c| c.id.as_str()).collect()
+    }
+
+    fn catalogue() -> Vec<SkillRow> {
+        vec![
+            skill(
+                "d3-visualization",
+                &["d3", "d3.js", "interactive chart", "data visualization"],
+            ),
+            skill("chart-basics", &["chart"]),
+            skill("pitch-deck", &["pitch deck", "slides"]),
+            skill("brand-vi", &["bảng màu thương hiệu"]),
+            skill("no-triggers", &[]),
+        ]
+    }
+
+    #[test]
+    fn suggest_matches_whole_phrases_longest_first() {
+        let all = catalogue();
+        let got = suggest("make an interactive chart with d3 for sales", &all, &[]);
+        assert_eq!(ids(&got), ["d3-visualization", "chart-basics"]);
+        // "d3" is a word of its own; "d3x" is another word.
+        assert_eq!(
+            ids(&suggest("plot this with d3x please", &all, &[])),
+            Vec::<&str>::new()
+        );
+        // Words of a phrase must stand together.
+        assert_eq!(
+            ids(&suggest("an interactive sales chart now", &all, &[])),
+            ["chart-basics"]
+        );
+        // Punctuation is a word break, on both sides.
+        assert_eq!(
+            ids(&suggest("use D3.JS, then ship", &all, &[]))[0],
+            "d3-visualization"
+        );
+        assert_eq!(
+            ids(&suggest("need a pitch-deck for Friday", &all, &[])),
+            ["pitch-deck"]
+        );
+        // Singular and plural match both ways.
+        assert_eq!(
+            ids(&suggest("two pitch decks please", &all, &[])),
+            ["pitch-deck"]
+        );
+        assert_eq!(
+            ids(&suggest("make one slide today", &all, &[])),
+            ["pitch-deck"]
+        );
+        assert_eq!(singular("css"), "css");
+        assert_eq!(singular("status"), "status");
+        assert_eq!(singular("its"), "its");
+    }
+
+    #[test]
+    fn suggest_ignores_case_and_diacritics() {
+        let all = catalogue();
+        let want = ["brand-vi"];
+        assert_eq!(
+            ids(&suggest("Tạo BẢNG MÀU thương hiệu cho quán trà", &all, &[])),
+            want
+        );
+        assert_eq!(
+            ids(&suggest("tao bang mau thuong hieu cho quan tra", &all, &[])),
+            want
+        );
+        // Typed decomposed (NFD), as macOS file names and some IMEs give it.
+        let nfd =
+            "ta\u{323}o ba\u{309}ng ma\u{300}u thu\u{31b}o\u{31b}\u{300}ng hie\u{302}\u{323}u";
+        assert_eq!(ids(&suggest(nfd, &all, &[])), want);
+    }
+
+    #[test]
+    fn suggest_caps_at_two_and_needs_three_words() {
+        let all = vec![
+            skill("a", &["chart"]),
+            skill("b", &["chart"]),
+            skill("c", &["chart"]),
+        ];
+        assert_eq!(ids(&suggest("a chart for me", &all, &[])), ["a", "b"]);
+        assert!(suggest("d3 chart", &catalogue(), &[]).is_empty());
+        assert!(suggest("hello there", &catalogue(), &[]).is_empty());
+        assert!(suggest("", &catalogue(), &[]).is_empty());
+    }
+
+    #[test]
+    fn suggest_leaves_out_staged_dismissed_and_mentioned_skills() {
+        let all = catalogue();
+        let text = "make an interactive chart with d3 for sales";
+        let skip = vec!["d3-visualization".to_owned()];
+        assert_eq!(ids(&suggest(text, &all, &skip)), ["chart-basics"]);
+        let mentioned = format!("@d3-visualization {text}");
+        assert_eq!(ids(&suggest(&mentioned, &all, &[])), ["chart-basics"]);
+        // An `@` word neither matches nor counts as a word of the prompt.
+        assert!(suggest("@chart-basics @d3-visualization go", &all, &[]).is_empty());
+    }
+
+    #[test]
+    fn taking_a_suggestion_keeps_it_in_the_run() {
+        // A staged skill counts only while its token is in the text: a
+        // suggestion taken without it would be pruned on send.
+        let c = cand(MentionKind::Skill, "d3-visualization");
+        let draft = append_token("chart with d3", &c);
+        assert_eq!(draft, "chart with d3 @d3-visualization ");
+        assert_eq!(
+            extras(std::slice::from_ref(&c), &draft).skill_ids,
+            ["d3-visualization"]
+        );
+        assert_eq!(append_token("", &c), "@d3-visualization ");
+        assert_eq!(append_token("go\n", &c), "go\n@d3-visualization ");
     }
 
     #[test]
