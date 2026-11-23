@@ -504,20 +504,30 @@ impl Store {
         // A history that cannot follow is refused before the file moves;
         // undoing the move below stays for the errors only moving finds.
         // A file gone is not found, whatever its history (as a delete).
-        // The target is the name the file moves to on disk.
-        let from_rel = validate_project_path(from);
-        let to_rel = from_rel.as_ref().ok().and_then(|from| {
+        // Both are the names on disk: `B.html` sent for `b.html` checks
+        // the history of `b.html`, the target the name the file moves to.
+        let from_rel = validate_project_path(from)
+            .ok()
+            .map(|from| crate::paths::as_on_disk(&root.dir, &from));
+        let to_rel = from_rel.as_ref().and_then(|from| {
             crate::paths::sanitize_path(to)
                 .ok()
                 .map(|to| files::renamed_as(&root, from, &to))
         });
-        for name in [from_rel.ok(), to_rel].into_iter().flatten() {
-            versions::refuse_linked_history(&root.dir, &name).map_err(
-                |err| match files::stat_file(&root, from) {
-                    Err(StoreError::FileNotFound) => StoreError::FileNotFound,
-                    _ => err,
-                },
-            )?;
+        let gone = || {
+            matches!(
+                files::stat_file(&root, from_rel.as_deref().unwrap_or(from)),
+                Err(StoreError::FileNotFound)
+            )
+        };
+        for name in [&from_rel, &to_rel].into_iter().flatten() {
+            versions::refuse_linked_history(&root.dir, name).map_err(|err| {
+                if gone() {
+                    StoreError::FileNotFound
+                } else {
+                    err
+                }
+            })?;
         }
         let (old_name, file, sidecar_moved) = files::rename_file(&root, from, to)?;
         if let Err(err) =
@@ -562,7 +572,10 @@ impl Store {
                 Ok(())
             }
             Err(StoreError::FileNotFound) => {
-                forget(&validate_project_path(name)?);
+                forget(&crate::paths::as_on_disk(
+                    &root.dir,
+                    &validate_project_path(name)?,
+                ));
                 Err(StoreError::FileNotFound)
             }
             Err(e) => Err(e),
@@ -726,7 +739,9 @@ impl Store {
         // moves. A page's own history folder a link is found as its
         // history follows, and the folder moves back. A folder gone is not
         // found, whatever the histories (as a delete).
-        let from_rel = validate_project_path(from)?;
+        // As on disk: a folder that cannot follow goes back to `Pages`,
+        // also when sent as `pages`.
+        let from_rel = crate::paths::as_on_disk(&root.dir, &validate_project_path(from)?);
         versions::refuse_linked_history(&root.dir, &from_rel).map_err(|err| {
             if fs::symlink_metadata(root.dir.join(&from_rel)).is_ok_and(|m| m.is_dir()) {
                 err
