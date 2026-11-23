@@ -7,6 +7,10 @@
 //!   user override of a bundled one (side files copied once).
 //! - `DELETE /api/skills/:id`: removes a user skill or override; the
 //!   bundled skill shows again.
+//! - `POST   /api/skills/install` `{path}`: copies a local skill folder
+//!   (`SKILL.md` and its side files) into `<data>/skills/<id>`, replacing
+//!   a user skill with that id; 409 for a bundled id. "Save as skill" in
+//!   the Studio has the agent call it.
 
 use super::write_and_reload;
 use crate::error::{ApiErr, ApiJson, ApiResult};
@@ -15,13 +19,14 @@ use axum::extract::{Path, State};
 use axum::routing::{post, put};
 use axum::{Json, Router};
 use od_content::user_content::{self, SkillDraft};
-use od_contracts::ContentSource;
+use od_contracts::{ContentSource, name_key};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/skills", post(create))
+        .route("/api/skills/install", post(install))
         .route("/api/skills/{id}", put(save).delete(delete))
 }
 
@@ -64,6 +69,36 @@ pub async fn create(
         Ok(user_content::create_skill(&root, &body.into(), taken)?)
     })
     .await?;
+    Ok(Json(json!({ "id": id })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InstallBody {
+    path: String,
+}
+
+pub async fn install(
+    State(state): State<AppState>,
+    ApiJson(body): ApiJson<InstallBody>,
+) -> ApiResult<Json<Value>> {
+    let source = std::path::PathBuf::from(body.path.trim());
+    if !source.is_absolute() {
+        return Err(ApiErr::bad_request("path must be an absolute folder path"));
+    }
+    let root = user_root(&state);
+    // The bundled root itself: an override in the user root hides its
+    // bundled skill from the index, and must not let an install take it.
+    let bundled_root = state.content.roots().bundled_skills.clone();
+    let id = write_and_reload(&state, move || {
+        let bundled: Vec<String> = od_content::skills::list_skills(&[bundled_root], false)
+            .into_iter()
+            .map(|e| name_key(&e.info.id))
+            .collect();
+        let taken = |id: &str| bundled.contains(&name_key(id));
+        Ok(user_content::install_skill(&source, &root, taken)?)
+    })
+    .await?;
+    tracing::info!(skill = %id, "skill installed");
     Ok(Json(json!({ "id": id })))
 }
 

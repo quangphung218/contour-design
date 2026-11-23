@@ -1478,6 +1478,7 @@ AddMcpServer = Añadir servidor MCP
 ReferenceProject = Referenciar otro proyecto
 ReferenceProjectText = Usa el proyecto “{0}” como referencia. Sus archivos están en `{1}`; léelos, no los cambies.
 LinkLocalCode = Vincular código local
+SaveAsSkill = Guardar como skill
 LinkedFolders = Carpetas vinculadas
 Unlink = Desvincular {0}
 MentionEmpty = Busca archivos, plugins, skills y servidores MCP.

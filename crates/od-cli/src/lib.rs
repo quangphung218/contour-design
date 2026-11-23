@@ -13,6 +13,7 @@ mod mcp_cmd;
 mod media_cmd;
 mod plugin_cmd;
 mod research_cmd;
+mod skill_cmd;
 mod tools_cmd;
 
 use anyhow::Context;
@@ -78,6 +79,9 @@ enum Command {
     /// List, inspect, apply and validate plugins.
     #[command(subcommand)]
     Plugin(plugin_cmd::PluginCommand),
+    /// Install skills from a local folder.
+    #[command(subcommand)]
+    Skill(skill_cmd::SkillCommand),
     /// Web research (Tavily) with the key from Settings ▸ Media.
     #[command(subcommand)]
     Research(research_cmd::ResearchCommand),
@@ -211,7 +215,8 @@ enum FilesCommand {
 /// app answers `daemon …` through [`main_code_with`] (its bundled content)
 /// and serves `mcp` itself.
 pub const CLIENT_COMMANDS: &[&str] = &[
-    "project", "files", "run", "export", "lint", "media", "plugin", "research", "tools", "doctor",
+    "project", "files", "run", "export", "lint", "media", "plugin", "skill", "research", "tools",
+    "doctor",
 ];
 
 /// The subcommand `od` would run for `args` (program name left out): the
@@ -371,6 +376,7 @@ pub fn main_code_with(args: Vec<OsString>, app: AppDaemon) -> u8 {
         }
         Some(Command::Media(cmd)) => client().and_then(|c| media_cmd::run(&c, cmd, cli.json)),
         Some(Command::Plugin(cmd)) => client().and_then(|c| plugin_cmd::run(&c, cmd, cli.json)),
+        Some(Command::Skill(cmd)) => client().and_then(|c| skill_cmd::run(&c, cmd, cli.json)),
         Some(Command::Research(cmd)) => client().and_then(|c| research_cmd::run(&c, cmd, cli.json)),
         Some(Command::Doctor) => return doctor_cmd::run(&cli.daemon_url, cli.json),
         Some(Command::Tools(cmd)) => {

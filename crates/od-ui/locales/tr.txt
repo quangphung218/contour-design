@@ -1477,6 +1477,7 @@ AddMcpServer = MCP sunucusu ekle
 ReferenceProject = Başka bir projeye başvur
 ReferenceProjectText = “{0}” projesini referans olarak kullan. Dosyaları `{1}` içinde; oku, değiştirme.
 LinkLocalCode = Yerel kodu bağla
+SaveAsSkill = Skill olarak kaydet
 LinkedFolders = Bağlı klasörler
 Unlink = Ayır: {0}
 MentionEmpty = Dosya, plugin, skill ve MCP sunucusu arayın.

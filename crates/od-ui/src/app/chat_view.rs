@@ -346,6 +346,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
                         on_library=import_library
                     >
                         <super::chat_ops::ContextFolders ctx=ctx/>
+                        <super::chat_ops::SaveAsSkill ctx=ctx/>
                     </PlusMenu>
                     <ModelPicker up=true/>
                     <super::chat_ops::DesignSystemSwitch ctx=ctx/>

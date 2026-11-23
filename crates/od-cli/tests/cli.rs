@@ -566,3 +566,38 @@ fn doctor_reports_the_data_folder_of_the_daemon_it_asks() {
         );
     }
 }
+
+#[test]
+fn skill_install_copies_a_folder_into_the_user_skills() {
+    let d = start(false);
+    let src = tempfile::tempdir().unwrap();
+    let dir = src.path().join("tea");
+    std::fs::create_dir_all(dir.join("assets")).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        "---\nname: tea-house\ndescription: Calm tea pages.\n---\nUse cream.\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("assets/tokens.css"), ":root{}").unwrap();
+    let out = od(&d, &["skill", "install", dir.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "installed tea-house"
+    );
+    let installed = d._tmp.path().join("data/skills/tea-house");
+    assert!(installed.join("assets/tokens.css").is_file());
+    // --json gives the id; installing again replaces the copy.
+    let res = od_json(&d, &["skill", "install", dir.to_str().unwrap()]);
+    assert_eq!(res["id"], "tea-house");
+    // The bundled `demo` keeps its id.
+    std::fs::write(dir.join("SKILL.md"), "---\nname: demo\n---\nMine.\n").unwrap();
+    let out = od(&d, &["skill", "install", dir.to_str().unwrap()]);
+    assert!(!out.status.success(), "a bundled id is refused");
+    let out = od(&d, &["skill", "install", "/no/such/folder"]);
+    assert!(!out.status.success());
+}

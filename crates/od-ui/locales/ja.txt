@@ -1478,6 +1478,7 @@ AddMcpServer = MCP サーバーを追加
 ReferenceProject = 他のプロジェクトを参照
 ReferenceProjectText = プロジェクト「{0}」を参照として使用します。ファイルは `{1}` にあります。読み取りのみで、変更はしないでください。
 LinkLocalCode = ローカルコードをリンク
+SaveAsSkill = スキルとして保存
 LinkedFolders = リンク済みフォルダ
 Unlink = {0} のリンクを解除
 MentionEmpty = ファイル、プラグイン、スキル、MCP サーバーを検索します。

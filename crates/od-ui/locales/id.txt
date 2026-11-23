@@ -1478,6 +1478,7 @@ AddMcpServer = Tambah server MCP
 ReferenceProject = Rujuk proyek lain
 ReferenceProjectText = Gunakan proyek “{0}” sebagai referensi. File-nya ada di `{1}`; baca saja, jangan diubah.
 LinkLocalCode = Tautkan kode lokal
+SaveAsSkill = Simpan sebagai skill
 LinkedFolders = Folder tertaut
 Unlink = Putuskan {0}
 MentionEmpty = Cari file, plugin, skill, dan server MCP.

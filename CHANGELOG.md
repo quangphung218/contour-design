@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Save a Studio project as a personal skill from the "+" menu; `od skill install` installs a skill folder with its files.
+
 ## [0.2.0-beta.57] - 2026-11-23
 
 ### Fixed

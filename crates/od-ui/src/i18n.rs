@@ -1730,6 +1730,7 @@ messages! {
     ReferenceProject => "Reference another project", "Tham chiếu project khác";
     ReferenceProjectText => "Use the project “{0}” as a reference. Its files are in `{1}`; read them, do not change them.", "Dùng project “{0}” làm tham chiếu. File của nó nằm ở `{1}`; chỉ đọc, không sửa.";
     LinkLocalCode => "Link local code", "Liên kết code trên máy";
+    SaveAsSkill => "Save as skill", "Lưu thành skill";
     LinkedFolders => "Linked folders", "Thư mục đã liên kết";
     Unlink => "Unlink {0}", "Bỏ liên kết {0}";
     MentionEmpty => "Search files, plugins, skills and MCP servers.", "Tìm file, plugin, skill và MCP server.";

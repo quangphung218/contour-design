@@ -5,7 +5,8 @@
 // accept, download, delete, create from a brand's website with phases, from
 // CSS variables); Plugins (use a plugin with its inputs form → the run gets
 // the plugin; install from a folder, uninstall; create with agent; skills:
-// detail, edit as an override, new skill, delete); Media (provider key and
+// detail, edit as an override, new skill, delete; Save as skill from the
+// Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
 // projects only and words a page sent to it);
@@ -371,6 +372,55 @@ try {
   await page.getByTestId('skill-use').click();
   await page.getByTestId('home-skill').waitFor();
   results.skills = 'ok';
+
+  // ------------------------------------------------------ save as skill
+  // "+" ▸ Save as skill: off before a turn has finished and while one
+  // runs; then it sends the prepared turn, whose agent writes the skill
+  // with a side file and installs it with curl; it shows under Personal.
+  const teaProject = (await api('/api/projects', { method: 'POST', body: JSON.stringify({ name: 'Tea house' }) })).project.id;
+  await page.goto(`${BASE}/projects/${teaProject}`);
+  const teaComposer = page.getByTestId('composer');
+  await teaComposer.waitFor();
+  const saveSkill = page.getByTestId('save-as-skill');
+  const plusMenu = page.getByTestId('plus-menu');
+  await plusMenu.click();
+  await saveSkill.waitFor();
+  assert.ok(await saveSkill.isDisabled(), 'off before any turn');
+  await plusMenu.click();
+  await teaComposer.fill('calm tea house landing');
+  await page.getByTestId('send').click();
+  await until(async () => (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', 'first tea turn ends', 30_000);
+  // A second turn running after a finished one: still off.
+  await teaComposer.fill('slow warmer greens');
+  await page.getByTestId('send').click();
+  const teaTurn = page.getByTestId('assistant-msg').last();
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 2 && (await teaTurn.getAttribute('data-state')) === 'running', 'second tea turn runs');
+  await plusMenu.click();
+  await saveSkill.waitFor();
+  assert.ok(await saveSkill.isDisabled(), 'off while a turn runs');
+  await plusMenu.click();
+  await until(async () => (await teaTurn.getAttribute('data-state')) === 'succeeded', 'second tea turn ends', 30_000);
+  await plusMenu.click();
+  await until(async () => !(await saveSkill.isDisabled()), 'on after a finished turn');
+  await page.locator('.plus-menu').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  await page.screenshot({ path: join(OUT, 'save-as-skill-menu.png') });
+  const runReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
+  await saveSkill.click();
+  const sent = JSON.parse((await runReq).postData()).message;
+  assert.ok(sent.includes('generated-skill/<id>/SKILL.md') && sent.includes('od skill install'), 'the prepared turn is sent');
+  assert.ok(sent.includes('"Tea house"'), 'it names the project');
+  assert.equal(await teaComposer.inputValue(), '', 'the composer is left alone');
+  const skillTurn = page.getByTestId('assistant-msg').last();
+  await until(async () => (await skillTurn.getAttribute('data-state')) === 'succeeded', 'save-as-skill turn ends', 30_000);
+  await skillTurn.filter({ hasText: 'Installed: {id:tea-house}' }).waitFor();
+  assert.ok(existsSync(join(data, 'skills', 'tea-house', 'assets', 'tokens.css')), 'side file installed');
+  await settleStudio(false);
+  await page.goto(BASE + '/plugins');
+  await page.getByTestId('kind-skills').click();
+  await page.getByTestId('scope-personal').click();
+  await page.locator('[data-testid="skill-row"][data-id="tea-house"]').waitFor();
+  await page.screenshot({ path: join(OUT, 'save-as-skill-personal.png') });
+  results.saveAsSkill = 'ok';
 
   // ------------------------------------------------------------- media
   await page.locator('nav a[href="/media"]').click();

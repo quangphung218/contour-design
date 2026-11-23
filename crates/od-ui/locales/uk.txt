@@ -1478,6 +1478,7 @@ AddMcpServer = Додати сервер MCP
 ReferenceProject = Взяти за референс інший проєкт
 ReferenceProjectText = Використай проєкт «{0}» як референс. Його файли в `{1}`; читай їх, але не змінюй.
 LinkLocalCode = Локальний код
+SaveAsSkill = Зберегти як навичку
 LinkedFolders = Підключені папки
 Unlink = Відключити {0}
 MentionEmpty = Шукайте файли, плагіни, навички й сервери MCP.
