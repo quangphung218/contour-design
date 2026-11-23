@@ -282,7 +282,7 @@ pub fn install_plugin(source: &Path, user_root: &Path) -> Result<PluginEntry, Wr
     // which collide once synced). Reinstalling the same id still replaces it.
     for entry in std::fs::read_dir(user_root).map_err(io)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name != id && name.eq_ignore_ascii_case(&id) {
+        if name != id && od_contracts::name_key(&name) == od_contracts::name_key(&id) {
             return Err(WriteError::Exists(format!("plugin {name:?}")));
         }
     }
