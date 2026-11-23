@@ -355,10 +355,27 @@ struct Foretold {
 }
 
 fn foretell(root: &ProjectRoot, path: &str, ident: Option<&str>, uploaded_at: i64) -> Foretold {
-    let path = &as_on_disk(&root.dir, path);
-    let stamp = file_ident(root, path);
-    let fate = fate(root, path, ident, uploaded_at);
+    let spelled = as_on_disk(&root.dir, path);
+    let stamp = file_ident(root, &spelled);
+    let fate = fate_spelled(root, path, &spelled, ident, uploaded_at);
     Foretold { fate, stamp }
+}
+
+/// [`fate`] of the file the delete would take, `spelled` ([`as_on_disk`]
+/// of the recorded `path`). A record with no ident tells a file only by
+/// its mtime, so a file under another spelling (the user's `A.png` where
+/// the draft wrote `a.png`) is never its to delete.
+fn fate_spelled(
+    root: &ProjectRoot,
+    path: &str,
+    spelled: &str,
+    ident: Option<&str>,
+    uploaded_at: i64,
+) -> Fate {
+    if ident.is_none() && spelled != path {
+        return Fate::Other;
+    }
+    fate(root, spelled, ident, uploaded_at)
 }
 
 /// Deletes the file `path` of a draft if it is still the draft's
@@ -378,12 +395,12 @@ fn delete_foretold(
     // fate is told of the file that would go. With the draft's
     // `comments/a.png` gone, the user's `comments/A.png` is read, found
     // another file and kept, also where the disk tells case apart.
-    let path = &as_on_disk(&root.dir, path);
+    let spelled = as_on_disk(&root.dir, path);
     let fate = match told.stamp {
-        Some(stamp) if file_ident(root, path).is_some_and(|now| now == stamp) => told.fate,
-        _ => fate(root, path, ident, uploaded_at),
+        Some(stamp) if file_ident(root, &spelled).is_some_and(|now| now == stamp) => told.fate,
+        _ => fate_spelled(root, path, &spelled, ident, uploaded_at),
     };
-    settle(root, path, fate)
+    settle(root, &spelled, fate)
 }
 
 /// A draft's image held by a page write that may still fail
@@ -853,6 +870,47 @@ mod tests {
             std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
             let users = full.with_file_name("A.png");
             std::fs::write(&users, b"the user's").unwrap_or_else(|e| panic!("{e}"));
+            release(&s, &p);
+            assert_eq!(
+                std::fs::read(&users).ok().as_deref(),
+                Some(b"the user's".as_slice()),
+                "release {n}: the user's A.png went"
+            );
+        }
+    }
+
+    /// As above for a record made before idents were kept (`None`): it can
+    /// only tell a file by its mtime, so a user's `A.png` no newer than the
+    /// upload (unzipped, `cp -p`) would pass for the draft. Such a record
+    /// deletes only the very name it wrote.
+    #[test]
+    fn a_record_with_no_ident_leaves_a_users_file_alike_to_its_gone_image() {
+        let release: [fn(&Store, &str); 3] = [
+            |s, p| drop(s.release_draft_session(p, "s1")),
+            |s, _| {
+                age(s, DRAFT_MAX_AGE_MS + 1);
+                drop(s.sweep_draft_uploads(DRAFT_MAX_AGE_MS));
+            },
+            |s, _| drop(s.release_all_draft_uploads()),
+        ];
+        for (n, release) in release.into_iter().enumerate() {
+            let (_tmp, s, p, _) = store();
+            let (draft, _) = upload(&s, &p, "s1", "a.png");
+            s.with_conn(|c| {
+                c.execute("UPDATE draft_uploads SET ident = NULL", [])?;
+                Ok(())
+            })
+            .unwrap_or_else(|e| panic!("{e}"));
+            let full = s.stat_file(&p, &draft).unwrap_or_else(|e| panic!("{e}")).1;
+            std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+            let users = full.with_file_name("A.png");
+            std::fs::write(&users, b"the user's").unwrap_or_else(|e| panic!("{e}"));
+            let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+            std::fs::File::options()
+                .write(true)
+                .open(&users)
+                .and_then(|f| f.set_modified(old))
+                .unwrap_or_else(|e| panic!("{e}"));
             release(&s, &p);
             assert_eq!(
                 std::fs::read(&users).ok().as_deref(),
