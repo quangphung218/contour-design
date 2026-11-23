@@ -67,4 +67,4 @@ od:
 - "Composed pages, not dashboards." 不要堆 KPI 卡, 不要堆 emoji 图标, 不要 hero gradient。
 - "Ring or whisper only, no hard drop shadows." 阴影只能是 `0 0 0 1px #d4d1c5` 这种 hairline 描边。
 - 文字层级靠**衬线对比 + 字号 + 留白**, 不靠颜色。
-- 单文件 HTML, 用 Tailwind CDN; 全文中英混排时加盘古之白; 不要外链图片, 占位用 paper-tint 色块 + 1px ink 描边。
+- 单文件 HTML, 样式写在 `<style>` 里, 不用 Tailwind CDN (预览会拦截外部请求; example.html 已内联它用到的 Tailwind 类, 新类要自己写规则); 全文中英混排时加盘古之白; 不要外链图片, 占位用 paper-tint 色块 + 1px ink 描边。

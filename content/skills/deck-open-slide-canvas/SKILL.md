@@ -67,4 +67,4 @@ od:
 - 严禁 SVG icon 套用 lucide / feather 等通用库 (自己写 inline SVG)。
 - 加键盘 ← / → 切换 + hash 同步; 角标固定: 右下 `№N/M`, 左下 deck title。
 - 必须用用户的真实内容; 严禁 lorem ipsum。
-- 单文件 HTML; Tailwind CDN; 不要外链图片。
+- 单文件 HTML; 样式写在 `<style>` 里, 不用 Tailwind CDN (预览会拦截外部请求; example.html 已内联它用到的 Tailwind 类, 新类要自己写规则); 不要外链图片。

@@ -547,3 +547,32 @@ fn no_template_file_links_google_fonts() {
     walk(&templates_root(), &mut hits);
     assert!(hits.is_empty(), "Google Fonts in {hits:#?}");
 }
+
+/// The motion runtime that stands in for GSAP is inlined in every page
+/// that used GSAP from a CDN; the copies stay the same, so a fix to one
+/// reaches all.
+#[test]
+fn every_inlined_motion_runtime_is_the_same() {
+    const START: &str = "/* Motion runtime written for Contour";
+    let mut copies: Vec<(String, String)> = Vec::new();
+    for dir in bundled_folders() {
+        for path in served_files(&dir) {
+            let text = std::fs::read_to_string(&path).unwrap();
+            let Some(at) = text.find(START) else {
+                continue;
+            };
+            let rest = &text[at..];
+            let end = rest.find("})();").expect("runtime ends with })();") + 5;
+            let body: String = rest[..end]
+                .lines()
+                .map(|l| l.trim_start())
+                .collect::<Vec<_>>()
+                .join("\n");
+            copies.push((path.display().to_string(), body));
+        }
+    }
+    assert!(copies.len() >= 5, "{} copies", copies.len());
+    for (path, body) in &copies[1..] {
+        assert!(body == &copies[0].1, "{path} differs from {}", copies[0].0);
+    }
+}

@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Show bundled skill examples with their styles, charts and animations in the preview; they no longer load Tailwind, GSAP or Chart.js from a CDN.
+
 ## [0.2.0-beta.55] - 2026-11-23
 
 ### Fixed

@@ -54,8 +54,11 @@ weread-year-in-review-video-template/
 └── example.html
 ```
 
-The rendered MP4 showcase used by `example.html` is hosted at
-`https://repo-assets.open-design.ai/resources/videos/skills/weread-year-in-review-video-template/default-showcase.mp4`.
+The motion in `assets/template.html` runs on a small runtime inlined in a
+`<script>` in its `<head>`: the GSAP calls the template makes (see its
+comment). Keep it inline and add no CDN `<script>`: the preview blocks every
+request outside the project. For more of GSAP, put `gsap.min.js` next to
+`index.html` and load it before the runtime, which then steps aside.
 
 ## Workflow
 

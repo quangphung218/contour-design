@@ -3,7 +3,7 @@
 ## P0
 
 - `assets/template.html` exists and opens directly in a browser.
-- `example.html` previews both the editable template and the hosted showcase MP4.
+- `example.html` previews the editable template; it loads nothing from outside the folder.
 - Skill frontmatter uses `od.mode: template`, `od.surface: video`, and `od.type: hyperframes`.
 - Composition is vertical 9:16, 1080x1920, with exactly 12 scenes.
 - Every scene has direct `class="scene clip"` plus explicit `data-start`, `data-duration`, and `data-track-index` attributes.
@@ -23,4 +23,4 @@
 
 - Keyboard preview controls (`1`-`9`, `0`, `-`, `=`, `r`) jump to scenes locally.
 - The template can be adapted to non-WeRead reading data without changing the visual system.
-- Static fallback remains readable if GSAP fails to load.
+- Static fallback remains readable if the timeline script fails.

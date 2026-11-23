@@ -50,7 +50,7 @@ od:
 - **错峰揭示动画**: 标题 fade-in (0s), kicker (200ms), 折线 stroke-dashoffset 1.2s ease-out (400ms), 数据标签依次 100ms 间隔。可被 `prefers-reduced-motion` 关闭。
 
 【设计细节】
-- **绝不**: 使用 chart.js / d3 库 (除非 jsdelivr CDN 引入); 推荐手写 SVG, 不超过 80 行 inline。
+- **绝不**: 使用 chart.js / d3 等图表库, 也不从 CDN 引入任何文件 (预览会拦截外部请求); 手写 SVG, 不超过 80 行 inline。
 - 字体: 标题 `Source Serif Pro` 或 `Cheltenham` (无则用 `Playfair Display`); body `IBM Plex Sans` 或 `Inter`; 数据标签 `IBM Plex Mono`。
 - 1 个主色 (ink) + 1 个 accent (NYT red `#a91d1d` / 编辑 mint `#5fb38a` / 暖橙 `#d97757` 三选一)。
 - Y 轴刻度仅 hairline + 3-4 个 tick, 标签在轴外侧 mono 字。
