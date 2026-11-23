@@ -582,3 +582,172 @@ fn a_file_gone_and_deleted_by_a_name_alike_drops_its_comments() {
     assert!(matches!(res, Err(StoreError::FileNotFound)), "{res:?}");
     assert!(p.commented().is_empty(), "{:?}", p.commented());
 }
+
+impl Project {
+    /// How many page histories the project keeps (`.file-versions/*`).
+    fn histories(&self) -> usize {
+        fs::read_dir(self.dir.join(crate::versions::VERSION_ROOT))
+            .map(|dir| {
+                dir.filter(|e| e.as_ref().is_ok_and(|e| e.path().is_dir()))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+}
+
+/// The history of `b.html` (or NFD) on disk is the one listed and read
+/// when the page is sent as `B.html` (or NFC): no second history starts
+/// under the name sent.
+#[test]
+fn a_history_listed_and_read_by_a_name_alike_is_the_pages() {
+    for (on_disk, sent) in SENT_ALIKE {
+        let p = project();
+        p.page_with_history(on_disk);
+        let had = p.versions(on_disk);
+        let listed = p
+            .store
+            .list_versions(&p.id, sent)
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert_eq!(listed.file.path, on_disk);
+        assert_eq!(listed.versions.len(), had, "{sent}: another history");
+        for v in &listed.versions {
+            p.store
+                .read_version(&p.id, sent, &v.id)
+                .unwrap_or_else(|e| panic!("{sent} {}: {e}", v.id));
+        }
+        assert_eq!(p.histories(), 1, "{sent}");
+    }
+}
+
+/// A restore sent as `B.html` (or NFC) restores the version of `b.html`
+/// (or NFD) on disk, keeps what the page held in that history first, and
+/// writes the page there.
+#[test]
+fn a_version_restored_by_a_name_alike_is_the_pages() {
+    for (on_disk, sent) in SENT_ALIKE {
+        let p = project();
+        p.page_with_history(on_disk);
+        p.put(on_disk, b"<p>outside</p>");
+        let listed = p
+            .store
+            .list_versions(&p.id, on_disk)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let had = listed.versions.len();
+        let old = listed
+            .versions
+            .iter()
+            .find(|v| !v.current)
+            .unwrap_or_else(|| panic!("{on_disk}: one version"));
+        let (_, text) = p
+            .store
+            .read_version(&p.id, on_disk, &old.id)
+            .unwrap_or_else(|e| panic!("{e}"));
+        let (file, _) = p
+            .store
+            .restore_version(&p.id, sent, &old.id, None)
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert_eq!(file.path, on_disk);
+        assert_eq!(p.names(""), [on_disk], "{sent}");
+        assert_eq!(p.bytes(on_disk), text.as_bytes(), "{sent}");
+        // The page as changed outside, and the restore.
+        assert_eq!(p.versions(on_disk), had + 2, "{sent}");
+        assert_eq!(p.histories(), 1, "{sent}");
+    }
+}
+
+/// An edit or a replace sent as `B.html` (or NFC) writes `b.html` (or
+/// NFD) on disk and records the version in its history, not a second.
+#[test]
+fn a_page_edited_by_a_name_alike_keeps_its_history() {
+    type Op = fn(&Project, &str);
+    let ops: [(&str, Op); 3] = [
+        ("edit", |p, sent| {
+            p.store
+                .edit_html_tracked::<StoreError>(&p.id, sent, "edit", |_| Ok("<p>3</p>".into()))
+                .map(drop)
+                .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        }),
+        ("replace", |p, sent| {
+            p.store
+                .replace_file(&p.id, sent, b"<p>3</p>", "replace")
+                .map(drop)
+                .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        }),
+        ("version", |p, sent| {
+            p.put(&as_on_disk(&p.dir, sent), b"<p>3</p>");
+            p.store
+                .create_version(&p.id, sent, od_contracts::CreateVersionRequest::default())
+                .map(drop)
+                .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        }),
+    ];
+    for (op, run) in ops {
+        for (on_disk, sent) in SENT_ALIKE {
+            let p = project();
+            p.page_with_history(on_disk);
+            let had = p.versions(on_disk);
+            run(&p, sent);
+            assert_eq!(p.names(""), [on_disk], "{op} {sent}");
+            assert_eq!(p.bytes(on_disk), b"<p>3</p>", "{op} {sent}");
+            assert_eq!(p.versions(on_disk), had + 1, "{op} {sent}");
+            assert_eq!(p.histories(), 1, "{op} {sent}: a second history");
+        }
+    }
+}
+
+/// A file that is no page replaced by a name alike is the file on disk.
+#[test]
+fn a_file_replaced_by_a_name_alike_is_the_file_on_disk() {
+    for (on_disk, sent) in [("b.css", "B.css"), (MAU_NFD, MAU_NFC)] {
+        let p = project();
+        p.put(on_disk, b"a");
+        let file = p
+            .store
+            .replace_file(&p.id, sent, b"b", "replace")
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert_eq!(file.path, on_disk);
+        assert_eq!(p.names(""), [on_disk], "{sent}");
+        assert_eq!(p.bytes(on_disk), b"b", "{sent}");
+    }
+}
+
+/// A comment sent on `B.html` (or NFC), and an image sent as `A.png`, are
+/// kept under the names on disk: they follow a rename of the page.
+#[test]
+fn a_comment_sent_by_a_name_alike_follows_its_page() {
+    for (on_disk, sent) in SENT_ALIKE {
+        let p = project();
+        p.put(on_disk, b"<p>b</p>");
+        p.put("comments/a.png", b"\x89PNG\r\n\x1a\n");
+        let comment = p
+            .store
+            .create_comment(
+                &p.id,
+                &p.conversation,
+                CreateCommentRequest {
+                    file_path: sent.into(),
+                    selector: "p".into(),
+                    label: "p".into(),
+                    note: "Make it red".into(),
+                    attachments: vec!["comments/A.png".into()],
+                    ..CreateCommentRequest::default()
+                },
+            )
+            .unwrap_or_else(|e| panic!("{sent}: {e}"));
+        assert_eq!(comment.file_path, on_disk);
+        let images: Vec<&str> = comment
+            .attachments
+            .iter()
+            .map(|a| a.path.as_str())
+            .collect();
+        assert_eq!(images, ["comments/a.png"], "{sent}");
+        p.store
+            .rename_file(&p.id, on_disk, "c.html")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            p.commented(),
+            ["c.html"],
+            "{sent}: the comment stayed behind"
+        );
+    }
+}

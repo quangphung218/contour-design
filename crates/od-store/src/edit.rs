@@ -4,7 +4,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::files;
-use crate::paths::validate_project_path;
+use crate::paths::{as_on_disk, validate_project_path};
 use crate::store::{Store, manual, record_or_put_back, utf8};
 use crate::versions::{self, NewVersion};
 use od_contracts::{FileVersion, ProjectFile, PromptSource, VersionSource};
@@ -43,8 +43,9 @@ impl Store {
         edit: impl FnOnce(&str) -> Result<String, E>,
     ) -> Result<(ProjectFile, FileVersion, FileVersion), E> {
         let root = self.root_for(project_id)?;
-        let safe = validate_project_path(name)?;
         let _guard = self.versions_guard();
+        // The page on disk and its history: `b.html` when sent as `B.html`.
+        let safe = as_on_disk(&root.dir, &validate_project_path(name)?);
         let (_, bytes) = files::read_file(&root, &safe)?;
         let before = utf8(&bytes)?;
         let previous = versions::ensure_current_version(&root.dir, &safe, before, manual())?;

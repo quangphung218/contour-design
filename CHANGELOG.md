@@ -21,6 +21,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Keep a page's history and comments when an agent renames, moves or deletes it by a name differing in case or Unicode form (#311).
+- Show, restore and edit a page's own history, and keep comments on it, when an agent names it in another case or Unicode form (#318).
 
 ### Fixed
 

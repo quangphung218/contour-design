@@ -673,7 +673,10 @@ impl Store {
         bytes: &[u8],
         label: &str,
     ) -> Result<ProjectFile> {
-        let safe = validate_project_path(name)?;
+        let root = self.root_for(project_id)?;
+        // As on disk: `B.css` sent for `b.css` is that file (a page's edit
+        // spells it again, under the lock).
+        let safe = crate::paths::as_on_disk(&root.dir, &validate_project_path(name)?);
         if is_html_name(&safe) {
             let text = std::str::from_utf8(bytes)
                 .map_err(|_| StoreError::BadRequest("HTML must be UTF-8".to_owned()))?
@@ -682,7 +685,6 @@ impl Store {
                 .edit_html::<StoreError>(project_id, &safe, label, |_| Ok(text))
                 .map(|(file, _)| file);
         }
-        let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
         files::stat_file(&root, &safe)?;
         let before = self.away_before(&root, &safe);
@@ -932,11 +934,13 @@ impl Store {
     /// file nor a history exists.
     pub fn list_versions(&self, project_id: &str, name: &str) -> Result<FileVersionsResponse> {
         let root = self.root_for(project_id)?;
-        let safe = validate_project_path(name)?;
+        let _guard = self.versions_guard();
+        // The history of the page on disk: `B.html` sent for `b.html` lists
+        // that one, never starts a second one under the name sent.
+        let safe = crate::paths::as_on_disk(&root.dir, &validate_project_path(name)?);
         if !is_html_name(&safe) {
             return Err(StoreError::NotHtml);
         }
-        let _guard = self.versions_guard();
         let working = match files::read_file(&root, &safe) {
             Ok(found) => Some(found),
             Err(StoreError::FileNotFound) => None,
@@ -972,7 +976,8 @@ impl Store {
     ) -> Result<FileVersion> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
-        let (file, bytes) = files::read_file(&root, name)?;
+        let name = crate::paths::as_on_disk(&root.dir, &validate_project_path(name)?);
+        let (file, bytes) = files::read_file(&root, &name)?;
         if !is_html_name(&file.name) {
             return Err(StoreError::NotHtml);
         }
@@ -1006,7 +1011,7 @@ impl Store {
         version_id: &str,
     ) -> Result<(FileVersion, String)> {
         let root = self.root_for(project_id)?;
-        let safe = validate_project_path(name)?;
+        let safe = crate::paths::as_on_disk(&root.dir, &validate_project_path(name)?);
         versions::read_version(&root.dir, &safe, version_id)
     }
 
@@ -1042,8 +1047,10 @@ impl Store {
         expect: Option<&str>,
     ) -> Result<(ProjectFile, FileVersion)> {
         let root = self.root_for(project_id)?;
-        let safe = validate_project_path(name)?;
         let _guard = self.versions_guard();
+        // One name for every step: the version read, the page kept and
+        // written are those of `b.html` on disk when sent as `B.html`.
+        let safe = crate::paths::as_on_disk(&root.dir, &validate_project_path(name)?);
         let (restored, content) = versions::read_version(&root.dir, &safe, version_id)?;
         if let Some(expect) = expect {
             let (_, expected) = versions::read_version(&root.dir, &safe, expect)?;

@@ -16,7 +16,7 @@
 
 use crate::error::{Result, StoreError};
 use crate::files::{self, ProjectRoot};
-use crate::paths::as_on_disk;
+use crate::paths::{as_on_disk, validate_project_path};
 use crate::store::Store;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashSet;
@@ -657,13 +657,19 @@ impl Store {
         let root = self.root_for(project_id)?;
         let at = crate::now_ms();
         self.with_conn(|conn| {
-            for path in paths {
+            // As on disk, as the rows are: `A.png` sent for the draft's
+            // `a.png` takes it, else a release would delete the page's image.
+            let paths = paths
+                .iter()
+                .map(|path| Ok(as_on_disk(&root.dir, &validate_project_path(path)?)))
+                .collect::<Result<Vec<_>>>()?;
+            for path in &paths {
                 files::stat_file(&root, path)?;
             }
             // Moving a row from the record to the holds is one step.
             atomic(conn, || {
                 let mut taken = Vec::new();
-                for path in paths {
+                for path in &paths {
                     let held: Option<i64> = conn
                         .query_row(
                             "SELECT id FROM draft_held WHERE project_id = ?1 AND path = ?2",
@@ -918,6 +924,56 @@ mod tests {
                 "release {n}: the user's A.png went"
             );
         }
+    }
+
+    /// As above, the swap made while the release reads (after the fates
+    /// are told, before the lock): the draft's `a.png` was there then, so
+    /// the fate is told again under the lock, of the user's `A.png` now,
+    /// and that must still see the record wrote another name.
+    #[test]
+    fn a_record_with_no_ident_told_again_under_the_lock_leaves_a_users_file_alike() {
+        let (_tmp, s, p, _) = store();
+        let (draft, _) = upload(&s, &p, "s1", "a.png");
+        s.with_conn(|c| {
+            c.execute("UPDATE draft_uploads SET ident = NULL", [])?;
+            Ok(())
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        let full = s.stat_file(&p, &draft).unwrap_or_else(|e| panic!("{e}")).1;
+        let users = full.with_file_name("A.png");
+        s.release_draft_session_each(&p, "s1", || {
+            std::fs::remove_file(&full).unwrap_or_else(|e| panic!("{e}"));
+            std::fs::write(&users, b"the user's").unwrap_or_else(|e| panic!("{e}"));
+            let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+            std::fs::File::options()
+                .write(true)
+                .open(&users)
+                .and_then(|f| f.set_modified(old))
+                .unwrap_or_else(|e| panic!("{e}"));
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            std::fs::read(&users).ok().as_deref(),
+            Some(b"the user's".as_slice()),
+            "the user's A.png went"
+        );
+    }
+
+    /// A page write that claims its images by a name alike (`A.png` for
+    /// the draft's `a.png` on disk) takes them: a release after it leaves
+    /// the image the page shows.
+    #[test]
+    fn an_image_claimed_by_a_name_alike_is_taken() {
+        let (_tmp, s, p, _) = store();
+        let (draft, _) = upload(&s, &p, "s1", "a.png");
+        assert_eq!(draft, "comments/a.png");
+        s.take_draft_uploads(&p, &["comments/A.png".to_owned()])
+            .unwrap_or_else(|e| panic!("{e}"));
+        let released = s
+            .release_draft_session(&p, "s1")
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(released.is_empty(), "{released:?}");
+        assert!(exists(&s, &p, &draft), "the page's image went");
     }
 
     #[test]
