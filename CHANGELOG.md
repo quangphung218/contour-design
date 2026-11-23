@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Suggest up to two skills under the composer from words in the prompt that match their triggers; click to mention one.
+
 ## [0.2.0-beta.57] - 2026-11-23
 
 ### Fixed
