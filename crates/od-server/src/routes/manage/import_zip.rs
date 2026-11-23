@@ -149,7 +149,7 @@ pub fn import(
         .collect::<Result<Vec<_>, _>>()?;
     let mut seen = HashMap::with_capacity(paths.len());
     for path in &paths {
-        if let Some(first) = seen.insert(path.to_lowercase(), path) {
+        if let Some(first) = seen.insert(od_store::paths::name_key(path), path) {
             return Err(bad(format!("{first} and {path} name the same file")));
         }
     }

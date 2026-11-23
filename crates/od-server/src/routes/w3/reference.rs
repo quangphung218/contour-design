@@ -980,15 +980,15 @@ fn film_path(video: &FsPath, out: &FsPath) -> String {
 
 /// Whether a folder whose mark names `have` holds the reference of the
 /// film at `want` (a [`film_path`]). A mark of beta.17 or older names the
-/// film without its folders (no `/`): then the file names are compared,
-/// ignoring ASCII case.
+/// film without its folders (no `/`): then the file names are compared
+/// by [`od_store::paths::name_key`].
 fn same_film(have: &str, want: &str) -> bool {
     if have.contains('/') {
         have == want
     } else {
         want.rsplit('/')
             .next()
-            .is_some_and(|name| name.eq_ignore_ascii_case(have))
+            .is_some_and(|name| od_store::paths::name_key(name) == od_store::paths::name_key(have))
     }
 }
 
@@ -1014,7 +1014,8 @@ pub fn build_default(
         .and_then(|r| r.file_name().map(std::ffi::OsStr::to_os_string))
         .filter(|n| {
             video.file_name().is_some_and(|v| {
-                v.to_string_lossy().to_lowercase() == n.to_string_lossy().to_lowercase()
+                od_store::paths::name_key(&v.to_string_lossy())
+                    == od_store::paths::name_key(&n.to_string_lossy())
             })
         })
         .map_or_else(|| video.to_path_buf(), |n| video.with_file_name(n));

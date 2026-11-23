@@ -55,6 +55,12 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `src/drafts.rs::a_draft_image_that_cannot_be_deleted_stays_a_drafts`
 11. Opening the store sweeps day-old draft images.
     - `src/drafts.rs::opening_the_store_sweeps_day_old_draft_images`
+12. A user's file names compare by `paths::name_key` (NFC, case ignored) on every disk, as on macOS:
+    every target of a write, upload, rename, move or new folder is spelled as on disk first (`paths::as_on_disk`).
+    An upload takes `-1`, a new file or rename onto a name alike is `FileExists`, an overwrite writes the file there,
+    a rename to its own name in another case is allowed.
+    - `src/name_key_tests.rs` (all ops; run with `TMPDIR` on a case-sensitive volume to see Linux)
+    - `tests/name_key.rs` (source scan: no name check by hand in `crates/*/src`, exceptions in `KEPT`)
 
 ## Traps
 - Each per-op fix patched one op × state cell and broke a neighbour; add a matrix cell
@@ -67,6 +73,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 - Restoring a closed history's entry overwrote a new page with no snapshot (#211, #212).
 - Returning an error after the disk changed made a retry upload twice, conflict or 404 (#215).
 - Assert an error unconditionally, not inside `if res.is_err()` (#208).
+- Linux kept `Logo.png` and `logo.png` as two files; a Mac then shows one (#225, #242). Fold to the disk name, never compare by `==`.
 - Still open: `Store::update_project` and `Store::delete_project` report an error after the DB changed (#215).
 
 ## Check

@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Treat names differing only in case or Unicode form as one file on every OS; changing a folder name's case works on macOS (#307).
+
 ## [0.2.0-beta.56] - 2026-11-23
 
 ### Fixed

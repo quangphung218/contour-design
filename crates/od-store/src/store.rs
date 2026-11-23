@@ -440,7 +440,10 @@ impl Store {
     ) -> Result<ProjectFile> {
         let root = self.root_for(project_id)?;
         let _guard = self.versions_guard();
-        let safe = crate::paths::sanitize_path(name).ok();
+        // As the file is written: over `Logo.png` when sent as `logo.png`.
+        let safe = crate::paths::sanitize_path(name)
+            .ok()
+            .map(|safe| crate::paths::as_on_disk(&root.dir, &safe));
         let existed = overwrite
             && safe
                 .as_deref()

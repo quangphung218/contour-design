@@ -6,8 +6,9 @@
 
 use crate::error::{Result, StoreError};
 use crate::paths::{
-    assert_visible_for_import, is_ignored_dir_name, kind_for, mime_for, resolve_safe_real,
-    sanitize_path, through_link, to_project_path, upload_name, validate_project_path,
+    as_on_disk, assert_visible_for_import, is_ignored_dir_name, kind_for, mime_for,
+    resolve_safe_real, sanitize_path, through_link, to_project_path, upload_name,
+    validate_project_path,
 };
 use od_contracts::{ProjectFile, UploadedFile};
 use serde_json::Value;
@@ -320,6 +321,9 @@ fn write_named(
     artifact_manifest: Option<&Value>,
 ) -> Result<ProjectFile> {
     root.ensure_exists()?;
+    // `logo.png` over `Logo.png` writes `Logo.png` (or is refused, when
+    // new) on every disk, as on the Mac: never a second file beside it.
+    let rel = as_on_disk(&root.dir, &rel);
     let target = root.resolve(&rel)?;
     if target.is_dir() {
         return Err(StoreError::BadRequest("path is a directory".to_owned()));
@@ -388,7 +392,7 @@ pub fn rename_file(
 ) -> Result<(String, ProjectFile, bool)> {
     assert_visible_for_import(to, root.imported)?;
     let old_name = validate_project_path(from)?;
-    let new_name = sanitize_path(to)?;
+    let new_name = renamed_as(root, &old_name, &sanitize_path(to)?);
     let source = root.resolve(&old_name)?;
     let source_meta = fs::metadata(&source).map_err(StoreError::from_file_io)?;
     if !source_meta.is_file() {
@@ -460,6 +464,23 @@ pub fn rename_file(
     }
 }
 
+/// The name `old` is renamed or moved to when asked for `new`, as every
+/// disk takes it: its folders as they are on disk, and its last segment
+/// as asked when it names `old` itself (`a.html` → `A.html` changes the
+/// case), else as on disk (`logo.png` where `Logo.png` is: that name,
+/// which the caller then finds taken).
+fn renamed_as(root: &ProjectRoot, old: &str, new: &str) -> String {
+    let on_disk = as_on_disk(&root.dir, new);
+    if on_disk != as_on_disk(&root.dir, old) {
+        return on_disk;
+    }
+    let last = new.rsplit('/').next().unwrap_or(new);
+    match on_disk.rsplit_once('/') {
+        Some((parent, _)) => format!("{parent}/{last}"),
+        None => last.to_owned(),
+    }
+}
+
 /// [`StoreError::BadRequest`] when `rel` goes through a link: writing
 /// there would change the file or folder it points to.
 fn refuse_link(root: &ProjectRoot, rel: &str) -> Result<()> {
@@ -528,6 +549,11 @@ pub fn upload_file(
         None => String::new(),
     };
     root.ensure_exists()?;
+    let rel_dir = if rel_dir.is_empty() {
+        rel_dir
+    } else {
+        as_on_disk(&root.dir, &rel_dir)
+    };
     if !rel_dir.is_empty() {
         let full = root.resolve(&rel_dir)?;
         refuse_link(root, &rel_dir)?;
@@ -540,6 +566,9 @@ pub fn upload_file(
         } else {
             format!("{rel_dir}/{file_name}")
         };
+        // A name taken under another case or Unicode form is taken: the
+        // upload is `logo-1.png` beside `Logo.png` on every disk.
+        let rel = as_on_disk(&root.dir, &rel);
         let target = root.resolve(&rel)?;
         match write_atomic(&target, bytes, Place::CreateNew) {
             Ok(()) => {
@@ -602,6 +631,8 @@ pub fn create_folder(root: &ProjectRoot, path: &str) -> Result<String> {
     assert_visible_for_import(path, root.imported)?;
     let rel = sanitize_path(path)?;
     root.ensure_exists()?;
+    // `Assets` where `assets` is: that folder, on every disk.
+    let rel = as_on_disk(&root.dir, &rel);
     let full = root.resolve(&rel)?;
     if full.exists() && !full.is_dir() {
         return Err(StoreError::FileExists);
@@ -652,7 +683,7 @@ pub fn move_folder(
     to: &str,
 ) -> Result<(String, Vec<(String, String)>)> {
     let from = validate_project_path(from)?;
-    let to = validate_project_path(to)?;
+    let to = renamed_as(root, &from, &validate_project_path(to)?);
     if [&from, &to]
         .iter()
         .any(|p| p.split('/').any(|s| s.starts_with('.')))
@@ -666,14 +697,21 @@ pub fn move_folder(
     if !meta.is_dir() || through_link(&root.dir, &from) {
         return Err(StoreError::FileNotFound);
     }
-    let target = root.resolve(&to)?;
     refuse_link(root, &to)?;
-    if target.starts_with(&source) {
+    // Only its name changes (`a` → `A`): where a disk folds case, `to`
+    // resolves to the folder itself, which it does not move into.
+    let case_only = to != from && as_on_disk(&root.dir, &to) == as_on_disk(&root.dir, &from);
+    let target = if case_only {
+        root.real_dir().join(&to)
+    } else {
+        root.resolve(&to)?
+    };
+    if !case_only && target.starts_with(&source) {
         return Err(StoreError::BadRequest(
             "a folder cannot move into itself".to_owned(),
         ));
     }
-    if fs::symlink_metadata(&target).is_ok() {
+    if !case_only && fs::symlink_metadata(&target).is_ok() {
         return Err(StoreError::FileExists);
     }
     let mut held = Vec::new();

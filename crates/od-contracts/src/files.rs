@@ -1,6 +1,20 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// The key under which two names of one folder are one file, on every
+/// disk: NFC (macOS may send `mẫu` decomposed, and APFS takes both forms
+/// as one name), then lowercase (APFS and NTFS ignore case by default).
+/// Linux tells both apart, so a check by `==` there lets a project hold
+/// two files that are one on a Mac or once synced (#225, #242). Every
+/// check whether a user's file or folder name is taken goes through this
+/// key, on the daemon and in the app (`od-store/tests/name_key.rs`
+/// refuses any other). Works on whole paths: `/` stays itself.
+#[must_use]
+pub fn name_key(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    name.nfc().flat_map(char::to_lowercase).nfc().collect()
+}
+
 /// Coarse viewer bucket for a project file, derived from its extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

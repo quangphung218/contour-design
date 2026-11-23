@@ -255,22 +255,17 @@ async fn zip_entries_keep_their_names() {
     let bytes = zip_of(&[("My Page.html", b"<b>a</b>"), ("my page.html", b"<b>b</b>")]);
     let res = import_zip(&d, "dupes.zip", bytes).await;
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    // APFS also folds Unicode forms (é and e + U+0301): the second write
-    // finds the file taken. ext4 keeps both names: a new project.
+    // Two Unicode forms of one name (é and e + U+0301) are one file on a
+    // Mac: refused the same way on every disk, not a 409 on APFS and two
+    // files on ext4 (#225).
     let bytes = zip_of(&[("caf\u{e9}.html", b"a"), ("cafe\u{301}.html", b"b")]);
     let res = import_zip(&d, "forms.zip", bytes).await;
-    let folds = cfg!(target_os = "macos");
-    let expected = if folds {
-        StatusCode::CONFLICT
-    } else {
-        StatusCode::OK
-    };
-    assert_eq!(res.status(), expected);
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let after = d.get_json("/api/projects").await["projects"]
         .as_array()
         .unwrap()
         .len();
-    assert_eq!(after, before + usize::from(!folds));
+    assert_eq!(after, before);
 }
 
 /// A fake OpenAI/Anthropic endpoint on loopback recording the auth it saw.

@@ -209,6 +209,52 @@ pub fn sanitize_path(raw: &str) -> Result<String> {
         .join("/"))
 }
 
+pub use od_contracts::files::name_key;
+
+/// The entry of folder `dir` that `name` names on a disk that ignores case
+/// and Unicode form: the one called exactly so, else the one equal after
+/// NFC, else the first (sorted) of the same [`name_key`]. On Linux,
+/// `Logo.png` and `logo.png` can both be there already; the closest wins.
+/// `None` when nothing there has that key, or `dir` cannot be read.
+#[must_use]
+pub fn entry_named(dir: &Path, name: &str) -> Option<String> {
+    use unicode_normalization::UnicodeNormalization as _;
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .collect();
+    names.sort();
+    let nfc = |n: &str| n.nfc().collect::<String>();
+    let key = name_key(name);
+    names
+        .iter()
+        .find(|n| *n == name)
+        .or_else(|| names.iter().find(|n| nfc(n) == nfc(name)))
+        .or_else(|| names.iter().find(|n| name_key(n) == key))
+        .cloned()
+}
+
+/// `rel` (validated) with each segment that names an entry already under
+/// `root` spelled as that entry is ([`entry_named`]), so every disk takes
+/// `Logo.png` for `logo.png` and `mẫu` NFD for NFC, as macOS and Windows
+/// do; segments past the first that is not there are kept as given.
+#[must_use]
+pub fn as_on_disk(root: &Path, rel: &str) -> String {
+    let mut dir = Some(root.to_path_buf());
+    rel.split('/')
+        .map(|seg| {
+            let found = dir.as_deref().and_then(|d| entry_named(d, seg));
+            let seg = found.unwrap_or_else(|| seg.to_owned());
+            dir = dir
+                .take()
+                .map(|d| d.join(&seg))
+                .filter(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_dir()));
+            seg
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Resolves `name` under `root`, following symlinks, and proves the result
 /// stays inside the canonical root. Works for paths that do not exist yet.
 ///
