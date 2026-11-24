@@ -1134,7 +1134,13 @@ fn CreateDialog(
             Ok(open) if tasks.alive() && visit.try_get_value() == Some(started) => {
                 on_done.run(Some(open));
             }
-            Ok(_) => on_landed.run(()),
+            Ok(_) => {
+                // Still open on another mode: its buttons work again.
+                if tasks.alive() {
+                    busy.set(false);
+                }
+                on_landed.run(());
+            }
             Err(e) if tasks.alive() => {
                 busy.set(false);
                 error.set(Some(api::failure(T::InstallFailed, &e)));
