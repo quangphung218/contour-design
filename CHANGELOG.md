@@ -8,6 +8,14 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Import skills from Claude Code, Codex, Gemini and OpenCode skill folders in Library > Create > From agent CLI.
+
+### Changed
+
+- Install from folder puts a folder with only SKILL.md into your skills, not your plugins.
+
 ## [0.2.0-beta.60] - 2026-11-24
 
 ### Fixed

@@ -11,13 +11,18 @@
 //!   folder (`SKILL.md` and its side files) into `<data>/skills/<id>`; 409
 //!   for a bundled id, and for a user skill's id unless `replace` is set
 //!   (a skill of another project is never lost). "Save as skill" in the
-//!   Studio has the agent call it.
+//!   Studio has the agent call it. With `bareOnly` a folder that is a
+//!   plugin (`open-design.json`, `.claude-plugin/`) is left alone and the
+//!   answer is `{id: null}`: "Install from folder" then installs a plugin.
+//! - `GET    /api/skills/local-sources`: the skill folders of agent CLIs
+//!   (`~/.claude/skills`, `~/.codex/skills`…, one level, read only) with
+//!   whether each is imported; "From agent CLI" installs the ones picked.
 
 use super::write_and_reload;
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::{post, put};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use od_content::user_content::{self, SkillDraft};
 use od_contracts::{ContentSource, name_key};
@@ -28,6 +33,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/skills", post(create))
         .route("/api/skills/install", post(install))
+        .route("/api/skills/local-sources", get(local_sources))
         .route("/api/skills/{id}", put(save).delete(delete))
 }
 
@@ -80,6 +86,9 @@ pub struct InstallBody {
     /// its own turn installed).
     #[serde(default)]
     replace: bool,
+    /// Install only a bare skill; a plugin folder answers `{id: null}`.
+    #[serde(default, rename = "bareOnly")]
+    bare_only: bool,
 }
 
 pub async fn install(
@@ -90,6 +99,9 @@ pub async fn install(
     let replace = body.replace;
     if !source.is_absolute() {
         return Err(ApiErr::bad_request("path must be an absolute folder path"));
+    }
+    if body.bare_only && !user_content::is_bare_skill(&source) {
+        return Ok(Json(json!({ "id": null })));
     }
     let root = user_root(&state);
     // The bundled root itself: an override in the user root hides its
@@ -109,6 +121,29 @@ pub async fn install(
     .await?;
     tracing::info!(skill = %id, "skill installed");
     Ok(Json(json!({ "id": id })))
+}
+
+/// `HOME` of the agents' environment (the folders they read their skills
+/// from): the last `HOME` set, as an agent process gets it, else the
+/// daemon's.
+fn agent_home(env: &[(std::ffi::OsString, std::ffi::OsString)]) -> Option<std::path::PathBuf> {
+    env.iter()
+        .rfind(|(k, _)| k == "HOME")
+        .filter(|(_, v)| !v.is_empty())
+        .map(|(_, v)| std::path::PathBuf::from(v))
+        .or_else(od_runtime::login_path::home_dir)
+}
+
+pub async fn local_sources(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let home = agent_home(&state.runs.engine.config().base_env);
+    let root = user_root(&state);
+    let sources = crate::spawn::spawn_blocking_in_span(move || {
+        home.map(|h| user_content::scan_agent_skills(&user_content::agent_skill_roots(&h), &root))
+            .unwrap_or_default()
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))?;
+    Ok(Json(json!({ "sources": sources })))
 }
 
 pub async fn save(

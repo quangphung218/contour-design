@@ -4,7 +4,8 @@
 //! and "Use", which creates a project bound to the plugin; a skill's
 //! detail with "Use", edit (a user override for a bundled skill) and
 //! delete; and Create: a plugin written by an agent, a plugin installed
-//! from a local folder, or a new skill.
+//! from a local folder (a folder with only `SKILL.md` installs as a
+//! skill), a new skill, or skills imported from agent CLIs.
 
 use super::icons::{Glyph, icon};
 use super::lib_ui::{Modal, copy_text, initials, localized, query_param, tint};
@@ -224,19 +225,37 @@ pub fn PluginsPage() -> impl IntoView {
         });
     };
     reload();
-    let on_change = Callback::new(move |next: Option<Open>| {
-        if let Some(Open::Plugin(_) | Open::Skill(_)) = &next {
-            scope.set(Scope::Personal);
-        }
-        open.set(next);
-        reload();
-    });
-    // Made here, not in the dialog's view: it runs from the page's tasks
-    // after the dialog may have closed.
+    // An open plugin or skill holds text the user typed (a skill being
+    // edited, a plugin's inputs): work that lands late never replaces it.
+    let held = RwSignal::new(false);
+    // Made here, not in the dialog's view: they run from the page's tasks
+    // after the dialog may have closed. The dialog calls them only while
+    // it is still open on the mode that started the work; otherwise it
+    // calls `on_landed`, which only reloads the lists.
     let on_created = Callback::new(move |next: Option<Open>| {
         creating.set(false);
-        on_change.run(next);
+        if !held.get_untracked() {
+            if let Some(Open::Plugin(_) | Open::Skill(_)) = &next {
+                scope.set(Scope::Personal);
+            }
+            open.set(next);
+        }
+        reload();
     });
+    // Skills imported from agent CLIs: the Personal skills show them; the
+    // dialog stays open while a row failed, to show why.
+    let on_imported = Callback::new(move |all_ok: bool| {
+        if !held.get_untracked() {
+            open.set(None);
+            kind.set(Kind::Skills);
+            scope.set(Scope::Personal);
+        }
+        if all_ok {
+            creating.set(false);
+        }
+        reload();
+    });
+    let on_landed = Callback::new(move |()| reload());
     // A plugin or skill removed from its page: back to the list, unless
     // something else opened meanwhile. The reply can come late on a busy
     // machine, after a skill just made was opened; closing that one would
@@ -360,9 +379,9 @@ pub fn PluginsPage() -> impl IntoView {
             {move || match open.get() {
                 Some(Open::Plugin(id)) => {
                     let mono = monos.with_untracked(|m| m.get(&id).cloned());
-                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks/> }.into_any()
+                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks held=held/> }.into_any()
                 }
-                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks/> }.into_any(),
+                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks held=held/> }.into_any(),
                 None => view! {
                     <div class="lib-toolbar">
                         <div class="segmented" role="group" aria-label=t(T::NavPlugins)>
@@ -406,6 +425,8 @@ pub fn PluginsPage() -> impl IntoView {
                     page=tasks
                     on_close=Callback::new(move |()| creating.set(false))
                     on_done=on_created
+                    on_imported=on_imported
+                    on_landed=on_landed
                 />
             </Show>
         </section>
@@ -419,6 +440,15 @@ fn empty(personal: bool) -> impl IntoView {
             <p>{if personal { t(T::PluginsEmptyPersonal) } else { t(T::NoMatches) }}</p>
         </li>
     }
+}
+
+/// Keeps the page's `held` at `typed()` while the calling view is there,
+/// and clears it when the view goes.
+fn hold_while(held: RwSignal<bool>, typed: impl Fn() -> bool + 'static) {
+    Effect::new(move |_| held.set(typed()));
+    on_cleanup(move || {
+        let _ = held.try_set(false);
+    });
 }
 
 #[component]
@@ -660,6 +690,8 @@ fn PluginDetail(
     on_removed: Callback<Open>,
     /// The page's tasks, for an uninstall that ends on the list.
     page: Tasks,
+    /// Set while the inputs hold something typed.
+    held: RwSignal<bool>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let navigate = use_navigate();
@@ -667,6 +699,7 @@ fn PluginDetail(
     let values = RwSignal::new(Map::new());
     let busy = RwSignal::new(false);
     let notice = RwSignal::new(None::<Result<String, String>>);
+    hold_while(held, move || values.with(|v| !v.is_empty()));
     {
         let id = id.clone();
         tasks.spawn(async move {
@@ -852,12 +885,15 @@ fn SkillDetailView(
     on_removed: Callback<Open>,
     /// The page's tasks, for a delete that ends on the list.
     page: Tasks,
+    /// Set while the skill is being edited.
+    held: RwSignal<bool>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let navigate = use_navigate();
     let detail = RwSignal::new(None::<Result<SkillDetail, String>>);
     let editing = RwSignal::new(false);
     let notice = RwSignal::new(None::<String>);
+    hold_while(held, move || editing.get());
     let load = {
         let id = id.clone();
         Callback::new(move |()| {
@@ -1030,6 +1066,7 @@ enum CreateMode {
     Link,
     Folder,
     Skill,
+    AgentCli,
 }
 
 /// What it installs or saves ends on the page (`on_done`), so that runs on
@@ -1038,6 +1075,10 @@ enum CreateMode {
 fn CreateDialog(
     on_close: Callback<()>,
     on_done: Callback<Option<Open>>,
+    on_imported: Callback<bool>,
+    /// Work of a dialog closed, or moved to another mode, meanwhile: the
+    /// lists reload, nothing else changes.
+    on_landed: Callback<()>,
     page: Tasks,
 ) -> impl IntoView {
     let tasks = Tasks::here();
@@ -1045,6 +1086,14 @@ fn CreateDialog(
     let _ = shell;
     let navigate = use_navigate();
     let mode = RwSignal::new(CreateMode::Agent);
+    // Bumped on every switch of mode: a save or install that comes back
+    // late opens its result only if the user has not left the mode since
+    // (left and come back, they may be typing the next one).
+    let visit = StoredValue::new(0u64);
+    Effect::new(move |_| {
+        mode.track();
+        visit.update_value(|n| *n += 1);
+    });
     let brief = RwSignal::new(String::new());
     let path = RwSignal::new(String::new());
     let link = RwSignal::new(String::new());
@@ -1076,19 +1125,27 @@ fn CreateDialog(
             }
         });
     });
+    // A bare skill folder (only `SKILL.md`) goes to the skills; anything
+    // else to the plugins. Both requests run even if the page goes.
     let install = move |dir: String| {
         busy.set(true);
-        page.spawn(async move {
-            match api::post::<_, Value>("/api/plugins/install", &json!({ "path": dir })).await {
-                Ok(v) => on_done.run(Some(Open::Plugin(
-                    v["plugin"]["id"].as_str().unwrap_or_default().to_owned(),
-                ))),
-                Err(e) if tasks.alive() => {
-                    busy.set(false);
-                    error.set(Some(api::failure(T::InstallFailed, &e)));
-                }
-                Err(_) => {}
+        let started = visit.get_value();
+        page.spawn_then(install_folder(dir), move |done| match done {
+            Ok(open) if tasks.alive() && visit.try_get_value() == Some(started) => {
+                on_done.run(Some(open));
             }
+            Ok(_) => {
+                // Still open on another mode: its buttons work again.
+                if tasks.alive() {
+                    busy.set(false);
+                }
+                on_landed.run(());
+            }
+            Err(e) if tasks.alive() => {
+                busy.set(false);
+                error.set(Some(api::failure(T::InstallFailed, &e)));
+            }
+            Err(_) => {}
         });
     };
     let pick = move |_| {
@@ -1099,11 +1156,15 @@ fn CreateDialog(
         });
     };
     let save_skill = Callback::new(move |body: Value| {
+        let started = visit.get_value();
         page.spawn(async move {
             match api::post::<_, Value>("/api/skills", &body).await {
-                Ok(v) => on_done.run(Some(Open::Skill(
-                    v["id"].as_str().unwrap_or_default().to_owned(),
-                ))),
+                Ok(v) if tasks.alive() && visit.try_get_value() == Some(started) => {
+                    on_done.run(Some(Open::Skill(
+                        v["id"].as_str().unwrap_or_default().to_owned(),
+                    )));
+                }
+                Ok(_) => on_landed.run(()),
                 Err(e) if tasks.alive() => error.set(Some(api::failure(T::MdSaveFailed, &e))),
                 Err(_) => {}
             }
@@ -1114,7 +1175,7 @@ fn CreateDialog(
         <Modal title=t(T::CreateTitle).to_owned() glyph=Glyph::Plugin wide=true testid="plugin-create" on_close=on_close>
             <div class="dialog-body">
                 <div class="segmented" role="group" aria-label=t(T::CreateTitle)>
-                    {[(CreateMode::Agent, T::CreateWithAgent, "create-agent", Glyph::Agent), (CreateMode::Link, T::AddFromLink, "create-link", Glyph::Link), (CreateMode::Folder, T::InstallFromFolder, "create-folder", Glyph::FolderOpen), (CreateMode::Skill, T::NewSkill, "create-skill", Glyph::Book)]
+                    {[(CreateMode::Agent, T::CreateWithAgent, "create-agent", Glyph::Agent), (CreateMode::Link, T::AddFromLink, "create-link", Glyph::Link), (CreateMode::Folder, T::InstallFromFolder, "create-folder", Glyph::FolderOpen), (CreateMode::Skill, T::NewSkill, "create-skill", Glyph::Book), (CreateMode::AgentCli, T::FromAgentCli, "create-agent-cli", Glyph::Download)]
                         .into_iter()
                         .map(|(m, label, id, glyph)| view! {
                             <button class="seg" data-testid=id aria-pressed=move || (mode.get() == m).to_string() on:click=move |_| { mode.set(m); error.set(None); }>{icon(glyph)}{t(label)}</button>
@@ -1172,9 +1233,242 @@ fn CreateDialog(
                     CreateMode::Skill => view! {
                         <SkillForm draft=SkillDraft::default() name_locked=false on_cancel=on_close on_save=save_skill/>
                     }.into_any(),
+                    CreateMode::AgentCli => view! { <AgentSkillImport page=page on_imported=on_imported on_landed=on_landed/> }.into_any(),
                 }}
             </div>
         </Modal>
+    }
+}
+
+async fn install_folder(dir: String) -> Result<Open, api::HttpError> {
+    let skill: Value = api::post(
+        "/api/skills/install",
+        &json!({ "path": dir, "bareOnly": true }),
+    )
+    .await?;
+    if let Some(id) = skill["id"].as_str() {
+        return Ok(Open::Skill(id.to_owned()));
+    }
+    let v: Value = api::post("/api/plugins/install", &json!({ "path": dir })).await?;
+    Ok(Open::Plugin(
+        v["plugin"]["id"].as_str().unwrap_or_default().to_owned(),
+    ))
+}
+
+/// A skill folder of an agent CLI (`GET /api/skills/local-sources`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentSkill {
+    path: String,
+    agent: String,
+    id: String,
+    description: String,
+    imported: bool,
+    error: Option<String>,
+}
+
+impl AgentSkill {
+    fn parse(v: &Value) -> Self {
+        Self {
+            path: s(v, "path"),
+            agent: s(v, "agent"),
+            id: s(v, "id"),
+            description: s(v, "description"),
+            imported: v["imported"].as_bool().unwrap_or(false),
+            error: v["error"].as_str().map(str::to_owned),
+        }
+    }
+}
+
+/// The agent's name and where its skills are, for a group's heading.
+fn agent_heading(agent: &str) -> &'static str {
+    match agent {
+        "claude" => "Claude Code · ~/.claude/skills",
+        "agents" => "~/.agents/skills",
+        "codex" => "Codex · ~/.codex/skills",
+        "gemini" => "Gemini CLI · ~/.gemini/skills",
+        "opencode" => "OpenCode · ~/.config/opencode",
+        _ => "",
+    }
+}
+
+/// How an import went for one row, by path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Imported {
+    Done,
+    Failed(String),
+}
+
+/// "From agent CLI": the skill folders of the agent CLIs, read when the
+/// dialog opens this mode; the ones picked are copied in one by one
+/// through `POST /api/skills/install`, a failure shown by its row while
+/// the rest go on. The copies run on the `page`'s tasks to their end; the
+/// page moves to them (`on_imported`) only if this mode is still open,
+/// else it only reloads (`on_landed`).
+#[component]
+fn AgentSkillImport(
+    page: Tasks,
+    on_imported: Callback<bool>,
+    on_landed: Callback<()>,
+) -> impl IntoView {
+    let tasks = Tasks::here();
+    let sources = RwSignal::new(None::<Vec<AgentSkill>>);
+    let load_error = RwSignal::new(None::<String>);
+    let picked = RwSignal::new(Vec::<String>::new());
+    let outcome = RwSignal::new(std::collections::HashMap::<String, Imported>::new());
+    let filter = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
+    let load = move || {
+        load_error.set(None);
+        sources.set(None);
+        tasks.spawn(async move {
+            match api::get::<Value>("/api/skills/local-sources").await {
+                Ok(v) => sources.set(Some(
+                    v["sources"]
+                        .as_array()
+                        .map(|l| l.iter().map(AgentSkill::parse).collect())
+                        .unwrap_or_default(),
+                )),
+                Err(e) => load_error.set(Some(api::failure(T::AgentSkillsFailed, &e))),
+            }
+        });
+    };
+    load();
+    let import = move |_| {
+        let paths: Vec<(String, String)> = sources.with_untracked(|l| {
+            picked.with_untracked(|p| {
+                p.iter()
+                    .filter_map(|path| {
+                        let sk = l.iter().flatten().find(|sk| sk.path == *path)?;
+                        Some((path.clone(), sk.id.clone()))
+                    })
+                    .collect()
+            })
+        });
+        if paths.is_empty() {
+            return;
+        }
+        busy.set(true);
+        page.spawn_then(
+            async move {
+                let mut all_ok = true;
+                for (path, id) in paths {
+                    let done =
+                        api::post::<_, Value>("/api/skills/install", &json!({ "path": path }))
+                            .await
+                            .map(|_| Imported::Done)
+                            .unwrap_or_else(|e| {
+                                all_ok = false;
+                                // A bundled or personal skill of that name is
+                                // never replaced; say which name.
+                                Imported::Failed(if e.status == 409 {
+                                    tf(T::SkillNameTaken, &[&id])
+                                } else {
+                                    api::failure(T::InstallFailed, &e)
+                                })
+                            });
+                    // Rows show it as it goes, while the dialog is there.
+                    if tasks.alive() {
+                        if done == Imported::Done {
+                            picked.update(|p| p.retain(|x| *x != path));
+                        }
+                        outcome.update(|o| {
+                            o.insert(path, done);
+                        });
+                    }
+                }
+                all_ok
+            },
+            move |all_ok| {
+                if tasks.alive() {
+                    busy.set(false);
+                    on_imported.run(all_ok);
+                } else {
+                    on_landed.run(());
+                }
+            },
+        );
+    };
+    let shown = move || {
+        let q = filter.get().trim().to_lowercase();
+        sources.with(|l| {
+            l.iter()
+                .flatten()
+                .filter(|sk| q.is_empty() || hit(&q, &sk.id, &sk.description))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    };
+    view! {
+        <div class="col gap" data-testid="agent-skills">
+            <input class="input" type="search" data-testid="agent-skills-filter" placeholder=t(T::SearchLibrary) aria-label=t(T::SearchLibrary)
+                prop:value=move || filter.get() on:input=live(move |ev| filter.set(event_target_value(&ev)))/>
+            {move || load_error.get().map(|e| view! {
+                <div class="row">
+                    <p class="error-text grow" role="alert" data-testid="agent-skills-load-error">{e}</p>
+                    <button class="btn small" data-testid="agent-skills-retry" on:click=move |_| load()>{t(T::TryAgain)}</button>
+                </div>
+            })}
+            {move || match sources.with(|l| l.as_ref().map(Vec::is_empty)) {
+                None if load_error.with(Option::is_some) => ().into_any(),
+                None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),
+                Some(true) => view! { <p class="muted" data-testid="agent-skills-empty">{t(T::NoAgentSkills)}</p> }.into_any(),
+                Some(false) => {
+                    let rows = shown();
+                    let mut last = String::new();
+                    let items = rows.into_iter().map(|sk| {
+                        let heading = (sk.agent != last).then(|| {
+                            last.clone_from(&sk.agent);
+                            view! { <li class="eyebrow">{agent_heading(&sk.agent)}</li> }
+                        });
+                        let path = sk.path.clone();
+                        let p2 = path.clone();
+                        let p3 = path.clone();
+                        let p4 = path.clone();
+                        let locked = sk.imported || sk.error.is_some();
+                        let done = Signal::derive(move || outcome.with(|o| o.get(&p3) == Some(&Imported::Done)));
+                        let failed = move || outcome.with(|o| match o.get(&p4) {
+                            Some(Imported::Failed(e)) => Some(e.clone()),
+                            _ => None,
+                        });
+                        let mut description: String = sk.description.chars().take(140).collect();
+                        if sk.description.chars().count() > 140 {
+                            description.push('…');
+                        }
+                        view! {
+                            {heading}
+                            <li data-testid="agent-skill" data-id=sk.id.clone() data-agent=sk.agent.clone()>
+                                <label class="memory-item">
+                                    <input type="checkbox" data-testid="agent-skill-pick"
+                                        disabled=move || locked || busy.get() || done.get()
+                                        prop:checked=move || picked.with(|p| p.contains(&path))
+                                        on:change=live(move |ev| {
+                                            let on = event_target_checked(&ev);
+                                            picked.update(|p| {
+                                                p.retain(|x| *x != p2);
+                                                if on {
+                                                    p.push(p2.clone());
+                                                }
+                                            });
+                                        })/>
+                                    <span class="grow" title=sk.description.clone()><strong>{sk.id.clone()}</strong>" "<span class="muted">{description}</span></span>
+                                    {move || (sk.imported || done.get()).then(|| view! { <span class="badge" data-testid="agent-skill-imported">{t(T::Imported)}</span> })}
+                                </label>
+                                {sk.error.clone().map(|e| view! { <p class="error-text" data-testid="agent-skill-error">{e}</p> })}
+                                {move || failed().map(|e| view! { <p class="error-text" role="alert" data-testid="agent-skill-error">{e}</p> })}
+                            </li>
+                        }
+                    }).collect_view();
+                    view! { <ul class="memory-list" style="max-height: 50vh">{items}</ul> }.into_any()
+                }
+            }}
+            <div class="row end">
+                <button class="btn primary" data-testid="agent-skills-import"
+                    disabled=move || busy.get() || picked.with(Vec::is_empty)
+                    on:click=import>
+                    {icon(Glyph::Download)}{move || tf(T::ImportCount, &[&picked.with(Vec::len).to_string()])}
+                </button>
+            </div>
+        </div>
     }
 }
 
