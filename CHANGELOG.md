@@ -8,6 +8,16 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- After Save as skill, the turn offers Use @skill and Open skill, and the new skill is in @ and suggestions right away.
+- From the second finished page, the next-step card offers Save as skill until you save or dismiss it.
+- Skills without triggers, such as ones from agent CLIs, are suggested when the prompt names their id's words.
+
+### Changed
+
+- Save as skill in the + menu says why it is off.
+
 ## [0.2.0-beta.61] - 2026-11-24
 
 ### Added

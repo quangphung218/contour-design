@@ -11,7 +11,7 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use od_content::{ContentIndex, ContentRoots};
-use od_ui::mention::{Candidate, MentionKind, SkillRow, suggest};
+use od_ui::mention::{SkillRow, skill_row, suggest};
 use std::path::Path;
 
 /// Skills that fit a deck or a pitch.
@@ -201,7 +201,8 @@ const NONE: [&str; 26] = [
     "Why is the build failing on Windows?",
 ];
 
-/// The skill rows the composer builds from `/api/skills`.
+/// The skill rows the composer builds from `/api/skills` (`skill_row`:
+/// a skill without `triggers` gets the ones of its id).
 fn catalogue() -> Vec<SkillRow> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
     let index = ContentIndex::build(&ContentRoots::bundled(&root));
@@ -209,20 +210,16 @@ fn catalogue() -> Vec<SkillRow> {
     index
         .skills
         .iter()
-        .map(|s| SkillRow {
-            triggers: s
-                .info
-                .triggers
-                .iter()
-                .filter_map(|t| t.as_str().map(str::to_owned))
-                .collect(),
-            candidate: Candidate {
-                kind: MentionKind::Skill,
-                label: s.info.id.clone(),
-                detail: String::new(),
-                id: s.info.id.clone(),
-                inputs: None,
-            },
+        .map(|s| {
+            skill_row(
+                s.info.id.clone(),
+                String::new(),
+                s.info
+                    .triggers
+                    .iter()
+                    .filter_map(|t| t.as_str().map(str::to_owned))
+                    .collect(),
+            )
         })
         .collect()
 }
@@ -294,4 +291,93 @@ fn common_prompts_get_a_skill_of_their_topic() {
     for (lang, n) in [("English", en + new_en), ("Vietnamese", vi + new_vi)] {
         assert!(n >= 15, "{lang}: {n}/20 prompts get a suggestion, want 75%");
     }
+}
+
+/// Skill ids as agent CLIs install them (no `triggers`), as on the owner's
+/// machine (`~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`).
+const AGENT_CLI: &[&str] = &[
+    "brainstorming",
+    "code-review",
+    "design-taste-frontend",
+    "executing-plans",
+    "finishing-a-development-branch",
+    "house-style",
+    "obsidian-note",
+    "receiving-code-review",
+    "redesign-existing-projects",
+    "so-do",
+    "systematic-debugging",
+    "test-driven-development",
+    "using-git-worktrees",
+    "verification-before-completion",
+    "vietnamese-tech-writing",
+    "writing-plans",
+    "writing-skills",
+    "tea-house-landing",
+];
+
+#[test]
+fn skills_without_triggers_are_suggested_by_their_id_and_never_on_chat() {
+    let mut skills = catalogue();
+    skills.extend(
+        AGENT_CLI
+            .iter()
+            .map(|id| skill_row((*id).to_owned(), String::new(), Vec::new())),
+    );
+    let got =
+        |p: &str| -> Vec<String> { suggest(p, &skills, &[]).into_iter().map(|c| c.id).collect() };
+    assert_eq!(
+        got("make a tea house landing page")
+            .first()
+            .map(String::as_str),
+        Some("tea-house-landing")
+    );
+    assert!(
+        got("draft the writing plans for next week")
+            .iter()
+            .any(|id| id == "writing-plans")
+    );
+    let wrong: Vec<String> = NONE
+        .iter()
+        .filter_map(|p| {
+            let g = got(p);
+            (!g.is_empty()).then(|| format!("{p:?} → {g:?}"))
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "chat got suggestions:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// Every skill row is built by `skill_row`, so a skill without `triggers`
+/// gets those of its id wherever the composer lists skills: a `SkillRow {`
+/// literal anywhere under `src` but `mention.rs` fails here.
+#[test]
+fn skill_rows_are_built_by_skill_row_only() {
+    fn walk(dir: &Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && !path.ends_with("mention.rs")
+                && std::fs::read_to_string(&path)
+                    .unwrap()
+                    .contains("SkillRow {")
+            {
+                out.push(path.display().to_string());
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut found,
+    );
+    assert!(
+        found.is_empty(),
+        "build skill rows with `mention::skill_row`: {found:?}"
+    );
 }

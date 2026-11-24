@@ -360,11 +360,14 @@ fn drops_a_folder(dt: &web_sys::DataTransfer) -> bool {
     })
 }
 
-/// What the `@` palette can mention, loaded once per composer.
+/// What the `@` palette can mention, loaded once per composer; the skills
+/// again after a turn installs one ([`Sources::reload_skills`]).
 #[derive(Clone, Copy)]
 pub struct Sources {
     /// Skills with their triggers, for the palette and the suggestions.
     skills: LocalResource<Vec<SkillRow>>,
+    /// The skills loaded again, which then stand for `skills`.
+    fresh: RwSignal<Option<Vec<SkillRow>>>,
     plugins: LocalResource<Vec<Candidate>>,
     mcp: LocalResource<Vec<Candidate>>,
     /// Media library assets (track C2), offered where the composer can
@@ -372,35 +375,35 @@ pub struct Sources {
     library: LocalResource<Vec<Candidate>>,
 }
 
+/// The skills `/api/skills` lists, as palette rows with their triggers
+/// (`mention::skill_row`: one without gets those of its id); `None` when
+/// the list did not load.
+pub async fn fetch_skills() -> Option<Vec<SkillRow>> {
+    let skills = api::get::<SkillsResponse>("/api/skills").await.ok()?.skills;
+    Some(
+        skills
+            .into_iter()
+            .map(|s| {
+                let detail = crate::i18n::rebrand(&s.info.description)
+                    .chars()
+                    .take(90)
+                    .collect();
+                let triggers = s
+                    .info
+                    .triggers
+                    .iter()
+                    .filter_map(|t| t.as_str().map(str::to_owned))
+                    .collect();
+                mention::skill_row(s.info.id, detail, triggers)
+            })
+            .collect(),
+    )
+}
+
 impl Sources {
     #[must_use]
     pub fn load() -> Self {
-        let skills = LocalResource::new(|| async {
-            api::get::<SkillsResponse>("/api/skills")
-                .await
-                .map(|r| r.skills)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|s| SkillRow {
-                    triggers: s
-                        .info
-                        .triggers
-                        .iter()
-                        .filter_map(|t| t.as_str().map(str::to_owned))
-                        .collect(),
-                    candidate: Candidate {
-                        kind: MentionKind::Skill,
-                        label: s.info.id.clone(),
-                        detail: crate::i18n::rebrand(&s.info.description)
-                            .chars()
-                            .take(90)
-                            .collect(),
-                        id: s.info.id,
-                        inputs: None,
-                    },
-                })
-                .collect()
-        });
+        let skills = LocalResource::new(|| async { fetch_skills().await.unwrap_or_default() });
         let plugins = LocalResource::new(|| async {
             api::get::<Value>("/api/plugins")
                 .await
@@ -446,17 +449,59 @@ impl Sources {
         });
         Self {
             skills,
+            fresh: RwSignal::new(None),
             plugins,
             mcp,
             library,
         }
     }
 
+    /// The skill rows, `None` while the first load runs.
+    fn with_skills<R>(self, f: impl FnOnce(Option<&Vec<SkillRow>>) -> R) -> R {
+        if self.fresh.with(Option::is_some) {
+            self.fresh.with(|fresh| f(fresh.as_ref()))
+        } else {
+            self.skills.with(|s| f(s.as_ref()))
+        }
+    }
+
+    /// The ids of the skills listed, `None` while the first load runs.
+    #[must_use]
+    pub fn skill_ids_untracked(self) -> Option<Vec<String>> {
+        untrack(|| {
+            self.with_skills(|rows| {
+                rows.map(|rows| rows.iter().map(|r| r.candidate.id.clone()).collect())
+            })
+        })
+    }
+
+    /// The palette row of skill `id`, if listed.
+    #[must_use]
+    pub fn skill_untracked(self, id: &str) -> Option<Candidate> {
+        untrack(|| {
+            self.with_skills(|rows| {
+                rows.into_iter()
+                    .flatten()
+                    .find(|r| r.candidate.id == id)
+                    .map(|r| r.candidate.clone())
+            })
+        })
+    }
+
+    /// Puts the skills loaded again (`fetch_skills`) in place of the
+    /// first load: `@` and the suggestions offer a skill installed since.
+    pub fn set_skills(self, rows: Vec<SkillRow>) {
+        self.fresh.set(Some(rows));
+    }
+
     fn of(self, kind: MentionKind) -> Vec<Candidate> {
         match kind {
-            MentionKind::Skill => self
-                .skills
-                .with(|s| s.iter().flatten().map(|r| r.candidate.clone()).collect()),
+            MentionKind::Skill => self.with_skills(|s| {
+                s.into_iter()
+                    .flatten()
+                    .map(|r| r.candidate.clone())
+                    .collect()
+            }),
             MentionKind::Plugin => self.plugins.get().unwrap_or_default(),
             MentionKind::Mcp => self.mcp.get().unwrap_or_default(),
             MentionKind::Library => self.library.get().unwrap_or_default(),
@@ -860,9 +905,8 @@ fn SkillSuggestions(
                     .map(|c| c.id.clone()),
             );
         });
-        sources.skills.with(|rows| {
-            rows.as_ref()
-                .map(|rows| mention::suggest(&text, rows, &skip))
+        sources.with_skills(|rows| {
+            rows.map(|rows| mention::suggest(&text, rows, &skip))
                 .unwrap_or_default()
         })
     });
@@ -1206,13 +1250,14 @@ pub fn apply_toolbox(
     context: RwSignal<Vec<Candidate>>,
     draft: RwSignal<String>,
 ) {
-    let skills: Vec<Candidate> = sources
-        .skills
-        .get_untracked()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| r.candidate)
-        .collect();
+    let skills: Vec<Candidate> = untrack(|| {
+        sources.with_skills(|rows| {
+            rows.into_iter()
+                .flatten()
+                .map(|r| r.candidate.clone())
+                .collect()
+        })
+    });
     let ids: Vec<String> = skills.iter().map(|c| c.id.clone()).collect();
     let skill = crate::toolbox::skill_for(action, &ids)
         .and_then(|id| skills.iter().find(|c| c.id == id).cloned());

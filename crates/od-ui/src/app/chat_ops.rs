@@ -612,36 +612,59 @@ pub fn ContextFolders(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// "+" menu item of the Studio: sends a turn that has the agent turn this
-/// project into a skill and install it (`toolbox::skill_authoring_prompt`).
-/// Off until a turn of the open conversation has succeeded, and while one
-/// runs.
+/// Sends the "Save as skill" turn: the agent turns this project into a
+/// skill and installs it (`toolbox::skill_authoring_prompt`). A prepared
+/// turn: the composer's draft stays. The "+" menu item and the next-step
+/// chip both send it here.
+pub fn save_as_skill(ctx: StudioCtx, shell: Shell) {
+    let name = ctx
+        .project
+        .with_untracked(|p| p.as_ref().map(|p| p.name.clone()))
+        .unwrap_or_default();
+    let locale = shell.locale.get_untracked();
+    let prompt = crate::toolbox::skill_authoring_prompt(&name, locale);
+    ctx.send_prepared(prompt, Some(t(T::SaveAsSkill).to_owned()), shell);
+}
+
+/// Why "Save as skill" is off: no turn of the open conversation has
+/// succeeded yet, or one runs.
+fn save_as_skill_off(ctx: StudioCtx) -> Option<T> {
+    let finished = ctx.items.with(|items| {
+        items.iter().any(|i| match &i.kind {
+            super::chat_view::ItemKind::Assistant(turn) => {
+                turn.with(|t| t.state == TurnState::Succeeded)
+            }
+            super::chat_view::ItemKind::User(_) => false,
+        })
+    });
+    if !finished {
+        Some(T::SaveAsSkillNeedsTurn)
+    } else if ctx.live_run.with(Option::is_some) {
+        Some(T::SaveAsSkillWaitRun)
+    } else {
+        None
+    }
+}
+
+/// "+" menu item of the Studio: sends the "Save as skill" turn
+/// ([`save_as_skill`]). Off until a turn of the open conversation has
+/// succeeded, and while one runs; off, it says why under its name.
 #[component]
 pub fn SaveAsSkill(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
     let menu = expect_context::<super::composer::PlusMenuOpen>().0;
-    let finished = move || {
-        ctx.items.with(|items| {
-            items.iter().any(|i| match &i.kind {
-                super::chat_view::ItemKind::Assistant(turn) => {
-                    turn.with(|t| t.state == TurnState::Succeeded)
-                }
-                super::chat_view::ItemKind::User(_) => false,
-            })
-        })
-    };
-    let off = move || !finished() || ctx.live_run.with(Option::is_some);
+    let off = Memo::new(move |_| save_as_skill_off(ctx));
     view! {
         <button type="button" class="menu-item" role="menuitem" data-testid="save-as-skill"
-            disabled=off
+            disabled=move || off.with(Option::is_some)
             on:click=move |_| {
                 menu.set(false);
-                let name = ctx.project.with_untracked(|p| p.as_ref().map(|p| p.name.clone())).unwrap_or_default();
-                let locale = shell.locale.get_untracked();
-                let prompt = crate::toolbox::skill_authoring_prompt(&name, locale);
-                ctx.send_prepared(prompt, Some(t(T::SaveAsSkill).to_owned()), shell);
+                save_as_skill(ctx, shell);
             }>
             {icon(Glyph::Sparkle)}{t(T::SaveAsSkill)}
+            {move || off.get().map(|why| view! {
+                <span class="menu-hint" data-testid="save-as-skill-why">{t(why)}</span>
+            })}
         </button>
     }
 }
