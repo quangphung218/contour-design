@@ -184,6 +184,11 @@ try {
   await page.getByTestId('plugin-row').first().waitFor();
   assert.equal(new URL(page.url()).pathname, '/plugins', 'no move to the Skills');
   assert.equal(await page.getByTestId('skill-detail').count(), 0, 'no skill opened from the last page');
+  // Each page opens only its own kind: no plugin under "Skills".
+  const somePlugin = await page.getByTestId('plugin-row').first().getAttribute('data-id');
+  await page.goto(`${BASE}/skills?plugin=${encodeURIComponent(somePlugin)}`);
+  await page.getByTestId('skill-row').first().waitFor();
+  assert.equal(await page.getByTestId('plugin-detail').count(), 0, 'the Skills open no plugin');
   results.skillsNav = 'ok';
 
   // ------------------------------------------------------- design systems

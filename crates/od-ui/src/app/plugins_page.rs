@@ -239,11 +239,12 @@ fn LibraryPage(kind: Kind) -> impl IntoView {
     }
     let query = RwSignal::new(String::new());
     let category = RwSignal::new(String::new());
-    let open = RwSignal::new(
-        query_param("plugin")
-            .map(Open::Plugin)
-            .or_else(|| query_param("skill").map(Open::Skill)),
-    );
+    // Each page opens only its own kind: `/skills?plugin=…` is no
+    // address the app makes, and would show a plugin under "Skills".
+    let open = RwSignal::new(match kind {
+        Kind::Plugins => query_param("plugin").map(Open::Plugin),
+        Kind::Skills => query_param("skill").map(Open::Skill),
+    });
     let creating = RwSignal::new(false);
     // The mode Create opens on, set by what opened it.
     let create_mode = StoredValue::new(CreateMode::Agent);
