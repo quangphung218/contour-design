@@ -193,10 +193,96 @@ impl SkillLoop {
         }
         out
     }
+}
 
-    fn saved(&self) -> bool {
-        !self.saved_runs.is_empty()
+/// The Save as skill runs of this Studio's chat and, for each run that
+/// ran here, the skills that came into the list after it
+/// ([`reload_skills_after`]); for [`SavedSkillActions`] and the project's
+/// "saved" mark.
+#[derive(Clone, Copy)]
+struct SavedSkills {
+    runs: Memo<Vec<String>>,
+    /// Per run seen live here: `None` until the list loaded again after
+    /// it, then the ids that came in. A run not here (the chat loaded) is
+    /// told by the files it wrote.
+    added: RwSignal<Vec<(String, Option<Vec<String>>)>>,
+}
+
+impl SavedSkills {
+    /// The skill turn `t` installed, if it is a Save as skill turn and
+    /// the skill is Personal and still listed; tracked. None while the
+    /// list loads again after a run of this Studio, so a skill of the same
+    /// name listed before does not show meanwhile.
+    fn of(self, sources: Sources, t: &AssistantTurn) -> Option<String> {
+        let run = t.run_id.as_ref()?;
+        if t.state != crate::chat::TurnState::Succeeded || !self.runs.with(|r| r.contains(run)) {
+            return None;
+        }
+        let written = crate::toolbox::written_skill_ids(&t.touched_files());
+        self.added.with(|a| {
+            let added = match a.iter().find(|(r, _)| r == run) {
+                Some((_, None)) => return None,
+                Some((_, Some(ids))) => Some(ids.as_slice()),
+                None => None,
+            };
+            saved_skill_id(added, &written, |id| sources.listed_personal_skill(id))
+        })
     }
+
+    /// Run `run` is live in this Studio: its skill waits for the list.
+    fn live(self, run: &str) {
+        if !self
+            .added
+            .with_untracked(|a| a.iter().any(|(r, _)| r == run))
+        {
+            self.added.update(|a| a.push((run.to_owned(), None)));
+        }
+    }
+
+    /// The ids that came in after `run`; `None` when they cannot be told
+    /// (the list did not load), so the files it wrote tell its skill.
+    fn landed(self, run: &str, ids: Option<Vec<String>>) {
+        self.added.update(|a| match ids {
+            Some(ids) => match a.iter_mut().find(|(r, _)| r == run) {
+                Some(e) => e.1 = Some(ids),
+                None => a.push((run.to_owned(), Some(ids))),
+            },
+            None => a.retain(|(r, _)| r != run),
+        });
+    }
+}
+
+/// Whether a Save as skill turn of this chat installed its skill
+/// ([`SavedSkills::of`]): the chip stays away then, not after a turn that
+/// ended without one.
+#[derive(Clone, Copy)]
+struct SkillInstalled(Memo<bool>);
+
+/// Which skill a Save as skill turn installed. In the Studio it ran in,
+/// one that came into the list after it (`added`), so a skill renamed
+/// without a Write (`mv`, `sed`) is still the right one and a turn that
+/// installed nothing shows none; of those, one it wrote comes first. When the
+/// list did not load again after it (`added` is `None`: a reload), the
+/// last one it wrote. Only Personal skills count (`personal` gives the
+/// listed id), never a bundled one of the same name.
+fn saved_skill_id(
+    added: Option<&[String]>,
+    written: &[String],
+    personal: impl Fn(&str) -> Option<String>,
+) -> Option<String> {
+    let Some(added) = added else {
+        return written.iter().rev().find_map(|id| personal(id));
+    };
+    let wrote = |id: &str| {
+        let key = od_contracts::name_key(id);
+        written.iter().any(|w| od_contracts::name_key(w) == key)
+    };
+    added
+        .iter()
+        .rev()
+        .filter(|id| wrote(id))
+        .chain(added.iter().rev())
+        .find_map(|id| personal(id))
 }
 
 /// `localStorage` key: the user dismissed the "Save as skill" chip of
@@ -218,9 +304,9 @@ fn dismiss_skill_chip(project: &str) {
     }
 }
 
-/// `localStorage` key: a Save as skill turn of this project succeeded (in
-/// any of its conversations). The chip then stays away in all of them, as
-/// a dismissed one does.
+/// `localStorage` key: a Save as skill turn of this project installed its
+/// skill (in any of its conversations). The chip then stays away in all
+/// of them, as a dismissed one does.
 fn skill_saved_key(project: &str) -> String {
     format!("od.skillSaved.{project}")
 }
@@ -238,14 +324,26 @@ fn mark_skill_saved(project: &str) {
     }
 }
 
-/// After a Save as skill turn succeeds: the skill list again, so `@`,
-/// the suggestions and the turn's actions ([`SavedSkillActions`]) of this
-/// Studio offer the new skill. Leaving the Studio first drops it (UI only).
-fn reload_skills_after(sources: Sources, tasks: Tasks) {
+/// After a Save as skill turn `run` succeeds: the skill list again, so
+/// `@`, the suggestions and the turn's actions ([`SavedSkillActions`]) of
+/// this Studio offer the new skill, and the ids that came in go to
+/// [`SavedSkills`]. Leaving the Studio first drops it (UI only).
+fn reload_skills_after(run: String, sources: Sources, saved: SavedSkills, tasks: Tasks) {
+    let before = sources.skill_ids_untracked();
     tasks.spawn_then(super::composer::fetch_skills(), move |rows| {
-        if let Some(rows) = rows {
-            sources.set_skills(rows);
-        }
+        let Some(rows) = rows else {
+            saved.landed(&run, None);
+            return;
+        };
+        // Before the first load came there is nothing to tell new from.
+        let added = before.map(|before| {
+            rows.iter()
+                .filter(|r| !before.contains(&r.candidate.id))
+                .map(|r| r.candidate.id.clone())
+                .collect()
+        });
+        saved.landed(&run, added);
+        sources.set_skills(rows);
     });
 }
 
@@ -331,13 +429,26 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             .with(|u| u.iter().any(|x| x.state == UploadState::Uploading))
     };
     provide_context(sources);
-    // A Save as skill turn that succeeded, live or in the chat loaded:
-    // the project has its skill, so none of its conversations offers the
-    // chip again.
+    let saved = SavedSkills {
+        runs: Memo::new(move |_| {
+            ctx.items
+                .with(|items| SkillLoop::of(&loop_rows(items)).saved_runs)
+        }),
+        added: RwSignal::new(Vec::new()),
+    };
+    provide_context(saved);
+    // A Save as skill turn that installed its skill, live or in the chat
+    // loaded: the project has it, so none of its conversations offers the
+    // chip again. A turn that ended without one leaves the chip.
     let saved_here = Memo::new(move |_| {
-        ctx.items
-            .with(|items| SkillLoop::of(&loop_rows(items)).saved())
+        ctx.items.with(|items| {
+            items.iter().any(|i| match &i.kind {
+                ItemKind::Assistant(turn) => turn.with(|t| saved.of(sources, t).is_some()),
+                ItemKind::User(_) => false,
+            })
+        })
     });
+    provide_context(SkillInstalled(saved_here));
     Effect::new(move |_| {
         if saved_here.get() {
             mark_skill_saved(&ctx.project_id.get_value());
@@ -347,12 +458,16 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let pane_tasks = Tasks::here();
     Effect::new(move |prev: Option<Option<String>>| {
         let now = ctx.live_run.get();
+        if let Some(run) = &now {
+            saved.live(run);
+        }
         if let Some(Some(ended)) = prev
             && now.as_ref() != Some(&ended)
         {
-            let saved = untrack(|| ctx.items.with(|items| SkillLoop::of(&loop_rows(items))));
-            if saved.saved_runs.contains(&ended) {
-                reload_skills_after(sources, pane_tasks);
+            if saved.runs.with_untracked(|r| r.contains(&ended)) {
+                reload_skills_after(ended, sources, saved, pane_tasks);
+            } else {
+                saved.landed(&ended, None);
             }
         }
         now
@@ -1266,34 +1381,22 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     }
 }
 
-/// Under a turn that wrote and installed a skill (Save as skill): open
-/// it in the Library, or mention it in the composer as a suggestion's chip
-/// does. The skill is the last `generated-skill/<id>/SKILL.md` the turn
-/// wrote that the skill list has, so the row is there after a reload too.
+/// Under a Save as skill turn that installed its skill: open it in the
+/// Library, or mention it in the composer as a suggestion's chip does.
+/// Which skill: [`SavedSkills::of`] (after a reload, from the files the
+/// turn wrote, so the row is there too).
 /// Names come from the visible text (axe `label-content-name-mismatch`).
 #[component]
 fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
     let sources = use_context::<Sources>();
+    let saved = use_context::<SavedSkills>();
     let navigate = super::leave_guard::use_leave();
-    let written = Memo::new(move |_| {
-        turn.with(|t| {
-            if t.state == crate::chat::TurnState::Succeeded {
-                crate::toolbox::written_skill_ids(&t.touched_files())
-            } else {
-                Vec::new()
-            }
-        })
+    let ids = Memo::new(move |_| {
+        let (sources, saved) = (sources?, saved?);
+        turn.with(|t| saved.of(sources, t)).map(|id| vec![id])
     });
-    let ids = move || {
-        let sources = sources?;
-        written.with(|w| {
-            w.iter()
-                .rev()
-                .find_map(|id| sources.listed_skill(id))
-                .map(|id| vec![id])
-        })
-    };
+    let ids = move || ids.get();
     move || {
         let navigate = navigate.clone();
         ids().map(|ids| {
@@ -1372,6 +1475,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
         skill_chip_dismissed(&project) || skill_saved(&project)
     });
     let skill_loop = Memo::new(move |_| ctx.items.with(|items| SkillLoop::of(&loop_rows(items))));
+    let installed = use_context::<SkillInstalled>();
     move || {
         let (steps, holding) = lint.with(|l| {
             let state = page.with(|p| l.state(p.as_deref()));
@@ -1385,7 +1489,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
             crate::toolbox::offer_skill_save(
                 wrote_page && turn.with(|tn| tn.state == crate::chat::TurnState::Succeeded),
                 l.succeeded,
-                l.saved(),
+                installed.is_some_and(|i| i.0.get()),
                 chip_dismissed.get(),
             )
         }) && !holding;
@@ -1826,7 +1930,8 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
 #[cfg(test)]
 mod tests {
     use super::{
-        ChatItem, LoopRow, Retry, SkillLoop, ToolCall, process_summary, tool_label, tool_texts,
+        ChatItem, LoopRow, Retry, SkillLoop, ToolCall, process_summary, saved_skill_id, tool_label,
+        tool_texts,
     };
 
     #[test]
@@ -1850,8 +1955,8 @@ mod tests {
         ];
         let l = SkillLoop::of(&rows);
         assert_eq!(
-            (l.succeeded, l.saved()),
-            (2, false),
+            (l.succeeded, l.saved_runs.is_empty()),
+            (2, true),
             "a failed turn does not count"
         );
         // The request names it; a failed try is no save.
@@ -1884,6 +1989,40 @@ mod tests {
             (l.succeeded, l.saved_runs.as_slice()),
             (1, &["r7".to_owned()][..])
         );
+    }
+
+    #[test]
+    fn the_saved_skill_is_the_personal_one_the_turn_added() {
+        let v = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        // Listed Personal skills; `ad-creative` is bundled.
+        let personal = |id: &str| {
+            ["tea", "tea-2", "Tea-House"]
+                .into_iter()
+                .find(|p| od_contracts::name_key(p) == od_contracts::name_key(id))
+                .map(str::to_owned)
+        };
+        let pick = |added: Option<&[&str]>, written: &[&str]| {
+            let added = added.map(v);
+            saved_skill_id(added.as_deref(), &v(written), personal)
+        };
+        // In the Studio it ran in: what came into the list, not the file
+        // (written as `tea`, a 409, renamed by `mv` and `sed` to `tea-2`).
+        assert_eq!(pick(Some(&["tea-2"]), &["tea"]), Some("tea-2".into()));
+        // Nothing came in (a 409, no other try): no skill, even though
+        // another `tea` is listed.
+        assert_eq!(pick(Some(&[]), &["tea"]), None);
+        // Two came in (another window installed one): the one it wrote.
+        assert_eq!(
+            pick(Some(&["tea-2", "tea"]), &["tea-2"]),
+            Some("tea-2".into())
+        );
+        // Reloaded: the last one it wrote that is listed as Personal, by
+        // the daemon's name comparison.
+        assert_eq!(pick(None, &["tea", "tea-2"]), Some("tea-2".into()));
+        assert_eq!(pick(None, &["tea-house"]), Some("Tea-House".into()));
+        // A bundled skill of the same name is never the one saved.
+        assert_eq!(pick(None, &["ad-creative"]), None);
+        assert_eq!(pick(Some(&["ad-creative"]), &["ad-creative"]), None);
     }
 
     #[test]

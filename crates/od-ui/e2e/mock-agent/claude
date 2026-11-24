@@ -83,6 +83,22 @@ case "$line" in *"generated-skill/"*)
     echo "mock: skill turn failed on purpose" >&2
     exit 1
   fi
+  # `skill-no-install` in the project (an id inside): write that skill and
+  # stop without installing it, as an agent that got a 409 and gave up.
+  if [ -f skill-no-install ]; then
+    id=$(cat skill-no-install)
+    rm -f skill-no-install
+    rm -rf generated-skill
+    mkdir -p "generated-skill/$id"
+    printf -- '---\nname: %s\ndescription: Calm tea house pages.\n---\n' "$id" > "generated-skill/$id/SKILL.md"
+    printf '{"type":"system","subtype":"init","session_id":"%s","model":"mock-1"}\n' "$sid"
+    printf '{"type":"assistant","message":{"id":"w%s","role":"assistant","content":[{"type":"tool_use","id":"w-%s","name":"Write","input":{"file_path":"%s/generated-skill/%s/SKILL.md","content":"x"}}]}}\n' "$$" "$id" "$PWD" "$id"
+    printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"w-%s","content":"ok"}]}}\n' "$id"
+    printf '{"type":"assistant","message":{"id":"skill-%s","role":"assistant","content":[{"type":"text","text":"The id %s is taken; not installed."}]}}\n' "$$" "$id"
+    printf '{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}\n'
+    cat >/dev/null
+    exit 0
+  fi
   answer=""
   # Each SKILL.md written is a Write the chat shows, as a real agent's is:
   # the turn's files name the skill (the last one written).
@@ -163,6 +179,15 @@ case "$req" in *artifact-lint*)
   skip=1
   say "Saw lint findings. "
 ;; esac
+# `also-skill-md` in the project: this page turn also edits the skill the
+# project saved (`generated-skill/tea-house/SKILL.md`), as a user's "add a
+# rule to the skill" turn would; no install.
+if [ -f also-skill-md ]; then
+  rm -f also-skill-md
+  mkdir -p generated-skill/tea-house
+  printf -- '---\nname: tea-house\ndescription: Calm tea house pages.\n---\n\nOne more rule.\n' > generated-skill/tea-house/SKILL.md
+  printf '{"type":"assistant","message":{"id":"m%s-sk","role":"assistant","content":[{"type":"tool_use","id":"sk-%s","name":"Write","input":{"file_path":"%s/generated-skill/tea-house/SKILL.md","content":"x"}}]}}\n' "$$" "$$" "$PWD"
+fi
 case "$req" in *plan*)
   printf '{"type":"assistant","message":{"id":"m%s-p","role":"assistant","content":[{"type":"tool_use","id":"plan-%s","name":"TodoWrite","input":{"todos":[{"content":"Read the brief","activeForm":"Reading the brief","status":"completed"},{"content":"Write the page","activeForm":"Writing the page","status":"in_progress"},{"content":"Check the result","activeForm":"Checking the result","status":"pending"}]}}]}}\n' "$$" "$$"
 ;; esac

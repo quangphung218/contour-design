@@ -256,6 +256,8 @@ pub fn append_token(draft: &str, c: &Candidate) -> String {
 pub struct SkillRow {
     pub candidate: Candidate,
     pub triggers: Vec<String>,
+    /// The user's own skill (Personal in the Library), not a bundled one.
+    pub personal: bool,
 }
 
 /// The palette row of skill `id` and its triggers for [`suggest`]: the
@@ -272,6 +274,7 @@ pub fn skill_row(id: String, detail: String, triggers: Vec<String>) -> SkillRow 
     };
     SkillRow {
         triggers,
+        personal: false,
         candidate: Candidate {
             kind: MentionKind::Skill,
             label: id.clone(),
@@ -791,6 +794,7 @@ mod tests {
         SkillRow {
             candidate: cand(MentionKind::Skill, id),
             triggers: triggers.iter().map(|t| (*t).to_owned()).collect(),
+            personal: false,
         }
     }
 
