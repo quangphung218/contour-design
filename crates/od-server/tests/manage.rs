@@ -821,6 +821,76 @@ async fn codex_bin_and_service_tier_reach_the_codex_run() {
     assert!(last.contains("model_reasoning_effort=\"high\""), "{last}");
 }
 
+/// A folder typed from home (`~/…`) starts at the daemon's home folder in
+/// every field that takes one, as Install from folder does
+/// (`routes::library::typed_folder`): linked folders, Import folder, and
+/// project locations.
+#[tokio::test]
+async fn a_typed_tilde_is_the_home_folder_in_every_folder_field() {
+    // The daemon runs in this process, so `~` is this process's home: a
+    // folder made there for the test, gone when it ends. Not hidden (a
+    // `.tmpXXXX` name is a hidden segment the routes refuse).
+    let home = od_runtime::login_path::home_dir().unwrap();
+    let work = tempfile::Builder::new()
+        .prefix("od-typed-home-")
+        .tempdir_in(&home)
+        .unwrap();
+    let name = work
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    for f in ["linked", "imported", "base"] {
+        std::fs::create_dir_all(work.path().join(f)).unwrap();
+    }
+    let d = common::daemon().await;
+    let at_home = |f: &str| {
+        work.path()
+            .join(f)
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    };
+    let typed = |f: &str| format!("~/{name}/{f}");
+
+    let res: Value = d
+        .post(
+            "/api/linked-dirs/check",
+            &json!({ "paths": [format!(" {} ", typed("linked"))] }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(res["dirs"][0]["path"], at_home("linked").as_str(), "{res}");
+
+    let res = d
+        .post(
+            "/api/import/folder",
+            &json!({ "baseDir": typed("imported") }),
+        )
+        .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let v: Value = res.json().await.unwrap();
+    assert_eq!(v["project"]["name"], "imported", "{v}");
+
+    let res = put(
+        &d,
+        "/api/project-locations",
+        &json!({"locations": [{"name": "Work", "path": typed("base")}]}),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let list: Value = res.json().await.unwrap();
+    assert_eq!(
+        list["locations"][1]["path"],
+        at_home("base").as_str(),
+        "{list}"
+    );
+}
+
 #[tokio::test]
 async fn project_locations_hold_new_projects_and_scan_finds_folders() {
     let d = common::daemon().await;

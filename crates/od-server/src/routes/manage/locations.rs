@@ -89,7 +89,7 @@ fn listing(store: &Store) -> LocationsResponse {
 /// A base must be an absolute existing folder, not hidden, not the home
 /// folder or one of its parents, and apart from the data directory.
 fn check_base(store: &Store, raw: &str) -> Result<PathBuf, String> {
-    let path = Path::new(raw.trim());
+    let path = crate::routes::library::typed_folder(raw);
     if !path.is_absolute() {
         return Err(format!("{raw}: use an absolute path"));
     }

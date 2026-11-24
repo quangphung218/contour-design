@@ -1910,11 +1910,12 @@ pub fn Studio() -> impl IntoView {
         active_term: RwSignal::new(None),
         recent: RwSignal::new(Vec::new()),
         preview_rev: RwSignal::new(0),
-        preview_stopped: RwSignal::new(
-            web_sys::window()
-                .and_then(|w| w.location().search().ok())
-                .is_some_and(|search| super::desktop::preview_was_stopped(&search)),
-        ),
+        // The router's address, not `window.location`: on a move inside
+        // the app the page is built before the address bar changes, so
+        // the window still has the last project's `?preview=stopped`.
+        preview_stopped: RwSignal::new(super::desktop::preview_was_stopped(
+            &leptos_router::hooks::use_location().search.get_untracked(),
+        )),
         notice: RwSignal::new(None),
         link_down: RwSignal::new(false),
         load,

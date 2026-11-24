@@ -118,9 +118,11 @@ fn tab_round(dialog: &web_sys::Element, back: bool) -> Option<web_sys::HtmlEleme
         .filter_map(|i| list.item(i))
         .filter_map(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
         .filter(|e| {
-            // Shown, and not tucked away in a closed `<details>`.
+            // Tab reaches it (a roving chip's `tabindex="-1"` is skipped:
+            // as the last one, Tab from the real last control would leave),
+            // shown, and not tucked away in a closed `<details>`.
             let r = e.get_bounding_client_rect();
-            r.width() > 0.0 || r.height() > 0.0
+            e.tab_index() >= 0 && (r.width() > 0.0 || r.height() > 0.0)
         })
         .collect();
     let (first, last) = match (items.first(), items.last()) {

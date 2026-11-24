@@ -155,6 +155,15 @@ try {
   await page.getByTestId('skills-page').locator('h1', { hasText: 'Skills' }).waitFor();
   await page.getByTestId('skill-row').first().waitFor();
   assert.equal(await page.getByTestId('plugin-row').count(), 0, 'only skills on the Skills');
+  // At 1440 px the Skills' line under the title fits one line, as the
+  // Plugins' does: Create and the filters stay put between the two.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const subLines = (id) => page.getByTestId(id).locator('.page-sub').evaluate((p) => {
+    const cs = getComputedStyle(p);
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.25;
+    return Math.round(p.getBoundingClientRect().height / lh);
+  });
+  assert.equal(await subLines('skills-page'), 1, 'the Skills line fits one line at 1440');
   assert.equal(await page.locator('nav a[href="/skills"]').getAttribute('aria-current'), 'page');
   assert.equal(await page.locator('nav a[href="/plugins"]').getAttribute('aria-current'), null);
   assert.equal(await page.locator('[data-testid="kind-skills"], [data-testid="kind-plugins"]').count(), 0, 'no Plugins/Skills switch');
@@ -163,6 +172,8 @@ try {
   await page.getByTestId('plugin-row').first().waitFor();
   assert.equal(await page.getByTestId('skill-row').count(), 0, 'only plugins on the Plugins');
   assert.doesNotMatch(await page.getByTestId('plugins-page').locator('.page-sub').textContent(), /skill/i);
+  assert.equal(await subLines('plugins-page'), 1, 'the Plugins line fits one line at 1440');
+  await page.setViewportSize({ width: 1360, height: 900 });
   assert.equal(await page.locator('nav a[href="/plugins"]').getAttribute('aria-current'), 'page');
   assert.equal(await page.locator('[data-testid="kind-skills"], [data-testid="kind-plugins"]').count(), 0, 'no Plugins/Skills switch');
   await page.goto(`${BASE}/media`);
@@ -184,6 +195,17 @@ try {
   await page.getByTestId('plugin-row').first().waitFor();
   assert.equal(new URL(page.url()).pathname, '/plugins', 'no move to the Skills');
   assert.equal(await page.getByTestId('skill-detail').count(), 0, 'no skill opened from the last page');
+  const somePlugin = await page.getByTestId('plugin-row').first().getAttribute('data-id');
+  // The Library's own CSS leaves other pages' empty states alone: the
+  // page-not-found button keeps the shared 12 px above it.
+  await page.goto(`${BASE}/no-such-page`);
+  const notFoundBtn = page.locator('.empty-state .btn').first();
+  await notFoundBtn.waitFor();
+  assert.equal(await notFoundBtn.evaluate((b) => getComputedStyle(b).marginTop), '12px', 'the shared empty-state spacing');
+  // Each page opens only its own kind: no plugin under "Skills".
+  await page.goto(`${BASE}/skills?plugin=${encodeURIComponent(somePlugin)}`);
+  await page.getByTestId('skill-row').first().waitFor();
+  assert.equal(await page.getByTestId('plugin-detail').count(), 0, 'the Skills open no plugin');
   results.skillsNav = 'ok';
 
   // ------------------------------------------------------- design systems
@@ -352,16 +374,20 @@ try {
   await page.getByText('Plugin applied.').first().waitFor({ timeout: 20_000 });
   results.pluginUse = 'ok';
 
-  // Install from a folder, then uninstall.
+  // Install from a folder, then uninstall. Started on the Skills, a plugin
+  // installed opens on the Plugins (Personal), not under "Skills".
   const folder = join(fixtures, 'recipe-cards');
   mkdirSync(folder, { recursive: true });
   writeFileSync(join(folder, 'open-design.json'), JSON.stringify({ name: 'recipe-cards', title: 'Recipe cards', version: '0.1.0', description: 'Cards for recipes.', od: { kind: 'scenario', inputs: [{ name: 'dish', type: 'select', options: ['pho', 'bun'], required: true }] } }));
   writeFileSync(join(folder, 'SKILL.md'), '---\nname: recipe-cards\n---\nUse big photos.\n');
-  await page.locator('nav a[href="/plugins"]').click();
+  await page.locator('nav a[href="/skills"]').click();
+  await page.getByTestId('skills-page').waitFor();
   await page.getByTestId('plugins-create').click();
   await page.getByTestId('create-folder').click();
   await page.getByTestId('plugin-path').fill(folder);
   await page.getByTestId('plugin-install').click();
+  await page.waitForURL(`${BASE}/plugins?plugin=recipe-cards&scope=personal`);
+  await page.getByTestId('plugins-page').locator('h1', { hasText: 'Plugins' }).waitFor();
   await page.getByTestId('plugin-detail').locator('h2', { hasText: 'Recipe cards' }).waitFor();
   assert.ok(existsSync(join(data, 'plugins', 'recipe-cards', 'SKILL.md')));
   await page.getByTestId('input-dish').selectOption('bun');
@@ -393,6 +419,22 @@ try {
     assert.ok(await inCreate(), `Shift+Tab ${i} stays in the dialog`);
   }
   assert.equal(await page.getByTestId('plugin-brief').inputValue(), 'Kept while tabbing', 'Tab keeps what is typed');
+  // A control Tab skips (`tabindex="-1"`, as a roving chip has) last in
+  // the dialog: Tab from the real last control still goes round.
+  await page.getByTestId('plugin-create').evaluate((root) => {
+    const dialog = root.closest('.dialog') || root;
+    const skip = document.createElement('button');
+    skip.tabIndex = -1;
+    skip.dataset.testid = 'tab-skipped';
+    skip.textContent = 'Skipped';
+    dialog.append(skip);
+    const reach = [...dialog.querySelectorAll('a[href], button:not(:disabled), input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled)')]
+      .filter((e) => e.tabIndex >= 0 && e.getBoundingClientRect().width > 0);
+    reach[reach.length - 1].focus();
+  });
+  await page.keyboard.press('Tab');
+  assert.ok(await inCreate(), 'Tab from the last control stays in the dialog past a skipped one');
+  await page.getByTestId('tab-skipped').evaluate((b) => b.remove());
   await page.getByTestId('create-link').focus();
   await page.keyboard.press('Escape');
   await page.getByTestId('plugin-create').waitFor({ state: 'detached' });
@@ -573,9 +615,14 @@ try {
       await route.continue();
     });
   };
+  // The install's answer, then the reload it starts: the UI part of the
+  // late result has run by then.
+  const installed = () => page.waitForResponse((r) => r.url() === `${BASE}/api/skills/install` && r.request().method() === 'POST');
   const releaseInstalls = async () => {
+    const answered = installed();
     const reloaded = page.waitForResponse((r) => r.url() === `${BASE}/api/skills` && r.request().method() === 'GET');
     releaseInstall();
+    await answered;
     await reloaded;
     await page.unroute(`${BASE}/api/skills/install`);
   };
@@ -646,9 +693,11 @@ try {
   assert.ok((await emptyList.textContent()).includes('~/.claude/skills'), 'the empty list says where to put skills');
   await page.getByTestId('agent-skills-refresh').click();
   await page.getByTestId('agent-skills-load-error').waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'agent-skills-filter', 'Refresh puts the focus in the filter');
   assert.equal(await createDialog.getByText('Loading…').count(), 0, 'no Loading under the error');
   await page.getByTestId('agent-skills-retry').click();
   await until(async () => (await agentRows.count()) === 6, 'six agent skills after Try again');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'agent-skills-filter', 'Try again puts the focus in the filter');
   await page.unroute(sourcesRoute);
   assert.equal(await page.getByTestId('agent-skills-load-error').count(), 0);
   assert.deepEqual(
@@ -659,7 +708,45 @@ try {
   // The bundled id is not picked; its row says why.
   assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true, 'a bundled id is not picked');
   assert.equal((await agentRow('ad-creative').getByTestId('agent-skill-taken').textContent()).trim(), 'A skill named ad-creative already exists');
+  // The reason is read with the checkbox.
+  const whyId = await agentRow('ad-creative').getByTestId('agent-skill-taken').getAttribute('id');
+  assert.ok(whyId, 'the reason has an id');
+  assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), whyId);
+  assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), null);
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-taken').count(), 0);
+  // The daemon compares names by `name_key` (NFC, case ignored): the
+  // same name in another case is taken too.
+  await closeDialog();
+  await page.route(sourcesRoute, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ sources: [{ path: join(home, '.claude/skills/ad-case'), agent: 'claude', id: 'Ad-Creative', description: 'Mine.', imported: false }] }),
+  }), { times: 1 });
+  await openAgentCli();
+  await agentRow('Ad-Creative').waitFor();
+  assert.equal(await agentRow('Ad-Creative').getByTestId('agent-skill-pick').isDisabled(), true, 'a bundled id in another case is not picked');
+  assert.equal((await agentRow('Ad-Creative').getByTestId('agent-skill-taken').textContent()).trim(), 'A skill named Ad-Creative already exists');
+  await closeDialog();
+  // Opened before the page's skills came: no row is picked until they
+  // come, so a bundled name is never ticked and sent.
+  let releaseSkills;
+  const skillsHeld = new Promise((r) => (releaseSkills = r));
+  await page.route(`${BASE}/api/skills`, async (route) => {
+    if (route.request().method() === 'GET') await skillsHeld;
+    await route.fallback();
+  });
+  await page.goto(`${BASE}/skills`);
+  await openAgentCli();
+  await until(async () => (await agentRows.count()) === 6, 'the agent skills before the page\'s skills');
+  assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').isDisabled(), true, 'nothing is picked before the skills come');
+  assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true);
+  const skillsCame = page.waitForResponse((r) => r.url() === `${BASE}/api/skills` && r.request().method() === 'GET');
+  releaseSkills();
+  await skillsCame;
+  await page.unroute(`${BASE}/api/skills`);
+  await until(async () => await agentRow('tea-b').getByTestId('agent-skill-pick').isEnabled(), 'tea-b can be picked once the skills come');
+  assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true, 'the bundled name stays off');
+  await agentRow('ad-creative').getByTestId('agent-skill-taken').waitFor();
   // A filter that matches nothing says so, and Clear search brings the
   // list back.
   await page.getByTestId('agent-skills-filter').fill('no such skill');
@@ -667,6 +754,8 @@ try {
   assert.equal(await agentRows.count(), 0);
   await page.getByTestId('agent-skills-clear').click();
   await until(async () => (await agentRows.count()) === 6, 'Clear search brings the list back');
+  const focusedId = () => page.evaluate(() => document.activeElement?.dataset?.testid);
+  assert.equal(await focusedId(), 'agent-skills-filter', 'Clear search puts the focus back in the filter');
   assert.equal(await page.getByTestId('agent-skills-filter').inputValue(), '');
   // A name taken meanwhile (409) fails by its row; the other one is copied
   // in; the dialog stays open to show why.
@@ -774,12 +863,19 @@ try {
   await page.getByTestId('skill-edit').click();
   await page.getByTestId('skill-description').fill('Typed while the import ran.');
   // The page that started it is gone: the copy still runs to its end, and
-  // nothing on this page reloads or moves.
+  // nothing on this page reloads or moves. Checked once the answer is in
+  // the browser, and for a while after (the late result's UI part runs
+  // right after it).
+  const lateAnswer = installed();
   releaseInstall();
+  await lateAnswer;
   await until(async () => existsSync(join(data, 'skills', 'tea-d', 'SKILL.md')), 'tea-d copied');
   await page.unroute(`${BASE}/api/skills/install`);
+  for (let i = 0; i < 10; i++) {
+    assert.equal(page.url(), `${BASE}/skills`, `a late import does not move the page (${i})`);
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 50))));
+  }
   assert.equal(await page.getByTestId('skill-description').inputValue(), 'Typed while the import ran.', 'the edit stays');
-  assert.equal(page.url(), `${BASE}/skills`, 'a late import does not move the page');
   // Still editing, the dialog opened over it: all copied, the dialog
   // closes, and the edit stays on the page.
   await openAgentCli();
@@ -998,6 +1094,26 @@ try {
   assert.equal(shownTexts[2].trim(), 'Save as skill');
   assert.equal(shownTexts[3].trim(), 'Save as skill');
   assert.ok(!shownTexts.join(' ').includes('curl') && !shownTexts.join(' ').includes('OD_DAEMON_URL'), 'no instructions in the chat');
+  // The skill's actions come from the files the turn wrote, so they stay
+  // after a reload, under its "Done" line.
+  const savedAgain = page.getByTestId('assistant-msg').nth(3).locator('[data-testid="saved-skill"][data-id="tea-house"]');
+  await savedAgain.waitFor();
+  assert.ok(await savedAgain.evaluate((row) => {
+    const done = row.closest('[data-testid="assistant-msg"]').querySelector('[data-testid="run-state"]');
+    return !!done && (done.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  }), 'the skill row comes after the Done line');
+  // Saved once in this project: a new conversation of it does not offer
+  // the chip again after two page turns.
+  await settleStudio(false);
+  await page.getByTestId('new-conversation').click();
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 0, 'a new conversation');
+  for (const [i, text] of ['tea house landing again', 'warmer greens again'].entries()) {
+    await teaComposer.fill(text);
+    await page.getByTestId('send').click();
+    await until(async () => (await page.getByTestId('assistant-msg').count()) === i + 1 && (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', `new conversation, turn ${i + 1} ends`, 30_000);
+  }
+  await cardSettled(page.getByTestId('assistant-msg').last());
+  assert.equal(await saveChip.count(), 0, 'no chip in another conversation of a saved project');
   const firstSkill = readFileSync(join(data, 'skills', 'tea-house', 'SKILL.md'), 'utf8');
 
   // Another project with the same name saved as a skill: the agent gets a

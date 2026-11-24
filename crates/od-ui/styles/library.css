@@ -218,4 +218,10 @@
 /* Install from folder: what is wrong with the path, right under it. */
 .field .input[aria-invalid="true"] { border-color: var(--color-danger); }
 .field .field-error { margin: var(--space-1) 0 0; }
-.empty-state .btn { margin-top: var(--space-2); }
+/* The Personal skills' empty state only: every other empty state keeps
+   the shared spacing (`components.css`). */
+.skills-empty .btn { margin-top: var(--space-2); }
+/* "A skill named … already exists" under a locked agent skill: in line
+   with the row's name (past its checkbox), so it reads as the row's note
+   and not as the next agent's heading. */
+.agent-skill-note { margin: var(--space-1) 0 0; padding-left: calc(var(--space-2-5) + 16px + var(--space-1-5)); }

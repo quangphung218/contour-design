@@ -91,18 +91,20 @@ async fn check_dirs(
             Ok(req
                 .paths
                 .into_iter()
-                .map(|input| match check_dir(s, FsPath::new(input.trim())) {
-                    Ok(p) => CheckedDir {
-                        input,
-                        path: Some(p.to_string_lossy().into_owned()),
-                        error: None,
+                .map(
+                    |input| match check_dir(s, &super::library::typed_folder(&input)) {
+                        Ok(p) => CheckedDir {
+                            input,
+                            path: Some(p.to_string_lossy().into_owned()),
+                            error: None,
+                        },
+                        Err(e) => CheckedDir {
+                            input,
+                            path: None,
+                            error: Some(e.to_owned()),
+                        },
                     },
-                    Err(e) => CheckedDir {
-                        input,
-                        path: None,
-                        error: Some(e.to_owned()),
-                    },
-                })
+                )
                 .collect())
         })
         .await?;

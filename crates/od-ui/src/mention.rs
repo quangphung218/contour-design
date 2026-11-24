@@ -308,17 +308,6 @@ pub fn implicit_triggers(id: &str) -> Vec<String> {
     vec![words.join(" ")]
 }
 
-/// The ids in `after` that were not in `before`, in `after`'s order: the
-/// skills a "Save as skill" turn installed.
-#[must_use]
-pub fn new_ids(before: &[String], after: &[String]) -> Vec<String> {
-    after
-        .iter()
-        .filter(|id| !before.contains(id))
-        .cloned()
-        .collect()
-}
-
 /// Most skills suggested at once.
 pub const SUGGEST_MAX: usize = 2;
 /// Fewer words than this suggest nothing.
@@ -957,20 +946,6 @@ mod tests {
             ["tea-house-landing"]
         );
         assert!(suggest("make some slides today", &all, &[]).is_empty());
-    }
-
-    #[test]
-    fn new_ids_are_the_ones_the_reload_added() {
-        let v = |s: &[&str]| s.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
-        assert_eq!(
-            new_ids(
-                &v(&["a", "tea-house"]),
-                &v(&["a", "tea-house", "tea-house-2"])
-            ),
-            ["tea-house-2"]
-        );
-        assert!(new_ids(&v(&["a"]), &v(&["a"])).is_empty());
-        assert!(new_ids(&v(&["a", "b"]), &v(&["a"])).is_empty());
     }
 
     #[test]

@@ -27,14 +27,14 @@ pub fn DocsPage() -> impl IntoView {
             .with(|c| c.as_ref().is_some_and(|c| !c.onboarding_completed))
     };
     // A link to a section (`/docs#deepseek-harness`) opens at it.
+    // The router's address, not `window.location`: a link inside the app
+    // builds this page before the address bar changes.
+    let location = leptos_router::hooks::use_location();
     let body = NodeRef::<leptos::html::Article>::new();
     Effect::new(move |_| {
         let Some(el) = body.get() else { return };
-        let hash = web_sys::window()
-            .and_then(|w| w.location().hash().ok())
-            .unwrap_or_default();
-        if let Some(target) = hash
-            .strip_prefix('#')
+        let hash = location.hash.get();
+        if let Some(target) = Some(hash.trim_start_matches('#'))
             .filter(|id| !id.is_empty())
             .and_then(|id| el.query_selector(&format!("[id=\"{id}\"]")).ok().flatten())
         {
