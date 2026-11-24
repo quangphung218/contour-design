@@ -225,30 +225,37 @@ pub fn PluginsPage() -> impl IntoView {
         });
     };
     reload();
-    let on_change = Callback::new(move |next: Option<Open>| {
-        if let Some(Open::Plugin(_) | Open::Skill(_)) = &next {
-            scope.set(Scope::Personal);
-        }
-        open.set(next);
-        reload();
-    });
-    // Made here, not in the dialog's view: it runs from the page's tasks
-    // after the dialog may have closed.
+    // An open plugin or skill holds text the user typed (a skill being
+    // edited, a plugin's inputs): work that lands late never replaces it.
+    let held = RwSignal::new(false);
+    // Made here, not in the dialog's view: they run from the page's tasks
+    // after the dialog may have closed. The dialog calls them only while
+    // it is still open on the mode that started the work; otherwise it
+    // calls `on_landed`, which only reloads the lists.
     let on_created = Callback::new(move |next: Option<Open>| {
         creating.set(false);
-        on_change.run(next);
+        if !held.get_untracked() {
+            if let Some(Open::Plugin(_) | Open::Skill(_)) = &next {
+                scope.set(Scope::Personal);
+            }
+            open.set(next);
+        }
+        reload();
     });
     // Skills imported from agent CLIs: the Personal skills show them; the
     // dialog stays open while a row failed, to show why.
     let on_imported = Callback::new(move |all_ok: bool| {
-        open.set(None);
-        kind.set(Kind::Skills);
-        scope.set(Scope::Personal);
+        if !held.get_untracked() {
+            open.set(None);
+            kind.set(Kind::Skills);
+            scope.set(Scope::Personal);
+        }
         if all_ok {
             creating.set(false);
         }
         reload();
     });
+    let on_landed = Callback::new(move |()| reload());
     // A plugin or skill removed from its page: back to the list, unless
     // something else opened meanwhile. The reply can come late on a busy
     // machine, after a skill just made was opened; closing that one would
@@ -372,9 +379,9 @@ pub fn PluginsPage() -> impl IntoView {
             {move || match open.get() {
                 Some(Open::Plugin(id)) => {
                     let mono = monos.with_untracked(|m| m.get(&id).cloned());
-                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks/> }.into_any()
+                    view! { <PluginDetail id=id mono=mono on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks held=held/> }.into_any()
                 }
-                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks/> }.into_any(),
+                Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks held=held/> }.into_any(),
                 None => view! {
                     <div class="lib-toolbar">
                         <div class="segmented" role="group" aria-label=t(T::NavPlugins)>
@@ -419,6 +426,7 @@ pub fn PluginsPage() -> impl IntoView {
                     on_close=Callback::new(move |()| creating.set(false))
                     on_done=on_created
                     on_imported=on_imported
+                    on_landed=on_landed
                 />
             </Show>
         </section>
@@ -432,6 +440,15 @@ fn empty(personal: bool) -> impl IntoView {
             <p>{if personal { t(T::PluginsEmptyPersonal) } else { t(T::NoMatches) }}</p>
         </li>
     }
+}
+
+/// Keeps the page's `held` at `typed()` while the calling view is there,
+/// and clears it when the view goes.
+fn hold_while(held: RwSignal<bool>, typed: impl Fn() -> bool + 'static) {
+    Effect::new(move |_| held.set(typed()));
+    on_cleanup(move || {
+        let _ = held.try_set(false);
+    });
 }
 
 #[component]
@@ -673,6 +690,8 @@ fn PluginDetail(
     on_removed: Callback<Open>,
     /// The page's tasks, for an uninstall that ends on the list.
     page: Tasks,
+    /// Set while the inputs hold something typed.
+    held: RwSignal<bool>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let navigate = use_navigate();
@@ -680,6 +699,7 @@ fn PluginDetail(
     let values = RwSignal::new(Map::new());
     let busy = RwSignal::new(false);
     let notice = RwSignal::new(None::<Result<String, String>>);
+    hold_while(held, move || values.with(|v| !v.is_empty()));
     {
         let id = id.clone();
         tasks.spawn(async move {
@@ -865,12 +885,15 @@ fn SkillDetailView(
     on_removed: Callback<Open>,
     /// The page's tasks, for a delete that ends on the list.
     page: Tasks,
+    /// Set while the skill is being edited.
+    held: RwSignal<bool>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let navigate = use_navigate();
     let detail = RwSignal::new(None::<Result<SkillDetail, String>>);
     let editing = RwSignal::new(false);
     let notice = RwSignal::new(None::<String>);
+    hold_while(held, move || editing.get());
     let load = {
         let id = id.clone();
         Callback::new(move |()| {
@@ -1053,6 +1076,9 @@ fn CreateDialog(
     on_close: Callback<()>,
     on_done: Callback<Option<Open>>,
     on_imported: Callback<bool>,
+    /// Work of a dialog closed, or moved to another mode, meanwhile: the
+    /// lists reload, nothing else changes.
+    on_landed: Callback<()>,
     page: Tasks,
 ) -> impl IntoView {
     let tasks = Tasks::here();
@@ -1096,7 +1122,10 @@ fn CreateDialog(
     let install = move |dir: String| {
         busy.set(true);
         page.spawn_then(install_folder(dir), move |done| match done {
-            Ok(open) => on_done.run(Some(open)),
+            Ok(open) if tasks.alive() && mode.get_untracked() == CreateMode::Folder => {
+                on_done.run(Some(open));
+            }
+            Ok(_) => on_landed.run(()),
             Err(e) if tasks.alive() => {
                 busy.set(false);
                 error.set(Some(api::failure(T::InstallFailed, &e)));
@@ -1114,9 +1143,12 @@ fn CreateDialog(
     let save_skill = Callback::new(move |body: Value| {
         page.spawn(async move {
             match api::post::<_, Value>("/api/skills", &body).await {
-                Ok(v) => on_done.run(Some(Open::Skill(
-                    v["id"].as_str().unwrap_or_default().to_owned(),
-                ))),
+                Ok(v) if tasks.alive() && mode.get_untracked() == CreateMode::Skill => {
+                    on_done.run(Some(Open::Skill(
+                        v["id"].as_str().unwrap_or_default().to_owned(),
+                    )));
+                }
+                Ok(_) => on_landed.run(()),
                 Err(e) if tasks.alive() => error.set(Some(api::failure(T::MdSaveFailed, &e))),
                 Err(_) => {}
             }
@@ -1185,7 +1217,7 @@ fn CreateDialog(
                     CreateMode::Skill => view! {
                         <SkillForm draft=SkillDraft::default() name_locked=false on_cancel=on_close on_save=save_skill/>
                     }.into_any(),
-                    CreateMode::AgentCli => view! { <AgentSkillImport page=page on_imported=on_imported/> }.into_any(),
+                    CreateMode::AgentCli => view! { <AgentSkillImport page=page on_imported=on_imported on_landed=on_landed/> }.into_any(),
                 }}
             </div>
         </Modal>
@@ -1253,9 +1285,15 @@ enum Imported {
 /// "From agent CLI": the skill folders of the agent CLIs, read when the
 /// dialog opens this mode; the ones picked are copied in one by one
 /// through `POST /api/skills/install`, a failure shown by its row while
-/// the rest go on. The copies run on the `page`'s tasks to their end.
+/// the rest go on. The copies run on the `page`'s tasks to their end; the
+/// page moves to them (`on_imported`) only if this mode is still open,
+/// else it only reloads (`on_landed`).
 #[component]
-fn AgentSkillImport(page: Tasks, on_imported: Callback<bool>) -> impl IntoView {
+fn AgentSkillImport(
+    page: Tasks,
+    on_imported: Callback<bool>,
+    on_landed: Callback<()>,
+) -> impl IntoView {
     let tasks = Tasks::here();
     let sources = RwSignal::new(None::<Vec<AgentSkill>>);
     let load_error = RwSignal::new(None::<String>);
@@ -1263,17 +1301,22 @@ fn AgentSkillImport(page: Tasks, on_imported: Callback<bool>) -> impl IntoView {
     let outcome = RwSignal::new(std::collections::HashMap::<String, Imported>::new());
     let filter = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
-    tasks.spawn(async move {
-        match api::get::<Value>("/api/skills/local-sources").await {
-            Ok(v) => sources.set(Some(
-                v["sources"]
-                    .as_array()
-                    .map(|l| l.iter().map(AgentSkill::parse).collect())
-                    .unwrap_or_default(),
-            )),
-            Err(e) => load_error.set(Some(api::failure(T::AgentSkillsFailed, &e))),
-        }
-    });
+    let load = move || {
+        load_error.set(None);
+        sources.set(None);
+        tasks.spawn(async move {
+            match api::get::<Value>("/api/skills/local-sources").await {
+                Ok(v) => sources.set(Some(
+                    v["sources"]
+                        .as_array()
+                        .map(|l| l.iter().map(AgentSkill::parse).collect())
+                        .unwrap_or_default(),
+                )),
+                Err(e) => load_error.set(Some(api::failure(T::AgentSkillsFailed, &e))),
+            }
+        });
+    };
+    load();
     let import = move |_| {
         let paths: Vec<(String, String)> = sources.with_untracked(|l| {
             picked.with_untracked(|p| {
@@ -1322,8 +1365,10 @@ fn AgentSkillImport(page: Tasks, on_imported: Callback<bool>) -> impl IntoView {
             move |all_ok| {
                 if tasks.alive() {
                     busy.set(false);
+                    on_imported.run(all_ok);
+                } else {
+                    on_landed.run(());
                 }
-                on_imported.run(all_ok);
             },
         );
     };
@@ -1341,8 +1386,14 @@ fn AgentSkillImport(page: Tasks, on_imported: Callback<bool>) -> impl IntoView {
         <div class="col gap" data-testid="agent-skills">
             <input class="input" type="search" data-testid="agent-skills-filter" placeholder=t(T::SearchLibrary) aria-label=t(T::SearchLibrary)
                 prop:value=move || filter.get() on:input=live(move |ev| filter.set(event_target_value(&ev)))/>
-            {move || load_error.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
+            {move || load_error.get().map(|e| view! {
+                <div class="row">
+                    <p class="error-text grow" role="alert" data-testid="agent-skills-load-error">{e}</p>
+                    <button class="btn small" data-testid="agent-skills-retry" on:click=move |_| load()>{t(T::TryAgain)}</button>
+                </div>
+            })}
             {move || match sources.with(|l| l.as_ref().map(Vec::is_empty)) {
+                None if load_error.with(Option::is_some) => ().into_any(),
                 None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),
                 Some(true) => view! { <p class="muted" data-testid="agent-skills-empty">{t(T::NoAgentSkills)}</p> }.into_any(),
                 Some(false) => {

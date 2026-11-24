@@ -401,14 +401,15 @@ fn read_skill(
     Ok((id, front))
 }
 
-/// Whether `source` is a bare skill: a `SKILL.md` and no plugin manifest
+/// Whether `source` is a bare skill: a `SKILL.md` that installs as a
+/// skill (front matter, a valid id) and no plugin manifest
 /// (`open-design.json`, `.claude-plugin/`). "Install from folder" puts
-/// one in the skills, not the plugins.
+/// one in the skills; anything else stays a plugin, as before.
 #[must_use]
 pub fn is_bare_skill(source: &Path) -> bool {
-    std::fs::symlink_metadata(source.join("SKILL.md")).is_ok_and(|m| m.is_file())
-        && !source.join("open-design.json").exists()
+    !source.join("open-design.json").exists()
         && !source.join(".claude-plugin").exists()
+        && read_skill(source).is_ok()
 }
 
 /// Where agent CLIs keep their skills, under `home`: `(agent, folder)`.
@@ -892,5 +893,10 @@ mod tests {
         let none = tmp.path().join("none");
         std::fs::create_dir_all(&none).unwrap();
         assert!(!is_bare_skill(&none));
+        // A SKILL.md the skills would refuse stays a plugin, as before.
+        let loose = skill_dir(tmp.path(), "loose", "Just text.\n");
+        assert!(!is_bare_skill(&loose));
+        let bad = skill_dir(tmp.path(), "bad", "---\nname: \"a b\"\n---\n");
+        assert!(!is_bare_skill(&bad));
     }
 }

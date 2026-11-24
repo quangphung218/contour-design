@@ -7,7 +7,8 @@
 // the plugin; install from a folder, uninstall; create with agent; skills:
 // detail, edit as an override, new skill, delete; a folder with only
 // SKILL.md installs as a skill; From agent CLI: the skills of a temp HOME,
-// two imported, a bundled id refused by its row; Save as skill from the
+// a load error and Try again, a bundled id refused by its row, an import
+// landing late never closes what is being typed; Save as skill from the
 // Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
@@ -82,6 +83,9 @@ const agentSkill = (rel, md) => {
 agentSkill('.claude/skills/tea-a', '---\nname: tea-a\ndescription: Tea house pages.\n---\nUse cream.\n');
 agentSkill('.codex/skills/tea-b', '---\nname: tea-b\ndescription: Tea menus.\n---\nUse leaf green.\n');
 agentSkill('.agents/skills/ad-creative', '---\nname: ad-creative\ndescription: Mine.\n---\nMine.\n');
+agentSkill('.agents/skills/tea-e', '---\nname: tea-e\ndescription: Tea signs.\n---\nUse chalk.\n');
+agentSkill('.gemini/skills/tea-c', '---\nname: tea-c\ndescription: Tea labels.\n---\nUse kraft paper.\n');
+agentSkill('.config/opencode/skills/tea-d', '---\nname: tea-d\ndescription: Tea posters.\n---\nUse jade.\n');
 mkdirSync(OUT, { recursive: true });
 const daemon = spawn(BIN, ['daemon', 'start', '--port', String(PORT)], {
   stdio: ['ignore', 'inherit', 'inherit'],
@@ -399,51 +403,125 @@ try {
   assert.ok(!existsSync(join(data, 'plugins', 'tea-bare')), 'not in the plugins');
   results.bareSkill = 'ok';
 
-  // From agent CLI: pick three; the bundled id fails by its row, the two
-  // others are copied in and listed under Personal.
-  await page.locator('nav a[href="/plugins"]').click();
-  await page.getByTestId('plugins-create').click();
-  await page.getByTestId('create-agent-cli').click();
+  // From agent CLI. The install route can be held, as on a busy machine:
+  // the import then lands after the user moved on.
+  let releaseInstall = null;
+  const holdInstalls = async () => {
+    const gate = new Promise((r) => { releaseInstall = r; });
+    await page.route(`${BASE}/api/skills/install`, async (route) => {
+      await gate;
+      await route.continue();
+    });
+  };
+  const releaseInstalls = async () => {
+    const reloaded = page.waitForResponse((r) => r.url() === `${BASE}/api/skills` && r.request().method() === 'GET');
+    releaseInstall();
+    await reloaded;
+    await page.unroute(`${BASE}/api/skills/install`);
+  };
+  const createDialog = page.getByTestId('plugin-create');
+  const closeDialog = async () => {
+    await createDialog.getByRole('button', { name: 'Close' }).click();
+    await createDialog.waitFor({ state: 'detached' });
+  };
+  const openAgentCli = async () => {
+    await page.getByTestId('plugins-create').click();
+    await page.getByTestId('create-agent-cli').click();
+  };
   const agentRows = page.getByTestId('agent-skill');
-  await until(async () => (await agentRows.count()) === 3, 'three agent skills');
+  const agentRow = (id) => page.locator(`[data-testid="agent-skill"][data-id="${id}"]`);
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByTestId('plugin-list').waitFor();
+
+  // The list fails to load once: no "Loading…" under the error, and Try
+  // again loads it.
+  const sourcesRoute = `${BASE}/api/skills/local-sources`;
+  await page.route(sourcesRoute, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' }), { times: 1 });
+  await openAgentCli();
+  await page.getByTestId('agent-skills-load-error').waitFor();
+  assert.equal(await createDialog.getByText('Loading…').count(), 0, 'no Loading under the error');
+  await page.getByTestId('agent-skills-retry').click();
+  await until(async () => (await agentRows.count()) === 6, 'six agent skills after Try again');
+  await page.unroute(sourcesRoute);
+  assert.equal(await page.getByTestId('agent-skills-load-error').count(), 0);
   assert.deepEqual(
     await agentRows.evaluateAll((rows) => rows.map((r) => `${r.dataset.agent}/${r.dataset.id}`)),
-    ['claude/tea-a', 'agents/ad-creative', 'codex/tea-b'],
+    ['claude/tea-a', 'agents/ad-creative', 'agents/tea-e', 'codex/tea-b', 'gemini/tea-c', 'opencode/tea-d'],
   );
-  const agentRow = (id) => page.locator(`[data-testid="agent-skill"][data-id="${id}"]`);
+
+  // The bundled id fails by its row; the other one is copied in; the
+  // dialog stays open to show why.
   await page.getByTestId('agent-skills-filter').fill('menus');
   await until(async () => (await agentRows.count()) === 1, 'the filter narrows the list');
   await agentRow('tea-b').getByTestId('agent-skill-pick').check();
   await page.getByTestId('agent-skills-filter').fill('');
-  await until(async () => (await agentRows.count()) === 3, 'the filter clears');
-  await agentRow('tea-a').getByTestId('agent-skill-pick').check();
+  await until(async () => (await agentRows.count()) === 6, 'the filter clears');
   await agentRow('ad-creative').getByTestId('agent-skill-pick').check();
-  assert.equal((await page.getByTestId('agent-skills-import').textContent()).trim(), 'Import (3)');
+  assert.equal((await page.getByTestId('agent-skills-import').textContent()).trim(), 'Import (2)');
   await page.getByTestId('agent-skills-import').click();
   await agentRow('ad-creative').getByTestId('agent-skill-error').waitFor();
   assert.equal((await agentRow('ad-creative').getByTestId('agent-skill-error').textContent()).trim(), 'A skill named ad-creative already exists');
-  await agentRow('tea-a').getByTestId('agent-skill-imported').waitFor();
   await agentRow('tea-b').getByTestId('agent-skill-imported').waitFor();
-  assert.ok(existsSync(join(data, 'skills', 'tea-a', 'assets', 'tokens.css')));
-  assert.ok(existsSync(join(data, 'skills', 'tea-b', 'SKILL.md')));
+  assert.ok(existsSync(join(data, 'skills', 'tea-b', 'assets', 'tokens.css')));
   assert.ok(!existsSync(join(data, 'skills', 'ad-creative')), 'the bundled skill is not overwritten');
-  assert.ok(existsSync(join(home, '.claude/skills/tea-a/SKILL.md')), 'the agent folder stays');
+  assert.ok(existsSync(join(home, '.codex/skills/tea-b/SKILL.md')), 'the agent folder stays');
   await page.screenshot({ path: join(OUT, 'agent-skills.png') });
   // The close button: focus left the dialog with the Import button that
   // was off while it ran, so Escape would not reach it.
-  await page.getByTestId('plugin-create').getByRole('button', { name: 'Close' }).click();
-  await page.getByTestId('plugin-create').waitFor({ state: 'detached' });
-  await page.locator('[data-testid="skill-row"][data-id="tea-a"]').waitFor();
+  await closeDialog();
   await page.locator('[data-testid="skill-row"][data-id="tea-b"]').waitFor();
-  const userSkills = (await api('/api/skills')).skills.filter((sk) => sk.source === 'user').map((sk) => sk.id);
-  assert.ok(userSkills.includes('tea-a') && userSkills.includes('tea-b'), 'the composer lists them for @');
-  // Opened again: both read as imported and cannot be picked again.
-  await page.getByTestId('plugins-create').click();
-  await page.getByTestId('create-agent-cli').click();
-  await agentRow('tea-a').getByTestId('agent-skill-imported').waitFor();
+
+  // All copied: the dialog closes on the Personal skills.
+  await openAgentCli();
   await agentRow('tea-b').getByTestId('agent-skill-imported').waitFor();
-  assert.equal(await agentRow('tea-a').getByTestId('agent-skill-pick').isDisabled(), true);
-  await page.getByTestId('plugin-create').getByRole('button', { name: 'Close' }).click();
+  assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').isDisabled(), true, 'imported: not picked again');
+  await agentRow('tea-c').getByTestId('agent-skill-pick').check();
+  await page.getByTestId('agent-skills-import').click();
+  await createDialog.waitFor({ state: 'detached' });
+  await page.locator('[data-testid="skill-row"][data-id="tea-c"]').waitFor();
+
+  // Moved to New skill while it ran: the dialog stays open on what is
+  // being typed.
+  await openAgentCli();
+  await agentRow('tea-a').getByTestId('agent-skill-pick').check();
+  await holdInstalls();
+  await page.getByTestId('agent-skills-import').click();
+  await page.getByTestId('create-skill').click();
+  await page.getByTestId('skill-name').fill('Typed while it ran');
+  await page.getByTestId('skill-body-input').fill('Kept.');
+  await releaseInstalls();
+  await until(async () => existsSync(join(data, 'skills', 'tea-a', 'SKILL.md')), 'tea-a copied');
+  assert.equal(await page.getByTestId('skill-name').inputValue(), 'Typed while it ran', 'the new skill being typed stays');
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Kept.');
+  await closeDialog();
+
+  // Closed, then editing a skill while it ran: the edit stays open.
+  await openAgentCli();
+  await agentRow('tea-d').getByTestId('agent-skill-pick').check();
+  await holdInstalls();
+  await page.getByTestId('agent-skills-import').click();
+  await closeDialog();
+  await page.locator('[data-testid="skill-row"][data-id="tea-b"] .plugin-row-main').click();
+  await page.getByTestId('skill-edit').click();
+  await page.getByTestId('skill-description').fill('Typed while the import ran.');
+  await releaseInstalls();
+  await until(async () => existsSync(join(data, 'skills', 'tea-d', 'SKILL.md')), 'tea-d copied');
+  assert.equal(await page.getByTestId('skill-description').inputValue(), 'Typed while the import ran.', 'the edit stays');
+  // Still editing, the dialog opened over it: all copied, the dialog
+  // closes, and the edit stays on the page.
+  await openAgentCli();
+  await agentRow('tea-e').getByTestId('agent-skill-pick').check();
+  await page.getByTestId('agent-skills-import').click();
+  await createDialog.waitFor({ state: 'detached' });
+  assert.ok(existsSync(join(data, 'skills', 'tea-e', 'SKILL.md')), 'tea-e copied');
+  assert.equal(await page.getByTestId('skill-description').inputValue(), 'Typed while the import ran.', 'the edit stays under the dialog');
+  await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Back' }).click();
+  for (const id of ['tea-a', 'tea-b', 'tea-c', 'tea-d', 'tea-e']) {
+    await page.locator(`[data-testid="skill-row"][data-id="${id}"]`).waitFor();
+  }
+  const userSkills = (await api('/api/skills')).skills.filter((sk) => sk.source === 'user').map((sk) => sk.id);
+  assert.ok(['tea-a', 'tea-b', 'tea-c', 'tea-d', 'tea-e'].every((id) => userSkills.includes(id)), 'the composer lists them for @');
   results.agentSkills = 'ok';
 
   // ------------------------------------------------------ save as skill

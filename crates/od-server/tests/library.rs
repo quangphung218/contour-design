@@ -383,8 +383,9 @@ async fn agent_cli_skills_are_listed_from_the_agents_home() {
     assert_eq!(again["sources"][2]["imported"], false);
 }
 
-/// "Install from folder": a bare skill goes to the skills; a plugin folder
-/// is left to the plugin install (`{id: null}`, nothing written).
+/// "Install from folder": a bare skill goes to the skills; a plugin folder,
+/// or a SKILL.md the skills would refuse, is left to the plugin install
+/// (`{id: null}`, nothing written).
 #[tokio::test]
 async fn a_bare_only_install_leaves_plugin_folders_alone() {
     let d = daemon().await;
@@ -393,10 +394,24 @@ async fn a_bare_only_install_leaves_plugin_folders_alone() {
     let plugin = skill_folder(src.path(), "plugin", "---\nname: tea-plugin\n---\nP.\n");
     std::fs::write(plugin.join("open-design.json"), "{}").unwrap();
     let body = |p: &Path| json!({ "path": p.to_string_lossy(), "bareOnly": true });
-    let (s, v) = call(&d, "POST", "/api/skills/install", Some(body(&plugin))).await;
-    assert_eq!(s, 200, "{v}");
-    assert_eq!(v["id"], Value::Null);
+    // A SKILL.md without front matter installs as a plugin, as before.
+    let loose = src.path().join("loose");
+    std::fs::create_dir_all(&loose).unwrap();
+    std::fs::write(loose.join("SKILL.md"), "Use big photos.\n").unwrap();
+    for folder in [&plugin, &loose] {
+        let (s, v) = call(&d, "POST", "/api/skills/install", Some(body(folder))).await;
+        assert_eq!(s, 200, "{v}");
+        assert_eq!(v["id"], Value::Null);
+    }
     assert!(user_skill_folders(&d).is_empty());
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/plugins/install",
+        Some(json!({ "path": loose.to_string_lossy() })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
     let (s, v) = call(&d, "POST", "/api/skills/install", Some(body(&bare))).await;
     assert_eq!(s, 200, "{v}");
     assert_eq!(v["id"], "tea-bare");
