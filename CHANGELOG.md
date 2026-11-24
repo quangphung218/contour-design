@@ -8,6 +8,15 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Library > Skills opens on your own skills when you have some, and offers to import skills found in agent CLI folders.
+- Install from folder accepts paths starting with ~ and shows what is wrong right under the path.
+
+### Fixed
+
+- Library dialogs keep keyboard focus inside while open, close with Esc, and return focus to the button that opened them.
+
 ## [0.2.0-beta.61] - 2026-11-24
 
 ### Added

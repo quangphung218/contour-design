@@ -214,3 +214,8 @@
 .agent-skills-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1-5); }
 .agent-skills-empty p { margin: 0; }
 .agent-skills-where { margin: 0; padding-left: var(--space-4); font-size: var(--text-sm); color: var(--color-text-secondary); }
+
+/* Install from folder: what is wrong with the path, right under it. */
+.field .input[aria-invalid="true"] { border-color: var(--color-danger); }
+.field .field-error { margin: var(--space-1) 0 0; }
+.empty-state .btn { margin-top: var(--space-2); }
