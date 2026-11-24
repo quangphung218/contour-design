@@ -51,7 +51,7 @@ async function until(fn, label, timeout = 10_000) {
 
 // The languages beyond en/vi, with a word their Home link must read.
 const LOCALES = ['id', 'de', 'zh-CN', 'zh-TW', 'pt-BR', 'es-ES', 'ru', 'fa', 'ar', 'ja', 'ko', 'pl', 'hu', 'fr', 'uk', 'tr', 'th', 'it'];
-const SCREENS = (pid) => ['/', '/projects', `/projects/${pid}`, '/templates', '/design-systems', '/plugins',
+const SCREENS = (pid) => ['/', '/projects', `/projects/${pid}`, '/templates', '/design-systems', '/skills', '/plugins',
   '/media', '/automations', '/integrations', '/inbox', '/settings', '/onboarding'];
 const homeLabel = (tag) => {
   if (tag === 'en') return 'Home';

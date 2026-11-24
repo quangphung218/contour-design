@@ -484,6 +484,7 @@ fn Shelled() -> impl IntoView {
                             <Route path=path!("/automations") view=automations::Automations/>
                             <Route path=path!("/design-systems") view=ds_page::DesignSystemsPage/>
                             <Route path=path!("/plugins") view=plugins_page::PluginsPage/>
+                            <Route path=path!("/skills") view=plugins_page::SkillsPage/>
                             <Route path=path!("/media") view=media_page::MediaPage/>
                             <Route path=path!("/templates") view=templates_page::TemplatesPage/>
                             <Route path=path!("/integrations") view=integrations::Integrations/>
@@ -680,6 +681,7 @@ fn Sidebar() -> impl IntoView {
                 {link("/projects", Glyph::Projects, T::NavProjects, false)}
                 {link("/templates", Glyph::Grid, T::NavTemplates, false)}
                 {link("/design-systems", Glyph::DesignSystem, T::NavDesignSystems, false)}
+                {link("/skills", Glyph::Book, T::NavSkills, false)}
                 {link("/plugins", Glyph::Plugin, T::NavPlugins, false)}
                 {link("/media", Glyph::Image, T::NavMedia, false)}
                 {link("/automations", Glyph::Automations, T::NavAutomations, false)}

@@ -165,6 +165,7 @@ try {
     ['projects', async (p) => { await p.goto(BASE + '/projects'); await p.locator('.project-card, .project-row').first().waitFor(); }],
     ['studio', openStudio],
     ['design-systems', async (p) => { await p.goto(BASE + '/design-systems?id=airbnb'); await p.getByTestId('kit-palette').waitFor(); }],
+    ['skills', async (p) => { await p.goto(BASE + '/skills'); await p.getByTestId('skill-row').first().waitFor(); }],
     ['plugins', async (p) => { await p.goto(BASE + '/plugins'); await p.getByTestId('plugin-row').first().waitFor(); }],
     ['media', async (p) => { await p.goto(BASE + '/media'); await p.getByTestId('media-card').first().waitFor(); }],
     ['templates', async (p) => { await p.goto(BASE + '/templates'); await p.getByTestId('tpl-card').first().waitFor(); await sleep(600); }],

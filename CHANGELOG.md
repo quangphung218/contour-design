@@ -10,6 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Changed
 
+- Skills have their own item in the sidebar, above Plugins; old /plugins?skill= links still open the skill.
 - Library > Skills opens on your own skills when you have some, and offers to import skills found in agent CLI folders.
 - Install from folder accepts paths starting with ~ and shows what is wrong right under the path.
 

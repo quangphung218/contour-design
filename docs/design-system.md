@@ -15,7 +15,7 @@ Never use: purple gradients, emoji as icons, characters as icons (`↻ × ⤓ >_
 | `crates/od-ui/styles/tokens.css` | All tokens: `@font-face`, light/dark colours, type scale, spacing, radius, shadow, z-index, motion |
 | `crates/od-ui/styles/components.css` | Reusable components (button, input, chip, card, tab, menu, dialog, toast, badge, tooltip, empty state, skeleton) |
 | `crates/od-ui/styles/app.css` | App shell and each screen (Home, Projects, Studio, Settings…), composed only from tokens and components |
-| `crates/od-ui/styles/library.css` | Library screens (Design systems, Plugins, Media, Templates), loaded after `app.css`, also composed only from tokens and components |
+| `crates/od-ui/styles/library.css` | Library screens (Design systems, Skills, Plugins, Media, Templates), loaded after `app.css`, also composed only from tokens and components |
 | `crates/od-ui/src/app/icons.rs` | `Glyph` + the `icon(glyph)` function |
 | `crates/od-ui/vendor/remixicon/` | 109 Remix Icon 4.8.0 SVG icons, Apache-2.0 |
 | `crates/od-ui/assets/` | Favicon and the Contour mark (generated from `assets/brand`, see [`brand.md`](brand.md)) |
@@ -125,7 +125,7 @@ Weights: 400 body text, 500 buttons and labels, 600 headings. Large headings use
 
 ## App shell
 
-- Left sidebar: Contour logo, the "Tìm hoặc chạy lệnh" (Search or run a command) box (opens the command palette), Home, Projects, Templates, Design systems, Plugins, Media, Automations, Integrations, Messages, then Keyboard shortcuts and Settings at the bottom. It collapses to a 56px rail; the choice is stored in `localStorage` separately for Studio (`od.sidebar.studio-collapsed`, collapsed by default) and other pages (`od.sidebar.collapsed`). Windows narrower than 960px become a rail automatically.
+- Left sidebar: Contour logo, the "Tìm hoặc chạy lệnh" (Search or run a command) box (opens the command palette), Home, Projects, Templates, Design systems, Skills, Plugins, Media, Automations, Integrations, Messages, then Keyboard shortcuts and Settings at the bottom. It collapses to a 56px rail; the choice is stored in `localStorage` separately for Studio (`od.sidebar.studio-collapsed`, collapsed by default) and other pages (`od.sidebar.collapsed`). Windows narrower than 960px become a rail automatically.
 - Content sits in the `.main` panel floating over the canvas background.
 - macOS desktop: the Tauri window uses an overlay title bar (`TitleBarStyle::Overlay`, title hidden). The UI detects Tauri + macOS, sets `data-shell="mac"` on `<html>` and reserves a 38px-high `.titlebar` strip as the window drag region (`data-tauri-drag-region`, permission `core:window:allow-start-dragging`).
 

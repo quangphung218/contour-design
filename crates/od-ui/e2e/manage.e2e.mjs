@@ -518,7 +518,7 @@ try {
   await page.getByTestId('inbox-archive').first().click();
   await until(async () => (await page.getByTestId('inbox-item').count()) === items - 1, 'archived');
   results.inbox = 'ok';
-  for (const [href, testid] of [['/design-systems', 'design-systems'], ['/plugins', 'plugins-page'], ['/integrations', 'integrations'], ['/inbox', 'inbox']]) {
+  for (const [href, testid] of [['/design-systems', 'design-systems'], ['/skills', 'skills-page'], ['/plugins', 'plugins-page'], ['/integrations', 'integrations'], ['/inbox', 'inbox']]) {
     await page.locator(`.sidenav a[href="${href}"]`).click();
     await page.getByTestId(testid).waitFor();
   }
@@ -576,6 +576,7 @@ try {
     await shot('integrations-everywhere', async (p) => { await p.getByTestId('tab-everywhere').click(); await p.getByTestId('use-everywhere').waitFor(); });
     await shot('inbox', async (p) => { await p.goto(BASE + '/inbox'); await p.getByTestId('inbox').waitFor(); });
     await shot('design-systems', async (p) => { await p.goto(BASE + '/design-systems'); await p.getByTestId('ds-row').first().waitFor(); });
+    await shot('skills', async (p) => { await p.goto(BASE + '/skills'); await p.getByTestId('skills-page').waitFor(); });
     await shot('plugins', async (p) => { await p.goto(BASE + '/plugins'); await p.getByTestId('plugins-page').waitFor(); });
     await shot('home-recent', async (p) => { await p.goto(BASE + '/'); await p.getByTestId('recent-projects').scrollIntoViewIfNeeded(); });
     await fetch(BASE + '/api/app-config', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ onboardingCompleted: false }) });
