@@ -13,7 +13,7 @@ use crate::models::{self, Selection};
 use leptos::ev;
 use leptos::html::{Div, Input, Textarea};
 use leptos::prelude::*;
-use od_contracts::{SkillsResponse, UploadResponse};
+use od_contracts::{ContentSource, SkillsResponse, UploadResponse};
 use send_wrapper::SendWrapper;
 use serde_json::Value;
 use wasm_bindgen::JsCast;
@@ -394,7 +394,10 @@ pub async fn fetch_skills() -> Option<Vec<SkillRow>> {
                     .iter()
                     .filter_map(|t| t.as_str().map(str::to_owned))
                     .collect();
-                mention::skill_row(s.info.id, detail, triggers)
+                let personal = s.info.source == ContentSource::User;
+                let mut row = mention::skill_row(s.info.id, detail, triggers);
+                row.personal = personal;
+                row
             })
             .collect(),
     )
@@ -465,16 +468,27 @@ impl Sources {
         }
     }
 
-    /// The id of the listed skill named `id`, as the daemon compares
-    /// names (`od_contracts::name_key`); tracked.
+    /// The id of the listed Personal skill (the user's own, not bundled)
+    /// named `id`, as the daemon compares names (`od_contracts::name_key`);
+    /// tracked.
     #[must_use]
-    pub fn listed_skill(self, id: &str) -> Option<String> {
+    pub fn listed_personal_skill(self, id: &str) -> Option<String> {
         let key = od_contracts::name_key(id);
         self.with_skills(|rows| {
             rows.into_iter()
                 .flatten()
-                .find(|r| od_contracts::name_key(&r.candidate.id) == key)
+                .find(|r| r.personal && od_contracts::name_key(&r.candidate.id) == key)
                 .map(|r| r.candidate.id.clone())
+        })
+    }
+
+    /// The ids of the skills listed, `None` while the first load runs.
+    #[must_use]
+    pub fn skill_ids_untracked(self) -> Option<Vec<String>> {
+        untrack(|| {
+            self.with_skills(|rows| {
+                rows.map(|rows| rows.iter().map(|r| r.candidate.id.clone()).collect())
+            })
         })
     }
 

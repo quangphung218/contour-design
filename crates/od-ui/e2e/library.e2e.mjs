@@ -714,6 +714,19 @@ try {
   assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), whyId);
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), null);
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-taken').count(), 0);
+  // In a right-to-left language (ar, fa) the reason is indented from the
+  // right, still in line with the name past the checkbox.
+  const rtlPadding = await agentRow('ad-creative').getByTestId('agent-skill-taken').evaluate((el) => {
+    const root = document.documentElement;
+    const was = root.getAttribute('dir');
+    root.setAttribute('dir', 'rtl');
+    const s = getComputedStyle(el);
+    const out = { left: s.paddingLeft, right: s.paddingRight };
+    if (was === null) root.removeAttribute('dir');
+    else root.setAttribute('dir', was);
+    return out;
+  });
+  assert.ok(rtlPadding.left === '0px' && parseFloat(rtlPadding.right) > 0, `RTL: indented from the right (${JSON.stringify(rtlPadding)})`);
   // The daemon compares names by `name_key` (NFC, case ignored): the
   // same name in another case is taken too.
   await closeDialog();
@@ -1077,6 +1090,9 @@ try {
   assert.equal(await teaComposer.inputValue(), '@tea-house ');
   await teaComposer.press('End');
   await teaComposer.pressSequentially('warmer hero');
+  // This page turn also edits the skill's SKILL.md (no install): it is no
+  // Save as skill turn, so it gets no skill row.
+  writeFileSync(join(data, 'projects', teaProject, 'also-skill-md'), '');
   const useReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
   await page.getByTestId('send').click();
   const useBody = JSON.parse((await useReq).postData());
@@ -1085,6 +1101,7 @@ try {
   await until(async () => (await page.getByTestId('assistant-msg').count()) === 5 && (await useTurn.getAttribute('data-state')) === 'succeeded', 'the turn with the skill ends', 30_000);
   // Saved once in this conversation: a page turn no longer offers it.
   await cardSettled(useTurn);
+  assert.equal(await useTurn.getByTestId('saved-skill').count(), 0, 'no skill row under a page turn that edited SKILL.md');
   assert.equal(await saveChip.count(), 0, 'no chip once saved');
   // Opened again, the conversation still shows the name.
   await settleStudio(false);
@@ -1102,6 +1119,7 @@ try {
     const done = row.closest('[data-testid="assistant-msg"]').querySelector('[data-testid="run-state"]');
     return !!done && (done.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
   }), 'the skill row comes after the Done line');
+  assert.equal(await page.getByTestId('assistant-msg').nth(4).getByTestId('saved-skill').count(), 0, 'after a reload, still no row under the page turn');
   // Saved once in this project: a new conversation of it does not offer
   // the chip again after two page turns.
   await settleStudio(false);
@@ -1135,13 +1153,45 @@ try {
   await page.reload();
   await cardSettled(page.getByTestId('assistant-msg').last());
   assert.equal(await saveChip.count(), 0, 'a dismissed chip stays away');
+  // Save as skill turns that wrote a skill, got a 409 and stopped: no
+  // skill row, and the project is not marked saved. `tea-house` (another
+  // Personal skill of that name) shows none here, even before the list
+  // loads again; `ad-creative` (bundled) none after a reload either.
+  const saveWithoutInstall = async (id, n) => {
+    writeFileSync(join(data, 'projects', teaProject2, 'skill-no-install'), id);
+    await plusMenu.click();
+    await until(async () => !(await saveSkill.isDisabled()), `on in the second project (${id})`);
+    const req = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
+    // The skill list loads again as the turn ends: a row would show by then.
+    const skillsAgain = page.waitForResponse((r) => r.url().endsWith('/api/skills') && r.request().method() === 'GET', { timeout: 30_000 });
+    await saveSkill.click();
+    checkPrepared(JSON.parse((await req).postData()), `the menu item (${id})`);
+    const turn = page.getByTestId('assistant-msg').last();
+    await until(async () => (await page.getByTestId('assistant-msg').count()) === n && (await turn.getAttribute('data-state')) === 'succeeded', `the save of ${id} that installs nothing ends`, 30_000);
+    await turn.filter({ hasText: `The id ${id} is taken` }).waitFor();
+    await skillsAgain;
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    assert.equal(await turn.getByTestId('saved-skill').count(), 0, `no skill row after a save that installed nothing (${id})`);
+    assert.equal(await page.evaluate((k) => localStorage.getItem(k), `od.skillSaved.${teaProject2}`), null, `not marked saved (${id})`);
+  };
+  await saveWithoutInstall('tea-house', 3);
+  await saveWithoutInstall('ad-creative', 4);
+  await settleStudio(false);
+  await page.reload();
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 4, 'the conversation loads again');
+  await page.getByTestId('assistant-msg').last().locator('[data-testid="run-state"]').waitFor();
+  // The bundled skill is listed by now (the Skills' first load).
+  await teaComposer.fill('@ad-cre');
+  await page.locator('[data-testid="mention-item"][data-kind="skill"]').filter({ hasText: 'ad-creative' }).first().waitFor();
+  await teaComposer.fill('');
+  assert.equal(await page.getByTestId('assistant-msg').nth(3).getByTestId('saved-skill').count(), 0, 'no row for a bundled skill after a reload');
   await plusMenu.click();
-  await until(async () => !(await saveSkill.isDisabled()), 'on in the second project');
+  await until(async () => !(await saveSkill.isDisabled()), 'on again in the second project');
   const menuReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
   await saveSkill.click();
-  checkPrepared(JSON.parse((await menuReq).postData()), 'the menu item');
+  checkPrepared(JSON.parse((await menuReq).postData()), 'the menu item, again');
   const skillTurn2 = page.getByTestId('assistant-msg').last();
-  await until(async () => (await page.getByTestId('assistant-msg').count()) === 3 && (await skillTurn2.getAttribute('data-state')) === 'succeeded', 'second save ends', 30_000);
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 5 && (await skillTurn2.getAttribute('data-state')) === 'succeeded', 'second save ends', 30_000);
   await skillTurn2.filter({ hasText: 'Installed: {id:tea-house-2}' }).waitFor();
   assert.equal(readFileSync(join(data, 'skills', 'tea-house', 'SKILL.md'), 'utf8'), firstSkill, 'the first skill is untouched');
   // Only the skill this turn added: tea-house was there before.

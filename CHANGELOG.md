@@ -13,6 +13,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Save as skill stays hidden in every conversation of a project once saved, and its Use and Open row survives a reload.
+- The Use and Open row shows only under a Save as skill turn that installed your own skill; a failed save keeps the chip.
 - From agent CLI locks a built-in skill name in any letter case, and picks nothing until your skills have loaded.
 - A folder typed as ~/… works for linked folders, Import folder and project locations, and ~\… in Install from folder.
 

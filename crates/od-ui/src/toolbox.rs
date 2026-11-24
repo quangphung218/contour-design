@@ -103,26 +103,23 @@ pub fn wrote_only_a_skill(written: &[String]) -> bool {
         })
 }
 
-/// The ids of the skills a turn wrote, in the order it wrote them: `<id>`
-/// of each `SKILL_DIR/<id>/SKILL.md`. A Save as skill turn that found its
-/// id taken writes again under a new one (`-2`), so the last one is the
-/// skill it installed.
+/// The ids of the skills a turn wrote, in the order it first wrote them:
+/// `<id>` of each `SKILL_DIR/<id>/SKILL.md` in `written`, which lists each
+/// file once (`AssistantTurn::touched_files`). A Save as skill turn that
+/// found its id taken writes again under a new one (`-2`), so the last one
+/// is the skill it installed.
 #[must_use]
 pub fn written_skill_ids(written: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for f in written {
-        let Some(id) = f
-            .strip_prefix(SKILL_DIR)
-            .and_then(|rest| rest.strip_prefix('/'))
-            .and_then(|rest| rest.strip_suffix("/SKILL.md"))
-            .filter(|id| !id.is_empty() && !id.contains('/'))
-        else {
-            continue;
-        };
-        out.retain(|x| x != id);
-        out.push(id.to_owned());
-    }
-    out
+    written
+        .iter()
+        .filter_map(|f| {
+            f.strip_prefix(SKILL_DIR)
+                .and_then(|rest| rest.strip_prefix('/'))
+                .and_then(|rest| rest.strip_suffix("/SKILL.md"))
+                .filter(|id| !id.is_empty() && !id.contains('/'))
+                .map(str::to_owned)
+        })
+        .collect()
 }
 
 /// The first line of [`skill_authoring_prompt`], whatever the language.
@@ -137,8 +134,8 @@ pub fn is_skill_request(request: &str) -> bool {
 
 /// Whether the next-step card offers "Save as skill" (a chip, besides the
 /// "+" menu item): after a turn that wrote a page, once the conversation
-/// has `succeeded` two turns or more, until a Save as skill turn has
-/// succeeded in it (`saved`) or the user dismissed the chip.
+/// has `succeeded` two turns or more, until a Save as skill turn in it
+/// installed its skill (`saved`) or the user dismissed the chip.
 #[must_use]
 pub fn offer_skill_save(wrote_page: bool, succeeded: usize, saved: bool, dismissed: bool) -> bool {
     wrote_page && succeeded >= 2 && !saved && !dismissed
@@ -213,15 +210,6 @@ mod tests {
                 "index.html",
             ])),
             v(&["tea", "tea-2"])
-        );
-        // Written again last: it is the last one.
-        assert_eq!(
-            written_skill_ids(&v(&[
-                "generated-skill/a/SKILL.md",
-                "generated-skill/b/SKILL.md",
-                "generated-skill/a/SKILL.md",
-            ])),
-            v(&["b", "a"])
         );
         for none in [
             "generated-skill/SKILL.md",
