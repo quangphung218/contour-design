@@ -122,6 +122,127 @@ fn upload_staged(ctx: StudioCtx) {
     );
 }
 
+/// One row of the chat as the skill loop reads it ([`SkillLoop`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LoopRow {
+    /// A user message; `sent`: a prepared turn's request.
+    Asked { sent: Option<String> },
+    /// An assistant turn; `only_skill`: it wrote files only in
+    /// `generated-skill/` (`toolbox::wrote_only_a_skill`).
+    Turn {
+        run_id: Option<String>,
+        succeeded: bool,
+        only_skill: bool,
+    },
+}
+
+/// The chat's rows, read (and tracked) from `items`.
+fn loop_rows(items: &[ChatItem]) -> Vec<LoopRow> {
+    items
+        .iter()
+        .map(|i| match &i.kind {
+            ItemKind::User(_) => LoopRow::Asked {
+                sent: i.sent.clone(),
+            },
+            ItemKind::Assistant(turn) => turn.with(|t| LoopRow::Turn {
+                run_id: t.run_id.clone(),
+                succeeded: t.state == crate::chat::TurnState::Succeeded,
+                only_skill: crate::toolbox::wrote_only_a_skill(&t.touched_files()),
+            }),
+        })
+        .collect()
+}
+
+/// What the chat says of "Save as skill".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SkillLoop {
+    /// Succeeded turns other than Save as skill ones.
+    succeeded: usize,
+    /// The runs of the Save as skill turns that succeeded.
+    saved_runs: Vec<String>,
+}
+
+impl SkillLoop {
+    /// A turn is a Save as skill one when the message before it sent that
+    /// request (`toolbox::is_skill_request`), or it wrote only the skill.
+    fn of(rows: &[LoopRow]) -> Self {
+        let mut out = Self::default();
+        let mut asked_skill = false;
+        for row in rows {
+            match row {
+                LoopRow::Asked { sent } => {
+                    asked_skill = sent
+                        .as_deref()
+                        .is_some_and(crate::toolbox::is_skill_request);
+                }
+                LoopRow::Turn {
+                    run_id,
+                    succeeded,
+                    only_skill,
+                } => {
+                    if !succeeded {
+                        continue;
+                    }
+                    if asked_skill || *only_skill {
+                        out.saved_runs.extend(run_id.clone());
+                    } else {
+                        out.succeeded += 1;
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn saved(&self) -> bool {
+        !self.saved_runs.is_empty()
+    }
+}
+
+/// The skills each Save as skill turn of this Studio installed, by run:
+/// the ids the skill list had new when it loaded again after the turn.
+#[derive(Clone, Copy)]
+struct SavedSkills(RwSignal<Vec<(String, Vec<String>)>>);
+
+/// `localStorage` key: the user dismissed the "Save as skill" chip of
+/// this project's next-step card.
+fn skill_chip_key(project: &str) -> String {
+    format!("od.skillChipDismissed.{project}")
+}
+
+fn skill_chip_dismissed(project: &str) -> bool {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|s| s.get_item(&skill_chip_key(project)).ok().flatten())
+        .is_some()
+}
+
+fn dismiss_skill_chip(project: &str) {
+    if let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = s.set_item(&skill_chip_key(project), "1");
+    }
+}
+
+/// After a Save as skill turn succeeds: the skill list again, so `@` and
+/// the suggestions of this Studio offer the new skill, and the ids it
+/// added go to [`SavedSkills`] for the turn's actions. Leaving the Studio
+/// first drops it (UI only).
+fn reload_skills_after(run: String, sources: Sources, saved: SavedSkills, tasks: Tasks) {
+    let before = sources.skill_ids_untracked();
+    tasks.spawn_then(super::composer::fetch_skills(), move |rows| {
+        let Some(rows) = rows else { return };
+        let after: Vec<String> = rows.iter().map(|r| r.candidate.id.clone()).collect();
+        // Before the first load came there is nothing to tell new from.
+        if let Some(before) = before {
+            let added = mention::new_ids(&before, &after);
+            if !added.is_empty() {
+                saved.0.update(|s| s.push((run, added)));
+            }
+        }
+        sources.set_skills(rows);
+    });
+}
+
 #[component]
 pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
     let shell = Shell::get();
@@ -204,6 +325,22 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             .with(|u| u.iter().any(|x| x.state == UploadState::Uploading))
     };
     provide_context(sources);
+    // A Save as skill turn that ended well: load the skills again.
+    let saved_skills = SavedSkills(RwSignal::new(Vec::new()));
+    provide_context(saved_skills);
+    let pane_tasks = Tasks::here();
+    Effect::new(move |prev: Option<Option<String>>| {
+        let now = ctx.live_run.get();
+        if let Some(Some(ended)) = prev
+            && now.as_ref() != Some(&ended)
+        {
+            let saved = untrack(|| ctx.items.with(|items| SkillLoop::of(&loop_rows(items))));
+            if saved.saved_runs.contains(&ended) {
+                reload_skills_after(ended, sources, saved_skills, pane_tasks);
+            }
+        }
+        now
+    });
     // "Quote": text selected in the transcript goes into the composer.
     let quote = RwSignal::new(None::<(f64, f64, String)>);
     let read_selection = move || {
@@ -720,6 +857,7 @@ fn AssistantView(
             </Show>
             {move || blocks(|l| &l.reply)}
             <super::chat_ops::TurnFiles turn=turn/>
+            <SavedSkillActions turn=turn/>
             // With a process, its line shows the run's progress and clock;
             // the status line then speaks only to screen readers.
             <RunLine turn=turn clock=clock quiet=Signal::derive(move || layout.with(|l| !l.process.is_empty()))/>
@@ -1111,6 +1249,54 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     }
 }
 
+/// Under a Save as skill turn that installed a skill: open it in the
+/// Library, or mention it in the composer as a suggestion's chip does.
+/// Names come from the visible text (axe `label-content-name-mismatch`).
+#[component]
+fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    let ctx = expect_context::<StudioCtx>();
+    let saved = use_context::<SavedSkills>();
+    let sources = use_context::<Sources>();
+    let navigate = super::leave_guard::use_leave();
+    let ids = move || {
+        let run = turn.with(|t| t.run_id.clone())?;
+        saved?.0.with(|s| {
+            s.iter()
+                .find(|(r, _)| *r == run)
+                .map(|(_, ids)| ids.clone())
+        })
+    };
+    move || {
+        let navigate = navigate.clone();
+        ids().map(|ids| {
+            ids.into_iter()
+                .map(|id| {
+                    let navigate = navigate.clone();
+                    let (open_id, use_id) = (id.clone(), id.clone());
+                    view! {
+                        <div class="next-actions saved-skill" data-testid="saved-skill" data-id=id.clone()>
+                            <span class="next-label">{tf(T::SkillInstalledNamed, &[&id])}</span>
+                            <button class="btn ghost small next-action" data-testid="saved-skill-use"
+                                on:click=move |_| {
+                                    let Some(c) = sources.and_then(|s| s.skill_untracked(&use_id)) else { return };
+                                    ctx.draft.update(|d| *d = mention::append_token(d, &c));
+                                    super::composer::stage(ctx.chat.context, c);
+                                    focus_composer();
+                                }>
+                                {icon(Glyph::Magic)}{tf(T::UseSkillMention, &[&id])}
+                            </button>
+                            <button class="btn ghost small next-action" data-testid="saved-skill-open"
+                                on:click=move |_| navigate(&format!("/skills?skill={}", super::api::seg(&open_id)))>
+                                {icon(Glyph::ArrowRight)}{t(T::OpenSkill)}
+                            </button>
+                        </div>
+                    }
+                })
+                .collect_view()
+        })
+    }
+}
+
 /// Suggested next steps under the latest finished turn: chips that fill the
 /// composer (the lint fix, the agent's suggestions, Retry), then small
 /// actions (open the page, comment, export, toolbox).
@@ -1151,15 +1337,28 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
         ctx.draft.update(|d| *d = crate::chat::seed_draft(d, &text));
         focus_composer();
     };
+    // "Save as skill" offered from the second turn that wrote a page on,
+    // until one succeeded or the chip is dismissed (this project).
+    let chip_dismissed = RwSignal::new(skill_chip_dismissed(&ctx.project_id.get_value()));
+    let skill_loop = Memo::new(move |_| ctx.items.with(|items| SkillLoop::of(&loop_rows(items))));
     move || {
         let (steps, holding) = lint.with(|l| {
             let state = page.with(|p| l.state(p.as_deref()));
             let holding = page.with(Option::is_some) && state == PageLint::Pending;
             (turn.with(|tn| next_steps(tn, state)), holding)
         });
+        // Not while the page's lint runs: the chip comes with the others.
         let steps_wrote = steps.iter().any(|s| matches!(s, NextStep::Open(_)));
         let wrote_page = steps_wrote && sources.is_some();
-        (!steps.is_empty()).then(|| {
+        let offer_skill = skill_loop.with(|l| {
+            crate::toolbox::offer_skill_save(
+                wrote_page && turn.with(|tn| tn.state == crate::chat::TurnState::Succeeded),
+                l.succeeded,
+                l.saved(),
+                chip_dismissed.get(),
+            )
+        }) && !holding;
+        (!steps.is_empty() || offer_skill).then(|| {
             let navigate = navigate.clone();
             let (chips, actions): (Vec<NextStep>, Vec<NextStep>) =
                 steps.into_iter().partition(|s| s.is_chip() || matches!(s, NextStep::Retry | NextStep::Settings));
@@ -1211,7 +1410,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                     {holding.then(|| view! {
                         <div class="next-chips next-chips-pending" data-testid="next-chips" data-pending="true" aria-hidden="true"></div>
                     })}
-                    {(!chips.is_empty()).then(|| view! {
+                    {(!chips.is_empty() || offer_skill).then(|| view! {
                         <div class="next-chips" data-testid="next-chips">
                             <span class="next-label">{t(T::NextSteps)}</span>
                             {chips
@@ -1257,6 +1456,23 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                     }
                                 })
                                 .collect_view()}
+                            {offer_skill.then(|| view! {
+                                <span class="chip next-step skill-suggestion" data-testid="next-save-skill">
+                                    // The name comes from the visible text (WCAG 2.5.3).
+                                    <button type="button" class="skill-suggestion-take" data-testid="next-save-skill-take"
+                                        on:click=move |_| super::chat_ops::save_as_skill(ctx, shell)>
+                                        {icon(Glyph::Sparkle)}<span class="next-text">{t(T::SaveAsSkill)}</span>
+                                    </button>
+                                    <button type="button" class="chip-x" data-testid="next-save-skill-dismiss"
+                                        aria-label=tf(T::DismissNamed, &[t(T::SaveAsSkill)])
+                                        on:click=move |_| {
+                                            dismiss_skill_chip(&ctx.project_id.get_value());
+                                            chip_dismissed.set(true);
+                                        }>
+                                        {icon(Glyph::Close)}
+                                    </button>
+                                </span>
+                            })}
                         </div>
                     })}
                 </div>
@@ -1578,7 +1794,66 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
 
 #[cfg(test)]
 mod tests {
-    use super::{ChatItem, Retry, ToolCall, process_summary, tool_label, tool_texts};
+    use super::{
+        ChatItem, LoopRow, Retry, SkillLoop, ToolCall, process_summary, tool_label, tool_texts,
+    };
+
+    #[test]
+    fn the_skill_loop_counts_design_turns_and_finds_save_as_skill_ones() {
+        let asked = |sent: Option<&str>| LoopRow::Asked {
+            sent: sent.map(str::to_owned),
+        };
+        let turn = |run: &str, succeeded: bool, only_skill: bool| LoopRow::Turn {
+            run_id: Some(run.to_owned()),
+            succeeded,
+            only_skill,
+        };
+        let skill = crate::toolbox::skill_authoring_prompt("Tea", crate::i18n::Locale::En);
+        let rows = vec![
+            asked(None),
+            turn("r1", true, false),
+            asked(None),
+            turn("r2", false, false),
+            asked(Some("Write DESIGN.md")),
+            turn("r3", true, false),
+        ];
+        let l = SkillLoop::of(&rows);
+        assert_eq!(
+            (l.succeeded, l.saved()),
+            (2, false),
+            "a failed turn does not count"
+        );
+        // The request names it; a failed try is no save.
+        let mut with_skill = rows.clone();
+        with_skill.extend([
+            asked(Some(&skill)),
+            turn("r4", false, true),
+            asked(Some(&skill)),
+            turn("r5", true, true),
+        ]);
+        let l = SkillLoop::of(&with_skill);
+        assert_eq!(
+            (l.succeeded, l.saved_runs.as_slice()),
+            (2, &["r5".to_owned()][..])
+        );
+        // Known by its files alone (the request not kept), it is one too.
+        let l = SkillLoop::of(&[asked(None), turn("r6", true, true)]);
+        assert_eq!(
+            (l.succeeded, l.saved_runs.as_slice()),
+            (0, &["r6".to_owned()][..])
+        );
+        // The request marks only the turn that answers it.
+        let l = SkillLoop::of(&[
+            asked(Some(&skill)),
+            turn("r7", true, false),
+            asked(None),
+            turn("r8", true, false),
+        ]);
+        assert_eq!(
+            (l.succeeded, l.saved_runs.as_slice()),
+            (1, &["r7".to_owned()][..])
+        );
+    }
 
     #[test]
     fn a_retry_sends_the_request_and_shows_the_name_again() {

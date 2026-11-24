@@ -8,9 +8,16 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- After Save as skill, the turn offers Use @skill and Open skill, and the new skill is in @ and suggestions right away.
+- From the second finished page, the next-step card offers Save as skill until you save or dismiss it.
+- Skills without triggers, such as ones from agent CLIs, are suggested when the prompt names their id's words.
+
 ### Changed
 
 - Skills have their own item in the sidebar, above Plugins; old /plugins?skill= links still open the skill.
+- Save as skill in the + menu says why it is off.
 - Library > Skills opens on your own skills when you have some, and offers to import skills found in agent CLI folders.
 - Install from folder accepts paths starting with ~ and shows what is wrong right under the path.
 

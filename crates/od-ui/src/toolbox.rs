@@ -103,6 +103,25 @@ pub fn wrote_only_a_skill(written: &[String]) -> bool {
         })
 }
 
+/// The first line of [`skill_authoring_prompt`], whatever the language.
+const SKILL_PROMPT_HEAD: &str = "# Save this project as a skill\n";
+
+/// Whether `request` (a prepared turn's, `Message.prepared_message`) is
+/// the one "Save as skill" sends.
+#[must_use]
+pub fn is_skill_request(request: &str) -> bool {
+    request.starts_with(SKILL_PROMPT_HEAD)
+}
+
+/// Whether the next-step card offers "Save as skill" (a chip, besides the
+/// "+" menu item): after a turn that wrote a page, once the conversation
+/// has `succeeded` two turns or more, until a Save as skill turn has
+/// succeeded in it (`saved`) or the user dismissed the chip.
+#[must_use]
+pub fn offer_skill_save(wrote_page: bool, succeeded: usize, saved: bool, dismissed: bool) -> bool {
+    wrote_page && succeeded >= 2 && !saved && !dismissed
+}
+
 /// The turn "Save as skill" sends: the agent reads this project's chat and
 /// files, writes a reusable skill under [`SKILL_DIR`] and installs it
 /// through the daemon (`od skill install`, else `POST /api/skills/install`),
@@ -117,7 +136,7 @@ pub fn skill_authoring_prompt(project_name: &str, locale: Locale) -> String {
     let language = locale.native_name();
     let tag = locale.tag();
     format!(
-        "# Save this project as a skill\n\n\
+        "{SKILL_PROMPT_HEAD}\n\
          Turn the work in this project (\"{name}\") into a reusable Contour skill, so a \
          later project gets the same result from one sentence.\n\n\
          Read the conversation so far and the project's files. Keep what can be reused: \
@@ -182,6 +201,26 @@ mod tests {
             p.contains("--replace") && p.contains("\\\"replace\\\": true"),
             "{p}"
         );
+    }
+
+    #[test]
+    fn the_skill_request_is_known_by_its_head_in_any_language() {
+        for locale in [Locale::En, Locale::Vi, Locale::Ja] {
+            assert!(is_skill_request(&skill_authoring_prompt("Tea", locale)));
+        }
+        assert!(!is_skill_request("Save as skill"));
+        assert!(!is_skill_request("make a tea house landing"));
+        assert!(!is_skill_request(""));
+    }
+
+    #[test]
+    fn the_chip_shows_from_the_second_page_turn_until_saved_or_dismissed() {
+        assert!(offer_skill_save(true, 2, false, false));
+        assert!(offer_skill_save(true, 5, false, false));
+        assert!(!offer_skill_save(true, 1, false, false), "one turn");
+        assert!(!offer_skill_save(false, 2, false, false), "no page");
+        assert!(!offer_skill_save(true, 2, true, false), "saved once");
+        assert!(!offer_skill_save(true, 2, false, true), "dismissed");
     }
 
     #[test]
