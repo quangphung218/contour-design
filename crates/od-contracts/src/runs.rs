@@ -285,9 +285,11 @@ pub struct ChatRequest {
     pub agent_id: String,
     /// What the agent gets as the user's request.
     pub message: String,
-    /// What the chat shows and keeps as the user's message, when it is not
-    /// `message`: a prepared turn (Save as skill) shows its short name, not
-    /// its instructions to the agent.
+    /// What the chat shows and keeps as the user's message for a prepared
+    /// turn (Save as skill, Finalize, Continue…): its short name, or the
+    /// request itself. Present only on a prepared turn, which the store
+    /// marks so a Retry after a reload sends `message` again, without the
+    /// user's draft ([`Message::prepared_message`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shown_message: Option<String>,
     pub project_id: String,
@@ -495,6 +497,10 @@ pub struct Message {
     #[serde(default)]
     pub ended_at: Option<i64>,
     pub created_at: i64,
+    /// A user message of a prepared turn: what the agent got (`content` is
+    /// what the chat shows). `None` for a message the user wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepared_message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

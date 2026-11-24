@@ -8,6 +8,11 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Finalize, Continue, lint, media retry, form answers and Save as skill no longer send or clear your draft's files, @ chips and attached comments.
+- Retry of a Save as skill turn after reopening the project sends the full instructions again, not just its name.
+
 ## [0.2.0-beta.59] - 2026-11-24
 
 ### Added

@@ -475,7 +475,7 @@ pub fn ContinueTasks(turn: RwSignal<AssistantTurn>) -> impl IntoView {
         Some(view! {
             <div class="continue-tasks" data-testid="continue-tasks" data-left=left.to_string()>
                 {(!done).then(|| view! { <span class="muted">{tf(T::TaskNotFinished, &[&left.to_string()])}</span> })}
-                <button class="btn small" data-testid="continue-remaining" on:click=move |_| ctx.send(prompt.clone(), shell)>
+                <button class="btn small" data-testid="continue-remaining" on:click=move |_| ctx.send_prepared(prompt.clone(), None, shell)>
                     {icon(Glyph::Play)}{t(T::ContinueRemaining)}
                 </button>
             </div>
@@ -639,7 +639,7 @@ pub fn SaveAsSkill(ctx: StudioCtx) -> impl IntoView {
                 let name = ctx.project.with_untracked(|p| p.as_ref().map(|p| p.name.clone())).unwrap_or_default();
                 let locale = shell.locale.get_untracked();
                 let prompt = crate::toolbox::skill_authoring_prompt(&name, locale);
-                ctx.send_shown(prompt, t(T::SaveAsSkill).to_owned(), shell);
+                ctx.send_prepared(prompt, Some(t(T::SaveAsSkill).to_owned()), shell);
             }>
             {icon(Glyph::Sparkle)}{t(T::SaveAsSkill)}
         </button>

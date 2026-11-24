@@ -783,13 +783,19 @@ impl StudioCtx {
         self.send_at(text, shell, js_sys::Date::now() as i64, false, None, None);
     }
 
-    /// Sends a prepared turn: the agent gets `text`, the chat shows and
-    /// keeps `shown` (`ChatRequest.shown_message`). Not queued behind a
-    /// running turn, as the queue keeps only what it shows.
-    pub fn send_shown(self, text: String, shown: String, shell: Shell) {
-        if self.live_run.get_untracked().is_some() {
+    /// Sends a prepared turn, one a button wrote (Save as skill, Finalize,
+    /// Continue, a lint report, a media retry, a form's answers): the
+    /// agent gets `text`, the chat shows `shown` (else `text`). It is not
+    /// the user's draft, so it takes none of the composer's files,
+    /// attached comments or @ chips, and the store keeps `text` for a Retry
+    /// after a reload. While a run goes, one without `shown` waits in the
+    /// queue (still prepared); one with `shown` is not sent, as the queue
+    /// shows only the text it sends.
+    pub fn send_prepared(self, text: String, shown: Option<String>, shell: Shell) {
+        if self.live_run.get_untracked().is_some() && shown.is_some() {
             return;
         }
+        let shown = shown.unwrap_or_else(|| text.trim().to_owned());
         self.send_at(
             text,
             shell,
@@ -804,8 +810,8 @@ impl StudioCtx {
     /// a queued message keeps its own time for Recent projects, and
     /// `from_queue` marks it as not sent by the reader just now. `clear`, a
     /// patch of the project, goes to the server first, in the same work as
-    /// the run (the brief from Home: see [`Self::load`]). `shown`: what
-    /// the chat shows instead of `text` ([`Self::send_shown`]).
+    /// the run (the brief from Home: see [`Self::load`]). `shown`: a
+    /// prepared turn and what the chat shows for it ([`Self::send_prepared`]).
     fn send_at(
         self,
         text: String,
@@ -832,6 +838,7 @@ impl StudioCtx {
                     id: api::random_id(),
                     text,
                     sent_at,
+                    prepared: shown.is_some(),
                 });
             });
             return;
@@ -840,7 +847,7 @@ impl StudioCtx {
         let user_id = api::random_id();
         let assistant_id = api::random_id();
         let turn = RwSignal::new(AssistantTurn::new());
-        // A prepared turn ([`Self::send_shown`]) is not the user's draft: it
+        // A prepared turn ([`Self::send_prepared`]) is not the user's draft: it
         // takes none of the composer's files, attached comments or @ chips,
         // and leaves them all where they are for the user's own message.
         let bare = shown.is_some();
@@ -1128,7 +1135,9 @@ impl StudioCtx {
             .queue
             .try_update(|q| (!q.is_empty()).then(|| q.remove(0)));
         if let Some(Some(next)) = next {
-            self.send_at(next.text, shell, next.sent_at, auto, None, None);
+            // A prepared turn stays one: the draft typed meanwhile is not its.
+            let shown = next.prepared.then(|| next.text.clone());
+            self.send_at(next.text, shell, next.sent_at, auto, None, shown);
         }
     }
 
@@ -1356,7 +1365,8 @@ impl StudioCtx {
             .iter()
             .map(|m| match m.role {
                 MessageRole::User => ChatItem::user(m.id.clone(), m.content.clone())
-                    .with_attachments(m.attachments.clone()),
+                    .with_attachments(m.attachments.clone())
+                    .with_sent(m.prepared_message.clone()),
                 MessageRole::Assistant => {
                     let turn = RwSignal::new(AssistantTurn::from_stored(m));
                     if turn.with_untracked(|t| t.state.is_live()) {

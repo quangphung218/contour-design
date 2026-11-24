@@ -52,6 +52,11 @@ Paths below are relative to this folder.
    - `src/app/preview_comments.rs::the_draft_keeps_the_slide_it_was_picked_on`
 10. A late Manual edit write, read or upload lands on its own file after a switch.
     - `src/app/manual_edit.rs::a_write_that_lands_after_a_switch_cleans_its_own_file_only`
+11. Only the composer's Send (and a Retry of the user's own message) takes the draft's files, attached comments
+    and @ chips (`StudioCtx::send`). A turn a button writes goes through `StudioCtx::send_prepared`; the store keeps
+    its request (`Message.prepared_message`) so a Retry after a reload sends it again, still without the draft.
+    - `tests/prepared_turns.rs` (source scan: every `.send(…)`/`send_at(…)` listed in `KEPT` with why)
+    - `src/app/chat_view.rs::a_retry_sends_the_request_and_shows_the_name_again`; e2e `e2e/library.e2e.mjs` (Save as skill)
 
 ## Traps
 - Reading a disposed signal after an `await` panics; `Tasks::spawn` drops all work after its first await,

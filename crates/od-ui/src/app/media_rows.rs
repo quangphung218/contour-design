@@ -163,7 +163,7 @@ fn media_row_view(ctx: StudioCtx, row: Row, live: bool) -> impl IntoView {
         } else {
             view! {
                 <button class="btn ghost small" data-testid="media-retry"
-                    on:click=move |_| ctx.send(text.clone(), ctx.shell)>
+                    on:click=move |_| ctx.send_prepared(text.clone(), None, ctx.shell)>
                     {icon(Glyph::Refresh)}{t(T::NextRetry)}
                 </button>
             }

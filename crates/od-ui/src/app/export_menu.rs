@@ -754,7 +754,7 @@ fn finalize_label(ctx: StudioCtx) -> &'static str {
 /// Asks the agent to write (or refresh) `DESIGN.md`, the design package a
 /// coding agent starts from.
 fn finalize(ctx: StudioCtx) {
-    ctx.send(t(T::FinalizePrompt).to_owned(), ctx.shell);
+    ctx.send_prepared(t(T::FinalizePrompt).to_owned(), None, ctx.shell);
 }
 
 /// Copies `text` to the clipboard.

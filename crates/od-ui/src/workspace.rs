@@ -122,6 +122,10 @@ pub struct Queued {
     pub text: String,
     /// When the user queued it (epoch ms): the time it counts as sent.
     pub sent_at: i64,
+    /// A prepared turn (Continue, Finalize…), not the user's draft: it goes
+    /// without the composer's files, attached comments and @ chips.
+    #[serde(default)]
+    pub prepared: bool,
 }
 
 /// Why the queue waits for the user instead of going out on its own.
@@ -361,7 +365,15 @@ mod tests {
             id: "q1".into(),
             text: "queued while cut".into(),
             sent_at: 7,
+            prepared: false,
         }];
+        // Stored before `prepared` existed: a message the user wrote.
+        assert_eq!(
+            decode_held(
+                r#"{"why":"LinkLost","items":[{"id":"q1","text":"queued while cut","sent_at":7}]}"#
+            ),
+            Some((QueueHold::LinkLost, items.clone()))
+        );
         let stored = encode_held(Some(QueueHold::LinkLost), &items);
         assert_eq!(
             decode_held(&stored),

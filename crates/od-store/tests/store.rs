@@ -116,6 +116,7 @@ fn usage_keeps_the_first_mark_and_counts_turns_since_recording_began() {
     for i in 0..2 {
         store
             .begin_turn(&NewTurn {
+                prepared_message: None,
                 conversation_id: &conversation,
                 user_message_id: &format!("u{i}"),
                 assistant_message_id: &format!("a{i}"),

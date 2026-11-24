@@ -77,6 +77,12 @@ case "$line" in *"# Design system revision"*)
 # on PATH (curl to the daemon, absolute path). A 409 (the id is taken)
 # moves on to tea-house-2, then -3, as the prompt says.
 case "$line" in *"generated-skill/"*)
+  # `fail-next-skill` in the project: this turn fails (once), for Retry.
+  if [ -f fail-next-skill ]; then
+    rm -f fail-next-skill
+    echo "mock: skill turn failed on purpose" >&2
+    exit 1
+  fi
   answer=""
   for id in tea-house tea-house-2 tea-house-3; do
     rm -rf generated-skill
