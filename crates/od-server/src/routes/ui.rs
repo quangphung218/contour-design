@@ -593,7 +593,7 @@ async fn import_folder_route(
     ApiJson(req): ApiJson<ImportFolderRequest>,
 ) -> ApiResult<ApiJson<CreateProjectResponse>> {
     let (project, conversation_id) = state
-        .blocking(move |s| import_folder(s, Path::new(&req.base_dir), req.name))
+        .blocking(move |s| import_folder(s, &super::library::typed_folder(&req.base_dir), req.name))
         .await?;
     Ok(ApiJson(CreateProjectResponse {
         project,

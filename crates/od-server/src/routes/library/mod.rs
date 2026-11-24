@@ -75,8 +75,11 @@ pub(crate) fn optional_json<T: serde::de::DeserializeOwned + Default>(
     serde_json::from_slice(body).map_err(|e| ApiErr::bad_request(e.to_string()))
 }
 
-/// A folder path as the user typed it, trimmed: `~` and `~/…` start at
-/// the home folder (the daemon's), as in a shell. Anything else is kept.
+/// A folder path as the user typed it, trimmed: `~` and `~/…` (`~\…` on
+/// Windows) start at the home folder (the daemon's), as in a shell.
+/// Anything else is kept. Every route that takes a folder the user types
+/// reads it through here (Install from folder, linked folders, Import
+/// folder, project locations).
 pub(crate) fn typed_folder(raw: &str) -> std::path::PathBuf {
     expand_home(raw, od_runtime::login_path::home_dir().as_deref())
 }

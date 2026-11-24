@@ -1474,14 +1474,17 @@ fn pick_state(bundled: Option<&[String]>, id: &str) -> Pick {
 }
 
 /// A path that names a folder on its own: from the root, from the home
-/// folder (`~`, which the daemon expands), or a Windows drive or share.
-/// Anything else depends on a current folder the user never sees.
+/// folder (`~`, which the daemon expands; `~\` too, as the daemon does on
+/// Windows), or a Windows drive or share. Anything else depends on a
+/// current folder the user never sees. The app cannot tell the daemon's
+/// OS, so `~\` passes everywhere; a Unix daemon answers "No folder".
 fn full_path(path: &str) -> bool {
     let p = path.trim();
     let b = p.as_bytes();
     p.starts_with('/')
         || p == "~"
         || p.starts_with("~/")
+        || p.starts_with("~\\")
         || p.starts_with("\\\\")
         || (b.len() > 2
             && b[0].is_ascii_alphabetic()
@@ -1836,6 +1839,8 @@ mod tests {
             "/Users/ada/skills/tea",
             " ~/skills/tea ",
             "~",
+            // Windows: the daemon there takes `~\` as `~/`.
+            "~\\skills\\tea",
             "C:\\skills\\tea",
             "d:/skills",
             "\\\\server\\share\\tea",
