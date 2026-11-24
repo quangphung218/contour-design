@@ -400,48 +400,90 @@ try {
   assert.ok(await saveSkill.isDisabled(), 'off while a turn runs');
   await plusMenu.click();
   await until(async () => (await teaTurn.getAttribute('data-state')) === 'succeeded', 'second tea turn ends', 30_000);
-  // The user's own draft: text, an @ skill chip and a file. Saving as a
-  // skill is not that message: it leaves all three in the composer.
+  // The user's own draft: text, an @ skill chip, a file and a comment
+  // attached on the preview. Saving as a skill is not that message: it
+  // leaves all four where they are, and so does its Retry after a reload.
+  const comments = async (cid) =>
+    (await api(`/api/projects/${teaProject}/conversations/${cid}/comments`)).comments;
+  const frame = page.frameLocator('iframe[data-testid="preview"]');
+  await frame.locator('h1').waitFor();
+  await page.getByTestId('comment-mode').click();
+  await sleep(150);
+  await frame.locator('h1').click();
+  await page.getByTestId('comment-note').fill('Warmer title please');
+  await page.getByTestId('comment-add').click();
+  await page.getByTestId('comment-pin').first().waitFor();
+  await page.getByTestId('comment-mode').click();
+  const stageDraft = async (file) => {
+    await teaComposer.fill('');
+    await teaComposer.pressSequentially(draftText);
+    await page.locator('[data-testid="mention-item"]').first().filter({ hasText: 'web-clone' }).waitFor();
+    await teaComposer.press('Enter');
+    await draftChip.waitFor();
+    await page.getByTestId('file-input').setInputFiles({ name: file, mimeType: 'image/png', buffer: PNG });
+    // Uploaded, the file shows as an attachment of the draft.
+    const chip = page.locator(`[data-testid="attachment-chip"][title*="${file.replace('.png', '')}"]`);
+    await chip.waitFor();
+    return chip;
+  };
   const draftText = 'redo the hero with @web-cl';
-  await teaComposer.fill('');
-  await teaComposer.pressSequentially(draftText);
-  await page.locator('[data-testid="mention-item"]').first().filter({ hasText: 'web-clone' }).waitFor();
-  await teaComposer.press('Enter');
   const draftChip = page.locator('[data-testid="context-chip"][data-kind="skill"]').getByText('web-clone');
-  await draftChip.waitFor();
+  let draftFile = await stageDraft('draft-ref.png');
   const draftValue = await teaComposer.inputValue();
-  await page.getByTestId('file-input').setInputFiles({ name: 'draft-ref.png', mimeType: 'image/png', buffer: PNG });
-  // Uploaded, the file shows as an attachment of the draft.
-  const draftFile = page.locator('[data-testid="attachment-chip"][title*="draft-ref"]');
-  await draftFile.waitFor();
+  // Each body a prepared turn sends: the request, its name, none of the draft.
+  const checkPrepared = (body, label) => {
+    const sent = body.message;
+    assert.ok(sent.includes('generated-skill/<id>/SKILL.md') && sent.includes('od skill install'), `${label}: the prepared turn is sent`);
+    assert.ok(sent.includes('"Tea house"'), `${label}: it names the project`);
+    assert.equal(body.shownMessage, 'Save as skill', label);
+    assert.deepEqual(body.attachments ?? [], [], `${label}: the draft's file does not go with it`);
+    assert.deepEqual(body.skillIds ?? [], [], `${label}: the draft's @ skill does not go with it`);
+    assert.deepEqual(body.commentAttachments ?? [], [], `${label}: the attached comment does not go with it`);
+  };
+  const draftStays = async (label) => {
+    assert.equal(await teaComposer.inputValue(), draftValue, `${label}: the draft text stays`);
+    assert.ok(await draftChip.isVisible(), `${label}: the @ chip stays`);
+    assert.ok(await draftFile.isVisible(), `${label}: the file stays`);
+    const cid = sentBody.conversationId;
+    const list = await comments(cid);
+    assert.equal(list.length, 1, `${label}: one comment`);
+    assert.equal(list[0].status, 'attached', `${label}: the comment stays attached`);
+  };
+  // The first try fails (the mock agent exits 1 once): Retry after a reload.
+  writeFileSync(join(data, 'projects', teaProject, 'fail-next-skill'), '');
   await plusMenu.click();
   await until(async () => !(await saveSkill.isDisabled()), 'on after a finished turn');
   await page.locator('.plus-menu').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   await page.screenshot({ path: join(OUT, 'save-as-skill-menu.png') });
   const runReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
-  const deliverableChecks = [];
-  const onDeliverable = (r) => r.url().includes('/deliverable') && deliverableChecks.push(r.url());
-  page.on('request', onDeliverable);
   await saveSkill.click();
-  const sentReq = await runReq;
-  const sentBody = JSON.parse(sentReq.postData());
-  const sent = sentBody.message;
-  assert.ok(sent.includes('generated-skill/<id>/SKILL.md') && sent.includes('od skill install'), 'the prepared turn is sent');
-  assert.ok(sent.includes('"Tea house"'), 'it names the project');
-  assert.equal(sentBody.shownMessage, 'Save as skill');
-  assert.deepEqual(sentBody.attachments ?? [], [], "the draft's file does not go with it");
-  assert.deepEqual(sentBody.skillIds ?? [], [], "the draft's @ skill does not go with it");
-  assert.deepEqual(sentBody.commentAttachments ?? [], [], 'no attached comment goes with it');
+  const sentBody = JSON.parse((await runReq).postData());
+  checkPrepared(sentBody, 'first try');
   // The chat shows the action's name, not the instructions to the agent.
   const bubble = page.getByTestId('user-msg').last();
   await until(async () => (await bubble.textContent()).trim() === 'Save as skill', 'the bubble shows the name');
+  await until(async () => (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'failed', 'the first try fails', 30_000);
+  await draftStays('after the failed try');
+  // Reloaded, the chat knows only the name; Retry still sends the request,
+  // and takes none of a draft made again (text, @ chip, file, comment).
+  await settleStudio(false);
+  await page.reload();
+  await until(async () => (await page.getByTestId('user-msg').count()) === 3, 'the conversation loads again');
+  await until(async () => (await teaComposer.inputValue()) === draftValue, 'the draft text is back');
+  draftFile = await stageDraft('retry-ref.png');
+  const retryReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
+  const deliverableChecks = [];
+  const onDeliverable = (r) => r.url().includes('/deliverable') && deliverableChecks.push(r.url());
+  page.on('request', onDeliverable);
+  await page.getByTestId('assistant-msg').last().getByTestId('next-retry').click();
+  const sentReq = await retryReq;
+  checkPrepared(JSON.parse(sentReq.postData()), 'Retry after a reload');
   const skillRun = (await (await sentReq.response()).json()).runId;
   const skillTurn = page.getByTestId('assistant-msg').last();
   await until(async () => (await skillTurn.getAttribute('data-state')) === 'succeeded', 'save-as-skill turn ends', 30_000);
   await skillTurn.filter({ hasText: 'Installed: {id:tea-house}' }).waitFor();
-  assert.equal(await teaComposer.inputValue(), draftValue, 'the draft text stays');
-  assert.ok(await draftChip.isVisible(), 'the @ chip stays');
-  assert.ok(await draftFile.isVisible(), 'the file stays');
+  assert.equal(await page.getByTestId('user-msg').last().textContent().then((t) => t.trim()), 'Save as skill');
+  await draftStays('after the Retry');
   assert.ok(existsSync(join(data, 'skills', 'tea-house', 'assets', 'tokens.css')), 'side file installed');
   // A turn that wrote only its skill is no design turn: its entry is not
   // checked, so no "did not update index.html" warning.
@@ -456,9 +498,10 @@ try {
   // Opened again, the conversation still shows the name.
   await settleStudio(false);
   await page.reload();
-  await until(async () => (await page.getByTestId('user-msg').count()) === 3, 'the conversation loads again');
+  await until(async () => (await page.getByTestId('user-msg').count()) === 4, 'the conversation loads again');
   const shownTexts = await page.getByTestId('user-msg').allTextContents();
   assert.equal(shownTexts[2].trim(), 'Save as skill');
+  assert.equal(shownTexts[3].trim(), 'Save as skill');
   assert.ok(!shownTexts.join(' ').includes('curl') && !shownTexts.join(' ').includes('OD_DAEMON_URL'), 'no instructions in the chat');
   const firstSkill = readFileSync(join(data, 'skills', 'tea-house', 'SKILL.md'), 'utf8');
 
@@ -488,8 +531,10 @@ try {
   results.saveAsSkill = 'ok';
   // The draft's file is a real file of the project, and Media lists every
   // image across projects: the media section below starts from none.
-  const draftGone = await fetch(`${BASE}/api/projects/${teaProject}/files/draft-ref.png`, { method: 'DELETE' });
-  assert.ok(draftGone.ok, `draft-ref.png deleted (${draftGone.status})`);
+  for (const name of ['draft-ref.png', 'retry-ref.png']) {
+    const gone = await fetch(`${BASE}/api/projects/${teaProject}/files/${name}`, { method: 'DELETE' });
+    assert.ok(gone.ok, `${name} deleted (${gone.status})`);
+  }
 
   // ------------------------------------------------------------- media
   await page.locator('nav a[href="/media"]').click();

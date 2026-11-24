@@ -30,6 +30,9 @@ pub struct NewTurn<'a> {
     pub user_message_id: &'a str,
     pub assistant_message_id: &'a str,
     pub content: &'a str,
+    /// What the agent got, for a prepared turn (its `content` is what the
+    /// chat shows); `None` for a message the user wrote.
+    pub prepared_message: Option<&'a str>,
     pub attachments: &'a [String],
     pub agent_id: &'a str,
     pub run_id: &'a str,
@@ -75,7 +78,8 @@ fn conversation_from_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
 
 const CONVERSATION_COLUMNS: &str = "id, project_id, title, session_mode, created_at, updated_at";
 const MESSAGE_COLUMNS: &str = "id, conversation_id, role, content, agent_id, run_id, run_status, \
-     last_run_event_id, position, events_json, attachments_json, started_at, ended_at, created_at";
+     last_run_event_id, position, events_json, attachments_json, started_at, ended_at, created_at, \
+     prepared_message";
 
 fn json_list<T: serde::de::DeserializeOwned>(raw: Option<String>) -> Vec<T> {
     raw.and_then(|s| serde_json::from_str(&s).ok())
@@ -104,6 +108,7 @@ fn message_from_row(row: &Row<'_>) -> rusqlite::Result<Message> {
         started_at: row.get(11)?,
         ended_at: row.get(12)?,
         created_at: row.get(13)?,
+        prepared_message: row.get(14)?,
     })
 }
 
@@ -135,11 +140,11 @@ fn copy_messages(conn: &Connection, from: &str, to: &str, upto: i64) -> Result<(
     conn.execute(
         "INSERT INTO messages (id, conversation_id, role, content, agent_id, run_id, run_status, \
            last_run_event_id, position, events_json, attachments_json, comment_attachments_json, \
-           produced_files_json, feedback_json, started_at, ended_at, created_at) \
+           produced_files_json, feedback_json, started_at, ended_at, created_at, prepared_message) \
          SELECT lower(hex(randomblob(16))), ?2, role, content, agent_id, run_id, \
            CASE WHEN run_status = 'running' THEN 'canceled' ELSE run_status END, \
            last_run_event_id, position, events_json, attachments_json, comment_attachments_json, \
-           produced_files_json, feedback_json, started_at, ended_at, created_at \
+           produced_files_json, feedback_json, started_at, ended_at, created_at, prepared_message \
          FROM messages WHERE conversation_id = ?1 AND position <= ?3",
         params![from, to, upto],
     )?;
@@ -414,7 +419,8 @@ impl Store {
                 let position = next_position(conn, turn.conversation_id)?;
                 conn.execute(
                     "INSERT INTO messages (id, conversation_id, role, content, agent_id, position, \
-                     attachments_json, created_at) VALUES (?1, ?2, 'user', ?3, ?4, ?5, ?6, ?7)",
+                     attachments_json, created_at, prepared_message) \
+                     VALUES (?1, ?2, 'user', ?3, ?4, ?5, ?6, ?7, ?8)",
                     params![
                         turn.user_message_id,
                         turn.conversation_id,
@@ -422,7 +428,8 @@ impl Store {
                         turn.agent_id,
                         position,
                         attachments,
-                        now
+                        now,
+                        turn.prepared_message
                     ],
                 )?;
                 conn.execute(
@@ -694,9 +701,14 @@ mod tests {
                 ..CreateProjectRequest::default()
             })
             .unwrap_or_else(|e| panic!("{e}"));
-        for (u, a, run) in [("u1", "a1", "r1"), ("u2", "a2", "r2")] {
+        // u1 is a prepared turn: the agent got more than the chat shows.
+        for (u, a, run, prepared) in [
+            ("u1", "a1", "r1", Some("u1 in full")),
+            ("u2", "a2", "r2", None),
+        ] {
             store
                 .begin_turn(&NewTurn {
+                    prepared_message: prepared,
                     conversation_id: &conv,
                     user_message_id: u,
                     assistant_message_id: a,
@@ -728,6 +740,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["u1", ""]
         );
+        assert_eq!(copied[0].prepared_message.as_deref(), Some("u1 in full"));
+        let own = store.list_messages(&conv).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(own[0].prepared_message.as_deref(), Some("u1 in full"));
+        assert_eq!(own[2].prepared_message, None, "a message the user wrote");
         assert!(
             copied.iter().all(|m| m.id != "u1" && m.id != "a1"),
             "fresh ids"
@@ -769,6 +785,7 @@ mod tests {
         let (other, _) = new_project();
         store
             .begin_turn(&NewTurn {
+                prepared_message: None,
                 conversation_id: &conv,
                 user_message_id: "u1",
                 assistant_message_id: "a1",
@@ -811,6 +828,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("{e}"));
         store
             .begin_turn(&NewTurn {
+                prepared_message: None,
                 conversation_id: &conv,
                 user_message_id: "u1",
                 assistant_message_id: "a1",
@@ -867,6 +885,7 @@ mod tests {
 
         // Ids are never reused, and a message stays in its conversation.
         let again = store.begin_turn(&NewTurn {
+            prepared_message: None,
             conversation_id: &conv,
             user_message_id: "u2",
             assistant_message_id: "a1",
@@ -920,6 +939,7 @@ mod tests {
         let resolved = comment(CommentStatus::Resolved);
         store
             .begin_turn(&NewTurn {
+                prepared_message: None,
                 conversation_id: &conv,
                 user_message_id: "u1",
                 assistant_message_id: "a1",

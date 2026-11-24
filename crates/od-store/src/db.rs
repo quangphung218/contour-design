@@ -106,6 +106,11 @@ CREATE TABLE message_event_batches (
   PRIMARY KEY (message_id, seq)
 );
 ",
+    // What the agent got for a prepared turn (Save as skill, Finalize…):
+    // Retry after a reload sends it again, not the chat's short name.
+    r"
+ALTER TABLE messages ADD COLUMN prepared_message TEXT;
+",
 ];
 
 /// Tables that must exist after migration. Used by tests.

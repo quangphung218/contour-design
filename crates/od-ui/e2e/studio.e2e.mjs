@@ -812,6 +812,28 @@ try {
   // That turn wrote nothing: the deliverable check says so.
   await page.getByTestId('deliverable-warning').waitFor();
   results.deliverable = 'ok';
+  // Sent while a turn runs, the report waits in the queue and stays a
+  // prepared turn: a file the user attaches meanwhile is the draft's, so
+  // the report goes without it and the file stays in the composer.
+  await page.getByTestId('composer').fill('slow tweak again');
+  await page.getByTestId('composer').press('Enter');
+  await until(async () => (await lastAssistant().getAttribute('data-state')) === 'running', 'slow tweak runs');
+  const queuedFrom = runBodies.length;
+  await page.locator('[data-testid="lint-finding"][data-rule="emoji-icon"]').waitFor();
+  await page.getByTestId('lint-send').click();
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'the report is queued');
+  await page.getByTestId('file-input').setInputFiles({ name: 'queue-note.txt', mimeType: 'text/plain', buffer: Buffer.from('mine') });
+  const queueNote = page.locator('[data-testid="attachment-chip"][title*="queue-note"]');
+  await queueNote.waitFor();
+  await until(async () => runBodies.length > queuedFrom, 'the queued report goes', 30_000);
+  assert.match(runBodies[queuedFrom].message, /^<artifact-lint>/);
+  assert.deepEqual(runBodies[queuedFrom].attachments ?? [], [], 'the queued report takes no draft file');
+  await lastAssistant().getByText('Saw lint findings.').waitFor();
+  await turnEnd('queued lint turn end');
+  assert.ok(await queueNote.isVisible(), 'the file stays in the draft');
+  await queueNote.locator('.chip-x').click();
+  await until(async () => (await page.getByTestId('attachment-chip').count()) === 0, 'draft file removed');
+  results.lintQueued = 'ok';
   await page.getByTestId('lint-badge').click();
 
   // Palette: electric moves chromatic paint to hue ~262; original restores.

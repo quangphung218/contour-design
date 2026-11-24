@@ -39,9 +39,20 @@ pub struct ChatItem {
     pub kind: ItemKind,
     /// Files sent with a user message (`attachments`), for a retry.
     pub attachments: Vec<String>,
-    /// The request a user message sent when the chat shows another text
-    /// (a prepared turn shows its name), for a retry.
+    /// The request of a prepared turn (one a button wrote, see
+    /// `StudioCtx::send_prepared`), for a retry; `None` for a message the
+    /// user wrote. The chat may show a name instead (Save as skill).
     pub sent: Option<String>,
+}
+
+/// What a retry of a user message sends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Retry {
+    /// The user's own message, again with its files (the Send path).
+    Own { text: String, files: Vec<String> },
+    /// A prepared turn: the same request, with none of the user's draft,
+    /// and the name it showed when that is not the request.
+    Prepared { text: String, shown: Option<String> },
 }
 
 #[derive(Clone)]
@@ -72,16 +83,21 @@ impl ChatItem {
         self
     }
 
-    /// What a retry of this user message sends: the request, the text the
-    /// chat showed for it when that differs, and its files.
+    /// What a retry of this user message sends.
     #[must_use]
-    pub fn retry(&self) -> Option<(String, Option<String>, Vec<String>)> {
+    pub fn retry(&self) -> Option<Retry> {
         let ItemKind::User(text) = &self.kind else {
             return None;
         };
         Some(match &self.sent {
-            Some(sent) => (sent.clone(), Some(text.clone()), self.attachments.clone()),
-            None => (text.clone(), None, self.attachments.clone()),
+            Some(sent) => Retry::Prepared {
+                text: sent.clone(),
+                shown: (text != sent).then(|| text.clone()),
+            },
+            None => Retry::Own {
+                text: text.clone(),
+                files: self.attachments.clone(),
+            },
         })
     }
 
@@ -1221,12 +1237,13 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                             Followup::Variations => t(T::FollowupVariations),
                                         }.to_owned()),
                                         NextStep::Retry => {
-                                            if let Some((text, shown, files)) = asked() {
-                                                ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, files));
-                                                match shown {
-                                                    Some(shown) => ctx.send_shown(text, shown, shell),
-                                                    None => ctx.send(text, shell),
+                                            match asked() {
+                                                Some(Retry::Own { text, files }) => {
+                                                    ctx.tools.attachments.update(|a| crate::workspace::add_missing(a, files));
+                                                    ctx.send(text, shell);
                                                 }
+                                                Some(Retry::Prepared { text, shown }) => ctx.send_prepared(text, shown, shell),
+                                                None => {}
                                             }
                                         }
                                         _ => navigate("/settings"),
@@ -1441,7 +1458,8 @@ fn QuestionFormView(form: QuestionForm, enabled: Signal<bool>) -> impl IntoView 
             return;
         }
         submitted.set(true);
-        ctx.send(msg, shell);
+        // The answers are the form's, not the composer's draft.
+        ctx.send_prepared(msg, None, shell);
     };
 
     view! {
@@ -1560,7 +1578,7 @@ fn QuestionField(q: Question, answers: RwSignal<Answers>, active: Signal<bool>) 
 
 #[cfg(test)]
 mod tests {
-    use super::{ChatItem, ToolCall, process_summary, tool_label, tool_texts};
+    use super::{ChatItem, Retry, ToolCall, process_summary, tool_label, tool_texts};
 
     #[test]
     fn a_retry_sends_the_request_and_shows_the_name_again() {
@@ -1568,17 +1586,29 @@ mod tests {
             .with_attachments(vec!["a.png".into()]);
         assert_eq!(
             plain.retry(),
-            Some(("make a page".into(), None, vec!["a.png".into()]))
+            Some(Retry::Own {
+                text: "make a page".into(),
+                files: vec!["a.png".into()]
+            })
         );
         let prepared = ChatItem::user("u2".into(), "Save as skill".into())
             .with_sent(Some("# Save this project as a skill …".into()));
         assert_eq!(
             prepared.retry(),
-            Some((
-                "# Save this project as a skill …".into(),
-                Some("Save as skill".into()),
-                Vec::new()
-            ))
+            Some(Retry::Prepared {
+                text: "# Save this project as a skill …".into(),
+                shown: Some("Save as skill".into()),
+            })
+        );
+        // Finalize shows its request: still prepared, nothing else shown.
+        let finalize = ChatItem::user("u3".into(), "Write DESIGN.md".into())
+            .with_sent(Some("Write DESIGN.md".into()));
+        assert_eq!(
+            finalize.retry(),
+            Some(Retry::Prepared {
+                text: "Write DESIGN.md".into(),
+                shown: None,
+            })
         );
     }
 

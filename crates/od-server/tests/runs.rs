@@ -507,6 +507,11 @@ async fn a_shown_message_is_what_the_chat_keeps_and_the_agent_gets_the_request()
         .cloned()
         .unwrap();
     assert_eq!(user["content"], "Save as skill");
+    // Kept for a Retry after a reload, which must send the request again.
+    assert_eq!(
+        user["preparedMessage"],
+        "# Prepared\n\nRun curl $OD_DAEMON_URL/x"
+    );
     let info = d.get_json(&format!("/api/runs/{}", run.run_id)).await;
     assert!(!info.to_string().contains("OD_DAEMON_URL"), "{info}");
     assert!(

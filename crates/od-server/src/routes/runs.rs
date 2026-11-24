@@ -405,6 +405,10 @@ async fn prepare_and_launch(
                 user_message_id: &user_message,
                 assistant_message_id: &assistant,
                 content: shown_message(&req2),
+                prepared_message: req2
+                    .shown_message
+                    .is_some()
+                    .then_some(req2.message.as_str()),
                 attachments: &req2.attachments,
                 agent_id: def.id,
                 run_id: &run_id,
