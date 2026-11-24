@@ -1031,6 +1031,26 @@ try {
   assert.equal(shownTexts[2].trim(), 'Save as skill');
   assert.equal(shownTexts[3].trim(), 'Save as skill');
   assert.ok(!shownTexts.join(' ').includes('curl') && !shownTexts.join(' ').includes('OD_DAEMON_URL'), 'no instructions in the chat');
+  // The skill's actions come from the files the turn wrote, so they stay
+  // after a reload, under its "Done" line.
+  const savedAgain = page.getByTestId('assistant-msg').nth(3).locator('[data-testid="saved-skill"][data-id="tea-house"]');
+  await savedAgain.waitFor();
+  assert.ok(await savedAgain.evaluate((row) => {
+    const done = row.closest('[data-testid="assistant-msg"]').querySelector('[data-testid="run-state"]');
+    return !!done && (done.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  }), 'the skill row comes after the Done line');
+  // Saved once in this project: a new conversation of it does not offer
+  // the chip again after two page turns.
+  await settleStudio(false);
+  await page.getByTestId('new-conversation').click();
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 0, 'a new conversation');
+  for (const [i, text] of ['tea house landing again', 'warmer greens again'].entries()) {
+    await teaComposer.fill(text);
+    await page.getByTestId('send').click();
+    await until(async () => (await page.getByTestId('assistant-msg').count()) === i + 1 && (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', `new conversation, turn ${i + 1} ends`, 30_000);
+  }
+  await cardSettled(page.getByTestId('assistant-msg').last());
+  assert.equal(await saveChip.count(), 0, 'no chip in another conversation of a saved project');
   const firstSkill = readFileSync(join(data, 'skills', 'tea-house', 'SKILL.md'), 'utf8');
 
   // Another project with the same name saved as a skill: the agent gets a

@@ -103,6 +103,28 @@ pub fn wrote_only_a_skill(written: &[String]) -> bool {
         })
 }
 
+/// The ids of the skills a turn wrote, in the order it wrote them: `<id>`
+/// of each `SKILL_DIR/<id>/SKILL.md`. A Save as skill turn that found its
+/// id taken writes again under a new one (`-2`), so the last one is the
+/// skill it installed.
+#[must_use]
+pub fn written_skill_ids(written: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for f in written {
+        let Some(id) = f
+            .strip_prefix(SKILL_DIR)
+            .and_then(|rest| rest.strip_prefix('/'))
+            .and_then(|rest| rest.strip_suffix("/SKILL.md"))
+            .filter(|id| !id.is_empty() && !id.contains('/'))
+        else {
+            continue;
+        };
+        out.retain(|x| x != id);
+        out.push(id.to_owned());
+    }
+    out
+}
+
 /// The first line of [`skill_authoring_prompt`], whatever the language.
 const SKILL_PROMPT_HEAD: &str = "# Save this project as a skill\n";
 
@@ -178,6 +200,38 @@ mod tests {
         assert!(FEATURED.iter().all(|f| find(f).is_some()));
         let ids: std::collections::HashSet<_> = ACTIONS.iter().map(|a| a.id).collect();
         assert_eq!(ids.len(), ACTIONS.len());
+    }
+
+    #[test]
+    fn the_skill_ids_written_come_in_the_order_written() {
+        let v = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            written_skill_ids(&v(&[
+                "generated-skill/tea/SKILL.md",
+                "generated-skill/tea/assets/tokens.css",
+                "generated-skill/tea-2/SKILL.md",
+                "index.html",
+            ])),
+            v(&["tea", "tea-2"])
+        );
+        // Written again last: it is the last one.
+        assert_eq!(
+            written_skill_ids(&v(&[
+                "generated-skill/a/SKILL.md",
+                "generated-skill/b/SKILL.md",
+                "generated-skill/a/SKILL.md",
+            ])),
+            v(&["b", "a"])
+        );
+        for none in [
+            "generated-skill/SKILL.md",
+            "generated-skill//SKILL.md",
+            "generated-skill/a/b/SKILL.md",
+            "generated-skill-old/a/SKILL.md",
+            "x/generated-skill/a/SKILL.md",
+        ] {
+            assert!(written_skill_ids(&v(&[none])).is_empty(), "{none}");
+        }
     }
 
     #[test]

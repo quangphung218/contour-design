@@ -199,11 +199,6 @@ impl SkillLoop {
     }
 }
 
-/// The skills each Save as skill turn of this Studio installed, by run:
-/// the ids the skill list had new when it loaded again after the turn.
-#[derive(Clone, Copy)]
-struct SavedSkills(RwSignal<Vec<(String, Vec<String>)>>);
-
 /// `localStorage` key: the user dismissed the "Save as skill" chip of
 /// this project's next-step card.
 fn skill_chip_key(project: &str) -> String {
@@ -223,23 +218,34 @@ fn dismiss_skill_chip(project: &str) {
     }
 }
 
-/// After a Save as skill turn succeeds: the skill list again, so `@` and
-/// the suggestions of this Studio offer the new skill, and the ids it
-/// added go to [`SavedSkills`] for the turn's actions. Leaving the Studio
-/// first drops it (UI only).
-fn reload_skills_after(run: String, sources: Sources, saved: SavedSkills, tasks: Tasks) {
-    let before = sources.skill_ids_untracked();
+/// `localStorage` key: a Save as skill turn of this project succeeded (in
+/// any of its conversations). The chip then stays away in all of them, as
+/// a dismissed one does.
+fn skill_saved_key(project: &str) -> String {
+    format!("od.skillSaved.{project}")
+}
+
+fn skill_saved(project: &str) -> bool {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|s| s.get_item(&skill_saved_key(project)).ok().flatten())
+        .is_some()
+}
+
+fn mark_skill_saved(project: &str) {
+    if let Some(s) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = s.set_item(&skill_saved_key(project), "1");
+    }
+}
+
+/// After a Save as skill turn succeeds: the skill list again, so `@`,
+/// the suggestions and the turn's actions ([`SavedSkillActions`]) of this
+/// Studio offer the new skill. Leaving the Studio first drops it (UI only).
+fn reload_skills_after(sources: Sources, tasks: Tasks) {
     tasks.spawn_then(super::composer::fetch_skills(), move |rows| {
-        let Some(rows) = rows else { return };
-        let after: Vec<String> = rows.iter().map(|r| r.candidate.id.clone()).collect();
-        // Before the first load came there is nothing to tell new from.
-        if let Some(before) = before {
-            let added = mention::new_ids(&before, &after);
-            if !added.is_empty() {
-                saved.0.update(|s| s.push((run, added)));
-            }
+        if let Some(rows) = rows {
+            sources.set_skills(rows);
         }
-        sources.set_skills(rows);
     });
 }
 
@@ -325,9 +331,19 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             .with(|u| u.iter().any(|x| x.state == UploadState::Uploading))
     };
     provide_context(sources);
+    // A Save as skill turn that succeeded, live or in the chat loaded:
+    // the project has its skill, so none of its conversations offers the
+    // chip again.
+    let saved_here = Memo::new(move |_| {
+        ctx.items
+            .with(|items| SkillLoop::of(&loop_rows(items)).saved())
+    });
+    Effect::new(move |_| {
+        if saved_here.get() {
+            mark_skill_saved(&ctx.project_id.get_value());
+        }
+    });
     // A Save as skill turn that ended well: load the skills again.
-    let saved_skills = SavedSkills(RwSignal::new(Vec::new()));
-    provide_context(saved_skills);
     let pane_tasks = Tasks::here();
     Effect::new(move |prev: Option<Option<String>>| {
         let now = ctx.live_run.get();
@@ -336,7 +352,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         {
             let saved = untrack(|| ctx.items.with(|items| SkillLoop::of(&loop_rows(items))));
             if saved.saved_runs.contains(&ended) {
-                reload_skills_after(ended, sources, saved_skills, pane_tasks);
+                reload_skills_after(sources, pane_tasks);
             }
         }
         now
@@ -857,10 +873,11 @@ fn AssistantView(
             </Show>
             {move || blocks(|l| &l.reply)}
             <super::chat_ops::TurnFiles turn=turn/>
-            <SavedSkillActions turn=turn/>
             // With a process, its line shows the run's progress and clock;
             // the status line then speaks only to screen readers.
             <RunLine turn=turn clock=clock quiet=Signal::derive(move || layout.with(|l| !l.process.is_empty()))/>
+            // After "Done", as the next-step card's actions are.
+            <SavedSkillActions turn=turn/>
             // A turn that never ran (no run) has no agent output to show.
             <Show when=move || turn.with(|tn| matches!(run_phase(tn), RunPhase::Failed) && tn.run_id.is_some())>
                 <RunLog turn=turn/>
@@ -1249,21 +1266,32 @@ fn RunLog(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     }
 }
 
-/// Under a Save as skill turn that installed a skill: open it in the
-/// Library, or mention it in the composer as a suggestion's chip does.
+/// Under a turn that wrote and installed a skill (Save as skill): open
+/// it in the Library, or mention it in the composer as a suggestion's chip
+/// does. The skill is the last `generated-skill/<id>/SKILL.md` the turn
+/// wrote that the skill list has, so the row is there after a reload too.
 /// Names come from the visible text (axe `label-content-name-mismatch`).
 #[component]
 fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
-    let saved = use_context::<SavedSkills>();
     let sources = use_context::<Sources>();
     let navigate = super::leave_guard::use_leave();
+    let written = Memo::new(move |_| {
+        turn.with(|t| {
+            if t.state == crate::chat::TurnState::Succeeded {
+                crate::toolbox::written_skill_ids(&t.touched_files())
+            } else {
+                Vec::new()
+            }
+        })
+    });
     let ids = move || {
-        let run = turn.with(|t| t.run_id.clone())?;
-        saved?.0.with(|s| {
-            s.iter()
-                .find(|(r, _)| *r == run)
-                .map(|(_, ids)| ids.clone())
+        let sources = sources?;
+        written.with(|w| {
+            w.iter()
+                .rev()
+                .find_map(|id| sources.listed_skill(id))
+                .map(|id| vec![id])
         })
     };
     move || {
@@ -1339,7 +1367,10 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     };
     // "Save as skill" offered from the second turn that wrote a page on,
     // until one succeeded or the chip is dismissed (this project).
-    let chip_dismissed = RwSignal::new(skill_chip_dismissed(&ctx.project_id.get_value()));
+    let chip_dismissed = RwSignal::new({
+        let project = ctx.project_id.get_value();
+        skill_chip_dismissed(&project) || skill_saved(&project)
+    });
     let skill_loop = Memo::new(move |_| ctx.items.with(|items| SkillLoop::of(&loop_rows(items))));
     move || {
         let (steps, holding) = lint.with(|l| {

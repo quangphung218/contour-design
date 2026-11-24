@@ -465,13 +465,16 @@ impl Sources {
         }
     }
 
-    /// The ids of the skills listed, `None` while the first load runs.
+    /// The id of the listed skill named `id`, as the daemon compares
+    /// names (`od_contracts::name_key`); tracked.
     #[must_use]
-    pub fn skill_ids_untracked(self) -> Option<Vec<String>> {
-        untrack(|| {
-            self.with_skills(|rows| {
-                rows.map(|rows| rows.iter().map(|r| r.candidate.id.clone()).collect())
-            })
+    pub fn listed_skill(self, id: &str) -> Option<String> {
+        let key = od_contracts::name_key(id);
+        self.with_skills(|rows| {
+            rows.into_iter()
+                .flatten()
+                .find(|r| od_contracts::name_key(&r.candidate.id) == key)
+                .map(|r| r.candidate.id.clone())
         })
     }
 
