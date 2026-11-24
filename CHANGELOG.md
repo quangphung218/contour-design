@@ -16,6 +16,13 @@ All notable changes to Contour are recorded here. The format follows
 
 - Install from folder puts a folder with only SKILL.md into your skills, not your plugins.
 
+## [0.2.0-beta.60] - 2026-11-24
+
+### Fixed
+
+- Finalize, Continue, lint, media retry, form answers and Save as skill no longer send or clear your draft's files, @ chips and attached comments.
+- Retry of a Save as skill turn after reopening the project sends the full instructions again, not just its name.
+
 ## [0.2.0-beta.59] - 2026-11-24
 
 ### Added
@@ -1408,7 +1415,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.59...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.60...HEAD
+[0.2.0-beta.60]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.59...v0.2.0-beta.60
 [0.2.0-beta.59]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.58...v0.2.0-beta.59
 [0.2.0-beta.58]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.56...v0.2.0-beta.58
 [0.2.0-beta.56]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.55...v0.2.0-beta.56

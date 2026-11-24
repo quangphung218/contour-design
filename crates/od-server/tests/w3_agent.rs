@@ -442,6 +442,7 @@ async fn restart_puts_applying_comments_back_to_attached() {
         .unwrap();
     store
         .begin_turn(&od_store::NewTurn {
+            prepared_message: None,
             conversation_id: &conversation,
             user_message_id: "u1",
             assistant_message_id: "a1",

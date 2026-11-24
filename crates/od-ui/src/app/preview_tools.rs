@@ -1402,7 +1402,7 @@ fn LintPanel(ctx: StudioCtx) -> impl IntoView {
                     <button
                         class="btn small primary"
                         data-testid="lint-send"
-                        on:click=move |_| ctx.send(message.clone(), ctx.shell)
+                        on:click=move |_| ctx.send_prepared(message.clone(), None, ctx.shell)
                     >
                         {t(T::LintSend)}
                     </button>
