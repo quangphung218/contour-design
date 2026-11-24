@@ -714,6 +714,19 @@ try {
   assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), whyId);
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), null);
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-taken').count(), 0);
+  // In a right-to-left language (ar, fa) the reason is indented from the
+  // right, still in line with the name past the checkbox.
+  const rtlPadding = await agentRow('ad-creative').getByTestId('agent-skill-taken').evaluate((el) => {
+    const root = document.documentElement;
+    const was = root.getAttribute('dir');
+    root.setAttribute('dir', 'rtl');
+    const s = getComputedStyle(el);
+    const out = { left: s.paddingLeft, right: s.paddingRight };
+    if (was === null) root.removeAttribute('dir');
+    else root.setAttribute('dir', was);
+    return out;
+  });
+  assert.ok(rtlPadding.left === '0px' && parseFloat(rtlPadding.right) > 0, `RTL: indented from the right (${JSON.stringify(rtlPadding)})`);
   // The daemon compares names by `name_key` (NFC, case ignored): the
   // same name in another case is taken too.
   await closeDialog();
