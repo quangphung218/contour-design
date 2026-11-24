@@ -184,8 +184,14 @@ try {
   await page.getByTestId('plugin-row').first().waitFor();
   assert.equal(new URL(page.url()).pathname, '/plugins', 'no move to the Skills');
   assert.equal(await page.getByTestId('skill-detail').count(), 0, 'no skill opened from the last page');
-  // Each page opens only its own kind: no plugin under "Skills".
   const somePlugin = await page.getByTestId('plugin-row').first().getAttribute('data-id');
+  // The Library's own CSS leaves other pages' empty states alone: the
+  // page-not-found button keeps the shared 12 px above it.
+  await page.goto(`${BASE}/no-such-page`);
+  const notFoundBtn = page.locator('.empty-state .btn').first();
+  await notFoundBtn.waitFor();
+  assert.equal(await notFoundBtn.evaluate((b) => getComputedStyle(b).marginTop), '12px', 'the shared empty-state spacing');
+  // Each page opens only its own kind: no plugin under "Skills".
   await page.goto(`${BASE}/skills?plugin=${encodeURIComponent(somePlugin)}`);
   await page.getByTestId('skill-row').first().waitFor();
   assert.equal(await page.getByTestId('plugin-detail').count(), 0, 'the Skills open no plugin');
@@ -398,6 +404,22 @@ try {
     assert.ok(await inCreate(), `Shift+Tab ${i} stays in the dialog`);
   }
   assert.equal(await page.getByTestId('plugin-brief').inputValue(), 'Kept while tabbing', 'Tab keeps what is typed');
+  // A control Tab skips (`tabindex="-1"`, as a roving chip has) last in
+  // the dialog: Tab from the real last control still goes round.
+  await page.getByTestId('plugin-create').evaluate((root) => {
+    const dialog = root.closest('.dialog') || root;
+    const skip = document.createElement('button');
+    skip.tabIndex = -1;
+    skip.dataset.testid = 'tab-skipped';
+    skip.textContent = 'Skipped';
+    dialog.append(skip);
+    const reach = [...dialog.querySelectorAll('a[href], button:not(:disabled), input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled)')]
+      .filter((e) => e.tabIndex >= 0 && e.getBoundingClientRect().width > 0);
+    reach[reach.length - 1].focus();
+  });
+  await page.keyboard.press('Tab');
+  assert.ok(await inCreate(), 'Tab from the last control stays in the dialog past a skipped one');
+  await page.getByTestId('tab-skipped').evaluate((b) => b.remove());
   await page.getByTestId('create-link').focus();
   await page.keyboard.press('Escape');
   await page.getByTestId('plugin-create').waitFor({ state: 'detached' });
@@ -651,9 +673,11 @@ try {
   assert.ok((await emptyList.textContent()).includes('~/.claude/skills'), 'the empty list says where to put skills');
   await page.getByTestId('agent-skills-refresh').click();
   await page.getByTestId('agent-skills-load-error').waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'agent-skills-filter', 'Refresh puts the focus in the filter');
   assert.equal(await createDialog.getByText('Loading…').count(), 0, 'no Loading under the error');
   await page.getByTestId('agent-skills-retry').click();
   await until(async () => (await agentRows.count()) === 6, 'six agent skills after Try again');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'agent-skills-filter', 'Try again puts the focus in the filter');
   await page.unroute(sourcesRoute);
   assert.equal(await page.getByTestId('agent-skills-load-error').count(), 0);
   assert.deepEqual(
@@ -664,6 +688,11 @@ try {
   // The bundled id is not picked; its row says why.
   assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true, 'a bundled id is not picked');
   assert.equal((await agentRow('ad-creative').getByTestId('agent-skill-taken').textContent()).trim(), 'A skill named ad-creative already exists');
+  // The reason is read with the checkbox.
+  const whyId = await agentRow('ad-creative').getByTestId('agent-skill-taken').getAttribute('id');
+  assert.ok(whyId, 'the reason has an id');
+  assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), whyId);
+  assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').getAttribute('aria-describedby'), null);
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-taken').count(), 0);
   // The daemon compares names by `name_key` (NFC, case ignored): the
   // same name in another case is taken too.
@@ -705,6 +734,8 @@ try {
   assert.equal(await agentRows.count(), 0);
   await page.getByTestId('agent-skills-clear').click();
   await until(async () => (await agentRows.count()) === 6, 'Clear search brings the list back');
+  const focusedId = () => page.evaluate(() => document.activeElement?.dataset?.testid);
+  assert.equal(await focusedId(), 'agent-skills-filter', 'Clear search puts the focus back in the filter');
   assert.equal(await page.getByTestId('agent-skills-filter').inputValue(), '');
   // A name taken meanwhile (409) fails by its row; the other one is copied
   // in; the dialog stays open to show why.

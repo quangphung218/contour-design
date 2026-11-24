@@ -602,7 +602,7 @@ fn OwnSkillsEmpty(
     create: Callback<Option<CreateMode>>,
 ) -> impl IntoView {
     view! {
-        <li class="empty-state compact" data-testid="skills-empty">
+        <li class="empty-state compact skills-empty" data-testid="skills-empty">
             <span class="empty-icon">{icon(Glyph::Book)}</span>
             {move || match importable.get() {
                 Some(n) if n > 0 => view! {
@@ -1599,6 +1599,14 @@ fn AgentSkillImport(
     let outcome = RwSignal::new(std::collections::HashMap::<String, Imported>::new());
     let filter = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
+    // Clear search, Refresh and Try again go away once pressed: the focus
+    // goes back to the filter, not to the page's body.
+    let filter_input = NodeRef::<leptos::html::Input>::new();
+    let to_filter = move || {
+        if let Some(el) = filter_input.get_untracked() {
+            let _ = el.focus();
+        }
+    };
     let load = move || {
         load_error.set(None);
         sources.set(None);
@@ -1691,12 +1699,12 @@ fn AgentSkillImport(
     };
     view! {
         <div class="col gap" data-testid="agent-skills">
-            <input class="input" type="search" data-testid="agent-skills-filter" placeholder=t(T::SearchLibrary) aria-label=t(T::SearchLibrary)
+            <input class="input" type="search" data-testid="agent-skills-filter" placeholder=t(T::SearchLibrary) aria-label=t(T::SearchLibrary) node_ref=filter_input
                 prop:value=move || filter.get() on:input=live(move |ev| filter.set(event_target_value(&ev)))/>
             {move || load_error.get().map(|e| view! {
                 <div class="row">
                     <p class="error-text grow" role="alert" data-testid="agent-skills-load-error">{e}</p>
-                    <button class="btn small" data-testid="agent-skills-retry" on:click=move |_| load()>{t(T::TryAgain)}</button>
+                    <button class="btn small" data-testid="agent-skills-retry" on:click=move |_| { load(); to_filter(); }>{t(T::TryAgain)}</button>
                 </div>
             })}
             {move || match sources.with(|l| l.as_ref().map(Vec::is_empty)) {
@@ -1710,7 +1718,7 @@ fn AgentSkillImport(
                         <ul class="agent-skills-where">
                             {AGENTS.iter().map(|a| view! { <li class="mono">{agent_folder(a)}</li> }).collect_view()}
                         </ul>
-                        <button class="btn small" data-testid="agent-skills-refresh" on:click=move |_| load()>{icon(Glyph::Refresh)}{t(T::Refresh)}</button>
+                        <button class="btn small" data-testid="agent-skills-refresh" on:click=move |_| { load(); to_filter(); }>{icon(Glyph::Refresh)}{t(T::Refresh)}</button>
                     </div>
                 }.into_any(),
                 Some(false) => {
@@ -1719,12 +1727,15 @@ fn AgentSkillImport(
                         return view! {
                             <div class="row" data-testid="agent-skills-no-match">
                                 <p class="muted grow">{t(T::AgentSkillsNoMatch)}</p>
-                                <button class="btn small" data-testid="agent-skills-clear" on:click=move |_| filter.set(String::new())>{t(T::ClearSearch)}</button>
+                                <button class="btn small" data-testid="agent-skills-clear" on:click=move |_| { filter.set(String::new()); to_filter(); }>{t(T::ClearSearch)}</button>
                             </div>
                         }.into_any();
                     }
                     let mut last = String::new();
-                    let items = rows.into_iter().map(|sk| {
+                    let items = rows.into_iter().enumerate().map(|(i, sk)| {
+                        // The reason a row is locked, read with its checkbox.
+                        let why_id = format!("agent-skill-taken-{i}");
+                        let why_ref = why_id.clone();
                         let heading = (sk.agent != last).then(|| {
                             last.clone_from(&sk.agent);
                             view! { <li class="eyebrow">{agent_heading(&sk.agent)}</li> }
@@ -1755,6 +1766,7 @@ fn AgentSkillImport(
                                 <label class="memory-item">
                                     <input type="checkbox" data-testid="agent-skill-pick"
                                         disabled=move || locked() || busy.get() || done.get()
+                                        aria-describedby=move || taken().then(|| why_ref.clone())
                                         prop:checked=move || picked.with(|p| p.contains(&path))
                                         on:change=live(move |ev| {
                                             let on = event_target_checked(&ev);
@@ -1768,7 +1780,7 @@ fn AgentSkillImport(
                                     <span class="grow" title=sk.description.clone()><strong>{sk.id.clone()}</strong>" "<span class="muted">{description}</span></span>
                                     {move || (sk.imported || done.get()).then(|| view! { <span class="badge" data-testid="agent-skill-imported">{t(T::Imported)}</span> })}
                                 </label>
-                                {let id = sk.id.clone(); move || taken().then(|| view! { <p class="muted small-text" data-testid="agent-skill-taken">{tf(T::SkillNameTaken, &[&id])}</p> })}
+                                {let id = sk.id.clone(); move || taken().then(|| view! { <p class="muted small-text agent-skill-note" id=why_id.clone() data-testid="agent-skill-taken">{tf(T::SkillNameTaken, &[&id])}</p> })}
                                 {sk.error.clone().map(|e| view! { <p class="error-text" data-testid="agent-skill-error">{e}</p> })}
                                 {move || failed().map(|e| view! { <p class="error-text" role="alert" data-testid="agent-skill-error">{e}</p> })}
                             </li>
