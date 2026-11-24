@@ -3,7 +3,8 @@
 // chip, media picker, examples, working directory, "+" menu, @ mentions,
 // staged files) → the first turn carries them → Studio composer (attach by
 // button, paste and drop, @ file, / commands, model picker, design system
-// switch) → turn actions (files from this turn, copy, continue remaining
+// switch) → "Skills" under a turn and a warning for one gone → turn
+// actions (files from this turn, copy, continue remaining
 // tasks, design toolbox, quote, reconnect) → conversation rename and delete → chat pane collapse
 // and resize → linked folders and project references → Vietnamese.
 // Screenshots (light and dark) go to $OD_SHOTS or test-results/. Every
@@ -250,6 +251,9 @@ try {
   assert.deepEqual(first.attachments, ['ref.png']);
   assert.deepEqual(first.skillIds, ['web-clone']);
   assert.equal(first.pluginId, 'od-design-refine');
+  // The turn names the skill its agent got, picked with `@`.
+  await page.getByTestId('assistant-msg').first()
+    .locator('[data-testid="turn-skill"][data-id="web-clone"][data-source="mention"]').waitFor();
   await page.getByTestId('assistant-msg').first().getByText('Saw attached files.', { exact: false }).waitFor();
   const project = (await api(`/api/projects/${projectId}`)).project;
   assert.equal(project.metadata.pendingAttachments, undefined, 'staged files cleared once sent');
@@ -470,6 +474,45 @@ try {
       await page.getByTestId('context-chip').first().locator('.chip-x').click();
     }
     results.skillSuggestions = 'ok';
+  }
+
+  // 13c3. "Skills: …" under a turn: the skill taken above, and a warning
+  // for an `@` skill that is gone by the time the turn runs (the request
+  // names one no skill has). The run still goes; both stay after a reload.
+  {
+    const turns = await page.getByTestId('assistant-msg').count();
+    const taken = page.getByTestId('assistant-msg').nth(turns - 1);
+    await taken.locator('[data-testid="turn-skill"][data-id="d3-visualization"]').waitFor();
+    const gone = 'e2e-deleted-skill';
+    const runs = '**/api/runs';
+    await page.route(runs, async (route) => {
+      const req = route.request();
+      if (req.method() !== 'POST') return route.continue();
+      const body = req.postDataJSON();
+      await route.continue({ postData: JSON.stringify({ ...body, skillIds: [...(body.skillIds || []), gone] }) });
+    });
+    await composer.fill('one more pass');
+    await composer.press('Enter');
+    await lastTurnDone(turns + 1);
+    await page.unroute(runs);
+    const last = () => page.getByTestId('assistant-msg').nth(turns);
+    assert.equal(await last().getAttribute('data-state'), 'succeeded', 'the run went without the skill');
+    await last().locator(`[data-testid="turn-skill-missing"][data-id="${gone}"]`).waitFor();
+    assert.match(await last().getByTestId('turn-skill-missing').textContent(), /@e2e-deleted-skill was not found; the agent did not get it/);
+    assert.equal(await last().getByTestId('turn-skills').count(), 0, 'no "Skills" without one the agent got');
+    await page.reload();
+    await page.getByTestId('composer').waitFor();
+    await page.getByTestId('assistant-msg').nth(turns).locator(`[data-testid="turn-skill-missing"][data-id="${gone}"]`).waitFor();
+    await page.getByTestId('assistant-msg').nth(turns - 1).locator('[data-testid="turn-skill"][data-id="d3-visualization"]').waitFor();
+    // A turn without a skill shows none.
+    assert.equal(await page.getByTestId('assistant-msg').nth(1).locator('[data-testid="turn-skill"], [data-testid="turn-skill-missing"]').count(), 0);
+    // The skill's name opens its page; back to the studio.
+    await page.getByTestId('assistant-msg').nth(turns - 1).getByRole('button', { name: 'd3-visualization', exact: true }).click();
+    await page.waitForURL('**/skills?skill=d3-visualization');
+    await page.goBack();
+    // The composer comes before the turns load: wait for all of them.
+    await expectPoll(() => page.getByTestId('assistant-msg').count(), turns + 1, 'turns back after the skill page');
+    results.turnSkills = 'ok';
   }
 
   // 13d. Stick to the bottom: scrolled up while a run streams, new output

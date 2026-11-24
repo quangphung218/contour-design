@@ -12,8 +12,8 @@ use od_content::prompt::{self, PromptInput, TranscriptTurn};
 use od_content::skills::skill_cwd_alias_segment;
 use od_contracts::{
     AgentsResponse, ChatRequest, CommentStatus, CreateRunResponse, ErrorCode, MessageRole,
-    RunActionResponse, RunResponse, RunStatus, RunsResponse, SteerRequest, UpdateCommentRequest,
-    sse,
+    RunActionResponse, RunResponse, RunStatus, RunsResponse, SkillSource, SteerRequest, TurnSkill,
+    UpdateCommentRequest, sse,
 };
 use od_runs::{Run, RunMeta, RunsError};
 use od_runtime::env::{RunEnv, agent_env};
@@ -203,7 +203,7 @@ pub async fn create(
         // The request's span: the launch and the run log under its id.
         .in_current_span(),
     );
-    let resumed = task
+    let Launched { resumed, skills } = task
         .await
         .map_err(|e| ApiErr::internal(format!("run launch failed: {e}")))??;
     Ok((
@@ -215,6 +215,7 @@ pub async fn create(
             client_request_id,
             reused: false,
             resumed,
+            skills,
         }),
     )
         .into_response())
@@ -284,6 +285,7 @@ fn reused_response(run: &Arc<Run>) -> Response {
             client_request_id: meta.client_request_id.clone(),
             reused: true,
             resumed: false,
+            skills: Vec::new(),
         }),
     )
         .into_response()
@@ -367,8 +369,61 @@ fn critique_enabled(project: &od_contracts::Project, skills: &[&od_content::Skil
         .unwrap_or(false)
 }
 
+/// What [`prepare_and_launch`] tells the request: whether the run resumes
+/// a session, and the skills its turn asked for.
+struct Launched {
+    resumed: bool,
+    skills: Vec<TurnSkill>,
+}
+
+/// The skills a turn asks for, in the order the agent gets them, each with
+/// why and whether it still exists: the `@` skills (`skill_ids`), then the
+/// request's `skill_id` (the project's, which the app sends with every
+/// turn, or one the CLI picked), else the project's own; then the
+/// plugin's. First mention wins; `dedup` alone only drops neighbours.
+/// Does not fail: an id that `exists` says is gone is kept as not found.
+fn turn_skills(
+    exists: impl Fn(&str) -> bool,
+    req: &ChatRequest,
+    project: &od_contracts::Project,
+    plugin_skills: &[String],
+) -> Vec<TurnSkill> {
+    let project_skill = project.skill_id.as_deref();
+    let mut asked: Vec<(&str, SkillSource)> = req
+        .skill_ids
+        .iter()
+        .map(|id| (id.as_str(), SkillSource::Mention))
+        .collect();
+    asked.extend(req.skill_id.as_deref().map(|id| {
+        let source = if Some(id) == project_skill {
+            SkillSource::Project
+        } else {
+            SkillSource::Mention
+        };
+        (id, source)
+    }));
+    if asked.is_empty() {
+        asked.extend(project_skill.map(|id| (id, SkillSource::Project)));
+    }
+    asked.extend(
+        plugin_skills
+            .iter()
+            .map(|id| (id.as_str(), SkillSource::Plugin)),
+    );
+    let mut seen = std::collections::HashSet::new();
+    asked
+        .into_iter()
+        .filter(|(id, _)| seen.insert(*id))
+        .map(|(id, source)| TurnSkill {
+            id: id.to_owned(),
+            source,
+            found: exists(id),
+        })
+        .collect()
+}
+
 /// Records the turn, composes the prompt, decides on resume, stages
-/// skills and launches. Returns whether the run resumes a session.
+/// skills and launches.
 async fn prepare_and_launch(
     state: &AppState,
     def: &'static od_runtime::RuntimeDef,
@@ -377,7 +432,7 @@ async fn prepare_and_launch(
     conversation_id: &str,
     run: &Arc<Run>,
     user_message_id: &str,
-) -> ApiResult<bool> {
+) -> ApiResult<Launched> {
     let assistant_message_id = run.meta().assistant_message_id.clone().unwrap_or_default();
     let model = non_default(req.model.as_deref());
     let content = state.content.snapshot();
@@ -395,6 +450,13 @@ async fn prepare_and_launch(
     let bound = crate::routes::library::plugins::project_plugin_request(req, project);
     let plugin =
         crate::routes::media::plugins::applied_plugin(&content, bound.as_ref().unwrap_or(req))?;
+    let turn_skills = turn_skills(
+        |id| content.find_skill(id).is_some() || content.find_design_template(id).is_some(),
+        req,
+        project,
+        plugin.as_ref().map_or(&[][..], |p| p.skill_ids.as_slice()),
+    );
+    let skills_kept = turn_skills.clone();
     let prepared = state
         .blocking(move |s| {
             let root = s.project_root(&project2)?;
@@ -412,6 +474,7 @@ async fn prepare_and_launch(
                 attachments: &req2.attachments,
                 agent_id: def.id,
                 run_id: &run_id,
+                skills: &skills_kept,
             })?;
             set_comments(
                 s,
@@ -421,24 +484,13 @@ async fn prepare_and_launch(
                 CommentStatus::Applying,
             )?;
 
-            // Skills: explicit ids, else the project's skill.
-            let mut ids: Vec<String> = req2.skill_ids.clone();
-            ids.extend(req2.skill_id.clone());
-            if ids.is_empty() {
-                ids.extend(project2.skill_id.clone());
-            }
-            if let Some(p) = &plugin {
-                ids.extend(p.skill_ids.iter().cloned());
-            }
-            // First mention wins; `dedup` alone only drops neighbours.
-            let mut seen = std::collections::HashSet::new();
-            ids.retain(|id| seen.insert(id.clone()));
-            let skills: Vec<&od_content::SkillEntry> = ids
+            // The skills found, in the turn's order (`turn_skills`).
+            let skills: Vec<&od_content::SkillEntry> = skills_kept
                 .iter()
-                .filter_map(|id| {
+                .filter_map(|t| {
                     content
-                        .find_skill(id)
-                        .or_else(|| content.find_design_template(id))
+                        .find_skill(&t.id)
+                        .or_else(|| content.find_design_template(&t.id))
                 })
                 .collect();
             let ds_id = req2
@@ -691,7 +743,10 @@ async fn prepare_and_launch(
             category,
         )
         .await;
-        return Ok(resumed);
+        return Ok(Launched {
+            resumed,
+            skills: turn_skills,
+        });
     };
     state.runs.tasks.spawn(
         persist_run(
@@ -713,7 +768,10 @@ async fn prepare_and_launch(
         )
         .instrument(tracing::info_span!("run", run_id = %run.id())),
     );
-    Ok(resumed)
+    Ok(Launched {
+        resumed,
+        skills: turn_skills,
+    })
 }
 
 struct Finalize {
@@ -1095,4 +1153,89 @@ pub async fn rescan_agents(State(state): State<AppState>) -> ApiJson<AgentsRespo
         .count();
     tracing::info!(path_changed, available, "agents rescanned");
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use od_contracts::SkillSource::{Mention, Plugin, Project};
+
+    fn project(skill: Option<&str>) -> od_contracts::Project {
+        serde_json::from_value(json!({
+            "id": "p", "name": "P", "skillId": skill, "createdAt": 0, "updatedAt": 0
+        }))
+        .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    fn req(skill_id: Option<&str>, skill_ids: &[&str]) -> ChatRequest {
+        ChatRequest {
+            skill_id: skill_id.map(str::to_owned),
+            skill_ids: skill_ids.iter().map(|s| (*s).to_owned()).collect(),
+            ..ChatRequest::default()
+        }
+    }
+
+    fn got(skills: &[TurnSkill]) -> Vec<(&str, SkillSource, bool)> {
+        skills
+            .iter()
+            .map(|s| (s.id.as_str(), s.source, s.found))
+            .collect()
+    }
+
+    const ALL: fn(&str) -> bool = |_| true;
+
+    #[test]
+    fn a_skill_picked_with_at_is_a_mention() {
+        let skills = turn_skills(ALL, &req(None, &["article-magazine"]), &project(None), &[]);
+        assert_eq!(got(&skills), [("article-magazine", Mention, true)]);
+    }
+
+    /// The app sends the project's skill with every turn (`skillId`).
+    #[test]
+    fn the_projects_skill_is_from_the_project_sent_or_not() {
+        let p = project(Some("x"));
+        for r in [req(Some("x"), &[]), req(None, &[])] {
+            assert_eq!(got(&turn_skills(ALL, &r, &p, &[])), [("x", Project, true)]);
+        }
+        // `od run --skill y` on a project whose skill is x.
+        assert_eq!(
+            got(&turn_skills(ALL, &req(Some("y"), &[]), &p, &[])),
+            [("y", Mention, true)]
+        );
+    }
+
+    #[test]
+    fn mentions_come_first_then_the_plugins_once_each() {
+        let skills = turn_skills(
+            ALL,
+            &req(None, &["x", "y"]),
+            &project(None),
+            &["y".to_owned(), "z".to_owned()],
+        );
+        assert_eq!(
+            got(&skills),
+            [
+                ("x", Mention, true),
+                ("y", Mention, true),
+                ("z", Plugin, true)
+            ]
+        );
+        // As before: a mention keeps the project's skill sent along, after it.
+        let skills = turn_skills(ALL, &req(Some("p"), &["x", "p"]), &project(Some("p")), &[]);
+        assert_eq!(got(&skills), [("x", Mention, true), ("p", Mention, true)]);
+    }
+
+    #[test]
+    fn a_skill_that_is_gone_is_kept_as_not_found() {
+        let skills = turn_skills(
+            |id| id != "my-skill",
+            &req(None, &["my-skill", "other"]),
+            &project(None),
+            &[],
+        );
+        assert_eq!(
+            got(&skills),
+            [("my-skill", Mention, false), ("other", Mention, true)]
+        );
+    }
 }

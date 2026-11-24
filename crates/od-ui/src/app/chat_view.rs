@@ -991,6 +991,7 @@ fn AssistantView(
             // With a process, its line shows the run's progress and clock;
             // the status line then speaks only to screen readers.
             <RunLine turn=turn clock=clock quiet=Signal::derive(move || layout.with(|l| !l.process.is_empty()))/>
+            <TurnSkills turn=turn/>
             // After "Done", as the next-step card's actions are.
             <SavedSkillActions turn=turn/>
             // A turn that never ran (no run) has no agent output to show.
@@ -1425,6 +1426,67 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 })
                 .collect_view()
         })
+    }
+}
+
+/// The skills the turn's agent got ("Skills: a, b (from project)"), each
+/// opening its page, and a warning for each `@` skill that is gone (the
+/// agent did not get it). Nothing for a turn without skills, or one stored
+/// before they were kept. Names come from the visible text (axe
+/// `label-content-name-mismatch`).
+#[component]
+fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
+    use od_contracts::SkillSource;
+    let navigate = super::leave_guard::use_leave();
+    let skills = Memo::new(move |_| turn.with(|t| t.skills.clone()));
+    move || {
+        let skills = skills.get();
+        let (got, gone): (Vec<_>, Vec<_>) = skills.into_iter().partition(|s| s.found);
+        let navigate = navigate.clone();
+        let got = (!got.is_empty()).then(|| {
+            let items = got
+                .into_iter()
+                .map(|s| {
+                    let navigate = navigate.clone();
+                    let open = format!("/skills?skill={}", super::api::seg(&s.id));
+                    let from = match s.source {
+                        SkillSource::Mention => None,
+                        SkillSource::Project => Some(T::TurnSkillFromProject),
+                        SkillSource::Plugin => Some(T::TurnSkillFromPlugin),
+                    };
+                    let source = match s.source {
+                        SkillSource::Mention => "mention",
+                        SkillSource::Project => "project",
+                        SkillSource::Plugin => "plugin",
+                    };
+                    view! {
+                        <li data-testid="turn-skill" data-id=s.id.clone() data-source=source>
+                            <button class="btn ghost small" on:click=move |_| navigate(&open)>
+                                {s.id.clone()}
+                            </button>
+                            {from.map(|k| view! { <span class="muted small">{t(k)}</span> })}
+                        </li>
+                    }
+                })
+                .collect_view();
+            view! {
+                <div class="turn-skills" data-testid="turn-skills">
+                    <span class="next-label">{t(T::TurnSkills)}</span>
+                    <ul>{items}</ul>
+                </div>
+            }
+        });
+        let gone = gone
+            .into_iter()
+            .map(|s| {
+                view! {
+                    <p class="warn-text" data-testid="turn-skill-missing" data-id=s.id.clone()>
+                        {icon(Glyph::Warning)}{tf(T::TurnSkillNotFound, &[&s.id])}
+                    </p>
+                }
+            })
+            .collect_view();
+        view! { {got}{gone} }
     }
 }
 

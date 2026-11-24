@@ -146,13 +146,21 @@ pub fn summary(u: &UsageResponse, version: &str, os: &str, agent: Option<&str>) 
             group(r.canceled)
         ));
     }
+    let st = &u.skill_turns;
+    out.push_str(&format!(
+        "\nTurns with a skill you picked: {} of {}",
+        group(st.picked),
+        group(st.turns)
+    ));
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use od_contracts::{EngagedUsage, FirstPreviewUsage, RunCause, RunUsage, SetupMark};
+    use od_contracts::{
+        EngagedUsage, FirstPreviewUsage, RunCause, RunUsage, SetupMark, SkillTurnsUsage,
+    };
 
     #[test]
     fn durations_read_at_a_glance() {
@@ -194,6 +202,7 @@ mod tests {
             },
             runs: RunUsage::default(),
             setup: None,
+            skill_turns: SkillTurnsUsage::default(),
         };
         let s = summary(&u, "0.2.0-beta.7", "macos aarch64", None);
         assert_eq!(
@@ -202,7 +211,8 @@ mod tests {
              Setup: not recorded (data folder older than 0.2.0-beta.8)\n\
              Time to first preview: needs 3 projects to measure (you have 2)\n\
              Projects with an export or 3+ chat turns: needs 3 projects to measure (you have 2)\n\
-             Failed runs: needs 3 runs to measure (you have 0)"
+             Failed runs: needs 3 runs to measure (you have 0)\n\
+             Turns with a skill you picked: 0 of 0"
         );
         assert!(!s.contains('%'), "no made-up 0%");
     }
@@ -240,6 +250,10 @@ mod tests {
                 stopped_at: None,
                 took_ms: Some(750_000),
             }),
+            skill_turns: SkillTurnsUsage {
+                turns: 5,
+                picked: 3,
+            },
         };
         let s = summary(&u, "0.2.0-beta.7", "macos aarch64", Some("claude"));
         assert_eq!(
@@ -249,7 +263,8 @@ mod tests {
              Time to first preview: median 4m 12s (4 projects)\n\
              Projects with an export or 3+ chat turns: 75% (3/4)\n\
              Failed runs: 10% (1,234/12,345): spawn_failed 1,233, timeout 1; \
-             stopped by the user: 2 (not counted)"
+             stopped by the user: 2 (not counted)\n\
+             Turns with a skill you picked: 3 of 5"
         );
     }
 

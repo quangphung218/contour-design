@@ -6,6 +6,7 @@ use crate::paths::is_safe_id;
 use crate::store::Store;
 use od_contracts::{
     Conversation, CreateConversationRequest, Message, MessageRole, RunStatus, SessionMode,
+    TurnSkill,
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde_json::Value;
@@ -36,6 +37,8 @@ pub struct NewTurn<'a> {
     pub attachments: &'a [String],
     pub agent_id: &'a str,
     pub run_id: &'a str,
+    /// The skills the turn asked for, kept with the assistant message.
+    pub skills: &'a [TurnSkill],
 }
 
 fn mode_str(mode: SessionMode) -> &'static str {
@@ -79,7 +82,7 @@ fn conversation_from_row(row: &Row<'_>) -> rusqlite::Result<Conversation> {
 const CONVERSATION_COLUMNS: &str = "id, project_id, title, session_mode, created_at, updated_at";
 const MESSAGE_COLUMNS: &str = "id, conversation_id, role, content, agent_id, run_id, run_status, \
      last_run_event_id, position, events_json, attachments_json, started_at, ended_at, created_at, \
-     prepared_message";
+     prepared_message, skills_json";
 
 fn json_list<T: serde::de::DeserializeOwned>(raw: Option<String>) -> Vec<T> {
     raw.and_then(|s| serde_json::from_str(&s).ok())
@@ -109,6 +112,7 @@ fn message_from_row(row: &Row<'_>) -> rusqlite::Result<Message> {
         ended_at: row.get(12)?,
         created_at: row.get(13)?,
         prepared_message: row.get(14)?,
+        skills: json_list(row.get(15)?),
     })
 }
 
@@ -140,11 +144,13 @@ fn copy_messages(conn: &Connection, from: &str, to: &str, upto: i64) -> Result<(
     conn.execute(
         "INSERT INTO messages (id, conversation_id, role, content, agent_id, run_id, run_status, \
            last_run_event_id, position, events_json, attachments_json, comment_attachments_json, \
-           produced_files_json, feedback_json, started_at, ended_at, created_at, prepared_message) \
+           produced_files_json, feedback_json, started_at, ended_at, created_at, prepared_message, \
+           skills_json) \
          SELECT lower(hex(randomblob(16))), ?2, role, content, agent_id, run_id, \
            CASE WHEN run_status = 'running' THEN 'canceled' ELSE run_status END, \
            last_run_event_id, position, events_json, attachments_json, comment_attachments_json, \
-           produced_files_json, feedback_json, started_at, ended_at, created_at, prepared_message \
+           produced_files_json, feedback_json, started_at, ended_at, created_at, prepared_message, \
+           skills_json \
          FROM messages WHERE conversation_id = ?1 AND position <= ?3",
         params![from, to, upto],
     )?;
@@ -405,6 +411,7 @@ impl Store {
         }
         let now = crate::now_ms();
         let attachments = serde_json::to_string(turn.attachments)?;
+        let skills = serde_json::to_string(turn.skills)?;
         self.with_conn(|conn| {
             conn.execute_batch("BEGIN IMMEDIATE")?;
             let result = (|| {
@@ -434,14 +441,16 @@ impl Store {
                 )?;
                 conn.execute(
                     "INSERT INTO messages (id, conversation_id, role, content, agent_id, run_id, run_status, \
-                     position, started_at, created_at) VALUES (?1, ?2, 'assistant', '', ?3, ?4, 'running', ?5, ?6, ?6)",
+                     position, started_at, created_at, skills_json) \
+                     VALUES (?1, ?2, 'assistant', '', ?3, ?4, 'running', ?5, ?6, ?6, ?7)",
                     params![
                         turn.assistant_message_id,
                         turn.conversation_id,
                         turn.agent_id,
                         turn.run_id,
                         position + 1,
-                        now
+                        now,
+                        skills
                     ],
                 )?;
                 touch_conversation(conn, turn.conversation_id, now)
@@ -702,9 +711,14 @@ mod tests {
             })
             .unwrap_or_else(|e| panic!("{e}"));
         // u1 is a prepared turn: the agent got more than the chat shows.
-        for (u, a, run, prepared) in [
-            ("u1", "a1", "r1", Some("u1 in full")),
-            ("u2", "a2", "r2", None),
+        let picked = [TurnSkill {
+            id: "article-magazine".into(),
+            source: od_contracts::SkillSource::Mention,
+            found: true,
+        }];
+        for (u, a, run, prepared, skills) in [
+            ("u1", "a1", "r1", Some("u1 in full"), &picked[..]),
+            ("u2", "a2", "r2", None, &[][..]),
         ] {
             store
                 .begin_turn(&NewTurn {
@@ -716,6 +730,7 @@ mod tests {
                     attachments: &[],
                     agent_id: "claude",
                     run_id: run,
+                    skills,
                 })
                 .unwrap_or_else(|e| panic!("{e}"));
         }
@@ -741,6 +756,11 @@ mod tests {
             ["u1", ""]
         );
         assert_eq!(copied[0].prepared_message.as_deref(), Some("u1 in full"));
+        assert_eq!(copied[1].skills, picked, "the copy keeps the turn's skills");
+        let own = store.list_messages(&conv).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(own[1].skills, picked, "kept with the assistant message");
+        assert!(own[0].skills.is_empty(), "not with the user's");
+        assert!(own[3].skills.is_empty(), "a turn with none");
         let own = store.list_messages(&conv).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(own[0].prepared_message.as_deref(), Some("u1 in full"));
         assert_eq!(own[2].prepared_message, None, "a message the user wrote");
@@ -793,6 +813,7 @@ mod tests {
                 attachments: &[],
                 agent_id: "claude",
                 run_id: "r1",
+                skills: &[],
             })
             .unwrap_or_else(|e| panic!("{e}"));
         let second = store
@@ -836,6 +857,7 @@ mod tests {
                 attachments: &[],
                 agent_id: "claude",
                 run_id: "r1",
+                skills: &[],
             })
             .unwrap_or_else(|e| panic!("{e}"));
         store
@@ -893,6 +915,7 @@ mod tests {
             attachments: &[],
             agent_id: "claude",
             run_id: "r2",
+            skills: &[],
         });
         assert!(matches!(again, Err(StoreError::BadRequest(_))));
         assert_eq!(store.list_messages(&conv).unwrap_or_default().len(), 2);
@@ -947,6 +970,7 @@ mod tests {
                 attachments: &[],
                 agent_id: "claude",
                 run_id: "r1",
+                skills: &[],
             })
             .unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(store.fail_interrupted_messages().ok(), Some(1));

@@ -1322,6 +1322,11 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
         } else {
             not_enough(T::UsageNotEnoughRuns, r.total).into_any()
         };
+        // A count, not a share: shown from the first turn.
+        let st = u.skill_turns;
+        let skill_turns = view! {
+            <dd data-state="value">{tf(T::UsageSkillTurnsValue, &[&count(st.picked), &count(st.turns)])}</dd>
+        };
         let stopped = (r.canceled > 0).then(|| {
             view! {
                 <dd class="muted small" data-testid="usage-stopped">
@@ -1342,6 +1347,9 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
                 </div>
                 <div data-testid="usage-runs">
                     <dt>{t(T::UsageFailedRuns)}</dt>{runs}{stopped}
+                </div>
+                <div data-testid="usage-skill-turns">
+                    <dt>{t(T::UsageSkillTurns)}</dt>{skill_turns}
                 </div>
             </dl>
         }

@@ -232,6 +232,9 @@ pub struct AssistantTurn {
     /// When the run ended (epoch ms), from its `end` or the stored message:
     /// a finished turn's run time stays as it was.
     pub ended_at: Option<i64>,
+    /// The skills the turn asked for (from the run's answer, or the stored
+    /// message), in the order the agent got them.
+    pub skills: Vec<od_contracts::TurnSkill>,
 }
 
 impl Default for AssistantTurn {
@@ -257,6 +260,7 @@ impl AssistantTurn {
             failure: None,
             started_at: None,
             ended_at: None,
+            skills: Vec::new(),
         }
     }
 
@@ -267,6 +271,7 @@ impl AssistantTurn {
         turn.run_id.clone_from(&msg.run_id);
         turn.started_at = msg.started_at;
         turn.ended_at = msg.ended_at;
+        turn.skills.clone_from(&msg.skills);
         for raw in &msg.events {
             if let Ok(ev) = serde_json::from_value::<AgentEvent>(raw.clone()) {
                 turn.apply(RunFrame::Agent(ev));

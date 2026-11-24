@@ -849,6 +849,11 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 /* The row the chips take while the page's lint runs: one chip high. */
 .next-chips-pending { min-height: 26px; align-self: stretch; }
 .next-label { font-size: var(--text-xs); font-weight: var(--weight-medium); color: var(--color-text-tertiary); margin-right: var(--space-0-5); }
+/* The skills a turn's agent got: a label, then one button per skill. */
+.turn-skills { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-0-5); margin-top: var(--space-1); max-width: 100%; }
+.turn-skills ul { display: contents; list-style: none; }
+.turn-skills li { display: inline-flex; align-items: center; gap: var(--space-0-5); max-width: 100%; }
+.turn-skills li .btn { overflow-wrap: anywhere; }
 .chip.next-step { min-height: 26px; height: auto; max-width: 100%; padding-block: var(--space-0-5); font-size: var(--text-sm); text-align: start; white-space: normal; }
 .next-step .next-text { overflow-wrap: anywhere; }
 .next-step .ico { color: var(--color-accent); flex: none; }

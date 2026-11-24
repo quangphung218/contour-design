@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use od_contracts::CreateProjectRequest;
-use od_store::{DataDir, Store, db};
+use od_store::{DataDir, NewTurn, Store, db};
 use serde_json::json;
 
 fn open(dir: &std::path::Path) -> Store {
@@ -74,7 +74,6 @@ fn deleting_a_project_cascades_to_conversations() {
 
 #[test]
 fn usage_keeps_the_first_mark_and_counts_turns_since_recording_began() {
-    use od_store::NewTurn;
     use od_store::usage::UsageMark;
     let tmp = tempfile::tempdir().unwrap();
     let store = open(tmp.path());
@@ -124,6 +123,7 @@ fn usage_keeps_the_first_mark_and_counts_turns_since_recording_began() {
                 attachments: &[],
                 agent_id: "claude",
                 run_id: &format!("r{i}"),
+                skills: &[],
             })
             .unwrap();
     }
@@ -401,5 +401,143 @@ fn updating_a_missing_project_reports_it_gone() {
     assert_eq!(
         store.with_conn(|c| db::update_project(c, &gone)).unwrap(),
         None
+    );
+}
+
+fn skill(id: &str, source: od_contracts::SkillSource, found: bool) -> od_contracts::TurnSkill {
+    od_contracts::TurnSkill {
+        id: id.to_owned(),
+        source,
+        found,
+    }
+}
+
+fn turn(store: &Store, conversation: &str, i: usize, skills: &[od_contracts::TurnSkill]) {
+    store
+        .begin_turn(&NewTurn {
+            prepared_message: None,
+            conversation_id: conversation,
+            user_message_id: &format!("u{i}"),
+            assistant_message_id: &format!("a{i}"),
+            content: "hi",
+            attachments: &[],
+            agent_id: "claude",
+            run_id: &format!("r{i}"),
+            skills,
+        })
+        .unwrap();
+}
+
+#[test]
+fn skill_turns_count_the_turns_with_a_skill_the_user_picked() {
+    use od_contracts::SkillSource::{Mention, Plugin, Project};
+    use od_store::usage::{SkillTurns, UsageMark};
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (project, conversation) = store
+        .create_project(CreateProjectRequest {
+            name: "P".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    // Three turns with an `@` skill the agent got, two without one.
+    turn(&store, &conversation, 0, &[skill("a", Mention, true)]);
+    turn(
+        &store,
+        &conversation,
+        1,
+        &[skill("a", Mention, true), skill("p", Project, true)],
+    );
+    turn(
+        &store,
+        &conversation,
+        2,
+        &[skill("gone", Mention, false), skill("b", Mention, true)],
+    );
+    turn(&store, &conversation, 3, &[]);
+    turn(
+        &store,
+        &conversation,
+        4,
+        &[
+            skill("p", Project, true),
+            skill("y", Plugin, true),
+            skill("gone", Mention, false),
+        ],
+    );
+    assert_eq!(
+        store.skill_turns().unwrap(),
+        SkillTurns {
+            turns: 5,
+            picked: 3
+        }
+    );
+
+    // A turn recorded before skills were kept counts for neither.
+    store
+        .with_conn(|c| {
+            c.execute("UPDATE messages SET skills_json = NULL WHERE id = 'a3'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(store.skill_turns().unwrap().turns, 4);
+
+    // An automation's turns are no one's.
+    let (auto, auto_conv) = store
+        .create_project(CreateProjectRequest {
+            name: "Auto".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    store.mark_usage(&auto.id, UsageMark::Automated).unwrap();
+    turn(&store, &auto_conv, 9, &[skill("a", Mention, true)]);
+    assert_eq!(
+        store.skill_turns().unwrap(),
+        SkillTurns {
+            turns: 4,
+            picked: 3
+        }
+    );
+    store.delete_project(&project.id).unwrap();
+    assert_eq!(store.skill_turns().unwrap(), SkillTurns::default());
+}
+
+/// A database from before `skills_json`: the column comes in empty, old
+/// turns list without skills and are not counted.
+#[test]
+fn a_database_from_before_turn_skills_opens_with_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (_, conversation) = store
+        .create_project(CreateProjectRequest {
+            name: "Old".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    turn(&store, &conversation, 0, &[]);
+    drop(store);
+    let conn = rusqlite::Connection::open(tmp.path().join("app.sqlite")).unwrap();
+    conn.execute_batch(&format!(
+        "ALTER TABLE messages DROP COLUMN skills_json; PRAGMA user_version = {};",
+        db::schema_version() - 1
+    ))
+    .unwrap();
+    drop(conn);
+
+    let store = open(tmp.path());
+    let messages = store.list_messages(&conversation).unwrap();
+    assert_eq!(messages.len(), 2);
+    assert!(messages.iter().all(|m| m.skills.is_empty()));
+    assert_eq!(store.skill_turns().unwrap().turns, 0);
+    // A turn after the upgrade keeps its skills.
+    turn(
+        &store,
+        &conversation,
+        1,
+        &[skill("a", od_contracts::SkillSource::Mention, true)],
+    );
+    assert_eq!(
+        store.list_messages(&conversation).unwrap()[3].skills.len(),
+        1
     );
 }
