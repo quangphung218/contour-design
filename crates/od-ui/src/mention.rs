@@ -258,6 +258,67 @@ pub struct SkillRow {
     pub triggers: Vec<String>,
 }
 
+/// The palette row of skill `id` and its triggers for [`suggest`]: the
+/// `triggers` of its SKILL.md, or when it has none (a skill from an agent
+/// CLI, a New skill left without them) the ones its id gives
+/// ([`implicit_triggers`]). The composer and the suggestion test build
+/// their rows here.
+#[must_use]
+pub fn skill_row(id: String, detail: String, triggers: Vec<String>) -> SkillRow {
+    let triggers = if triggers.iter().all(|t| t.trim().is_empty()) {
+        implicit_triggers(&id)
+    } else {
+        triggers
+    };
+    SkillRow {
+        triggers,
+        candidate: Candidate {
+            kind: MentionKind::Skill,
+            label: id.clone(),
+            detail,
+            id,
+            inputs: None,
+        },
+    }
+}
+
+/// Words of a skill id that say nothing of its topic.
+const ID_FILLER: &[&str] = &[
+    "a", "agent", "an", "and", "app", "claude", "codex", "for", "helper", "kit", "my", "new", "of",
+    "pro", "skill", "skills", "the", "to", "tool", "tools", "with",
+];
+
+/// The trigger a skill without `triggers` gets from its id: its words
+/// (split at `-`, `_`, `.` and spaces) without filler ([`ID_FILLER`]) and
+/// bare numbers (`tea-house-2`), as one phrase, when at least two words
+/// are left. `tea-house-landing` → "tea house landing"; `slides` and
+/// `taste-skill` → none, one word would match too much chat.
+#[must_use]
+pub fn implicit_triggers(id: &str) -> Vec<String> {
+    let words: Vec<String> = id
+        .split(['-', '_', '.', ' '])
+        .map(str::to_lowercase)
+        .filter(|w| !w.is_empty())
+        .filter(|w| !w.chars().all(|c| c.is_ascii_digit()))
+        .filter(|w| !ID_FILLER.contains(&w.as_str()))
+        .collect();
+    if words.len() < 2 {
+        return Vec::new();
+    }
+    vec![words.join(" ")]
+}
+
+/// The ids in `after` that were not in `before`, in `after`'s order: the
+/// skills a "Save as skill" turn installed.
+#[must_use]
+pub fn new_ids(before: &[String], after: &[String]) -> Vec<String> {
+    after
+        .iter()
+        .filter(|id| !before.contains(id))
+        .cloned()
+        .collect()
+}
+
 /// Most skills suggested at once.
 pub const SUGGEST_MAX: usize = 2;
 /// Fewer words than this suggest nothing.
@@ -863,6 +924,53 @@ mod tests {
         for (vi, _) in VI_EN {
             assert_eq!(words_of(vi).join(" "), *vi, "{vi}");
         }
+    }
+
+    #[test]
+    fn a_skill_without_triggers_gets_its_id_as_one() {
+        assert_eq!(
+            implicit_triggers("tea-house-landing"),
+            ["tea house landing"]
+        );
+        assert_eq!(implicit_triggers("Tea_House"), ["tea house"]);
+        // Filler and a numbered copy's suffix say nothing of the topic.
+        assert_eq!(implicit_triggers("my-tea-house-skill-2"), ["tea house"]);
+        // One word left matches too much chat.
+        for id in ["slides", "taste-skill", "new-skill", "agent-2", "", "--"] {
+            assert!(implicit_triggers(id).is_empty(), "{id}");
+        }
+        let row = |id: &str, t: &[&str]| {
+            skill_row(
+                id.to_owned(),
+                String::new(),
+                t.iter().map(|t| (*t).to_owned()).collect(),
+            )
+        };
+        // Its own triggers win; blank ones count as none.
+        assert_eq!(row("tea-house", &["matcha"]).triggers, ["matcha"]);
+        assert_eq!(row("tea-house", &[]).triggers, ["tea house"]);
+        assert_eq!(row("tea-house", &[" "]).triggers, ["tea house"]);
+        assert!(row("slides", &[]).triggers.is_empty());
+        let all = vec![row("tea-house-landing", &[]), row("slides", &[])];
+        assert_eq!(
+            ids(&suggest("make a tea house landing page", &all, &[])),
+            ["tea-house-landing"]
+        );
+        assert!(suggest("make some slides today", &all, &[]).is_empty());
+    }
+
+    #[test]
+    fn new_ids_are_the_ones_the_reload_added() {
+        let v = |s: &[&str]| s.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            new_ids(
+                &v(&["a", "tea-house"]),
+                &v(&["a", "tea-house", "tea-house-2"])
+            ),
+            ["tea-house-2"]
+        );
+        assert!(new_ids(&v(&["a"]), &v(&["a"])).is_empty());
+        assert!(new_ids(&v(&["a", "b"]), &v(&["a"])).is_empty());
     }
 
     #[test]

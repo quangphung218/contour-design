@@ -775,10 +775,20 @@ try {
   await plusMenu.click();
   await saveSkill.waitFor();
   assert.ok(await saveSkill.isDisabled(), 'off before any turn');
+  // Off, the item says why under its name.
+  const saveWhy = page.getByTestId('save-as-skill-why');
+  assert.equal((await saveWhy.textContent()).trim(), 'Available once a turn has finished');
   await plusMenu.click();
   await teaComposer.fill('calm tea house landing');
   await page.getByTestId('send').click();
   await until(async () => (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', 'first tea turn ends', 30_000);
+  // One turn that wrote the page: the next-step card does not offer it yet.
+  const saveChip = page.getByTestId('next-save-skill');
+  // The card is whole once the page's lint has answered.
+  const cardSettled = async (turn) =>
+    until(async () => (await turn.getByTestId('next-toolbox').count()) > 0 && (await turn.locator('[data-pending="true"]').count()) === 0, 'the next-step card settles');
+  await cardSettled(page.getByTestId('assistant-msg').last());
+  assert.equal(await saveChip.count(), 0, 'no Save as skill chip after one turn');
   // A second turn running after a finished one: still off.
   await teaComposer.fill('slow warmer greens');
   await page.getByTestId('send').click();
@@ -787,8 +797,13 @@ try {
   await plusMenu.click();
   await saveSkill.waitFor();
   assert.ok(await saveSkill.isDisabled(), 'off while a turn runs');
+  assert.equal((await saveWhy.textContent()).trim(), 'Available when this turn ends');
+  await page.locator('.plus-menu').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  await page.screenshot({ path: join(OUT, 'save-as-skill-why.png') });
   await plusMenu.click();
   await until(async () => (await teaTurn.getAttribute('data-state')) === 'succeeded', 'second tea turn ends', 30_000);
+  // The second turn that wrote the page: the card offers it.
+  await teaTurn.getByTestId('next-save-skill').waitFor();
   // The user's own draft: text, an @ skill chip, a file and a comment
   // attached on the preview. Saving as a skill is not that message: it
   // leaves all four where they are, and so does its Retry after a reload.
@@ -843,11 +858,16 @@ try {
   await plusMenu.click();
   await until(async () => !(await saveSkill.isDisabled()), 'on after a finished turn');
   await page.locator('.plus-menu').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  assert.equal(await saveWhy.count(), 0, 'on, the item gives no reason');
   await page.screenshot({ path: join(OUT, 'save-as-skill-menu.png') });
+  await plusMenu.click();
+  await page.screenshot({ path: join(OUT, 'save-as-skill-chip.png') });
+  // The chip sends the same prepared turn as the menu item (the menu item
+  // sends it in the second project below).
   const runReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
-  await saveSkill.click();
+  await page.getByTestId('next-save-skill-take').click();
   const sentBody = JSON.parse((await runReq).postData());
-  checkPrepared(sentBody, 'first try');
+  checkPrepared(sentBody, 'first try (the chip)');
   // The chat shows the action's name, not the instructions to the agent.
   const bubble = page.getByTestId('user-msg').last();
   await until(async () => (await bubble.textContent()).trim() === 'Save as skill', 'the bubble shows the name');
@@ -883,11 +903,42 @@ try {
   const warned = checked() && (await page.getByTestId('deliverable-warning').waitFor({ timeout: 5_000 }).then(() => true, () => false));
   assert.ok(!checked() && !warned, `no entry check or warning after a skill turn (warned: ${warned})`);
   assert.equal(await page.getByTestId('deliverable-warning').count(), 0);
+  // Under the turn: the skill it installed, to use or open.
+  const savedRow = skillTurn.locator('[data-testid="saved-skill"][data-id="tea-house"]');
+  await savedRow.waitFor();
+  assert.equal((await savedRow.getByTestId('saved-skill-use').textContent()).trim(), 'Use @tea-house');
+  assert.equal((await savedRow.getByTestId('saved-skill-open').textContent()).trim(), 'Open skill');
   await page.screenshot({ path: join(OUT, 'save-as-skill-turn.png') });
+  // The same composer, not reloaded, offers it for @ and as a suggestion.
+  await teaComposer.fill('');
+  await teaComposer.pressSequentially('@tea-h');
+  // A skill row: the skill's files also match by path.
+  await page.locator('[data-testid="mention-item"][data-kind="skill"]').filter({ hasText: 'tea-house' }).first().waitFor();
+  await teaComposer.press('Escape');
+  await teaComposer.fill('');
+  await teaComposer.pressSequentially('a calm tea house menu page');
+  await page.locator('[data-testid="skill-suggestion"][data-id="tea-house"]').waitFor();
+  await teaComposer.fill('');
+  // "Use @tea-house" stages it as a suggestion's chip does; the next
+  // turn runs with it.
+  await savedRow.getByTestId('saved-skill-use').click();
+  await page.locator('[data-testid="context-chip"][data-kind="skill"]').getByText('tea-house', { exact: true }).waitFor();
+  assert.equal(await teaComposer.inputValue(), '@tea-house ');
+  await teaComposer.press('End');
+  await teaComposer.pressSequentially('warmer hero');
+  const useReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
+  await page.getByTestId('send').click();
+  const useBody = JSON.parse((await useReq).postData());
+  assert.ok((useBody.skillIds ?? []).includes('tea-house'), `the next turn runs with the skill (${JSON.stringify(useBody.skillIds)})`);
+  const useTurn = page.getByTestId('assistant-msg').last();
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 5 && (await useTurn.getAttribute('data-state')) === 'succeeded', 'the turn with the skill ends', 30_000);
+  // Saved once in this conversation: a page turn no longer offers it.
+  await cardSettled(useTurn);
+  assert.equal(await saveChip.count(), 0, 'no chip once saved');
   // Opened again, the conversation still shows the name.
   await settleStudio(false);
   await page.reload();
-  await until(async () => (await page.getByTestId('user-msg').count()) === 4, 'the conversation loads again');
+  await until(async () => (await page.getByTestId('user-msg').count()) === 5, 'the conversation loads again');
   const shownTexts = await page.getByTestId('user-msg').allTextContents();
   assert.equal(shownTexts[2].trim(), 'Save as skill');
   assert.equal(shownTexts[3].trim(), 'Save as skill');
@@ -903,14 +954,34 @@ try {
   await teaComposer.fill('calm tea house landing');
   await page.getByTestId('send').click();
   await until(async () => (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', 'second project turn ends', 30_000);
+  await teaComposer.fill('slow warmer greens');
+  await page.getByTestId('send').click();
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 2 && (await page.getByTestId('assistant-msg').last().getAttribute('data-state')) === 'succeeded', 'second project, second turn ends', 30_000);
+  // Dismissed, the chip stays away in this project, after a reload too.
+  await page.getByTestId('next-save-skill-dismiss').click();
+  await saveChip.waitFor({ state: 'detached' });
+  await settleStudio(false);
+  await page.reload();
+  await cardSettled(page.getByTestId('assistant-msg').last());
+  assert.equal(await saveChip.count(), 0, 'a dismissed chip stays away');
   await plusMenu.click();
   await until(async () => !(await saveSkill.isDisabled()), 'on in the second project');
+  const menuReq = page.waitForRequest((r) => r.url().endsWith('/api/runs') && r.method() === 'POST');
   await saveSkill.click();
+  checkPrepared(JSON.parse((await menuReq).postData()), 'the menu item');
   const skillTurn2 = page.getByTestId('assistant-msg').last();
-  await until(async () => (await page.getByTestId('assistant-msg').count()) === 2 && (await skillTurn2.getAttribute('data-state')) === 'succeeded', 'second save ends', 30_000);
+  await until(async () => (await page.getByTestId('assistant-msg').count()) === 3 && (await skillTurn2.getAttribute('data-state')) === 'succeeded', 'second save ends', 30_000);
   await skillTurn2.filter({ hasText: 'Installed: {id:tea-house-2}' }).waitFor();
   assert.equal(readFileSync(join(data, 'skills', 'tea-house', 'SKILL.md'), 'utf8'), firstSkill, 'the first skill is untouched');
+  // Only the skill this turn added: tea-house was there before.
+  const savedRow2 = skillTurn2.getByTestId('saved-skill');
+  await savedRow2.waitFor();
+  assert.deepEqual(await savedRow2.evaluateAll((els) => els.map((e) => e.dataset.id)), ['tea-house-2']);
+  // "Open skill" goes to it in the Library.
   await settleStudio(false);
+  await savedRow2.getByTestId('saved-skill-open').click();
+  await until(async () => page.url().endsWith('/plugins?skill=tea-house-2'), 'the Library opens on the skill');
+  await page.getByTestId('skill-detail').waitFor();
   await page.goto(BASE + '/plugins');
   await page.getByTestId('kind-skills').click();
   await page.getByTestId('scope-personal').click();
