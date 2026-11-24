@@ -660,6 +660,39 @@ try {
   assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true, 'a bundled id is not picked');
   assert.equal((await agentRow('ad-creative').getByTestId('agent-skill-taken').textContent()).trim(), 'A skill named ad-creative already exists');
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-taken').count(), 0);
+  // The daemon compares names by `name_key` (NFC, case ignored): the
+  // same name in another case is taken too.
+  await closeDialog();
+  await page.route(sourcesRoute, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ sources: [{ path: join(home, '.claude/skills/ad-case'), agent: 'claude', id: 'Ad-Creative', description: 'Mine.', imported: false }] }),
+  }), { times: 1 });
+  await openAgentCli();
+  await agentRow('Ad-Creative').waitFor();
+  assert.equal(await agentRow('Ad-Creative').getByTestId('agent-skill-pick').isDisabled(), true, 'a bundled id in another case is not picked');
+  assert.equal((await agentRow('Ad-Creative').getByTestId('agent-skill-taken').textContent()).trim(), 'A skill named Ad-Creative already exists');
+  await closeDialog();
+  // Opened before the page's skills came: no row is picked until they
+  // come, so a bundled name is never ticked and sent.
+  let releaseSkills;
+  const skillsHeld = new Promise((r) => (releaseSkills = r));
+  await page.route(`${BASE}/api/skills`, async (route) => {
+    if (route.request().method() === 'GET') await skillsHeld;
+    await route.fallback();
+  });
+  await page.goto(`${BASE}/skills`);
+  await openAgentCli();
+  await until(async () => (await agentRows.count()) === 6, 'the agent skills before the page\'s skills');
+  assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').isDisabled(), true, 'nothing is picked before the skills come');
+  assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true);
+  const skillsCame = page.waitForResponse((r) => r.url() === `${BASE}/api/skills` && r.request().method() === 'GET');
+  releaseSkills();
+  await skillsCame;
+  await page.unroute(`${BASE}/api/skills`);
+  await until(async () => await agentRow('tea-b').getByTestId('agent-skill-pick').isEnabled(), 'tea-b can be picked once the skills come');
+  assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true, 'the bundled name stays off');
+  await agentRow('ad-creative').getByTestId('agent-skill-taken').waitFor();
   // A filter that matches nothing says so, and Clear search brings the
   // list back.
   await page.getByTestId('agent-skills-filter').fill('no such skill');

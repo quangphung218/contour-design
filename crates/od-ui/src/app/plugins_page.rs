@@ -345,16 +345,19 @@ fn LibraryPage(kind: Kind) -> impl IntoView {
         reload();
     });
     let on_landed = Callback::new(move |()| reload());
-    // Ids of the bundled skills: an agent skill of the same name is never
-    // copied in (the server answers 409), so its row is not picked. A Memo,
-    // so a reload that changes nothing leaves the dialog's rows alone.
+    // Ids of the bundled skills ([`bundled_keys`]), `None` while loading:
+    // an agent skill of the same name is never copied in (the server
+    // answers 409), so its row is not picked. A Memo, so a reload that
+    // changes nothing leaves the dialog's rows alone.
     let bundled = Memo::new(move |_| {
         skills.with(|l| {
-            l.iter()
-                .flatten()
-                .filter(|sk| !skill_personal(sk))
-                .map(|sk| sk.info.id.clone())
-                .collect::<Vec<_>>()
+            l.as_ref().map(|l| {
+                bundled_keys(
+                    l.iter()
+                        .filter(|sk| !skill_personal(sk))
+                        .map(|sk| sk.info.id.as_str()),
+                )
+            })
         })
     });
     // A plugin or skill removed from its page: back to the list, unless
@@ -377,7 +380,11 @@ fn LibraryPage(kind: Kind) -> impl IntoView {
             l.as_ref().map(|l| {
                 bundled.with(|b| {
                     l.iter()
-                        .filter(|sk| !sk.imported && sk.error.is_none() && !b.contains(&sk.id))
+                        .filter(|sk| {
+                            !sk.imported
+                                && sk.error.is_none()
+                                && pick_state(b.as_deref(), &sk.id) != Pick::Taken
+                        })
                         .count()
                 })
             })
@@ -1255,8 +1262,8 @@ fn CreateDialog(
     /// lists reload, nothing else changes.
     on_landed: Callback<()>,
     page: Tasks,
-    /// Ids of the bundled skills, for "From agent CLI".
-    bundled: Memo<Vec<String>>,
+    /// Ids of the bundled skills, for "From agent CLI" ([`pick_state`]).
+    bundled: Memo<Option<Vec<String>>>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let shell = Shell::get();
@@ -1439,6 +1446,32 @@ fn CreateDialog(
     }
 }
 
+/// Whether an agent CLI skill can be picked for "From agent CLI".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pick {
+    Free,
+    /// A bundled skill has its name: the daemon answers 409.
+    Taken,
+    /// The page's skills are not loaded yet, so it is not known whether
+    /// one has its name.
+    Waiting,
+}
+
+/// The keys of the bundled skills' ids, as the daemon compares them
+/// when it installs (`od_contracts::name_key`: NFC, case ignored).
+fn bundled_keys<'a>(ids: impl Iterator<Item = &'a str>) -> Vec<String> {
+    ids.map(od_contracts::name_key).collect()
+}
+
+/// `bundled` holds [`bundled_keys`], `None` while the skills load.
+fn pick_state(bundled: Option<&[String]>, id: &str) -> Pick {
+    match bundled {
+        None => Pick::Waiting,
+        Some(b) if b.contains(&od_contracts::name_key(id)) => Pick::Taken,
+        Some(_) => Pick::Free,
+    }
+}
+
 /// A path that names a folder on its own: from the root, from the home
 /// folder (`~`, which the daemon expands), or a Windows drive or share.
 /// Anything else depends on a current folder the user never sees.
@@ -1553,7 +1586,7 @@ fn AgentSkillImport(
     page: Tasks,
     on_imported: Callback<bool>,
     on_landed: Callback<()>,
-    bundled: Memo<Vec<String>>,
+    bundled: Memo<Option<Vec<String>>>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let sources = RwSignal::new(None::<Vec<AgentSkill>>);
@@ -1578,17 +1611,26 @@ fn AgentSkillImport(
         });
     };
     load();
-    let import = move |_| {
-        let paths: Vec<(String, String)> = sources.with_untracked(|l| {
-            picked.with_untracked(|p| {
-                p.iter()
-                    .filter_map(|path| {
-                        let sk = l.iter().flatten().find(|sk| sk.path == *path)?;
-                        Some((path.clone(), sk.id.clone()))
-                    })
-                    .collect()
+    // The rows picked that can go, as `(path, id)`: a row picked before
+    // the page's skills came, and found taken since, is not sent (the
+    // daemon would refuse it) nor counted.
+    let sendable = move || -> Vec<(String, String)> {
+        sources.with(|l| {
+            picked.with(|p| {
+                bundled.with(|b| {
+                    p.iter()
+                        .filter_map(|path| {
+                            let sk = l.iter().flatten().find(|sk| sk.path == *path)?;
+                            (pick_state(b.as_deref(), &sk.id) == Pick::Free)
+                                .then(|| (path.clone(), sk.id.clone()))
+                        })
+                        .collect()
+                })
             })
-        });
+        })
+    };
+    let import = move |_| {
+        let paths = untrack(sendable);
         if paths.is_empty() {
             return;
         }
@@ -1689,8 +1731,11 @@ fn AgentSkillImport(
                         let p4 = path.clone();
                         // A bundled skill of that name stays: not picked,
                         // the row says why.
-                        let taken = !sk.imported && sk.error.is_none() && bundled.with(|b| b.contains(&sk.id));
-                        let locked = sk.imported || sk.error.is_some() || taken;
+                        let id = sk.id.clone();
+                        let pick = Memo::new(move |_| bundled.with(|b| pick_state(b.as_deref(), &id)));
+                        let open_row = !sk.imported && sk.error.is_none();
+                        let taken = move || open_row && pick.get() == Pick::Taken;
+                        let locked = move || !open_row || pick.get() != Pick::Free;
                         let done = Signal::derive(move || outcome.with(|o| o.get(&p3) == Some(&Imported::Done)));
                         let failed = move || outcome.with(|o| match o.get(&p4) {
                             Some(Imported::Failed(e)) => Some(e.clone()),
@@ -1705,7 +1750,7 @@ fn AgentSkillImport(
                             <li data-testid="agent-skill" data-id=sk.id.clone() data-agent=sk.agent.clone()>
                                 <label class="memory-item">
                                     <input type="checkbox" data-testid="agent-skill-pick"
-                                        disabled=move || locked || busy.get() || done.get()
+                                        disabled=move || locked() || busy.get() || done.get()
                                         prop:checked=move || picked.with(|p| p.contains(&path))
                                         on:change=live(move |ev| {
                                             let on = event_target_checked(&ev);
@@ -1719,7 +1764,7 @@ fn AgentSkillImport(
                                     <span class="grow" title=sk.description.clone()><strong>{sk.id.clone()}</strong>" "<span class="muted">{description}</span></span>
                                     {move || (sk.imported || done.get()).then(|| view! { <span class="badge" data-testid="agent-skill-imported">{t(T::Imported)}</span> })}
                                 </label>
-                                {taken.then(|| view! { <p class="muted small-text" data-testid="agent-skill-taken">{tf(T::SkillNameTaken, &[&sk.id])}</p> })}
+                                {let id = sk.id.clone(); move || taken().then(|| view! { <p class="muted small-text" data-testid="agent-skill-taken">{tf(T::SkillNameTaken, &[&id])}</p> })}
                                 {sk.error.clone().map(|e| view! { <p class="error-text" data-testid="agent-skill-error">{e}</p> })}
                                 {move || failed().map(|e| view! { <p class="error-text" role="alert" data-testid="agent-skill-error">{e}</p> })}
                             </li>
@@ -1730,9 +1775,9 @@ fn AgentSkillImport(
             }}
             <div class="row end">
                 <button class="btn primary" data-testid="agent-skills-import"
-                    disabled=move || busy.get() || picked.with(Vec::is_empty)
+                    disabled=move || busy.get() || sendable().is_empty()
                     on:click=import>
-                    {icon(Glyph::Download)}{move || tf(T::ImportCount, &[&picked.with(Vec::len).to_string()])}
+                    {icon(Glyph::Download)}{move || tf(T::ImportCount, &[&sendable().len().to_string()])}
                 </button>
             </div>
         </div>
@@ -1742,6 +1787,20 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_agent_skill_named_like_a_bundled_one_in_any_case_or_form_is_taken() {
+        let b = bundled_keys(["ad-creative", "caf\u{e9}"].into_iter());
+        let b = Some(b.as_slice());
+        assert_eq!(pick_state(b, "ad-creative"), Pick::Taken);
+        assert_eq!(pick_state(b, "Ad-Creative"), Pick::Taken);
+        // NFD, as a Mac may write the folder's name.
+        assert_eq!(pick_state(b, "cafe\u{301}"), Pick::Taken);
+        assert_eq!(pick_state(b, "CAFE\u{301}"), Pick::Taken);
+        assert_eq!(pick_state(b, "tea"), Pick::Free);
+        // Before the page's skills come, no row is picked.
+        assert_eq!(pick_state(None, "tea"), Pick::Waiting);
+    }
 
     /// A link to the old Skills tab (`/plugins?skill=…`) goes on to the
     /// Skills with its query; any other address of the Plugins stays.
