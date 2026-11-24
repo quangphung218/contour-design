@@ -1227,6 +1227,8 @@ messages! {
     ImportCount => "Import ({0})", "Nhập ({0})";
     Imported => "Imported", "Đã nhập";
     NoAgentSkills => "No skills found", "Không thấy skill nào";
+    AgentSkillsWhere => "Put a skill folder with a SKILL.md in one of these folders, then refresh:", "Đặt một thư mục skill có SKILL.md vào một trong các thư mục sau, rồi làm mới:";
+    AgentSkillsNoMatch => "No skills match the search.", "Không có skill nào khớp tìm kiếm.";
     SkillNameTaken => "A skill named {0} already exists", "Đã có skill tên {0}";
     AgentSkillsFailed => "Could not read the agent skills: {0}", "Không đọc được skill của agent: {0}";
     MediaPageSub => "Every image, video and audio file across projects. Generate more with the providers you configured.", "Mọi ảnh, video và âm thanh trong các project. Sinh thêm bằng provider đã cấu hình.";
