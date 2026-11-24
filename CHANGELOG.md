@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.63] - 2026-11-25
+
 ### Fixed
 
 - Save as skill stays hidden in every conversation of a project once saved, and its Use and Open row survives a reload.
@@ -1447,7 +1449,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.62...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.63...HEAD
+[0.2.0-beta.63]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.62...v0.2.0-beta.63
 [0.2.0-beta.62]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.61...v0.2.0-beta.62
 [0.2.0-beta.61]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.60...v0.2.0-beta.61
 [0.2.0-beta.60]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.59...v0.2.0-beta.60
