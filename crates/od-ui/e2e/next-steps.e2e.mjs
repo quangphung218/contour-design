@@ -82,7 +82,10 @@ try {
     await until(async () => (await assistant.count()) === turns
       && (await assistant.last().getAttribute('data-state')) === 'succeeded', `turn ${turns} done`);
   };
-  const chips = () => assistant.last().getByTestId('next-chips').locator('.next-step');
+  // The steps (three at most); "Save as skill", offered from the second
+  // page turn on, sits after them and is not one of them.
+  const chips = () => assistant.last().getByTestId('next-chips').locator('.next-step:not([data-testid=next-save-skill])');
+  const saveSkill = () => assistant.last().getByTestId('next-save-skill');
   const chipTexts = async () => (await chips().allTextContents()).map((s) => s.trim());
 
   // 1. The agent's keyed markers: three chips, in order.
@@ -92,6 +95,7 @@ try {
   await until(async () => (await chips().count()) === 3, 'three chips');
   assert.deepEqual(await chipTexts(), suggested);
   assert.equal(await assistant.last().getByTestId('next-suggestion').count(), 3);
+  assert.equal(await saveSkill().count(), 0, 'one turn: no Save as skill yet');
   assert.equal(await assistant.last().getByTestId('next-mobile').count(), 0, 'no fixed follow-ups');
   // Open and Comment are small actions, not chips.
   const actions = assistant.last().getByTestId('next-actions');
@@ -147,6 +151,7 @@ try {
   await assistant.last().getByTestId('next-fix').waitFor();
   const withFix = await chipTexts();
   assert.deepEqual(withFix, ['Fix 1 issue: emoji icon', 'Add a pricing table', 'Make the hero shorter']);
+  assert.equal(await saveSkill().count(), 1, 'the second page turn offers Save as skill');
   await page.screenshot({ path: join(OUT, 'next-steps-fix.png') });
   await assistant.last().getByTestId('next-fix').click();
   const fix = await composer.inputValue();
