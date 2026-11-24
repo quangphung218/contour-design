@@ -1086,6 +1086,14 @@ fn CreateDialog(
     let _ = shell;
     let navigate = use_navigate();
     let mode = RwSignal::new(CreateMode::Agent);
+    // Bumped on every switch of mode: a save or install that comes back
+    // late opens its result only if the user has not left the mode since
+    // (left and come back, they may be typing the next one).
+    let visit = StoredValue::new(0u64);
+    Effect::new(move |_| {
+        mode.track();
+        visit.update_value(|n| *n += 1);
+    });
     let brief = RwSignal::new(String::new());
     let path = RwSignal::new(String::new());
     let link = RwSignal::new(String::new());
@@ -1121,8 +1129,9 @@ fn CreateDialog(
     // else to the plugins. Both requests run even if the page goes.
     let install = move |dir: String| {
         busy.set(true);
+        let started = visit.get_value();
         page.spawn_then(install_folder(dir), move |done| match done {
-            Ok(open) if tasks.alive() && mode.get_untracked() == CreateMode::Folder => {
+            Ok(open) if tasks.alive() && visit.try_get_value() == Some(started) => {
                 on_done.run(Some(open));
             }
             Ok(_) => on_landed.run(()),
@@ -1141,9 +1150,10 @@ fn CreateDialog(
         });
     };
     let save_skill = Callback::new(move |body: Value| {
+        let started = visit.get_value();
         page.spawn(async move {
             match api::post::<_, Value>("/api/skills", &body).await {
-                Ok(v) if tasks.alive() && mode.get_untracked() == CreateMode::Skill => {
+                Ok(v) if tasks.alive() && visit.try_get_value() == Some(started) => {
                     on_done.run(Some(Open::Skill(
                         v["id"].as_str().unwrap_or_default().to_owned(),
                     )));

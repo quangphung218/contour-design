@@ -495,6 +495,38 @@ try {
   assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Kept.');
   await closeDialog();
 
+  // A New skill save that comes back late, after the user went to From
+  // agent CLI and back and started a second skill: the dialog stays open on
+  // the second one.
+  let releaseSave;
+  const saveHeld = new Promise((r) => (releaseSave = r));
+  let heldOne = false;
+  const skillsRoute = `${BASE}/api/skills`;
+  await page.route(skillsRoute, async (route) => {
+    if (route.request().method() !== 'POST' || heldOne) return route.fallback();
+    heldOne = true;
+    await saveHeld;
+    await route.fallback();
+  });
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-skill').click();
+  await page.getByTestId('skill-name').fill('Saved late');
+  await page.getByTestId('skill-body-input').fill('First.');
+  await page.getByTestId('skill-save').click();
+  await until(async () => heldOne, 'the first save is held');
+  await page.getByTestId('create-agent-cli').click();
+  await page.getByTestId('create-skill').click();
+  await page.getByTestId('skill-name').fill('Second one');
+  await page.getByTestId('skill-body-input').fill('Still typing.');
+  releaseSave();
+  await until(async () => existsSync(join(data, 'skills', 'saved-late', 'SKILL.md')), 'the first save lands');
+  await sleep(500);
+  assert.ok(await createDialog.isVisible(), 'a late save does not close the dialog');
+  assert.equal(await page.getByTestId('skill-name').inputValue(), 'Second one', 'the second skill being typed stays');
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Still typing.');
+  await page.unroute(skillsRoute);
+  await closeDialog();
+
   // Closed, then editing a skill while it ran: the edit stays open.
   await openAgentCli();
   await agentRow('tea-d').getByTestId('agent-skill-pick').check();
