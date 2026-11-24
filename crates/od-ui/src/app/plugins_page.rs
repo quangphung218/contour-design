@@ -187,6 +187,13 @@ pub fn PluginsPage() -> impl IntoView {
         Kind::Plugins
     });
     let scope = RwSignal::new(Scope::Official);
+    // Set once the user picks Official or Personal (or a create lands on
+    // Personal): the page no longer picks the scope for them.
+    let scope_picked = StoredValue::new(false);
+    let pick_scope = move |sc: Scope| {
+        scope_picked.set_value(true);
+        scope.set(sc);
+    };
     let query = RwSignal::new(String::new());
     let category = RwSignal::new(String::new());
     let open = RwSignal::new(
@@ -195,6 +202,11 @@ pub fn PluginsPage() -> impl IntoView {
             .or_else(|| query_param("skill").map(Open::Skill)),
     );
     let creating = RwSignal::new(false);
+    // The mode Create opens on, set by what opened it.
+    let create_mode = StoredValue::new(CreateMode::Agent);
+    // The agent CLI skill folders (`local-sources`), read once the Skills
+    // are shown; a failed read counts as none.
+    let agent_sources = RwSignal::new(None::<Vec<AgentSkill>>);
     let error = RwSignal::new(None::<String>);
     let monos = Memo::new(move |_| {
         plugins.with(|list| {
@@ -207,6 +219,20 @@ pub fn PluginsPage() -> impl IntoView {
         })
     });
 
+    let load_agent_sources = move || {
+        tasks.spawn(async move {
+            let found = api::get::<Value>("/api/skills/local-sources")
+                .await
+                .map(|v| {
+                    v["sources"]
+                        .as_array()
+                        .map(|l| l.iter().map(AgentSkill::parse).collect())
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+            agent_sources.set(Some(found));
+        });
+    };
     let reload = move || {
         tasks.spawn(async move {
             match api::get::<Value>("/api/plugins").await {
@@ -223,6 +249,9 @@ pub fn PluginsPage() -> impl IntoView {
                 Err(e) => error.set(Some(e.to_string())),
             }
         });
+        if agent_sources.with_untracked(Option::is_some) {
+            load_agent_sources();
+        }
     };
     reload();
     // An open plugin or skill holds text the user typed (a skill being
@@ -236,7 +265,7 @@ pub fn PluginsPage() -> impl IntoView {
         creating.set(false);
         if !held.get_untracked() {
             if let Some(Open::Plugin(_) | Open::Skill(_)) = &next {
-                scope.set(Scope::Personal);
+                pick_scope(Scope::Personal);
             }
             open.set(next);
         }
@@ -248,7 +277,7 @@ pub fn PluginsPage() -> impl IntoView {
         if !held.get_untracked() {
             open.set(None);
             kind.set(Kind::Skills);
-            scope.set(Scope::Personal);
+            pick_scope(Scope::Personal);
         }
         if all_ok {
             creating.set(false);
@@ -279,6 +308,56 @@ pub fn PluginsPage() -> impl IntoView {
             }
         });
         reload();
+    });
+    // Skills in the agent CLI folders that "From agent CLI" can still
+    // import: not imported, readable, and not named like a bundled one.
+    // `None` until the folders are read.
+    let importable = Memo::new(move |_| {
+        agent_sources.with(|l| {
+            l.as_ref().map(|l| {
+                bundled.with(|b| {
+                    l.iter()
+                        .filter(|sk| !sk.imported && sk.error.is_none() && !b.contains(&sk.id))
+                        .count()
+                })
+            })
+        })
+    });
+    // The Skills read the agent CLI folders once, to offer them.
+    Effect::new(move |_| {
+        if kind.get() == Kind::Skills && agent_sources.with_untracked(Option::is_none) {
+            load_agent_sources();
+        }
+    });
+    // Whether the user has skills of their own (`None` while loading).
+    let own_skills =
+        Memo::new(move |_| skills.with(|l| l.as_ref().map(|l| l.iter().any(skill_personal))));
+    // Until the user picks a scope: the Skills open on Personal when they
+    // have skills of their own (else what they added is hidden under 169
+    // bundled ones), the Plugins on Official. A change of kind applies the
+    // default again; the skills coming in later only move to Personal.
+    Effect::new(move |prev: Option<Kind>| {
+        let k = kind.get();
+        let mine = k == Kind::Skills && own_skills.get() == Some(true);
+        if !scope_picked.get_value() && (prev != Some(k) || mine) {
+            scope.set(if mine {
+                Scope::Personal
+            } else {
+                Scope::Official
+            });
+        }
+        k
+    });
+    // Create opens on what the tab is about: on the Skills, the import
+    // from agent CLIs when there is something to import, else a new skill.
+    let create = Callback::new(move |m: Option<CreateMode>| {
+        let m = m.unwrap_or_else(|| match kind.get_untracked() {
+            Kind::Plugins => CreateMode::Agent,
+            Kind::Skills if importable.get_untracked().unwrap_or(0) > 0 => CreateMode::AgentCli,
+            Kind::Skills => CreateMode::Skill,
+        });
+        create_mode.set_value(m);
+        creating.set(true);
     });
 
     let count = move |sc: Scope| -> usize {
@@ -369,6 +448,10 @@ pub fn PluginsPage() -> impl IntoView {
                     .filter(|sk| hit(&q, &skill_name(sk), &skill_description(sk)))
                     .collect();
                 if rows.is_empty() {
+                    if personal && q.trim().is_empty() && cat.is_empty() {
+                        return view! { <OwnSkillsEmpty importable=importable create=create/> }
+                            .into_any();
+                    }
                     return empty(personal).into_any();
                 }
                 rows.into_iter()
@@ -386,7 +469,7 @@ pub fn PluginsPage() -> impl IntoView {
                     <h1>{t(T::NavPlugins)}</h1>
                     <p class="page-sub">{t(T::PluginsPageSub)}</p>
                 </div>
-                <button class="btn primary" data-testid="plugins-create" on:click=move |_| creating.set(true)>{icon(Glyph::Add)}{t(T::Create)}</button>
+                <button class="btn primary" data-testid="plugins-create" on:click=move |_| create.run(None)>{icon(Glyph::Add)}{t(T::Create)}</button>
             </header>
             {move || match open.get() {
                 Some(Open::Plugin(id)) => {
@@ -406,7 +489,7 @@ pub fn PluginsPage() -> impl IntoView {
                         </div>
                         <div class="segmented small" role="group" aria-label=t(T::Source)>
                             {[(Scope::Official, T::ScopeOfficial, "scope-official"), (Scope::Personal, T::ScopePersonal, "scope-personal")].into_iter().map(|(sc, label, id)| view! {
-                                <button class="seg" data-testid=id aria-pressed=move || (scope.get() == sc).to_string() on:click=move |_| { scope.set(sc); category.set(String::new()); }>
+                                <button class="seg" data-testid=id aria-pressed=move || (scope.get() == sc).to_string() on:click=move |_| { pick_scope(sc); category.set(String::new()); }>
                                     {t(label)}<span class="count-badge">{move || count(sc)}</span>
                                 </button>
                             }).collect_view()}
@@ -434,6 +517,7 @@ pub fn PluginsPage() -> impl IntoView {
             }}
             <Show when=move || creating.get()>
                 <CreateDialog
+                    first=create_mode.get_value()
                     page=tasks
                     on_close=Callback::new(move |()| creating.set(false))
                     on_done=on_created
@@ -451,6 +535,36 @@ fn empty(personal: bool) -> impl IntoView {
         <li class="empty-state compact">
             <span class="empty-icon">{icon(Glyph::Plugin)}</span>
             <p>{if personal { t(T::PluginsEmptyPersonal) } else { t(T::NoMatches) }}</p>
+        </li>
+    }
+}
+
+/// No skills of the user's own yet: the skills in their agent CLI
+/// folders are offered for import, else a new skill. Until the folders
+/// are read (or when the read failed) the plain words stand alone.
+#[component]
+fn OwnSkillsEmpty(
+    importable: Memo<Option<usize>>,
+    create: Callback<Option<CreateMode>>,
+) -> impl IntoView {
+    view! {
+        <li class="empty-state compact" data-testid="skills-empty">
+            <span class="empty-icon">{icon(Glyph::Book)}</span>
+            {move || match importable.get() {
+                Some(n) if n > 0 => view! {
+                    <p data-testid="skills-empty-found">{if n == 1 { t(T::AgentSkillsFoundOne).to_owned() } else { tf(T::AgentSkillsFoundMany, &[&n.to_string()]) }}</p>
+                    <button class="btn primary small" data-testid="skills-empty-import" on:click=move |_| create.run(Some(CreateMode::AgentCli))>
+                        {icon(Glyph::Download)}{t(T::ImportSkills)}
+                    </button>
+                }.into_any(),
+                Some(_) => view! {
+                    <p>{t(T::PluginsEmptyPersonal)}</p>
+                    <button class="btn small" data-testid="skills-empty-new" on:click=move |_| create.run(Some(CreateMode::Skill))>
+                        {icon(Glyph::Add)}{t(T::NewSkill)}
+                    </button>
+                }.into_any(),
+                None => view! { <p>{t(T::PluginsEmptyPersonal)}</p> }.into_any(),
+            }}
         </li>
     }
 }
@@ -1086,6 +1200,8 @@ enum CreateMode {
 /// the `page`'s tasks: closed meanwhile, the list still shows it.
 #[component]
 fn CreateDialog(
+    /// The mode it opens on.
+    first: CreateMode,
     on_close: Callback<()>,
     on_done: Callback<Option<Open>>,
     on_imported: Callback<bool>,
@@ -1100,7 +1216,7 @@ fn CreateDialog(
     let shell = Shell::get();
     let _ = shell;
     let navigate = use_navigate();
-    let mode = RwSignal::new(CreateMode::Agent);
+    let mode = RwSignal::new(first);
     // Bumped on every switch of mode: a save or install that comes back
     // late opens its result only if the user has not left the mode since
     // (left and come back, they may be typing the next one).
@@ -1113,6 +1229,8 @@ fn CreateDialog(
     let path = RwSignal::new(String::new());
     let link = RwSignal::new(String::new());
     let error = RwSignal::new(None::<String>);
+    // What is wrong with the folder path, shown under it.
+    let path_error = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
 
     // A project whose first turn writes (brief) or fetches (link) a plugin.
@@ -1143,6 +1261,11 @@ fn CreateDialog(
     // A bare skill folder (only `SKILL.md`) goes to the skills; anything
     // else to the plugins. Both requests run even if the page goes.
     let install = move |dir: String| {
+        if !full_path(&dir) {
+            path_error.set(Some(t(T::FolderPathNotFull).to_owned()));
+            return;
+        }
+        path_error.set(None);
         busy.set(true);
         let started = visit.get_value();
         page.spawn_then(install_folder(dir), move |done| match done {
@@ -1156,9 +1279,14 @@ fn CreateDialog(
                 }
                 on_landed.run(());
             }
+            // Under the path while the user is still on it.
+            Err(e) if tasks.alive() && visit.try_get_value() == Some(started) => {
+                busy.set(false);
+                path_error.set(Some(folder_failure(&e)));
+            }
             Err(e) if tasks.alive() => {
                 busy.set(false);
-                error.set(Some(api::failure(T::InstallFailed, &e)));
+                error.set(Some(folder_failure(&e)));
             }
             Err(_) => {}
         });
@@ -1167,6 +1295,7 @@ fn CreateDialog(
         tasks.spawn(async move {
             if let Some(dir) = desktop::pick_folder().await {
                 path.set(dir);
+                path_error.set(None);
             }
         });
     };
@@ -1193,7 +1322,13 @@ fn CreateDialog(
                     {[(CreateMode::Agent, T::CreateWithAgent, "create-agent", Glyph::Agent), (CreateMode::Link, T::AddFromLink, "create-link", Glyph::Link), (CreateMode::Folder, T::InstallFromFolder, "create-folder", Glyph::FolderOpen), (CreateMode::Skill, T::NewSkill, "create-skill", Glyph::Book), (CreateMode::AgentCli, T::FromAgentCli, "create-agent-cli", Glyph::Download)]
                         .into_iter()
                         .map(|(m, label, id, glyph)| view! {
-                            <button class="seg" data-testid=id aria-pressed=move || (mode.get() == m).to_string() on:click=move |_| { mode.set(m); error.set(None); }>{icon(glyph)}{t(label)}</button>
+                            <button class="seg" data-testid=id aria-pressed=move || (mode.get() == m).to_string() on:click=move |_| {
+                                // The mode shown already: its form stays as typed.
+                                if mode.get_untracked() != m {
+                                    mode.set(m);
+                                }
+                                error.set(None);
+                            }>{icon(glyph)}{t(label)}</button>
                         })
                         .collect_view()}
                 </div>
@@ -1233,9 +1368,12 @@ fn CreateDialog(
                                 <span>{t(T::FolderPathLabel)}</span>
                                 <div class="row">
                                     <input class="input mono grow" data-testid="plugin-path" placeholder=t(T::PluginPathPlaceholder)
-                                        prop:value=move || path.get() on:input=live(move |ev| path.set(event_target_value(&ev)))/>
+                                        aria-invalid=move || path_error.with(Option::is_some).then_some("true")
+                                        aria-describedby=move || path_error.with(Option::is_some).then_some("plugin-path-error")
+                                        prop:value=move || path.get() on:input=live(move |ev| { path.set(event_target_value(&ev)); path_error.set(None); })/>
                                     {desktop::is_desktop().then(|| view! { <button class="btn" on:click=pick>{icon(Glyph::FolderOpen)}{t(T::Browse)}</button> })}
                                 </div>
+                                {move || path_error.get().map(|e| view! { <p class="error-text field-error" id="plugin-path-error" role="alert" data-testid="plugin-path-error">{e}</p> })}
                             </label>
                             <div class="row end">
                                 <button class="btn primary" data-testid="plugin-install" disabled=move || busy.get() || path.with(|p| p.trim().is_empty())
@@ -1252,6 +1390,36 @@ fn CreateDialog(
                 }}
             </div>
         </Modal>
+    }
+}
+
+/// A path that names a folder on its own: from the root, from the home
+/// folder (`~`, which the daemon expands), or a Windows drive or share.
+/// Anything else depends on a current folder the user never sees.
+fn full_path(path: &str) -> bool {
+    let p = path.trim();
+    let b = p.as_bytes();
+    p.starts_with('/')
+        || p == "~"
+        || p.starts_with("~/")
+        || p.starts_with("\\\\")
+        || (b.len() > 2
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && matches!(b[2], b'\\' | b'/'))
+}
+
+/// Why Install from folder failed, in the user's words: no "request was
+/// not accepted" in front, no status.
+fn folder_failure(e: &api::HttpError) -> String {
+    let m = e.message.as_str();
+    match e.status {
+        409 => t(T::FolderNameTaken).to_owned(),
+        400 if m.ends_with("is not a folder") => t(T::FolderNotFound).to_owned(),
+        400 if m.contains("no SKILL.md") => t(T::FolderNothingToInstall).to_owned(),
+        400 if m.contains("absolute") => t(T::FolderPathNotFull).to_owned(),
+        _ if e.internal() => api::failure(T::InstallFailed, e),
+        _ => t(T::InstallFailed).replace("{0}", m),
     }
 }
 
@@ -1528,6 +1696,70 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_path_must_name_the_folder_on_its_own() {
+        for ok in [
+            "/Users/ada/skills/tea",
+            " ~/skills/tea ",
+            "~",
+            "C:\\skills\\tea",
+            "d:/skills",
+            "\\\\server\\share\\tea",
+        ] {
+            assert!(full_path(ok), "{ok}");
+        }
+        for bad in ["skills/tea", "./tea", "~bob/tea", "tea", "C:tea", ""] {
+            assert!(!full_path(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_folder_install_failure_reads_in_the_users_words() {
+        let err =
+            |status: u16, code: Option<od_contracts::ErrorCode>, message: &str| api::HttpError {
+                status,
+                code,
+                message: message.to_owned(),
+                request_id: None,
+            };
+        let bad = Some(od_contracts::ErrorCode::BadRequest);
+        // The daemon's words (`od-content` `install_skill`, `install_plugin`).
+        assert_eq!(
+            folder_failure(&err(400, bad, "/Users/ada/nope is not a folder")),
+            "No folder at this path. Check the spelling."
+        );
+        assert_eq!(
+            folder_failure(&err(
+                400,
+                bad,
+                "the folder has no SKILL.md or open-design.json"
+            )),
+            "This folder has no SKILL.md or open-design.json."
+        );
+        assert_eq!(
+            folder_failure(&err(400, bad, "path must be an absolute folder path")),
+            "Enter the folder's full path, starting with / or ~"
+        );
+        assert_eq!(
+            folder_failure(&err(
+                409,
+                Some(od_contracts::ErrorCode::Conflict),
+                "skill \"tea\" already exists"
+            )),
+            "A skill or plugin with this name is already installed."
+        );
+        // Anything else: the daemon's words without "The request was not
+        // accepted" in front; an internal failure says to try again.
+        let other = folder_failure(&err(400, bad, "SKILL.md has no name"));
+        assert_eq!(other, "Could not install: SKILL.md has no name");
+        let internal = folder_failure(&err(
+            500,
+            Some(od_contracts::ErrorCode::InternalError),
+            "disk I/O",
+        ));
+        assert!(!internal.contains("disk I/O"), "{internal}");
+    }
 
     #[test]
     fn the_empty_list_names_a_skills_folder_for_every_agent() {

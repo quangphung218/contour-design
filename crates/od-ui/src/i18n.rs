@@ -1227,6 +1227,13 @@ messages! {
     ImportCount => "Import ({0})", "Nhập ({0})";
     Imported => "Imported", "Đã nhập";
     NoAgentSkills => "No skills found", "Không thấy skill nào";
+    FolderPathNotFull => "Enter the folder's full path, starting with / or ~", "Nhập đường dẫn đầy đủ của thư mục, bắt đầu bằng / hoặc ~";
+    FolderNotFound => "No folder at this path. Check the spelling.", "Không có thư mục nào ở đường dẫn này. Kiểm tra lại chính tả.";
+    FolderNothingToInstall => "This folder has no SKILL.md or open-design.json.", "Thư mục này không có SKILL.md hay open-design.json.";
+    FolderNameTaken => "A skill or plugin with this name is already installed.", "Đã cài một skill hoặc plugin cùng tên.";
+    AgentSkillsFoundOne => "1 skill is in your agent CLI folders.", "Có 1 skill trong thư mục agent CLI.";
+    AgentSkillsFoundMany => "{0} skills are in your agent CLI folders.", "Có {0} skill trong thư mục agent CLI.";
+    ImportSkills => "Import skills", "Nhập skill";
     AgentSkillsWhere => "Put a skill folder with a SKILL.md in one of these folders, then refresh:", "Đặt một thư mục skill có SKILL.md vào một trong các thư mục sau, rồi làm mới:";
     AgentSkillsNoMatch => "No skills match the search.", "Không có skill nào khớp tìm kiếm.";
     SkillNameTaken => "A skill named {0} already exists", "Đã có skill tên {0}";

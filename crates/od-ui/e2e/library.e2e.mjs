@@ -281,6 +281,14 @@ try {
   results.fromCss = 'ok';
 
   // ----------------------------------------------------------- plugins
+  // A screenshot at desktop width and at 375 px (phone), for review.
+  const shots = async (name) => {
+    await page.screenshot({ path: join(OUT, `${name}.png`) });
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await page.screenshot({ path: join(OUT, `${name}-375.png`) });
+    await page.setViewportSize({ width: 1360, height: 900 });
+  };
   await page.locator('nav a[href="/plugins"]').click();
   await page.getByTestId('plugins-search').fill('media generation');
   const plugin = page.locator('[data-testid="plugin-row"][data-id="od-media-generation"]');
@@ -324,6 +332,34 @@ try {
   await until(async () => !existsSync(join(data, 'plugins', 'recipe-cards')), 'uninstalled');
   results.pluginInstall = 'ok';
 
+  // Dialog focus, by keyboard: Create opened with Enter keeps Tab and
+  // Shift+Tab inside, the page behind is inert, the brief typed stays, Esc
+  // closes it from any control, and the focus goes back to Create.
+  const inCreate = () => page.evaluate(() => !!document.activeElement?.closest('[data-testid="plugin-create"]'));
+  await page.getByTestId('plugins-create').focus();
+  await page.keyboard.press('Enter');
+  await page.getByTestId('plugin-create').waitFor();
+  assert.equal(await page.getByTestId('create-agent').getAttribute('aria-pressed'), 'true', 'Create on the Plugins opens on Create with agent');
+  assert.ok(await page.evaluate(() => !!document.querySelector('nav a[href="/plugins"]').closest('[inert]')), 'the sidebar is inert');
+  assert.ok(await page.evaluate(() => !!document.querySelector('[data-testid="plugin-list"]').closest('[inert]')), 'the list behind is inert');
+  assert.equal(await page.evaluate(() => !!document.querySelector('[data-testid="plugin-create"]').closest('[inert]')), false, 'the dialog is not');
+  await page.getByTestId('plugin-brief').fill('Kept while tabbing');
+  for (let i = 1; i <= 12; i++) {
+    await page.keyboard.press('Tab');
+    assert.ok(await inCreate(), `Tab ${i} stays in the dialog`);
+  }
+  for (let i = 1; i <= 12; i++) {
+    await page.keyboard.press('Shift+Tab');
+    assert.ok(await inCreate(), `Shift+Tab ${i} stays in the dialog`);
+  }
+  assert.equal(await page.getByTestId('plugin-brief').inputValue(), 'Kept while tabbing', 'Tab keeps what is typed');
+  await page.getByTestId('create-link').focus();
+  await page.keyboard.press('Escape');
+  await page.getByTestId('plugin-create').waitFor({ state: 'detached' });
+  await until(() => page.evaluate(() => document.activeElement?.dataset?.testid === 'plugins-create'), 'the focus goes back to Create');
+  assert.equal(await page.evaluate(() => document.querySelectorAll('[inert]').length), 0, 'nothing stays inert');
+  results.dialogFocus = 'ok';
+
   // Create with agent: a project whose first turn writes the plugin.
   await page.getByTestId('plugins-create').click();
   await page.getByTestId('plugin-brief').fill('Menu boards for cafes');
@@ -348,6 +384,51 @@ try {
   // Skills: edit a bundled one (override), new skill, delete.
   await page.locator('nav a[href="/plugins"]').click();
   await page.getByTestId('kind-skills').click();
+  // No skills of their own yet: the Skills open on Official. Personal
+  // offers the skills of the agent CLI folders (5: ad-creative is a
+  // bundled name) and opens Create on From agent CLI; so does Create
+  // itself on the Skills.
+  const closeCreate = async () => {
+    await page.getByTestId('plugin-create').getByRole('button', { name: 'Close' }).click();
+    await page.getByTestId('plugin-create').waitFor({ state: 'detached' });
+  };
+  const pressed = async (id) => (await page.getByTestId(id).getAttribute('aria-pressed')) === 'true';
+  assert.ok(await pressed('scope-official'), 'no skills of their own: Official');
+  await page.getByTestId('scope-personal').click();
+  const foundAgentSkills = page.getByTestId('skills-empty-found');
+  await foundAgentSkills.waitFor();
+  assert.equal((await foundAgentSkills.textContent()).trim(), '5 skills are in your agent CLI folders.');
+  await shots('skills-empty-import');
+  await page.getByTestId('skills-empty-import').click();
+  await page.getByTestId('agent-skills').waitFor();
+  assert.ok(await pressed('create-agent-cli'), 'Import skills opens From agent CLI');
+  await closeCreate();
+  await page.getByTestId('plugins-create').click();
+  assert.ok(await pressed('create-agent-cli'), 'Create on the Skills opens From agent CLI');
+  await shots('create-on-skills');
+  await closeCreate();
+  // The folders cannot be read: the plain words and New skill, no error.
+  const sourcesFail = `${BASE}/api/skills/local-sources`;
+  await page.route(sourcesFail, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' }));
+  await page.goto(`${BASE}/plugins`);
+  await page.getByTestId('kind-skills').click();
+  await page.getByTestId('scope-personal').click();
+  await page.getByTestId('skills-empty-new').waitFor();
+  assert.equal((await page.getByTestId('skills-empty').textContent()).includes('Nothing here yet'), true);
+  assert.equal(await page.getByTestId('plugin-list').getByRole('alert').count(), 0, 'no error in the empty list');
+  await page.getByTestId('skills-empty-new').click();
+  assert.ok(await pressed('create-skill'), 'New skill opens New skill');
+  // The mode shown already, picked again: what is typed stays.
+  await page.getByTestId('skill-name').fill('Typed before a click');
+  await page.getByTestId('create-skill').click();
+  assert.equal(await page.getByTestId('skill-name').inputValue(), 'Typed before a click', 'the New skill form stays as typed');
+  await closeCreate();
+  await page.getByTestId('plugins-create').click();
+  assert.ok(await pressed('create-skill'), 'nothing to import: Create on the Skills opens New skill');
+  await closeCreate();
+  await page.unroute(sourcesFail);
+  await page.getByTestId('scope-official').click();
+  results.skillsEmpty = 'ok';
   const skillRow = page.getByTestId('skill-row').first();
   await skillRow.waitFor();
   const skillId = await skillRow.getAttribute('data-id');
@@ -390,6 +471,42 @@ try {
   await page.getByTestId('skill-use').click();
   await page.getByTestId('home-skill').waitFor();
   results.skills = 'ok';
+
+  // Install from folder: a path that is not a full one is refused under
+  // the field before any request; `~` is the home folder; a folder that is
+  // not there says so in the user's words. What is typed stays.
+  let folderInstalls = 0;
+  const countInstalls = (r) => { if (r.url().endsWith('/install')) folderInstalls++; };
+  page.on('request', countInstalls);
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-folder').click();
+  const pathInput = page.getByTestId('plugin-path');
+  const pathError = page.getByTestId('plugin-path-error');
+  await pathInput.fill('tea-bare');
+  await page.getByTestId('plugin-install').click();
+  await pathError.waitFor();
+  assert.equal((await pathError.textContent()).trim(), "Enter the folder's full path, starting with / or ~");
+  assert.equal(await pathInput.getAttribute('aria-invalid'), 'true');
+  assert.equal(await pathInput.getAttribute('aria-describedby'), 'plugin-path-error');
+  assert.equal(folderInstalls, 0, 'no request for a path that is not full');
+  await pathInput.fill('~/no-such-folder');
+  assert.equal(await pathError.count(), 0, 'typing clears the error');
+  assert.equal(await pathInput.getAttribute('aria-invalid'), null);
+  await page.getByTestId('plugin-install').click();
+  await pathError.waitFor();
+  assert.equal((await pathError.textContent()).trim(), 'No folder at this path. Check the spelling.');
+  assert.equal(await page.getByTestId('plugin-create-error').count(), 0, 'one error, under the field');
+  assert.equal(await pathInput.inputValue(), '~/no-such-folder', 'the path typed stays');
+  await shots('folder-path-error');
+  page.off('request', countInstalls);
+  mkdirSync(join(home, 'tea-tilde'), { recursive: true });
+  writeFileSync(join(home, 'tea-tilde', 'SKILL.md'), '---\nname: tea-tilde\n---\nFrom home.\n');
+  await pathInput.fill('~/tea-tilde');
+  await page.getByTestId('plugin-install').click();
+  await page.getByTestId('skill-detail').locator('h2', { hasText: 'tea-tilde' }).waitFor();
+  assert.ok(existsSync(join(data, 'skills', 'tea-tilde', 'SKILL.md')), '~ is the home folder');
+  results.folderErrors = 'ok';
 
   // Install from folder: a folder with only SKILL.md is a skill.
   const bare = join(fixtures, 'tea-bare');
@@ -624,6 +741,26 @@ try {
   const userSkills = (await api('/api/skills')).skills.filter((sk) => sk.source === 'user').map((sk) => sk.id);
   assert.ok(['tea-a', 'tea-b', 'tea-c', 'tea-d', 'tea-e'].every((id) => userSkills.includes(id)), 'the composer lists them for @');
   results.agentSkills = 'ok';
+
+  // Skills of their own now: the Skills open on Personal, the Plugins
+  // still on Official; once the user picks a scope, it stays.
+  await page.goto(`${BASE}/plugins`);
+  await page.getByTestId('plugin-list').waitFor();
+  assert.ok(await pressed('scope-official'), 'the Plugins open on Official');
+  await page.getByTestId('kind-skills').click();
+  await until(() => pressed('scope-personal'), 'the Skills open on Personal');
+  await page.locator('[data-testid="skill-row"][data-id="tea-a"]').waitFor();
+  await shots('skills-personal-default');
+  await page.getByTestId('kind-plugins').click();
+  await until(() => pressed('scope-official'), 'back on the Plugins: Official');
+  await page.getByTestId('kind-skills').click();
+  await page.getByTestId('scope-official').click();
+  await page.getByTestId('kind-plugins').click();
+  await page.getByTestId('kind-skills').click();
+  // A bundled skill listed: the Skills rendered, scope and all.
+  await page.locator('[data-testid="skill-row"][data-id="ad-creative"]').waitFor();
+  assert.ok(await pressed('scope-official'), 'a scope picked stays');
+  results.skillsDefault = 'ok';
 
   // ------------------------------------------------------ save as skill
   // "+" ▸ Save as skill: off before a turn has finished and while one

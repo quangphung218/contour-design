@@ -26,7 +26,6 @@ use od_content::user_content;
 use od_contracts::{ChatRequest, CreateProjectRequest, Project, ProjectMetadata};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use std::path::PathBuf;
 
 /// Project metadata keys of a plugin-bound project.
 pub const PLUGIN_ID_KEY: &str = "pluginId";
@@ -49,7 +48,7 @@ pub async fn install(
     State(state): State<AppState>,
     ApiJson(body): ApiJson<InstallBody>,
 ) -> ApiResult<Json<Value>> {
-    let source = PathBuf::from(body.path.trim());
+    let source = super::typed_folder(&body.path);
     if !source.is_absolute() {
         return Err(ApiErr::bad_request("path must be an absolute folder path"));
     }
