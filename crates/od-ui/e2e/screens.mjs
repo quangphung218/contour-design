@@ -278,8 +278,7 @@ try {
       await page.getByTestId('plugin-use-card').waitFor();
     });
     await shot('skills', async () => {
-      await page.goto(BASE + '/plugins?skill=');
-      await page.getByTestId('kind-skills').click();
+      await page.goto(BASE + '/skills');
       await page.getByTestId('skill-row').first().waitFor();
     });
     await shot('media', async () => {

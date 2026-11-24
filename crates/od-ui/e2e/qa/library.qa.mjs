@@ -61,10 +61,9 @@ test('LIB-12', 'Design system search finds the words the page shows, not the bun
   await until(async () => (await page.getByTestId('ds-row').count()) === 0, '"derived from curated" matches nothing shown');
 });
 
-test('LIB-13', 'The Skills tab says what each skill makes, not when the agent should load it', async ({ d, newPage }) => {
+test('LIB-13', 'The Skills page says what each skill makes, not when the agent should load it', async ({ d, newPage }) => {
   const { page } = await newPage();
-  await page.goto(d.base + '/plugins');
-  await page.getByTestId('kind-skills').click();
+  await page.goto(d.base + '/skills');
   await page.getByTestId('skill-row').first().waitFor();
   const agentText = await page.getByTestId('skill-row').evaluateAll((els) =>
     els.map((e) => e.innerText).filter((t) => /\bUse (when|this|for)\b|Triggers? on/i.test(t)));
@@ -183,7 +182,7 @@ test('LIB-14', 'Media and Templates say "Audio", Generate has one way in, real s
 test('LIB-10', 'Library pages fit a phone-sized window without sideways scroll', async ({ d, newPage }) => {
   const { page } = await newPage({ viewport: { width: 390, height: 844 } });
   const wide = [];
-  for (const path of ['/templates', '/design-systems', '/plugins', '/media']) {
+  for (const path of ['/templates', '/design-systems', '/skills', '/plugins', '/media']) {
     await page.goto(d.base + path);
     await page.locator('section').first().waitFor();
     await page.waitForLoadState('networkidle').catch(() => {});

@@ -1,5 +1,6 @@
-//! Plugins and skills (spec 1.4): the bundled ("Official") and user
-//! ("Personal") plugins and skills, with search and categories; a plugin's
+//! Plugins (`/plugins`) and skills (`/skills`), one page each on the nav
+//! (spec 1.4): the bundled ("Official") and user ("Personal") plugins or
+//! skills, with search and categories; a plugin's
 //! detail (example brief, inputs form, context, workflow, capabilities)
 //! and "Use", which creates a project bound to the plugin; a skill's
 //! detail with "Use", edit (a user override for a bundled skill) and
@@ -14,6 +15,8 @@ use super::{Shell, api, desktop};
 use crate::i18n::{T, locale, t, tf};
 use crate::intent::in_locale;
 use leptos::prelude::*;
+use leptos_router::NavigateOptions;
+use leptos_router::components::Redirect;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{ContentSource, SkillDetail, SkillSummary, SkillsResponse};
 use serde_json::{Map, Value, json};
@@ -176,16 +179,53 @@ fn monograms(plugins: &[(String, String)]) -> std::collections::HashMap<String, 
         .collect()
 }
 
+/// Where an address of the Plugins goes when it is a link from before the
+/// Skills had a page of their own (`/plugins?skill=<id>`, the Skills tab):
+/// the Skills, with the same query. `search` is `location.search`.
+fn skills_address(search: &str) -> Option<String> {
+    let q = search.strip_prefix('?').unwrap_or(search);
+    q.split('&')
+        .any(|p| p.split_once('=').map_or(p, |(k, _)| k) == "skill")
+        .then(|| format!("/skills?{q}"))
+}
+
+/// `/plugins`. An old link to a skill goes on to `/skills` in place of
+/// itself, so Back does not come here again.
 #[component]
 pub fn PluginsPage() -> impl IntoView {
+    // The router's address: the browser's is still the last page's here.
+    let search = leptos_router::hooks::use_location().search.get_untracked();
+    match skills_address(&search) {
+        Some(to) => {
+            let options = NavigateOptions {
+                replace: true,
+                ..Default::default()
+            };
+            view! { <Redirect path=to options=options/> }.into_any()
+        }
+        None => view! { <LibraryPage kind=Kind::Plugins/> }.into_any(),
+    }
+}
+
+/// `/skills`.
+#[component]
+pub fn SkillsPage() -> impl IntoView {
+    view! { <LibraryPage kind=Kind::Skills/> }
+}
+
+/// The plugins or the skills: one route each, so the nav says which.
+/// `?scope=personal` opens on Personal (where a create or import lands).
+#[component]
+fn LibraryPage(kind: Kind) -> impl IntoView {
     let tasks = Tasks::here();
     let plugins = RwSignal::new(None::<Vec<Value>>);
     let skills = RwSignal::new(None::<Vec<SkillSummary>>);
-    let kind = RwSignal::new(if query_param("skill").is_some() {
-        Kind::Skills
-    } else {
-        Kind::Plugins
-    });
+    // To the other page when a create or import made the other kind. Kept
+    // local: the router's navigate is not `Send`.
+    let navigate = StoredValue::new_local(use_navigate());
+    let go = move |to: &str| {
+        navigate.try_with_value(|n| n(to, NavigateOptions::default()));
+    };
     let scope = RwSignal::new(Scope::Official);
     // Set once the user picks Official or Personal (or a create lands on
     // Personal): the page no longer picks the scope for them.
@@ -194,6 +234,9 @@ pub fn PluginsPage() -> impl IntoView {
         scope_picked.set_value(true);
         scope.set(sc);
     };
+    if query_param("scope").as_deref() == Some("personal") {
+        pick_scope(Scope::Personal);
+    }
     let query = RwSignal::new(String::new());
     let category = RwSignal::new(String::new());
     let open = RwSignal::new(
@@ -264,6 +307,17 @@ pub fn PluginsPage() -> impl IntoView {
     let on_created = Callback::new(move |next: Option<Open>| {
         creating.set(false);
         if !held.get_untracked() {
+            // A skill made from the Plugins opens on the Skills, and a
+            // plugin made from the Skills on the Plugins.
+            match (&next, kind) {
+                (Some(Open::Skill(id)), Kind::Plugins) => {
+                    return go(&format!("/skills?skill={}&scope=personal", api::seg(id)));
+                }
+                (Some(Open::Plugin(id)), Kind::Skills) => {
+                    return go(&format!("/plugins?plugin={}&scope=personal", api::seg(id)));
+                }
+                _ => {}
+            }
             if let Some(Open::Plugin(_) | Open::Skill(_)) = &next {
                 pick_scope(Scope::Personal);
             }
@@ -272,12 +326,18 @@ pub fn PluginsPage() -> impl IntoView {
         reload();
     });
     // Skills imported from agent CLIs: the Personal skills show them; the
-    // dialog stays open while a row failed, to show why.
+    // dialog stays open while a row failed, to show why (on the Plugins
+    // too: going to the Skills would close it).
     let on_imported = Callback::new(move |all_ok: bool| {
         if !held.get_untracked() {
-            open.set(None);
-            kind.set(Kind::Skills);
-            pick_scope(Scope::Personal);
+            match kind {
+                Kind::Plugins if all_ok => return go("/skills?scope=personal"),
+                Kind::Plugins => {}
+                Kind::Skills => {
+                    open.set(None);
+                    pick_scope(Scope::Personal);
+                }
+            }
         }
         if all_ok {
             creating.set(false);
@@ -324,34 +384,24 @@ pub fn PluginsPage() -> impl IntoView {
         })
     });
     // The Skills read the agent CLI folders once, to offer them.
-    Effect::new(move |_| {
-        if kind.get() == Kind::Skills && agent_sources.with_untracked(Option::is_none) {
-            load_agent_sources();
-        }
-    });
+    if kind == Kind::Skills {
+        load_agent_sources();
+    }
     // Whether the user has skills of their own (`None` while loading).
     let own_skills =
         Memo::new(move |_| skills.with(|l| l.as_ref().map(|l| l.iter().any(skill_personal))));
-    // Until the user picks a scope: the Skills open on Personal when they
-    // have skills of their own (else what they added is hidden under 169
-    // bundled ones), the Plugins on Official. A change of kind applies the
-    // default again; the skills coming in later only move to Personal.
-    Effect::new(move |prev: Option<Kind>| {
-        let k = kind.get();
-        let mine = k == Kind::Skills && own_skills.get() == Some(true);
-        if !scope_picked.get_value() && (prev != Some(k) || mine) {
-            scope.set(if mine {
-                Scope::Personal
-            } else {
-                Scope::Official
-            });
+    // Until the user picks a scope: the Skills move to Personal once they
+    // turn out to have skills of their own (else what they added is hidden
+    // under 169 bundled ones); the Plugins stay on Official.
+    Effect::new(move |_| {
+        if kind == Kind::Skills && own_skills.get() == Some(true) && !scope_picked.get_value() {
+            scope.set(Scope::Personal);
         }
-        k
     });
     // Create opens on what the tab is about: on the Skills, the import
     // from agent CLIs when there is something to import, else a new skill.
     let create = Callback::new(move |m: Option<CreateMode>| {
-        let m = m.unwrap_or_else(|| match kind.get_untracked() {
+        let m = m.unwrap_or_else(|| match kind {
             Kind::Plugins => CreateMode::Agent,
             Kind::Skills if importable.get_untracked().unwrap_or(0) > 0 => CreateMode::AgentCli,
             Kind::Skills => CreateMode::Skill,
@@ -362,7 +412,7 @@ pub fn PluginsPage() -> impl IntoView {
 
     let count = move |sc: Scope| -> usize {
         let personal = sc == Scope::Personal;
-        match kind.get() {
+        match kind {
             Kind::Plugins => plugins.with(|l| {
                 l.as_ref().map_or(0, |l| {
                     l.iter().filter(|p| plugin_personal(p) == personal).count()
@@ -377,7 +427,7 @@ pub fn PluginsPage() -> impl IntoView {
     };
     let categories = Memo::new(move |_| {
         let personal = scope.get() == Scope::Personal;
-        let mut c: Vec<String> = match kind.get() {
+        let mut c: Vec<String> = match kind {
             Kind::Plugins => plugins.with(|l| {
                 l.iter()
                     .flatten()
@@ -403,7 +453,7 @@ pub fn PluginsPage() -> impl IntoView {
         let personal = scope.get() == Scope::Personal;
         let q = query.get();
         let cat = category.get();
-        match kind.get() {
+        match kind {
             Kind::Plugins => {
                 let Some(list) = plugins.get() else {
                     return (0..5)
@@ -462,12 +512,16 @@ pub fn PluginsPage() -> impl IntoView {
         }
     };
 
+    let (title, sub, testid) = match kind {
+        Kind::Plugins => (T::NavPlugins, T::PluginsPageSub, "plugins-page"),
+        Kind::Skills => (T::NavSkills, T::SkillsPageSub, "skills-page"),
+    };
     view! {
-        <section class="page wide lib-page" data-testid="plugins-page">
+        <section class="page wide lib-page" data-testid=testid>
             <header class="page-head">
                 <div class="page-title">
-                    <h1>{t(T::NavPlugins)}</h1>
-                    <p class="page-sub">{t(T::PluginsPageSub)}</p>
+                    <h1>{t(title)}</h1>
+                    <p class="page-sub">{t(sub)}</p>
                 </div>
                 <button class="btn primary" data-testid="plugins-create" on:click=move |_| create.run(None)>{icon(Glyph::Add)}{t(T::Create)}</button>
             </header>
@@ -479,14 +533,6 @@ pub fn PluginsPage() -> impl IntoView {
                 Some(Open::Skill(id)) => view! { <SkillDetailView id=id on_back=Callback::new(move |()| open.set(None)) on_removed=on_removed page=tasks held=held/> }.into_any(),
                 None => view! {
                     <div class="lib-toolbar">
-                        <div class="segmented" role="group" aria-label=t(T::NavPlugins)>
-                            <button class="seg" data-testid="kind-plugins" aria-pressed=move || (kind.get() == Kind::Plugins).to_string() on:click=move |_| { kind.set(Kind::Plugins); category.set(String::new()); }>
-                                {icon(Glyph::Plugin)}{t(T::PluginsKind)}
-                            </button>
-                            <button class="seg" data-testid="kind-skills" aria-pressed=move || (kind.get() == Kind::Skills).to_string() on:click=move |_| { kind.set(Kind::Skills); category.set(String::new()); }>
-                                {icon(Glyph::Book)}{t(T::SkillsKind)}
-                            </button>
-                        </div>
                         <div class="segmented small" role="group" aria-label=t(T::Source)>
                             {[(Scope::Official, T::ScopeOfficial, "scope-official"), (Scope::Personal, T::ScopePersonal, "scope-personal")].into_iter().map(|(sc, label, id)| view! {
                                 <button class="seg" data-testid=id aria-pressed=move || (scope.get() == sc).to_string() on:click=move |_| { pick_scope(sc); category.set(String::new()); }>
@@ -1696,6 +1742,33 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A link to the old Skills tab (`/plugins?skill=…`) goes on to the
+    /// Skills with its query; any other address of the Plugins stays.
+    #[test]
+    fn an_old_link_to_a_skill_goes_to_the_skills() {
+        for (search, to) in [
+            ("?skill=tea", "/skills?skill=tea"),
+            ("?skill=", "/skills?skill="),
+            ("?skill", "/skills?skill"),
+            (
+                "?scope=personal&skill=a%20b",
+                "/skills?scope=personal&skill=a%20b",
+            ),
+        ] {
+            assert_eq!(skills_address(search).as_deref(), Some(to), "{search}");
+        }
+        for search in [
+            "",
+            "?",
+            "?plugin=od-new-generation",
+            "?skills=x",
+            "?scope=personal",
+            "?xskill=1",
+        ] {
+            assert_eq!(skills_address(search), None, "{search}");
+        }
+    }
 
     #[test]
     fn a_folder_path_must_name_the_folder_on_its_own() {

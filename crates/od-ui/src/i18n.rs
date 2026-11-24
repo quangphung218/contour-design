@@ -1180,9 +1180,9 @@ messages! {
     PhaseDesign => "Writing DESIGN.md", "Viết DESIGN.md";
     PhaseTokens => "Writing tokens.css", "Viết tokens.css";
     PhaseChecking => "Checking and installing", "Kiểm tra và cài";
-    PluginsPageSub => "Expert workflows and skills the agent can run. Fill a plugin's inputs and use it, or make your own.", "Quy trình và skill agent chạy được. Điền input của plugin rồi dùng, hoặc tự tạo.";
-    PluginsKind => "Plugins", "Plugin";
-    SkillsKind => "Skills", "Skill";
+    PluginsPageSub => "Expert workflows the agent can run. Fill a plugin's inputs and use it, or make your own.", "Quy trình agent chạy được. Điền input của plugin rồi dùng, hoặc tự tạo.";
+    SkillsPageSub => "Instructions the agent follows for one kind of work. Use one in a project, edit it, or add your own.", "Hướng dẫn agent làm theo cho từng loại việc. Dùng trong project, sửa, hoặc tự thêm.";
+    NavSkills => "Skills", "Skill";
     ScopeOfficial => "Official", "Chính thức";
     ScopePersonal => "Personal", "Cá nhân";
     SearchPlugins => "Search", "Tìm";

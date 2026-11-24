@@ -355,12 +355,16 @@ pub fn size_label(bytes: u64) -> String {
     }
 }
 
-/// The value of query parameter `key` in the current URL.
+/// The value of query parameter `key` in the router's address. Not
+/// `window.location`: a navigation to another path renders the new page
+/// before the browser's address changes, so a page reading that while it
+/// mounts got the query of the page it came from (Home's `?skill=` sent
+/// the Plugins on to a skill).
 #[must_use]
 pub fn query_param(key: &str) -> Option<String> {
-    let search = web_sys::window()?.location().search().ok()?;
-    let params = web_sys::UrlSearchParams::new_with_str(&search).ok()?;
-    params.get(key).filter(|v| !v.is_empty())
+    leptos_router::hooks::use_query_map()
+        .with_untracked(|q| q.get(key))
+        .filter(|v| !v.is_empty())
 }
 
 /// Text in the UI language from an i18n map (`{ "en": …, "vi": … }`) or a

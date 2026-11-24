@@ -140,11 +140,51 @@ try {
 
   // ---------------------------------------------------------- navigation
   await page.goto(BASE + '/');
-  for (const [href, testid] of [['/design-systems', 'design-systems'], ['/plugins', 'plugins-page'], ['/media', 'media-page'], ['/templates', 'templates-page']]) {
+  for (const [href, testid] of [['/design-systems', 'design-systems'], ['/skills', 'skills-page'], ['/plugins', 'plugins-page'], ['/media', 'media-page'], ['/templates', 'templates-page']]) {
     await page.locator(`nav a[href="${href}"]`).click();
     await page.getByTestId(testid).waitFor();
   }
   results.nav = 'ok';
+
+  // Skills have their own item, right above Plugins, and their own page:
+  // no Plugins/Skills switch on either. An old link to a skill
+  // (`/plugins?skill=`) opens it on the Skills in place of itself.
+  const navHrefs = await page.locator('nav.sidenav > a').evaluateAll((l) => l.map((a) => a.getAttribute('href')));
+  assert.equal(navHrefs.indexOf('/skills') + 1, navHrefs.indexOf('/plugins'), `Skills right above Plugins: ${navHrefs}`);
+  await page.locator('nav a[href="/skills"]').click();
+  await page.getByTestId('skills-page').locator('h1', { hasText: 'Skills' }).waitFor();
+  await page.getByTestId('skill-row').first().waitFor();
+  assert.equal(await page.getByTestId('plugin-row').count(), 0, 'only skills on the Skills');
+  assert.equal(await page.locator('nav a[href="/skills"]').getAttribute('aria-current'), 'page');
+  assert.equal(await page.locator('nav a[href="/plugins"]').getAttribute('aria-current'), null);
+  assert.equal(await page.locator('[data-testid="kind-skills"], [data-testid="kind-plugins"]').count(), 0, 'no Plugins/Skills switch');
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-page').locator('h1', { hasText: 'Plugins' }).waitFor();
+  await page.getByTestId('plugin-row').first().waitFor();
+  assert.equal(await page.getByTestId('skill-row').count(), 0, 'only plugins on the Plugins');
+  assert.doesNotMatch(await page.getByTestId('plugins-page').locator('.page-sub').textContent(), /skill/i);
+  assert.equal(await page.locator('nav a[href="/plugins"]').getAttribute('aria-current'), 'page');
+  assert.equal(await page.locator('[data-testid="kind-skills"], [data-testid="kind-plugins"]').count(), 0, 'no Plugins/Skills switch');
+  await page.goto(`${BASE}/media`);
+  await page.getByTestId('media-page').waitFor();
+  await page.goto(`${BASE}/plugins?skill=ad-creative`);
+  await page.waitForURL(`${BASE}/skills?skill=ad-creative`);
+  await page.getByTestId('skill-detail').locator('h2', { hasText: 'ad-creative' }).waitFor();
+  await page.goBack();
+  await page.waitForURL(`${BASE}/media`);
+  await page.goto(`${BASE}/plugins?skill=`);
+  await page.waitForURL(`${BASE}/skills?skill=`);
+  await page.getByTestId('skill-row').first().waitFor();
+  // From Home picking a skill (`/?skill=`): the Plugins are the Plugins.
+  // The browser's address still has that query while the page mounts.
+  await page.goto(`${BASE}/?skill=ad-creative`);
+  await page.getByTestId('home-skill').waitFor();
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-page').locator('h1', { hasText: 'Plugins' }).waitFor();
+  await page.getByTestId('plugin-row').first().waitFor();
+  assert.equal(new URL(page.url()).pathname, '/plugins', 'no move to the Skills');
+  assert.equal(await page.getByTestId('skill-detail').count(), 0, 'no skill opened from the last page');
+  results.skillsNav = 'ok';
 
   // ------------------------------------------------------- design systems
   await page.locator('nav a[href="/design-systems"]').click();
@@ -382,8 +422,7 @@ try {
   results.pluginLink = 'ok';
 
   // Skills: edit a bundled one (override), new skill, delete.
-  await page.locator('nav a[href="/plugins"]').click();
-  await page.getByTestId('kind-skills').click();
+  await page.locator('nav a[href="/skills"]').click();
   // No skills of their own yet: the Skills open on Official. Personal
   // offers the skills of the agent CLI folders (5: ad-creative is a
   // bundled name) and opens Create on From agent CLI; so does Create
@@ -410,8 +449,7 @@ try {
   // The folders cannot be read: the plain words and New skill, no error.
   const sourcesFail = `${BASE}/api/skills/local-sources`;
   await page.route(sourcesFail, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' }));
-  await page.goto(`${BASE}/plugins`);
-  await page.getByTestId('kind-skills').click();
+  await page.goto(`${BASE}/skills`);
   await page.getByTestId('scope-personal').click();
   await page.getByTestId('skills-empty-new').waitFor();
   assert.equal((await page.getByTestId('skills-empty').textContent()).includes('Nothing here yet'), true);
@@ -505,6 +543,9 @@ try {
   await pathInput.fill('~/tea-tilde');
   await page.getByTestId('plugin-install').click();
   await page.getByTestId('skill-detail').locator('h2', { hasText: 'tea-tilde' }).waitFor();
+  // A skill made from the Plugins opens on the Skills.
+  await page.waitForURL(`${BASE}/skills?skill=tea-tilde&scope=personal`);
+  assert.equal(await page.locator('nav a[href="/skills"]').getAttribute('aria-current'), 'page');
   assert.ok(existsSync(join(data, 'skills', 'tea-tilde', 'SKILL.md')), '~ is the home folder');
   results.folderErrors = 'ok';
 
@@ -655,14 +696,19 @@ try {
   await closeDialog();
   await page.locator('[data-testid="skill-row"][data-id="tea-b"]').waitFor();
 
-  // All copied: the dialog closes on the Personal skills.
+  // All copied from the Plugins: the dialog closes on the Personal skills,
+  // on the Skills page.
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-page').waitFor();
   await openAgentCli();
   await agentRow('tea-b').getByTestId('agent-skill-imported').waitFor();
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-pick').isDisabled(), true, 'imported: not picked again');
   await agentRow('tea-c').getByTestId('agent-skill-pick').check();
   await page.getByTestId('agent-skills-import').click();
+  await page.waitForURL(`${BASE}/skills?scope=personal`);
   await createDialog.waitFor({ state: 'detached' });
   await page.locator('[data-testid="skill-row"][data-id="tea-c"]').waitFor();
+  assert.equal(await page.getByTestId('scope-personal').getAttribute('aria-pressed'), 'true', 'on Personal');
 
   // Moved to New skill while it ran: the dialog stays open on what is
   // being typed.
@@ -713,18 +759,27 @@ try {
   await page.unroute(skillsRoute);
   await closeDialog();
 
-  // Closed, then editing a skill while it ran: the edit stays open.
+  // Started from the Plugins, closed, then editing a skill on the Skills
+  // while it ran: no move to the Skills again, and the edit stays open.
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugins-page').waitFor();
   await openAgentCli();
   await agentRow('tea-d').getByTestId('agent-skill-pick').check();
   await holdInstalls();
   await page.getByTestId('agent-skills-import').click();
   await closeDialog();
+  await page.locator('nav a[href="/skills"]').click();
+  await page.getByTestId('scope-personal').click();
   await page.locator('[data-testid="skill-row"][data-id="tea-b"] .plugin-row-main').click();
   await page.getByTestId('skill-edit').click();
   await page.getByTestId('skill-description').fill('Typed while the import ran.');
-  await releaseInstalls();
+  // The page that started it is gone: the copy still runs to its end, and
+  // nothing on this page reloads or moves.
+  releaseInstall();
   await until(async () => existsSync(join(data, 'skills', 'tea-d', 'SKILL.md')), 'tea-d copied');
+  await page.unroute(`${BASE}/api/skills/install`);
   assert.equal(await page.getByTestId('skill-description').inputValue(), 'Typed while the import ran.', 'the edit stays');
+  assert.equal(page.url(), `${BASE}/skills`, 'a late import does not move the page');
   // Still editing, the dialog opened over it: all copied, the dialog
   // closes, and the edit stays on the page.
   await openAgentCli();
@@ -747,16 +802,16 @@ try {
   await page.goto(`${BASE}/plugins`);
   await page.getByTestId('plugin-list').waitFor();
   assert.ok(await pressed('scope-official'), 'the Plugins open on Official');
-  await page.getByTestId('kind-skills').click();
+  await page.locator('nav a[href="/skills"]').click();
   await until(() => pressed('scope-personal'), 'the Skills open on Personal');
   await page.locator('[data-testid="skill-row"][data-id="tea-a"]').waitFor();
   await shots('skills-personal-default');
-  await page.getByTestId('kind-plugins').click();
-  await until(() => pressed('scope-official'), 'back on the Plugins: Official');
-  await page.getByTestId('kind-skills').click();
+  await page.locator('nav a[href="/plugins"]').click();
+  await page.getByTestId('plugin-row').first().waitFor();
+  assert.ok(await pressed('scope-official'), 'back on the Plugins: Official');
+  await page.locator('nav a[href="/skills"]').click();
+  await until(() => pressed('scope-personal'), 'the Skills again on Personal');
   await page.getByTestId('scope-official').click();
-  await page.getByTestId('kind-plugins').click();
-  await page.getByTestId('kind-skills').click();
   // A bundled skill listed: the Skills rendered, scope and all.
   await page.locator('[data-testid="skill-row"][data-id="ad-creative"]').waitFor();
   assert.ok(await pressed('scope-official'), 'a scope picked stays');
@@ -980,10 +1035,9 @@ try {
   // "Open skill" goes to it in the Library.
   await settleStudio(false);
   await savedRow2.getByTestId('saved-skill-open').click();
-  await until(async () => page.url().endsWith('/plugins?skill=tea-house-2'), 'the Library opens on the skill');
+  await until(async () => page.url().endsWith('/skills?skill=tea-house-2'), 'the Skills open on the skill');
   await page.getByTestId('skill-detail').waitFor();
-  await page.goto(BASE + '/plugins');
-  await page.getByTestId('kind-skills').click();
+  await page.goto(BASE + '/skills');
   await page.getByTestId('scope-personal').click();
   await page.locator('[data-testid="skill-row"][data-id="tea-house"]').waitFor();
   await page.locator('[data-testid="skill-row"][data-id="tea-house-2"]').waitFor();

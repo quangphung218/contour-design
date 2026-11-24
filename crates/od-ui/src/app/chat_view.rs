@@ -1286,7 +1286,7 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                                 {icon(Glyph::Magic)}{tf(T::UseSkillMention, &[&id])}
                             </button>
                             <button class="btn ghost small next-action" data-testid="saved-skill-open"
-                                on:click=move |_| navigate(&format!("/plugins?skill={}", super::api::seg(&open_id)))>
+                                on:click=move |_| navigate(&format!("/skills?skill={}", super::api::seg(&open_id)))>
                                 {icon(Glyph::ArrowRight)}{t(T::OpenSkill)}
                             </button>
                         </div>
