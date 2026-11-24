@@ -95,7 +95,7 @@ pub async fn install(
     State(state): State<AppState>,
     ApiJson(body): ApiJson<InstallBody>,
 ) -> ApiResult<Json<Value>> {
-    let source = std::path::PathBuf::from(body.path.trim());
+    let source = super::typed_folder(&body.path);
     let replace = body.replace;
     if !source.is_absolute() {
         return Err(ApiErr::bad_request("path must be an absolute folder path"));

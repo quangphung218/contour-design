@@ -74,3 +74,43 @@ pub(crate) fn optional_json<T: serde::de::DeserializeOwned + Default>(
     }
     serde_json::from_slice(body).map_err(|e| ApiErr::bad_request(e.to_string()))
 }
+
+/// A folder path as the user typed it, trimmed: `~` and `~/…` start at
+/// the home folder (the daemon's), as in a shell. Anything else is kept.
+pub(crate) fn typed_folder(raw: &str) -> std::path::PathBuf {
+    expand_home(raw, od_runtime::login_path::home_dir().as_deref())
+}
+
+fn expand_home(raw: &str, home: Option<&std::path::Path>) -> std::path::PathBuf {
+    let raw = raw.trim();
+    let rest = if raw == "~" {
+        Some("")
+    } else {
+        raw.strip_prefix("~/")
+            .or_else(|| raw.strip_prefix("~\\").filter(|_| cfg!(windows)))
+    };
+    match (rest, home) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => std::path::PathBuf::from(raw),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::expand_home;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn a_typed_tilde_starts_at_home() {
+        let home = Some(Path::new("/home/ada"));
+        assert_eq!(
+            expand_home(" ~/skills/tea ", home),
+            PathBuf::from("/home/ada/skills/tea")
+        );
+        assert_eq!(expand_home("~", home), PathBuf::from("/home/ada/"));
+        // Another user's home, a tilde inside, or no home: kept as typed.
+        assert_eq!(expand_home("~bob/x", home), PathBuf::from("~bob/x"));
+        assert_eq!(expand_home("/a/~/b", home), PathBuf::from("/a/~/b"));
+        assert_eq!(expand_home("~/x", None), PathBuf::from("~/x"));
+    }
+}

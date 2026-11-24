@@ -5,11 +5,17 @@ use super::icons::{Glyph, icon};
 use crate::i18n::{T, t};
 use gloo_net::http::Request;
 use leptos::prelude::*;
+use send_wrapper::SendWrapper;
 use serde::de::DeserializeOwned;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 /// A modal dialog: Esc and a click on the backdrop close it.
+///
+/// While it is open the rest of the page is `inert` ([`ModalStack`]) and Tab
+/// goes round the dialog's own controls ([`tab_round`]), so focus never
+/// leaves it and Esc always reaches it; once it closes, focus goes back to
+/// the control that opened it.
 ///
 /// The backdrop is a sibling of the dialog, not its parent, and only the
 /// dialog listens for keys: a button inside that closes the modal (or
@@ -30,10 +36,24 @@ pub fn Modal(
     children: Children,
 ) -> impl IntoView {
     let label = title.clone();
+    // Taken before the dialog takes the focus: the opener gets it back.
+    super::focus::return_focus_on_cleanup();
     // Focus the dialog so Esc reaches it right away.
     let dialog = NodeRef::<leptos::html::Div>::new();
+    let shown = StoredValue::new(None::<SendWrapper<web_sys::Element>>);
+    on_cleanup(move || {
+        if let Some(overlay) = shown.try_get_value().flatten() {
+            ModalStack::close(&overlay);
+        }
+    });
     Effect::new(move |_| {
         if let Some(el) = dialog.get() {
+            if let Some(overlay) = el.parent_element()
+                && shown.with_value(Option::is_none)
+            {
+                ModalStack::open(&overlay);
+                shown.set_value(Some(SendWrapper::new(overlay)));
+            }
             let inner = initial_focus
                 .and_then(|sel| el.query_selector(sel).ok().flatten())
                 .and_then(|e| e.dyn_into::<web_sys::HtmlElement>().ok());
@@ -59,6 +79,12 @@ pub fn Modal(
                     if ev.key() == "Escape" {
                         ev.stop_propagation();
                         on_close.run(());
+                    } else if ev.key() == "Tab"
+                        && let Some(el) = ev.current_target().and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                        && let Some(to) = tab_round(&el, ev.shift_key())
+                    {
+                        ev.prevent_default();
+                        let _ = to.focus();
                     }
                 }
             >
@@ -75,6 +101,109 @@ pub fn Modal(
                 {children()}
             </div>
         </div>
+    }
+}
+
+/// What Tab can reach inside a dialog, in order.
+const TABBABLE: &str = "a[href], button:not(:disabled), input:not([type=hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled), iframe, summary, [contenteditable=true], [tabindex]:not([tabindex='-1'])";
+
+/// Where Tab (or Shift+Tab with `back`) goes from the focused element in
+/// `dialog` when the browser's own order would leave it: from the last
+/// control to the first, from the first back to the last, and from the
+/// dialog itself (or anything outside it) to the first or last. `None`
+/// when the browser's own step stays inside.
+fn tab_round(dialog: &web_sys::Element, back: bool) -> Option<web_sys::HtmlElement> {
+    let list = dialog.query_selector_all(TABBABLE).ok()?;
+    let items: Vec<web_sys::HtmlElement> = (0..list.length())
+        .filter_map(|i| list.item(i))
+        .filter_map(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+        .filter(|e| {
+            // Shown, and not tucked away in a closed `<details>`.
+            let r = e.get_bounding_client_rect();
+            r.width() > 0.0 || r.height() > 0.0
+        })
+        .collect();
+    let (first, last) = match (items.first(), items.last()) {
+        (Some(f), Some(l)) => (f.clone(), l.clone()),
+        _ => return dialog.clone().dyn_into::<web_sys::HtmlElement>().ok(),
+    };
+    let active = document().active_element();
+    let inside = active
+        .as_ref()
+        .is_some_and(|a| a != dialog && dialog.contains(Some(a)));
+    let at = |e: &web_sys::HtmlElement| {
+        active
+            .as_ref()
+            .is_some_and(|a| a == e.unchecked_ref::<web_sys::Element>())
+    };
+    match (back, inside) {
+        (false, false) => Some(first),
+        (true, false) => Some(last),
+        (false, true) if at(&last) => Some(first),
+        (true, true) if at(&first) => Some(last),
+        _ => None,
+    }
+}
+
+thread_local! {
+    static OPEN_MODALS: std::cell::RefCell<Vec<web_sys::Element>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The open modals' overlays, last opened on top. Everything beside the
+/// top one's path to `<body>` is `inert` (out of Tab, clicks and screen
+/// readers); a toast region stays live. A modal opened over another (an
+/// update or leave prompt over a library dialog) is on top whatever part
+/// of the page it sits in: the page is made inert again for it, and for
+/// the one under it when it closes.
+struct ModalStack;
+
+/// Marks the `inert` a modal set, so only those are taken off.
+const INERT_MARK: &str = "data-modal-inert";
+
+impl ModalStack {
+    fn open(overlay: &web_sys::Element) {
+        OPEN_MODALS.with(|m| m.borrow_mut().push(overlay.clone()));
+        Self::apply();
+    }
+
+    fn close(overlay: &web_sys::Element) {
+        OPEN_MODALS.with(|m| m.borrow_mut().retain(|o| o != overlay));
+        Self::apply();
+    }
+
+    fn apply() {
+        let doc = document();
+        if let Ok(marked) = doc.query_selector_all(&format!("[{INERT_MARK}]")) {
+            for el in (0..marked.length())
+                .filter_map(|i| marked.item(i))
+                .filter_map(|n| n.dyn_into::<web_sys::Element>().ok())
+            {
+                let _ = el.remove_attribute("inert");
+                let _ = el.remove_attribute(INERT_MARK);
+            }
+        }
+        let top = OPEN_MODALS.with(|m| m.borrow().iter().rev().find(|o| o.is_connected()).cloned());
+        let Some(mut node) = top else {
+            return;
+        };
+        while let Some(parent) = node.parent_element() {
+            let mut child = parent.first_element_child();
+            while let Some(c) = child {
+                let spared = c == node
+                    || c.has_attribute("inert")
+                    || c.matches(".toast-region, script, style, link")
+                        .unwrap_or(false);
+                if !spared {
+                    let _ = c.set_attribute("inert", "");
+                    let _ = c.set_attribute(INERT_MARK, "");
+                }
+                child = c.next_element_sibling();
+            }
+            if parent.tag_name().eq_ignore_ascii_case("body") {
+                break;
+            }
+            node = parent;
+        }
     }
 }
 
