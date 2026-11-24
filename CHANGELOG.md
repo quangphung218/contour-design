@@ -8,6 +8,12 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Save as skill stays hidden in every conversation of a project once saved, and its Use and Open row survives a reload.
+- From agent CLI locks a built-in skill name in any letter case, and picks nothing until your skills have loaded.
+- A folder typed as ~/… works for linked folders, Import folder and project locations, and ~\… in Install from folder.
+
 ## [0.2.0-beta.62] - 2026-11-25
 
 ### Added
