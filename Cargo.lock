@@ -4081,7 +4081,7 @@ dependencies = [
 
 [[package]]
 name = "od-automation"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -4098,7 +4098,7 @@ dependencies = [
 
 [[package]]
 name = "od-cli"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "anyhow",
  "axum",
@@ -4128,7 +4128,7 @@ dependencies = [
 
 [[package]]
 name = "od-content"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -4147,7 +4147,7 @@ dependencies = [
 
 [[package]]
 name = "od-contracts"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "serde",
  "serde_json",
@@ -4156,7 +4156,7 @@ dependencies = [
 
 [[package]]
 name = "od-desktop"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "anyhow",
  "axum",
@@ -4190,7 +4190,7 @@ dependencies = [
 
 [[package]]
 name = "od-export"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "base64 0.23.1",
  "criterion",
@@ -4210,14 +4210,14 @@ dependencies = [
 
 [[package]]
 name = "od-job"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "win32job",
 ]
 
 [[package]]
 name = "od-live"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "od-contracts",
  "od-store",
@@ -4231,7 +4231,7 @@ dependencies = [
 
 [[package]]
 name = "od-mcp"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "anyhow",
  "axum",
@@ -4252,7 +4252,7 @@ dependencies = [
 
 [[package]]
 name = "od-mcp-client"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4272,7 +4272,7 @@ dependencies = [
 
 [[package]]
 name = "od-media"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -4290,7 +4290,7 @@ dependencies = [
 
 [[package]]
 name = "od-preview"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "chromiumoxide",
  "futures-util",
@@ -4313,7 +4313,7 @@ dependencies = [
 
 [[package]]
 name = "od-render-cdp"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "base64 0.23.1",
  "chromiumoxide",
@@ -4333,7 +4333,7 @@ dependencies = [
 
 [[package]]
 name = "od-runs"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "criterion",
  "od-contracts",
@@ -4347,7 +4347,7 @@ dependencies = [
 
 [[package]]
 name = "od-runtime"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "hex",
  "nix 0.31.3",
@@ -4369,7 +4369,7 @@ dependencies = [
 
 [[package]]
 name = "od-server"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "anyhow",
  "axum",
@@ -4418,7 +4418,7 @@ dependencies = [
 
 [[package]]
 name = "od-store"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "hex",
  "nix 0.31.3",
@@ -4436,7 +4436,7 @@ dependencies = [
 
 [[package]]
 name = "od-term"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "nix 0.31.3",
  "od-job",
@@ -4451,7 +4451,7 @@ dependencies = [
 
 [[package]]
 name = "od-ui"
-version = "0.2.0-beta.61"
+version = "0.2.0-beta.62"
 dependencies = [
  "console_error_panic_hook",
  "gloo-net 0.7.0",
