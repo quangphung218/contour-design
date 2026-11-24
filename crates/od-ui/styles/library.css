@@ -204,3 +204,13 @@
 .confirm-bar .confirm { padding-left: 0; }
 .modal-backdrop { position: absolute; inset: 0; }
 .overlay > .dialog { position: relative; }
+/* Create dialog modes: five tabs; on a narrow window they wrap into a
+   grid, labels on two lines, so none runs out of the dialog. */
+@media (max-width: 600px) {
+  .dialog-body .create-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); width: 100%; }
+  .create-modes .seg { height: auto; min-height: 44px; padding: var(--space-1); white-space: normal; text-align: center; line-height: 1.2; }
+  .create-modes .seg .ico { display: none; }
+}
+.agent-skills-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1-5); }
+.agent-skills-empty p { margin: 0; }
+.agent-skills-where { margin: 0; padding-left: var(--space-4); font-size: var(--text-sm); color: var(--color-text-secondary); }

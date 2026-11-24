@@ -15,6 +15,11 @@ All notable changes to Contour are recorded here. The format follows
 ### Changed
 
 - Install from folder puts a folder with only SKILL.md into your skills, not your plugins.
+- From agent CLI does not let you pick a skill whose name is built in, and says where to add skills when none are found.
+
+### Fixed
+
+- The Create dialog's mode tabs no longer run off narrow windows.
 
 ## [0.2.0-beta.60] - 2026-11-24
 

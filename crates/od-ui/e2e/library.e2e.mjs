@@ -6,9 +6,11 @@
 // CSS variables); Plugins (use a plugin with its inputs form → the run gets
 // the plugin; install from a folder, uninstall; create with agent; skills:
 // detail, edit as an override, new skill, delete; a folder with only
-// SKILL.md installs as a skill; From agent CLI: the skills of a temp HOME,
-// a load error and Try again, a bundled id refused by its row, an import
-// landing late never closes what is being typed; Save as skill from the
+// SKILL.md installs as a skill, and one landing late leaves the dialog's
+// buttons working; the mode tabs fit at 375 px; From agent CLI: the skills
+// of a temp HOME, an empty list, a load error and Try again, a filter with
+// no match, a bundled id not picked, a 409 by its row, an import landing
+// late never closes what is being typed; Save as skill from the
 // Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
@@ -424,6 +426,47 @@ try {
     await createDialog.getByRole('button', { name: 'Close' }).click();
     await createDialog.waitFor({ state: 'detached' });
   };
+
+  // An Install from folder that comes back late, after the user moved to
+  // Create with agent and typed a brief: the dialog stays open on the
+  // brief, and its buttons work again (busy cleared).
+  const late = join(fixtures, 'tea-late');
+  mkdirSync(late, { recursive: true });
+  writeFileSync(join(late, 'SKILL.md'), '---\nname: tea-late\n---\nLate.\n');
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-folder').click();
+  await page.getByTestId('plugin-path').fill(late);
+  await holdInstalls();
+  await page.getByTestId('plugin-install').click();
+  await page.getByTestId('create-agent').click();
+  await page.getByTestId('plugin-brief').fill('Typed while install ran');
+  await releaseInstalls();
+  await until(async () => existsSync(join(data, 'skills', 'tea-late', 'SKILL.md')), 'tea-late installed');
+  assert.ok(await createDialog.isVisible(), 'a late install does not close the dialog');
+  assert.equal(await page.getByTestId('plugin-brief').inputValue(), 'Typed while install ran', 'the brief being typed stays');
+  await until(async () => await page.getByTestId('plugin-author').isEnabled(), 'Start with agent works again');
+  await page.getByTestId('create-folder').click();
+  await page.getByTestId('plugin-path').fill(bare);
+  assert.ok(await page.getByTestId('plugin-install').isEnabled(), 'Install works again');
+  await closeDialog();
+  results.lateInstall = 'ok';
+
+  // A narrow window (phone, 375 px): the five mode tabs stay inside the
+  // dialog, and the dialog does not scroll sideways.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.getByTestId('plugins-create').click();
+  await page.getByTestId('create-agent-cli').click();
+  const fit = await createDialog.evaluate((root) => {
+    const dialog = root.closest('.dialog') || root;
+    const box = dialog.getBoundingClientRect();
+    const tabs = [...root.querySelectorAll('.create-modes .seg')].map((b) => b.getBoundingClientRect());
+    return { scroll: dialog.scrollWidth - dialog.clientWidth, out: tabs.filter((r) => r.left < box.left - 0.5 || r.right > box.right + 0.5).length, tabs: tabs.length };
+  });
+  assert.deepEqual(fit, { scroll: 0, out: 0, tabs: 5 }, 'mode tabs fit at 375 px');
+  await page.screenshot({ path: join(OUT, 'create-modes-375.png') });
+  await closeDialog();
+  await page.setViewportSize({ width: 1360, height: 900 });
+
   const openAgentCli = async () => {
     await page.getByTestId('plugins-create').click();
     await page.getByTestId('create-agent-cli').click();
@@ -433,11 +476,17 @@ try {
   await page.getByRole('button', { name: 'Back' }).click();
   await page.getByTestId('plugin-list').waitFor();
 
-  // The list fails to load once: no "Loading…" under the error, and Try
-  // again loads it.
+  // The list comes back empty first: it says where skills go, and Refresh
+  // reads it again. That read fails once: no "Loading…" under the error,
+  // and Try again loads it. (The route added last answers first.)
   const sourcesRoute = `${BASE}/api/skills/local-sources`;
   await page.route(sourcesRoute, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' }), { times: 1 });
+  await page.route(sourcesRoute, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sources":[]}' }), { times: 1 });
   await openAgentCli();
+  const emptyList = page.getByTestId('agent-skills-empty');
+  await emptyList.waitFor();
+  assert.ok((await emptyList.textContent()).includes('~/.claude/skills'), 'the empty list says where to put skills');
+  await page.getByTestId('agent-skills-refresh').click();
   await page.getByTestId('agent-skills-load-error').waitFor();
   assert.equal(await createDialog.getByText('Loading…').count(), 0, 'no Loading under the error');
   await page.getByTestId('agent-skills-retry').click();
@@ -449,21 +498,39 @@ try {
     ['claude/tea-a', 'agents/ad-creative', 'agents/tea-e', 'codex/tea-b', 'gemini/tea-c', 'opencode/tea-d'],
   );
 
-  // The bundled id fails by its row; the other one is copied in; the
-  // dialog stays open to show why.
+  // The bundled id is not picked; its row says why.
+  assert.equal(await agentRow('ad-creative').getByTestId('agent-skill-pick').isDisabled(), true, 'a bundled id is not picked');
+  assert.equal((await agentRow('ad-creative').getByTestId('agent-skill-taken').textContent()).trim(), 'A skill named ad-creative already exists');
+  assert.equal(await agentRow('tea-b').getByTestId('agent-skill-taken').count(), 0);
+  // A filter that matches nothing says so, and Clear search brings the
+  // list back.
+  await page.getByTestId('agent-skills-filter').fill('no such skill');
+  await page.getByTestId('agent-skills-no-match').waitFor();
+  assert.equal(await agentRows.count(), 0);
+  await page.getByTestId('agent-skills-clear').click();
+  await until(async () => (await agentRows.count()) === 6, 'Clear search brings the list back');
+  assert.equal(await page.getByTestId('agent-skills-filter').inputValue(), '');
+  // A name taken meanwhile (409) fails by its row; the other one is copied
+  // in; the dialog stays open to show why.
   await page.getByTestId('agent-skills-filter').fill('menus');
   await until(async () => (await agentRows.count()) === 1, 'the filter narrows the list');
   await agentRow('tea-b').getByTestId('agent-skill-pick').check();
   await page.getByTestId('agent-skills-filter').fill('');
   await until(async () => (await agentRows.count()) === 6, 'the filter clears');
-  await agentRow('ad-creative').getByTestId('agent-skill-pick').check();
+  await agentRow('tea-c').getByTestId('agent-skill-pick').check();
   assert.equal((await page.getByTestId('agent-skills-import').textContent()).trim(), 'Import (2)');
+  const installRoute = `${BASE}/api/skills/install`;
+  await page.route(installRoute, (route) => (route.request().postData() || '').includes('tea-c')
+    ? route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"taken","code":"conflict"}' })
+    : route.fallback());
   await page.getByTestId('agent-skills-import').click();
-  await agentRow('ad-creative').getByTestId('agent-skill-error').waitFor();
-  assert.equal((await agentRow('ad-creative').getByTestId('agent-skill-error').textContent()).trim(), 'A skill named ad-creative already exists');
+  await agentRow('tea-c').getByTestId('agent-skill-error').waitFor();
+  assert.equal((await agentRow('tea-c').getByTestId('agent-skill-error').textContent()).trim(), 'A skill named tea-c already exists');
   await agentRow('tea-b').getByTestId('agent-skill-imported').waitFor();
+  await page.unroute(installRoute);
   assert.ok(existsSync(join(data, 'skills', 'tea-b', 'assets', 'tokens.css')));
   assert.ok(!existsSync(join(data, 'skills', 'ad-creative')), 'the bundled skill is not overwritten');
+  assert.ok(!existsSync(join(data, 'skills', 'tea-c')), 'a 409 copies nothing');
   assert.ok(existsSync(join(home, '.codex/skills/tea-b/SKILL.md')), 'the agent folder stays');
   await page.screenshot({ path: join(OUT, 'agent-skills.png') });
   // The close button: focus left the dialog with the Import button that
@@ -518,9 +585,11 @@ try {
   await page.getByTestId('create-skill').click();
   await page.getByTestId('skill-name').fill('Second one');
   await page.getByTestId('skill-body-input').fill('Still typing.');
+  // The late save reloads the lists (`on_landed`): checked after that.
+  const savedReload = page.waitForResponse((r) => r.url() === `${BASE}/api/skills` && r.request().method() === 'GET');
   releaseSave();
   await until(async () => existsSync(join(data, 'skills', 'saved-late', 'SKILL.md')), 'the first save lands');
-  await sleep(500);
+  await savedReload;
   assert.ok(await createDialog.isVisible(), 'a late save does not close the dialog');
   assert.equal(await page.getByTestId('skill-name').inputValue(), 'Second one', 'the second skill being typed stays');
   assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Still typing.');

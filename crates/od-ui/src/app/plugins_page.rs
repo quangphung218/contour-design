@@ -256,6 +256,18 @@ pub fn PluginsPage() -> impl IntoView {
         reload();
     });
     let on_landed = Callback::new(move |()| reload());
+    // Ids of the bundled skills: an agent skill of the same name is never
+    // copied in (the server answers 409), so its row is not picked. A Memo,
+    // so a reload that changes nothing leaves the dialog's rows alone.
+    let bundled = Memo::new(move |_| {
+        skills.with(|l| {
+            l.iter()
+                .flatten()
+                .filter(|sk| !skill_personal(sk))
+                .map(|sk| sk.info.id.clone())
+                .collect::<Vec<_>>()
+        })
+    });
     // A plugin or skill removed from its page: back to the list, unless
     // something else opened meanwhile. The reply can come late on a busy
     // machine, after a skill just made was opened; closing that one would
@@ -427,6 +439,7 @@ pub fn PluginsPage() -> impl IntoView {
                     on_done=on_created
                     on_imported=on_imported
                     on_landed=on_landed
+                    bundled=bundled
                 />
             </Show>
         </section>
@@ -1080,6 +1093,8 @@ fn CreateDialog(
     /// lists reload, nothing else changes.
     on_landed: Callback<()>,
     page: Tasks,
+    /// Ids of the bundled skills, for "From agent CLI".
+    bundled: Memo<Vec<String>>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let shell = Shell::get();
@@ -1174,7 +1189,7 @@ fn CreateDialog(
     view! {
         <Modal title=t(T::CreateTitle).to_owned() glyph=Glyph::Plugin wide=true testid="plugin-create" on_close=on_close>
             <div class="dialog-body">
-                <div class="segmented" role="group" aria-label=t(T::CreateTitle)>
+                <div class="segmented create-modes" role="group" aria-label=t(T::CreateTitle)>
                     {[(CreateMode::Agent, T::CreateWithAgent, "create-agent", Glyph::Agent), (CreateMode::Link, T::AddFromLink, "create-link", Glyph::Link), (CreateMode::Folder, T::InstallFromFolder, "create-folder", Glyph::FolderOpen), (CreateMode::Skill, T::NewSkill, "create-skill", Glyph::Book), (CreateMode::AgentCli, T::FromAgentCli, "create-agent-cli", Glyph::Download)]
                         .into_iter()
                         .map(|(m, label, id, glyph)| view! {
@@ -1233,7 +1248,7 @@ fn CreateDialog(
                     CreateMode::Skill => view! {
                         <SkillForm draft=SkillDraft::default() name_locked=false on_cancel=on_close on_save=save_skill/>
                     }.into_any(),
-                    CreateMode::AgentCli => view! { <AgentSkillImport page=page on_imported=on_imported on_landed=on_landed/> }.into_any(),
+                    CreateMode::AgentCli => view! { <AgentSkillImport page=page on_imported=on_imported on_landed=on_landed bundled=bundled/> }.into_any(),
                 }}
             </div>
         </Modal>
@@ -1291,6 +1306,21 @@ fn agent_heading(agent: &str) -> &'static str {
     }
 }
 
+/// The agents `GET /api/skills/local-sources` reads, in its order.
+const AGENTS: [&str; 5] = ["claude", "agents", "codex", "gemini", "opencode"];
+
+/// The folder a skill folder goes in to be listed (`od-content`
+/// `agent_skill_roots`; OpenCode also reads `skill`).
+fn agent_folder(agent: &str) -> &'static str {
+    match agent {
+        "opencode" => "~/.config/opencode/skills",
+        _ => {
+            let heading = agent_heading(agent);
+            heading.rsplit(" · ").next().unwrap_or(heading)
+        }
+    }
+}
+
 /// How an import went for one row, by path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Imported {
@@ -1309,6 +1339,7 @@ fn AgentSkillImport(
     page: Tasks,
     on_imported: Callback<bool>,
     on_landed: Callback<()>,
+    bundled: Memo<Vec<String>>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
     let sources = RwSignal::new(None::<Vec<AgentSkill>>);
@@ -1411,9 +1442,27 @@ fn AgentSkillImport(
             {move || match sources.with(|l| l.as_ref().map(Vec::is_empty)) {
                 None if load_error.with(Option::is_some) => ().into_any(),
                 None => view! { <p class="muted">{t(T::Loading)}</p> }.into_any(),
-                Some(true) => view! { <p class="muted" data-testid="agent-skills-empty">{t(T::NoAgentSkills)}</p> }.into_any(),
+                // Nothing in any agent folder: say where to put one.
+                Some(true) => view! {
+                    <div class="agent-skills-empty" data-testid="agent-skills-empty">
+                        <p><strong>{t(T::NoAgentSkills)}</strong></p>
+                        <p class="muted">{t(T::AgentSkillsWhere)}</p>
+                        <ul class="agent-skills-where">
+                            {AGENTS.iter().map(|a| view! { <li class="mono">{agent_folder(a)}</li> }).collect_view()}
+                        </ul>
+                        <button class="btn small" data-testid="agent-skills-refresh" on:click=move |_| load()>{icon(Glyph::Refresh)}{t(T::Refresh)}</button>
+                    </div>
+                }.into_any(),
                 Some(false) => {
                     let rows = shown();
+                    if rows.is_empty() {
+                        return view! {
+                            <div class="row" data-testid="agent-skills-no-match">
+                                <p class="muted grow">{t(T::AgentSkillsNoMatch)}</p>
+                                <button class="btn small" data-testid="agent-skills-clear" on:click=move |_| filter.set(String::new())>{t(T::ClearSearch)}</button>
+                            </div>
+                        }.into_any();
+                    }
                     let mut last = String::new();
                     let items = rows.into_iter().map(|sk| {
                         let heading = (sk.agent != last).then(|| {
@@ -1424,7 +1473,10 @@ fn AgentSkillImport(
                         let p2 = path.clone();
                         let p3 = path.clone();
                         let p4 = path.clone();
-                        let locked = sk.imported || sk.error.is_some();
+                        // A bundled skill of that name stays: not picked,
+                        // the row says why.
+                        let taken = !sk.imported && sk.error.is_none() && bundled.with(|b| b.contains(&sk.id));
+                        let locked = sk.imported || sk.error.is_some() || taken;
                         let done = Signal::derive(move || outcome.with(|o| o.get(&p3) == Some(&Imported::Done)));
                         let failed = move || outcome.with(|o| match o.get(&p4) {
                             Some(Imported::Failed(e)) => Some(e.clone()),
@@ -1453,6 +1505,7 @@ fn AgentSkillImport(
                                     <span class="grow" title=sk.description.clone()><strong>{sk.id.clone()}</strong>" "<span class="muted">{description}</span></span>
                                     {move || (sk.imported || done.get()).then(|| view! { <span class="badge" data-testid="agent-skill-imported">{t(T::Imported)}</span> })}
                                 </label>
+                                {taken.then(|| view! { <p class="muted small-text" data-testid="agent-skill-taken">{tf(T::SkillNameTaken, &[&sk.id])}</p> })}
                                 {sk.error.clone().map(|e| view! { <p class="error-text" data-testid="agent-skill-error">{e}</p> })}
                                 {move || failed().map(|e| view! { <p class="error-text" role="alert" data-testid="agent-skill-error">{e}</p> })}
                             </li>
@@ -1475,6 +1528,23 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_empty_list_names_a_skills_folder_for_every_agent() {
+        // The server lists `<home>/.claude/skills` and the like
+        // (`od-content` `agent_skill_roots`): the hint names those folders.
+        let folders: Vec<&str> = AGENTS.iter().map(|a| agent_folder(a)).collect();
+        assert_eq!(
+            folders,
+            [
+                "~/.claude/skills",
+                "~/.agents/skills",
+                "~/.codex/skills",
+                "~/.gemini/skills",
+                "~/.config/opencode/skills",
+            ]
+        );
+    }
 
     #[test]
     fn plugins_whose_initials_clash_get_letters_of_their_own() {
