@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.61] - 2026-11-24
+
 ### Added
 
 - Import skills from Claude Code, Codex, Gemini and OpenCode skill folders in Library > Create > From agent CLI.
@@ -1415,7 +1417,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.60...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.61...HEAD
+[0.2.0-beta.61]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.60...v0.2.0-beta.61
 [0.2.0-beta.60]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.59...v0.2.0-beta.60
 [0.2.0-beta.59]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.58...v0.2.0-beta.59
 [0.2.0-beta.58]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.56...v0.2.0-beta.58
