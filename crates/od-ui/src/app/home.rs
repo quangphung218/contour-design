@@ -89,7 +89,7 @@ pub fn Home() -> impl IntoView {
         }
     });
     let template = RwSignal::new(None::<String>);
-    // `?skill=` from the Plugins page: the project runs that skill.
+    // `?skill=` from the Skills page ("Use"): the project runs that skill.
     let skill_pick = RwSignal::new(query_param("skill"));
     // `?template=` from the Templates page, applied once the list loads.
     let wanted_template = StoredValue::new(query_param("template"));
