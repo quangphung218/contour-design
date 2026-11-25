@@ -1301,10 +1301,11 @@ fn sh_quote(text: &str) -> String {
 /// The command that copies the skill folder `source` into `dest` as the
 /// app does: links and hidden entries left out (`rsync -r` without `-l`
 /// skips links, `--exclude='.*'` hidden names), and run twice it copies
-/// into the same folder, never one inside it.
+/// into the same folder, never one inside it. Without `rsync` it stops
+/// before it makes any folder.
 fn copy_command(source: &str, dest: &str) -> String {
     format!(
-        "mkdir -p {} && rsync -r --exclude='.*' {} {}",
+        "command -v rsync >/dev/null && mkdir -p {} && rsync -r --exclude='.*' {} {}",
         sh_quote(dest),
         sh_quote(&format!("{}/", source.trim_end_matches('/'))),
         sh_quote(&format!("{}/", dest.trim_end_matches('/'))),
@@ -2274,11 +2275,11 @@ mod tests {
     fn the_copy_command_quotes_every_path() {
         assert_eq!(
             copy_command("/data/skills/tea", "/home/a/.claude/skills/tea"),
-            "mkdir -p '/home/a/.claude/skills/tea' && rsync -r --exclude='.*' '/data/skills/tea/' '/home/a/.claude/skills/tea/'"
+            "command -v rsync >/dev/null && mkdir -p '/home/a/.claude/skills/tea' && rsync -r --exclude='.*' '/data/skills/tea/' '/home/a/.claude/skills/tea/'"
         );
         assert_eq!(
             copy_command("/My Data/it's $HOME/tea/", "/h/o'k/tea"),
-            "mkdir -p '/h/o'\\''k/tea' && rsync -r --exclude='.*' '/My Data/it'\\''s $HOME/tea/' '/h/o'\\''k/tea/'"
+            "command -v rsync >/dev/null && mkdir -p '/h/o'\\''k/tea' && rsync -r --exclude='.*' '/My Data/it'\\''s $HOME/tea/' '/h/o'\\''k/tea/'"
         );
     }
 

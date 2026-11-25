@@ -1322,6 +1322,59 @@ mod tests {
         );
     }
 
+    /// The bytes written are the bytes whose hash was compared: a skill
+    /// edited right after the compare (before the folder is made) is
+    /// copied as it was when compared, never as it is on disk by then.
+    #[test]
+    fn an_export_writes_the_bytes_it_compared() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let md = "---\nname: tea\ndescription: D.\n---\nUse cream.\n";
+        let tea = skill_dir(&user, "tea", md);
+        let hash = hash_of(&tea);
+        let (written, _) = export_skill_with(&user, &tea, "tea", &dest, &hash, || {
+            std::fs::write(tea.join("SKILL.md"), "---\nname: tea\n---\nPRINT PING\n").unwrap();
+            std::fs::write(tea.join("assets/tokens.css"), "body{}").unwrap();
+            std::fs::write(tea.join("assets/late.css"), "a{}").unwrap();
+        })
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(written.join("SKILL.md")).unwrap(),
+            md
+        );
+        assert_eq!(
+            std::fs::read_to_string(written.join("assets/tokens.css")).unwrap(),
+            ":root{--accent:#2f6b3a}"
+        );
+        assert_eq!(
+            names(&written.join("assets")),
+            ["tokens.css"],
+            "no file added since"
+        );
+    }
+
+    /// The hash counts each file's length: without it, one file `a`
+    /// holding the next entry's header (`f\0b\0…`) would hash as two
+    /// files `a` and `b`, and the copy would take one for the other.
+    #[test]
+    fn the_export_hash_tells_one_file_from_two() {
+        let tmp = tempfile::tempdir().unwrap();
+        let folder = |name: &str, files: &[(&str, &[u8])]| {
+            let dir = tmp.path().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("SKILL.md"), "---\nname: x\n---\nX.\n").unwrap();
+            for (f, bytes) in files {
+                std::fs::write(dir.join(f), bytes).unwrap();
+            }
+            ExportFiles::read(&dir).unwrap()
+        };
+        let one = folder("one", &[("a", b"Xf\0b\0Y")]);
+        let two = folder("two", &[("a", b"X"), ("b", b"Y")]);
+        assert_ne!(one.paths(), two.paths());
+        assert_ne!(one.hash(), two.hash());
+    }
+
     /// A skill with no description is copied: Claude Code 2.1.332 still
     /// loads it (the first line of its body stands in); the app warns.
     #[test]

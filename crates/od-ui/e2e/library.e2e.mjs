@@ -946,7 +946,7 @@ try {
     await page.getByTestId('skill-body').waitFor();
   };
   const sh = (p) => `'${p.replaceAll("'", "'\\''")}'`;
-  const commandFor = (id) => `mkdir -p ${sh(join(claudeSkills, id))} && rsync -r --exclude='.*' ${sh(join(skillsDir, id) + '/')} ${sh(join(claudeSkills, id) + '/')}`;
+  const commandFor = (id) => `command -v rsync >/dev/null && mkdir -p ${sh(join(claudeSkills, id))} && rsync -r --exclude='.*' ${sh(join(skillsDir, id) + '/')} ${sh(join(claudeSkills, id) + '/')}`;
   await page.locator('[data-testid="skill-row"][data-id="ad-creative"] .plugin-row-main').click();
   await page.getByTestId('skill-body').waitFor();
   assert.equal(await page.getByTestId('skill-export').count(), 0, 'no copy for an Official skill');
@@ -1028,8 +1028,20 @@ try {
   await page.getByTestId('skill-export-confirm').click();
   await command.waitFor();
   assert.equal(await command.textContent(), commandFor('tea-script'));
-  for (let run = 0; run < 2; run += 1) execFileSync('sh', ['-c', await command.textContent()], { stdio: 'pipe' });
   const copiedTo = join(claudeSkills, 'tea-script');
+  // With no rsync on PATH it fails before it makes any folder.
+  // (`mkdir` there, so only the missing rsync stops it.)
+  const noRsync = mkdtempSync(join(tmpdir(), 'od-e2e-lib-norsync-'));
+  symlinkSync(execFileSync('/bin/sh', ['-c', 'command -v mkdir']).toString().trim(), join(noRsync, 'mkdir'));
+  let failedWithout = false;
+  try {
+    execFileSync('/bin/sh', ['-c', await command.textContent()], { stdio: 'pipe', env: { ...process.env, PATH: noRsync } });
+  } catch {
+    failedWithout = true;
+  }
+  assert.ok(failedWithout, 'the command fails with no rsync');
+  assert.equal(existsSync(copiedTo), false, 'no empty folder left without rsync');
+  for (let run = 0; run < 2; run += 1) execFileSync('sh', ['-c', await command.textContent()], { stdio: 'pipe' });
   const tree = (dir, at = '') => readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [`${join(at, e.name)}/`, ...tree(dir, join(at, e.name))] : [join(at, e.name)])).sort();
   assert.deepEqual(tree(copiedTo), ['SKILL.md', 'scripts/', 'scripts/menu.sh'], 'no link, nothing hidden, no folder inside');
   rmSync(copiedTo, { recursive: true });
