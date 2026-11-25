@@ -1393,6 +1393,7 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     let sources = use_context::<Sources>();
     let saved = use_context::<SavedSkills>();
     let navigate = super::leave_guard::use_leave();
+    let tasks = Tasks::here();
     let ids = Memo::new(move |_| {
         let (sources, saved) = (sources?, saved?);
         turn.with(|t| saved.of(sources, t)).map(|id| vec![id])
@@ -1418,7 +1419,7 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                                 {icon(Glyph::Magic)}{tf(T::UseSkillMention, &[&id])}
                             </button>
                             <button class="btn ghost small next-action" data-testid="saved-skill-open"
-                                on:click=move |_| navigate(&format!("/skills?skill={}", super::api::seg(&open_id)))>
+                                on:click=move |_| open_after_click(tasks, navigate.clone(), format!("/skills?skill={}", super::api::seg(&open_id)))>
                                 {icon(Glyph::ArrowRight)}{t(T::OpenSkill)}
                             </button>
                         </div>
@@ -1427,6 +1428,17 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                 .collect_view()
         })
     }
+}
+
+/// Opens `path` on the next task. Leaving inside the click drops the
+/// studio's listeners that the same click still passes through, and wasm
+/// throws `closure invoked recursively or after being dropped`
+/// (`docs/design-system.md`, QA-010).
+fn open_after_click(tasks: Tasks, navigate: impl Fn(&str) + 'static, path: String) {
+    tasks.spawn(async move {
+        gloo_timers::future::TimeoutFuture::new(0).await;
+        navigate(&path);
+    });
 }
 
 /// The skills the turn's agent got ("Skills: a, b (from project)"), each
@@ -1438,6 +1450,7 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
 fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     use od_contracts::SkillSource;
     let navigate = super::leave_guard::use_leave();
+    let tasks = Tasks::here();
     let skills = Memo::new(move |_| turn.with(|t| t.skills.clone()));
     move || {
         let skills = skills.get();
@@ -1461,7 +1474,7 @@ fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                     };
                     view! {
                         <li data-testid="turn-skill" data-id=s.id.clone() data-source=source>
-                            <button class="btn ghost small" on:click=move |_| navigate(&open)>
+                            <button class="btn ghost small" on:click=move |_| open_after_click(tasks, navigate.clone(), open.clone())>
                                 {s.id.clone()}
                             </button>
                             {from.map(|k| view! { <span class="muted small">{t(k)}</span> })}
