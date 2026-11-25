@@ -371,6 +371,19 @@ pub struct TurnSkill {
     /// False when no skill or design template has this id (deleted since):
     /// the agent did not get it.
     pub found: bool,
+    /// What the id was found as; `None` when not found. Only a
+    /// [`TurnSkillKind::Skill`] has a skill page (`/skills?skill=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<TurnSkillKind>,
+}
+
+/// What a turn's skill id names: a skill, or a design template (a Remix
+/// project's `skill_id`), which the agent gets as a skill too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnSkillKind {
+    Skill,
+    DesignTemplate,
 }
 
 /// One run as listed by `GET /api/runs` and `GET /api/runs/:id`.

@@ -13,7 +13,7 @@ use od_content::skills::skill_cwd_alias_segment;
 use od_contracts::{
     AgentsResponse, ChatRequest, CommentStatus, CreateRunResponse, ErrorCode, MessageRole,
     RunActionResponse, RunResponse, RunStatus, RunsResponse, SkillSource, SteerRequest, TurnSkill,
-    UpdateCommentRequest, sse,
+    TurnSkillKind, UpdateCommentRequest, sse,
 };
 use od_runs::{Run, RunMeta, RunsError};
 use od_runtime::env::{RunEnv, agent_env};
@@ -381,9 +381,9 @@ struct Launched {
 /// request's `skill_id` (the project's, which the app sends with every
 /// turn, or one the CLI picked), else the project's own; then the
 /// plugin's. First mention wins; `dedup` alone only drops neighbours.
-/// Does not fail: an id that `exists` says is gone is kept as not found.
+/// Does not fail: an id `kind_of` finds nothing for is kept as not found.
 fn turn_skills(
-    exists: impl Fn(&str) -> bool,
+    kind_of: impl Fn(&str) -> Option<TurnSkillKind>,
     req: &ChatRequest,
     project: &od_contracts::Project,
     plugin_skills: &[String],
@@ -414,10 +414,14 @@ fn turn_skills(
     asked
         .into_iter()
         .filter(|(id, _)| seen.insert(*id))
-        .map(|(id, source)| TurnSkill {
-            id: id.to_owned(),
-            source,
-            found: exists(id),
+        .map(|(id, source)| {
+            let kind = kind_of(id);
+            TurnSkill {
+                id: id.to_owned(),
+                source,
+                found: kind.is_some(),
+                kind,
+            }
         })
         .collect()
 }
@@ -451,7 +455,15 @@ async fn prepare_and_launch(
     let plugin =
         crate::routes::media::plugins::applied_plugin(&content, bound.as_ref().unwrap_or(req))?;
     let turn_skills = turn_skills(
-        |id| content.find_skill(id).is_some() || content.find_design_template(id).is_some(),
+        |id| {
+            if content.find_skill(id).is_some() {
+                Some(TurnSkillKind::Skill)
+            } else {
+                content
+                    .find_design_template(id)
+                    .map(|_| TurnSkillKind::DesignTemplate)
+            }
+        },
         req,
         project,
         plugin.as_ref().map_or(&[][..], |p| p.skill_ids.as_slice()),
@@ -1182,7 +1194,7 @@ mod tests {
             .collect()
     }
 
-    const ALL: fn(&str) -> bool = |_| true;
+    const ALL: fn(&str) -> Option<TurnSkillKind> = |_| Some(TurnSkillKind::Skill);
 
     #[test]
     fn a_skill_picked_with_at_is_a_mention() {
@@ -1228,7 +1240,7 @@ mod tests {
     #[test]
     fn a_skill_that_is_gone_is_kept_as_not_found() {
         let skills = turn_skills(
-            |id| id != "my-skill",
+            |id| (id != "my-skill").then_some(TurnSkillKind::Skill),
             &req(None, &["my-skill", "other"]),
             &project(None),
             &[],

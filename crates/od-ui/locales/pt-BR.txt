@@ -1833,3 +1833,6 @@ TurnSkillFromPlugin = (do plugin)
 TurnSkillNotFound = @{0} não encontrada; o agente não a recebeu
 UsageSkillTurns = Turnos com uma skill escolhida por você
 UsageSkillTurnsValue = {0} de {1}
+TurnSkillProjectNotFound = Skill do projeto {0} não encontrada; o agente não a recebeu
+TurnSkillPluginNotFound = Skill do plugin {0} não encontrada; o agente não a recebeu
+UsageSkillTurnsSince = Contado desde {0}

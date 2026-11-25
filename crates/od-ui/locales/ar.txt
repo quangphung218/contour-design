@@ -1827,3 +1827,6 @@ TurnSkillFromPlugin = (من الإضافة)
 TurnSkillNotFound = لم يُعثر على @{0}؛ لم يحصل عليها الوكيل
 UsageSkillTurns = محادثات بمهارة اخترتها
 UsageSkillTurnsValue = {0} من {1}
+TurnSkillProjectNotFound = لم يُعثر على مهارة المشروع {0}؛ لم يحصل عليها الوكيل
+TurnSkillPluginNotFound = لم يُعثر على مهارة الإضافة {0}؛ لم يحصل عليها الوكيل
+UsageSkillTurnsSince = محسوبة منذ {0}

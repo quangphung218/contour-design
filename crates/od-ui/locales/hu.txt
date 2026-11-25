@@ -1827,3 +1827,6 @@ TurnSkillFromPlugin = (a pluginból)
 TurnSkillNotFound = @{0} nem található; az agent nem kapta meg
 UsageSkillTurns = Körök általad választott skillel
 UsageSkillTurnsValue = {0} / {1}
+TurnSkillProjectNotFound = A projekt {0} skillje nem található; az agent nem kapta meg
+TurnSkillPluginNotFound = A plugin {0} skillje nem található; az agent nem kapta meg
+UsageSkillTurnsSince = Számolva ettől: {0}

@@ -1833,3 +1833,6 @@ TurnSkillFromPlugin = (из плагина)
 TurnSkillNotFound = @{0} не найден; агент его не получил
 UsageSkillTurns = Ходы с навыком, выбранным вами
 UsageSkillTurnsValue = {0} из {1}
+TurnSkillProjectNotFound = Навык проекта {0} не найден; агент его не получил
+TurnSkillPluginNotFound = Навык плагина {0} не найден; агент его не получил
+UsageSkillTurnsSince = Считается с {0}

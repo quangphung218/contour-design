@@ -6,8 +6,9 @@
 // previewed; runs also fail for a missing agent (`codex` is not on PATH)
 // and a Stop; a duplicate of the exported one does not count. About then
 // shows the median wait, 2 of 3 projects put to use and 1 of 4 runs failed
-// by cause with the Stop listed apart, 2 of 5 turns with a skill the user
-// picked (the two API runs name one), and Copy puts the summary shown
+// by cause with the Stop listed apart, 2 of 3 turns with a skill the user
+// picked (two studio turns name one; the failed and stopped runs name one
+// too but did not finish, so they do not count), and Copy puts the summary shown
 // under it on the clipboard with the version, OS, agent and the three
 // numbers but no project name, path or prompt. A refused clipboard says so
 // in plain words and opens the summary to copy by hand; a failed load
@@ -164,6 +165,7 @@ try {
   assert.equal(await value('usage-setup').textContent(), 'Reached step 2 of 5');
   // A count, shown from the first turn: no "needs 3".
   assert.equal(await value('usage-skill-turns').textContent(), '0 of 0');
+  assert.equal(await page.getByTestId('usage-skill-turns-since').textContent(), 'Counted since 0.2.0-beta.64');
   assert.equal(await page.getByTestId('usage-setup-next').textContent(), 'Next step: agent test');
   // Where to paste it: the Discussions thread; a bug goes in an issue.
   assert.match(await section.textContent(), /“Share your usage” discussion on GitHub; for a bug, open an issue with steps to reproduce/);
@@ -177,7 +179,7 @@ try {
       'Time to first preview: needs 3 projects to measure (you have 0)\n' +
       'Projects with an export or 3+ chat turns: needs 3 projects to measure (you have 0)\n' +
       'Failed runs: needs 3 runs to measure (you have 0)\n' +
-      'Turns with a skill you picked: 0 of 0',
+      'Turns with a skill you picked (since 0.2.0-beta.64): 0 of 0',
   );
   // What Copy takes is on screen first, folded away.
   assert.equal(await page.getByTestId('usage-preview').getAttribute('open'), null);
@@ -202,6 +204,14 @@ try {
   }
   const [a, b, c] = projects;
   const assistant = page.getByTestId('assistant-msg');
+  // The first two name a skill the user picked, as an `@` chip would.
+  let picks = 2;
+  await page.route('**/api/runs', async (route) => {
+    const req = route.request();
+    if (req.method() !== 'POST' || picks === 0) return route.continue();
+    picks -= 1;
+    await route.continue({ postData: JSON.stringify({ ...req.postDataJSON(), skillIds: ['web-clone'] }) });
+  });
   await page.goto(`${BASE}/projects/${a}`);
   await page.getByTestId('composer').waitFor();
   for (let turn = 1; turn <= 3; turn++) {
@@ -209,6 +219,7 @@ try {
     await page.getByTestId('composer').press('Enter');
     await until(async () => (await assistant.count()) === turn && (await assistant.nth(turn - 1).getAttribute('data-state')) === 'succeeded', `turn ${turn} end`);
   }
+  await page.unroute('**/api/runs');
   await page.frameLocator('iframe[data-testid="preview"]').locator('#title', { hasText: 'Mock page v3' }).waitFor();
   await until(async () => (await api('/api/usage')).body.firstPreview.projects === 1, 'first preview recorded by the studio');
 
@@ -250,7 +261,7 @@ try {
   assert.equal(u.runs.failed, 1);
   assert.equal(u.runs.canceled, 1);
   assert.deepEqual(u.runs.causes.map((x) => x.cause), ['spawn_failed']);
-  assert.deepEqual(u.skillTurns, { turns: 5, picked: 2 });
+  assert.deepEqual(u.skillTurns, { turns: 3, picked: 2 }, 'the failed and stopped turns are not counted');
   results.recorded = 'first preview ×3 (studio, studio, bridge), export from the menu, duplicate left out, 1 failed run of 4 + 1 Stop';
 
   log('step', '3. About shows');
@@ -265,7 +276,7 @@ try {
   assert.deepEqual(causes, ['Agent missing or didn\'t start · 1']);
   assert.equal(await page.getByTestId('usage-stopped').textContent(), 'Stopped by you: 1 (not counted)');
   assert.equal(await page.getByTestId('usage-skill-turns').locator('dt').textContent(), 'Turns with a skill you picked');
-  assert.equal(await value('usage-skill-turns').textContent(), '2 of 5');
+  assert.equal(await value('usage-skill-turns').textContent(), '2 of 3');
   await page.getByTestId('usage-copy').click();
   log('copied');
   await until(async () => (await clipboard()) !== empty, 'new summary copied');
@@ -278,7 +289,7 @@ try {
   assert.match(lines[2], /^Time to first preview: median \S+( \S+)? \(3 projects\)$/);
   assert.equal(lines[3], 'Projects with an export or 3+ chat turns: 67% (2/3)');
   assert.equal(lines[4], 'Failed runs: 25% (1/4): spawn_failed 1; stopped by the user: 1 (not counted)');
-  assert.equal(lines[5], 'Turns with a skill you picked: 2 of 5');
+  assert.equal(lines[5], 'Turns with a skill you picked (since 0.2.0-beta.64): 2 of 3');
   assert.equal(await page.getByTestId('usage-summary').textContent(), text, 'Copy takes what is shown');
   for (const secret of [...names, ...projects, 'secret prompt', 'index.html', scratch]) {
     assert.ok(!text.includes(secret), `summary leaks ${secret}`);
@@ -361,7 +372,7 @@ try {
   assert.equal(await section.locator('h3').textContent(), 'Số liệu sử dụng');
   assert.equal(await value('usage-engaged').textContent(), '67% · 2/3 project');
   assert.equal(await value('usage-setup').textContent(), 'Đã tới bước 5/5');
-  assert.equal(await value('usage-skill-turns').textContent(), '2/5');
+  assert.equal(await value('usage-skill-turns').textContent(), '2/3');
   assert.equal(await page.getByTestId('usage-copy').textContent(), 'Chép tóm tắt');
   await shot('usage-1440-vi');
   await put('/api/app-config', { locale: 'en' });

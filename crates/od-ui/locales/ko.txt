@@ -1833,3 +1833,6 @@ TurnSkillFromPlugin = (플러그인)
 TurnSkillNotFound = @{0}을(를) 찾지 못해 에이전트에 전달되지 않았습니다
 UsageSkillTurns = 직접 고른 스킬을 쓴 턴
 UsageSkillTurnsValue = {1}개 중 {0}개
+TurnSkillProjectNotFound = 프로젝트 스킬 {0}을(를) 찾지 못해 에이전트에 전달되지 않았습니다
+TurnSkillPluginNotFound = 플러그인 스킬 {0}을(를) 찾지 못해 에이전트에 전달되지 않았습니다
+UsageSkillTurnsSince = {0}부터 집계

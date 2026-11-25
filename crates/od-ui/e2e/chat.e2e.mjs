@@ -3,7 +3,9 @@
 // chip, media picker, examples, working directory, "+" menu, @ mentions,
 // staged files) → the first turn carries them → Studio composer (attach by
 // button, paste and drop, @ file, / commands, model picker, design system
-// switch) → "Skills" under a turn and a warning for one gone → turn
+// switch) → "Skills" under a turn and a warning for one gone, the
+// project's own skill (kept across a reload mid-run), a Remix template not
+// linked, a gone project skill named without `@` → turn
 // actions (files from this turn, copy, continue remaining
 // tasks, design toolbox, quote, reconnect) → conversation rename and delete → chat pane collapse
 // and resize → linked folders and project references → Vietnamese.
@@ -1020,6 +1022,56 @@ try {
   const imported = (await api(`/api/projects/${page.url().split('/projects/')[1]}`)).project;
   assert.equal(imported.metadata.baseDir, join(work, 'site'));
   results.fromFolder = 'ok';
+
+  // 17c. Skills the user did not type. A project's own skill is marked
+  // "(from project)" and stays on a turn reloaded while it still runs; a
+  // Remix project's design template is named, not linked (it has no skill
+  // page); a project skill that is gone is warned about without an `@`.
+  {
+    const project = async (body) => {
+      const r = await api('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      return r.project.id;
+    };
+    const first = () => page.getByTestId('assistant-msg').first();
+    const sendIn = async (id, text) => {
+      await page.goto(`${BASE}/projects/${id}`);
+      await page.getByTestId('composer').fill(text);
+      await page.getByTestId('composer').press('Enter');
+    };
+
+    await sendIn(await project({ name: 'Own skill', skillId: 'd3-visualization' }), 'a slow page');
+    const own = '[data-testid="turn-skill"][data-id="d3-visualization"][data-source="project"][data-kind="skill"]';
+    await first().locator(own).waitFor();
+    assert.match(await first().locator(own).textContent(), /\(from project\)/);
+    // A touch target as tall as the next-step actions on a phone.
+    const wide = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectPoll(async () => (await first().locator(own).locator('button').boundingBox()).height >= 44, true, 'skill name 44 px high at 390');
+    await page.setViewportSize(wide);
+    await until(async () => /step2 /.test(await first().textContent()), 'slow run streaming');
+    await page.reload();
+    await first().locator(own).waitFor();
+    assert.equal(await first().getAttribute('data-state'), 'running', 'reloaded while the run goes on');
+    await until(async () => /step3[0-9] /.test(await first().textContent()), 'the run streams again after the reload');
+    await first().locator(own).waitFor();
+    await lastTurnDone(1);
+
+    const remix = await api('/api/design-templates/blog-post/remix', { method: 'POST' });
+    await sendIn(remix.project.id, 'hello');
+    await lastTurnDone(1);
+    const template = first().locator('[data-testid="turn-skill"][data-id="blog-post"][data-kind="design_template"]');
+    await template.waitFor();
+    assert.equal(await template.locator('button').count(), 0, 'a design template is not a link to a skill page');
+
+    await sendIn(await project({ name: 'Gone skill', skillId: 'e2e-gone-project-skill' }), 'hello');
+    await lastTurnDone(1);
+    const gone = first().locator('[data-testid="turn-skill-missing"][data-id="e2e-gone-project-skill"][data-source="project"]');
+    await gone.waitFor();
+    assert.equal((await gone.textContent()).trim(), 'Project skill e2e-gone-project-skill was not found; the agent did not get it');
+    assert.equal(await first().getAttribute('data-state'), 'succeeded', 'the run went without it');
+
+    results.unaskedSkills = 'ok';
+  }
 
   // 18. Dark screenshots of the new pieces, then Vietnamese strings.
   await page.emulateMedia({ colorScheme: 'dark' });

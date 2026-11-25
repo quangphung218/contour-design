@@ -1833,3 +1833,6 @@ TurnSkillFromPlugin = （プラグイン）
 TurnSkillNotFound = @{0} が見つかりません。エージェントには渡っていません
 UsageSkillTurns = 自分で選んだスキルを使った回
 UsageSkillTurnsValue = {1} 回中 {0} 回
+TurnSkillProjectNotFound = プロジェクトのスキル {0} が見つかりません。エージェントには渡っていません
+TurnSkillPluginNotFound = プラグインのスキル {0} が見つかりません。エージェントには渡っていません
+UsageSkillTurnsSince = {0} から集計

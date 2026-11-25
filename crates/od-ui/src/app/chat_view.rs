@@ -1448,7 +1448,7 @@ fn open_after_click(tasks: Tasks, navigate: impl Fn(&str) + 'static, path: Strin
 /// `label-content-name-mismatch`).
 #[component]
 fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
-    use od_contracts::SkillSource;
+    use od_contracts::{SkillSource, TurnSkillKind};
     let navigate = super::leave_guard::use_leave();
     let tasks = Tasks::here();
     let skills = Memo::new(move |_| turn.with(|t| t.skills.clone()));
@@ -1467,16 +1467,25 @@ fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                         SkillSource::Project => Some(T::TurnSkillFromProject),
                         SkillSource::Plugin => Some(T::TurnSkillFromPlugin),
                     };
-                    let source = match s.source {
-                        SkillSource::Mention => "mention",
-                        SkillSource::Project => "project",
-                        SkillSource::Plugin => "plugin",
-                    };
-                    view! {
-                        <li data-testid="turn-skill" data-id=s.id.clone() data-source=source>
+                    // Only a skill has a page; a Remix project's design
+                    // template is named, not linked.
+                    let name = if s.kind == Some(TurnSkillKind::Skill) {
+                        view! {
                             <button class="btn ghost small" on:click=move |_| open_after_click(tasks, navigate.clone(), open.clone())>
                                 {s.id.clone()}
                             </button>
+                        }
+                        .into_any()
+                    } else {
+                        view! { <span class="turn-skill-name small">{s.id.clone()}</span> }.into_any()
+                    };
+                    let kind = match s.kind {
+                        Some(TurnSkillKind::DesignTemplate) => "design_template",
+                        _ => "skill",
+                    };
+                    view! {
+                        <li data-testid="turn-skill" data-id=s.id.clone() data-source=source_name(s.source) data-kind=kind>
+                            {name}
                             {from.map(|k| view! { <span class="muted small">{t(k)}</span> })}
                         </li>
                     }
@@ -1493,13 +1502,34 @@ fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
             .into_iter()
             .map(|s| {
                 view! {
-                    <p class="warn-text" data-testid="turn-skill-missing" data-id=s.id.clone()>
-                        {icon(Glyph::Warning)}{tf(T::TurnSkillNotFound, &[&s.id])}
+                    <p class="warn-text" data-testid="turn-skill-missing" data-id=s.id.clone()
+                        data-source=source_name(s.source)>
+                        {icon(Glyph::Warning)}{tf(missing_key(s.source), &[&s.id])}
                     </p>
                 }
             })
             .collect_view();
         view! { {got}{gone} }
+    }
+}
+
+/// A turn skill's source as `data-source` names it.
+fn source_name(source: od_contracts::SkillSource) -> &'static str {
+    match source {
+        od_contracts::SkillSource::Mention => "mention",
+        od_contracts::SkillSource::Project => "project",
+        od_contracts::SkillSource::Plugin => "plugin",
+    }
+}
+
+/// The warning for a skill that is gone, by where it came from: only one
+/// the user picked was typed as `@x`; the project's and a plugin's skill
+/// come along unasked, on every turn.
+fn missing_key(source: od_contracts::SkillSource) -> T {
+    match source {
+        od_contracts::SkillSource::Mention => T::TurnSkillNotFound,
+        od_contracts::SkillSource::Project => T::TurnSkillProjectNotFound,
+        od_contracts::SkillSource::Plugin => T::TurnSkillPluginNotFound,
     }
 }
 
@@ -2008,6 +2038,42 @@ mod tests {
         ChatItem, LoopRow, Retry, SkillLoop, ToolCall, process_summary, saved_skill_id, tool_label,
         tool_texts,
     };
+
+    /// Only a skill the user picked was typed as `@x`; the project's and
+    /// a plugin's come unasked and are named for where they came from.
+    #[test]
+    fn a_gone_skill_is_named_for_where_it_came_from() {
+        use crate::i18n::Locale;
+        use od_contracts::SkillSource::{Mention, Plugin, Project};
+        let text = |source| super::missing_key(source).text(Locale::En);
+        assert!(text(Mention).starts_with("@{0} "));
+        assert_eq!(
+            text(Project),
+            "Project skill {0} was not found; the agent did not get it"
+        );
+        assert_eq!(
+            text(Plugin),
+            "Plugin skill {0} was not found; the agent did not get it"
+        );
+        for &locale in Locale::ALL {
+            for source in [Project, Plugin] {
+                let s = super::missing_key(source).text(locale);
+                assert!(!s.contains('@'), "{locale:?}: {s}");
+            }
+        }
+        // The languages read from `locales/` at run time.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        for file in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{e}")) {
+            let text = std::fs::read_to_string(file.unwrap_or_else(|e| panic!("{e}")).path())
+                .unwrap_or_else(|e| panic!("{e}"));
+            for line in text.lines().filter(|l| {
+                l.starts_with("TurnSkillProjectNotFound =")
+                    || l.starts_with("TurnSkillPluginNotFound =")
+            }) {
+                assert!(!line.contains('@'), "{line}");
+            }
+        }
+    }
 
     #[test]
     fn the_skill_loop_counts_design_turns_and_finds_save_as_skill_ones() {

@@ -1827,3 +1827,6 @@ TurnSkillFromPlugin = (dari plugin)
 TurnSkillNotFound = @{0} tidak ditemukan; agen tidak menerimanya
 UsageSkillTurns = Giliran dengan skill pilihanmu
 UsageSkillTurnsValue = {0} dari {1}
+TurnSkillProjectNotFound = Skill proyek {0} tidak ditemukan; agen tidak menerimanya
+TurnSkillPluginNotFound = Skill plugin {0} tidak ditemukan; agen tidak menerimanya
+UsageSkillTurnsSince = Dihitung sejak {0}

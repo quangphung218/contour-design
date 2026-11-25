@@ -1833,3 +1833,6 @@ TurnSkillFromPlugin = (از افزونه)
 TurnSkillNotFound = @{0} پیدا نشد؛ عامل آن را دریافت نکرد
 UsageSkillTurns = نوبت‌هایی با مهارتی که انتخاب کردید
 UsageSkillTurnsValue = {0} از {1}
+TurnSkillProjectNotFound = مهارت پروژه {0} پیدا نشد؛ عامل آن را دریافت نکرد
+TurnSkillPluginNotFound = مهارت افزونه {0} پیدا نشد؛ عامل آن را دریافت نکرد
+UsageSkillTurnsSince = شمارش از {0}

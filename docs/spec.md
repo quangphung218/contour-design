@@ -428,7 +428,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
   |---|---|
   | `projects` | id, name, skill_id, design_system_id, pending_prompt, metadata_json, custom_instructions, created_at, updated_at |
   | `conversations` | id, project_id (cascade), title, session_mode, timestamps |
-  | `messages` | id, conversation_id, role, content, agent_id, run_id, run_status, last_run_event_id, position, timestamps; JSON: `events_json` (persisted events), attachments, comment_attachments, produced_files, feedback; Contour: `prepared_message` (user), `skills_json` (assistant: `[{id, source: mention/project/plugin, found}]`, the skills the turn asked for; NULL before 0.2.0-beta.64) |
+  | `messages` | id, conversation_id, role, content, agent_id, run_id, run_status, last_run_event_id, position, timestamps; JSON: `events_json` (persisted events), attachments, comment_attachments, produced_files, feedback; Contour: `prepared_message` (user), `skills_json` (assistant: `[{id, source: mention/project/plugin, found, kind?: skill/design_template}]`, the skills the turn asked for; NULL before 0.2.0-beta.64) |
   | `message_event_batches` | Events written incrementally during a run; merged into `messages.events_json` when the run ends |
   | `agent_sessions` | Key (conversation_id, agent_id): session_id, stable_prompt_hash, model, cwd, last_message_id |
   | `templates` | Templates the user saved from a project |

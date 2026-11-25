@@ -1832,3 +1832,6 @@ TurnSkillFromPlugin = （来自插件）
 TurnSkillNotFound = 未找到 @{0}，智能体没有收到它
 UsageSkillTurns = 用了你选的技能的轮次
 UsageSkillTurnsValue = {1} 轮中 {0} 轮
+TurnSkillProjectNotFound = 未找到项目技能 {0}，智能体没有收到它
+TurnSkillPluginNotFound = 未找到插件技能 {0}，智能体没有收到它
+UsageSkillTurnsSince = 自 {0} 起统计

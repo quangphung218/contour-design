@@ -1702,7 +1702,7 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
   .menu-item { min-height: 44px; }
   .settings-nav-link { display: inline-flex; align-items: center; min-height: 44px; }
   .studio-switch .seg { min-height: 44px; }
-  .chip.next-step, .next-action, .next-chips-pending { min-height: 44px; }
+  .chip.next-step, .next-action, .next-chips-pending, .turn-skills .btn { min-height: 44px; }
   .settings-section .row.end .btn, .empty-state .btn { min-height: 44px; }
   .home-section .section-head .btn { min-height: 44px; }
   /* The title keeps its line; Show all and All templates go under it. */

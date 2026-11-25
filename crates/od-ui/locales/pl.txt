@@ -1833,3 +1833,6 @@ TurnSkillFromPlugin = (z wtyczki)
 TurnSkillNotFound = Nie znaleziono @{0}; agent go nie dostał
 UsageSkillTurns = Tury ze skillem wybranym przez Ciebie
 UsageSkillTurnsValue = {0} z {1}
+TurnSkillProjectNotFound = Nie znaleziono skilla projektu {0}; agent go nie dostał
+TurnSkillPluginNotFound = Nie znaleziono skilla wtyczki {0}; agent go nie dostał
+UsageSkillTurnsSince = Liczone od {0}

@@ -1187,7 +1187,7 @@ fn count(n: u32) -> String {
 /// telemetry: nothing is sent.
 #[component]
 fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
-    use crate::usage::{RECORDED_SINCE, SETUP_SINCE, duration, enough, percent};
+    use crate::usage::{RECORDED_SINCE, SETUP_SINCE, SKILL_TURNS_SINCE, duration, enough, percent};
     use od_contracts::{SetupStep, USAGE_MIN_SAMPLE, UsageResponse};
     let shell = Shell::get();
     let usage = LocalResource::new(|| async {
@@ -1326,6 +1326,11 @@ fn YourUsage(version: LocalResource<Option<Value>>) -> impl IntoView {
         let st = u.skill_turns;
         let skill_turns = view! {
             <dd data-state="value">{tf(T::UsageSkillTurnsValue, &[&count(st.picked), &count(st.turns)])}</dd>
+            // Turns before this release kept no skills: say so, or a
+            // long-time user reads "0 of 0" as broken.
+            <dd class="muted small" data-testid="usage-skill-turns-since">
+                {tf(T::UsageSkillTurnsSince, &[SKILL_TURNS_SINCE])}
+            </dd>
         };
         let stopped = (r.canceled > 0).then(|| {
             view! {

@@ -29,8 +29,10 @@ pub struct UsageResponse {
     pub skill_turns: SkillTurnsUsage,
 }
 
-/// Assistant turns that kept their skills (recorded since 0.2.0-beta.64),
-/// and how many of them got a skill the user picked (`@`, `--skill`).
+/// Assistant turns that ran to success and kept their skills (recorded
+/// since 0.2.0-beta.64), each run once (a fork's copies are not counted
+/// again), and how many of them got a skill the user picked (`@`,
+/// `--skill`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillTurnsUsage {

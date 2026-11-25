@@ -715,6 +715,7 @@ mod tests {
             id: "article-magazine".into(),
             source: od_contracts::SkillSource::Mention,
             found: true,
+            kind: Some(od_contracts::TurnSkillKind::Skill),
         }];
         for (u, a, run, prepared, skills) in [
             ("u1", "a1", "r1", Some("u1 in full"), &picked[..]),

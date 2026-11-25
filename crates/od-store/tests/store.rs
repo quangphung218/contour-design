@@ -409,10 +409,29 @@ fn skill(id: &str, source: od_contracts::SkillSource, found: bool) -> od_contrac
         id: id.to_owned(),
         source,
         found,
+        kind: found.then_some(od_contracts::TurnSkillKind::Skill),
     }
 }
 
+/// A turn that ran to success.
 fn turn(store: &Store, conversation: &str, i: usize, skills: &[od_contracts::TurnSkill]) {
+    turn_ending(
+        store,
+        conversation,
+        i,
+        skills,
+        Some(od_contracts::RunStatus::Succeeded),
+    );
+}
+
+/// A turn that ended as `status`, or is still running (`None`).
+fn turn_ending(
+    store: &Store,
+    conversation: &str,
+    i: usize,
+    skills: &[od_contracts::TurnSkill],
+    status: Option<od_contracts::RunStatus>,
+) {
     store
         .begin_turn(&NewTurn {
             prepared_message: None,
@@ -426,6 +445,53 @@ fn turn(store: &Store, conversation: &str, i: usize, skills: &[od_contracts::Tur
             skills,
         })
         .unwrap();
+    if let Some(status) = status {
+        store
+            .finish_assistant_message(&format!("a{i}"), "done", status, 0)
+            .unwrap();
+    }
+}
+
+/// Only turns that ran to success count, each run once: a failed,
+/// stopped or running turn is no use of a skill, and a fork's copies of a
+/// turn are the same turn.
+#[test]
+fn skill_turns_count_finished_turns_once_each() {
+    use od_contracts::RunStatus::{Canceled, Failed};
+    use od_contracts::SkillSource::Mention;
+    use od_store::usage::SkillTurns;
+    let tmp = tempfile::tempdir().unwrap();
+    let store = open(tmp.path());
+    let (project, conversation) = store
+        .create_project(CreateProjectRequest {
+            name: "P".to_owned(),
+            ..CreateProjectRequest::default()
+        })
+        .unwrap();
+    let picked = [skill("a", Mention, true)];
+    turn(&store, &conversation, 0, &picked);
+    turn(&store, &conversation, 1, &[]);
+    turn_ending(&store, &conversation, 2, &picked, Some(Failed));
+    turn_ending(&store, &conversation, 3, &picked, Some(Canceled));
+    turn_ending(&store, &conversation, 4, &picked, None);
+    let counted = SkillTurns {
+        turns: 2,
+        picked: 1,
+    };
+    assert_eq!(store.skill_turns().unwrap(), counted);
+
+    // A fork copies the messages under new ids, with their run ids.
+    let fork = store
+        .create_conversation(
+            &project.id,
+            od_contracts::CreateConversationRequest {
+                seed_from_conversation_id: Some(conversation.clone()),
+                ..od_contracts::CreateConversationRequest::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(store.list_messages(&fork.id).unwrap().len(), 10);
+    assert_eq!(store.skill_turns().unwrap(), counted);
 }
 
 #[test]

@@ -187,7 +187,7 @@ async fn a_turn_keeps_the_skills_it_asked_for() {
         )
         .await;
     let picked = json!([
-        {"id": "ad-creative", "source": "mention", "found": true},
+        {"id": "ad-creative", "source": "mention", "found": true, "kind": "skill"},
         {"id": "my-skill", "source": "mention", "found": false},
     ]);
     assert_eq!(serde_json::to_value(&run.skills).unwrap(), picked);
@@ -224,9 +224,56 @@ async fn a_turn_keeps_the_skills_it_asked_for() {
     let messages = d.settled_messages(&project2, &conversation2).await;
     assert_eq!(
         messages[1]["skills"],
-        json!([{"id": "agent-browser", "source": "project", "found": true}])
+        json!([{"id": "agent-browser", "source": "project", "found": true, "kind": "skill"}])
     );
 
     let usage = d.get_json("/api/usage").await;
     assert_eq!(usage["skillTurns"], json!({"turns": 2, "picked": 1}));
+}
+
+/// A Remix project's skill is the design template it came from: the
+/// agent gets it, and the turn says it is a template, which has no skill
+/// page (`GET /api/skills/:id` is 404 for it).
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_remix_projects_skill_is_kept_as_a_design_template() {
+    let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+    let d = daemon_with(Options {
+        content_root: Some(content),
+        ..Options::default()
+    })
+    .await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let remix: Value = d
+        .post("/api/design-templates/blog-post/remix", &json!({}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let project = remix["project"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(remix["project"]["skillId"], "blog-post");
+    let res = d
+        .post(
+            "/api/runs",
+            &json!({"agentId": "claude", "projectId": project, "message": "go",
+                "skillId": "blog-post", "skillIds": ["ad-creative"]}),
+        )
+        .await;
+    assert_eq!(res.status().as_u16(), 202);
+    let run: Value = res.json().await.unwrap();
+    assert_eq!(
+        run["skills"],
+        json!([
+            {"id": "ad-creative", "source": "mention", "found": true, "kind": "skill"},
+            {"id": "blog-post", "source": "project", "found": true, "kind": "design_template"},
+        ])
+    );
+    let page = d
+        .http
+        .get(format!("{}/api/skills/blog-post", d.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(page.status().as_u16(), 404, "a template has no skill page");
+    d.events(run["runId"].as_str().unwrap(), None).await;
 }
