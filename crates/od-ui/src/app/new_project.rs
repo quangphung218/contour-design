@@ -129,9 +129,10 @@ pub fn NewProjectPanel(open: RwSignal<bool>) -> impl IntoView {
     };
 
     view! {
-        <div class="overlay center" on:click=move |_| open.set(false)
+        <div class="overlay center"
             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { open.set(false) }>
-            <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="new-project-title" data-testid="new-project-panel" on:click=|ev| ev.stop_propagation()>
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| open.set(false)></div>
+            <div class="dialog wide-dialog" role="dialog" aria-modal="true" aria-labelledby="new-project-title" data-testid="new-project-panel">
                 <div class="dialog-head">
                     <span class="dialog-icon">{icon(Glyph::Add)}</span>
                     <div class="grow">

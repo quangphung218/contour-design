@@ -156,10 +156,10 @@ pub fn ConversationMenu(ctx: StudioCtx) -> impl IntoView {
                 </div>
             })}
             <Show when=move || confirming.get()>
-                <div class="overlay center" on:click=move |_| cancel_delete()
+                <div class="overlay center"
                     on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { cancel_delete() }>
-                    <div class="dialog" role="alertdialog" aria-modal="true" data-testid="delete-conversation-dialog"
-                        on:click=|ev| ev.stop_propagation()>
+                    <div class="modal-backdrop" aria-hidden="true" on:click=move |_| cancel_delete()></div>
+                    <div class="dialog" role="alertdialog" aria-modal="true" data-testid="delete-conversation-dialog">
                         <div class="dialog-head">
                             <span class="dialog-icon danger">{icon(Glyph::Delete)}</span>
                             <div class="grow">
@@ -752,9 +752,10 @@ fn FolderDialogView(ctx: StudioCtx, kind: FolderDialog, close: Callback<()>) -> 
         FolderDialog::Reference => t(T::ReferenceProject),
     };
     view! {
-        <div class="overlay center" on:click=move |_| close.run(())
+        <div class="overlay center"
             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { close.run(()) }>
-            <div class="dialog" role="dialog" aria-modal="true" data-testid="folder-dialog" on:click=|ev| ev.stop_propagation()>
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| close.run(())></div>
+            <div class="dialog" role="dialog" aria-modal="true" data-testid="folder-dialog">
                 <div class="dialog-head">
                     <span class="dialog-icon">{icon(if kind == FolderDialog::Link { Glyph::Link } else { Glyph::Projects })}</span>
                     <div class="grow"><h2>{title}</h2><p>{t(T::WorkingDirHint)}</p></div>

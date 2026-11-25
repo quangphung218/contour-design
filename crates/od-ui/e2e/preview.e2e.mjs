@@ -471,6 +471,10 @@ try {
   assert.deepEqual(await leaveDialog.getByTestId('leave-files').locator('li').allTextContents(), ['draft.html']);
   await leaveDialog.getByTestId('leave-stay').click();
   await leaveDialog.waitFor({ state: 'detached' });
+  // Stay closes the question inside its own click: nothing around the
+  // button may listen for that click too (`tests/nested_listeners.rs`).
+  await page.evaluate(() => 0);
+  assert.deepEqual(pageErrors, [], 'Stay closes the question with no page error');
   // Its element goes while another file shows: the note and image wait
   // for an element picked again.
   await write('draft.html', DRAFT.replace(/<p id="pick"[^<]*<\/p>/, ''));

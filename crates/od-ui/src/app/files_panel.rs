@@ -1304,10 +1304,10 @@ fn FileDialog(ctx: StudioCtx, ui: FilesUi, dialog: Dialog) -> impl IntoView {
     };
     let cancel = move || ui.close_dialog();
     view! {
-        <div class="overlay center" on:click=move |_| cancel()
+        <div class="overlay center"
             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { cancel(); }>
-            <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="file-dialog-title" data-testid="file-dialog"
-                on:click=|ev| ev.stop_propagation()>
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| cancel()></div>
+            <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="file-dialog-title" data-testid="file-dialog">
                 <div class="dialog-head">
                     <span class="dialog-icon" class:danger=danger>{icon(glyph)}</span>
                     <div class="grow">

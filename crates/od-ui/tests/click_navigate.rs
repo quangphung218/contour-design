@@ -148,13 +148,22 @@ fn calls(line: &str) -> usize {
 
 /// Whether `line` takes a navigate (`use_navigate()`, `use_leave()`, or a
 /// clone of one) without naming it `navigate`, wraps it, or hands it on.
-fn renamed(line: &str) -> bool {
+/// `prev` is the code of the line before (rustfmt puts a long call's
+/// arguments, or the value of a long `let`, on lines of their own).
+fn renamed(prev: &str, line: &str) -> bool {
     let code = code(line).trim();
     if code.contains("fn use_leave") {
         return false;
     }
     for hook in ["use_navigate();", "use_leave();", "navigate.clone();"] {
         if let Some(head) = code.strip_suffix(hook) {
+            // `let x =` on the line before: the value moved down.
+            let joined = format!("{} {}", prev.trim(), head.trim());
+            let head = if prev.trim_end().ends_with('=') && !head.contains('=') {
+                joined.as_str()
+            } else {
+                head
+            };
             // `let navigate = <path::>hook`: the scan sees its calls.
             let path = head.strip_prefix("let navigate =").map(str::trim);
             return !path.is_some_and(|p| {
@@ -163,17 +172,21 @@ fn renamed(line: &str) -> bool {
             });
         }
     }
-    code.contains("use_navigate()") || code.contains("use_leave()") || moved(code)
+    code.contains("use_navigate()") || code.contains("use_leave()") || moved(prev, code)
 }
 
 /// Whether `code` hands `navigate` (or `navigate.clone()`) on as a value
 /// (`let go = navigate;`, `StoredValue::new(navigate)`,
 /// `open_now(navigate.clone(), path)`): whatever receives it calls it under
-/// another name. `let navigate = navigate.clone();` keeps the name.
-fn moved(code: &str) -> bool {
+/// another name. `let navigate = navigate.clone();` keeps the name. At the
+/// start of a line, what comes before it is the end of `prev`.
+fn moved(prev: &str, code: &str) -> bool {
     let ident = |c: char| c.is_alphanumeric() || c == '_';
     code.match_indices("navigate").any(|(i, word)| {
-        let before = code[..i].trim_end();
+        let before = match code[..i].trim_end() {
+            "" => prev.trim_end(),
+            before => before,
+        };
         let mut after = &code[i + word.len()..];
         if code[..i]
             .chars()
@@ -207,6 +220,7 @@ fn scan(src: &Path) -> Scan {
             .to_string_lossy()
             .replace('\\', "/");
         let mut current = String::from("(top)");
+        let mut prev = String::new();
         for line in std::fs::read_to_string(&path).unwrap().lines() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("//") || trimmed.starts_with("use ") {
@@ -219,8 +233,11 @@ fn scan(src: &Path) -> Scan {
             if n > 0 {
                 *found.entry((rel.clone(), current.clone())).or_default() += n;
             }
-            if renamed(line) {
+            if renamed(&prev, line) {
                 renames.push((rel.clone(), current.clone()));
+            }
+            if !code(line).trim().is_empty() {
+                code(line).trim().clone_into(&mut prev);
             }
         }
     }
@@ -295,27 +312,57 @@ fn the_scan_sees_a_call_of_navigate_only() {
     assert_eq!(calls("cx.navigate(path, options)"), 0);
     assert_eq!(calls("on:click=move |_| navigate.clone()(&path)>"), 1);
     assert_eq!(calls("open(path); // then navigate(path)"), 0);
-    assert!(renamed("let go = use_leave();"));
-    assert!(renamed("let nav = StoredValue::new_local(use_navigate());"));
-    assert!(!renamed("let navigate = super::leave_guard::use_leave();"));
-    assert!(!renamed("let navigate = use_navigate();"));
-    assert!(!renamed("        let navigate = navigate.clone();"));
-    assert!(renamed("    let nav_docs = navigate.clone();"));
+    assert!(renamed("", "let go = use_leave();"));
     assert!(renamed(
+        "",
+        "let nav = StoredValue::new_local(use_navigate());"
+    ));
+    assert!(!renamed(
+        "",
+        "let navigate = super::leave_guard::use_leave();"
+    ));
+    assert!(!renamed("", "let navigate = use_navigate();"));
+    assert!(!renamed("", "        let navigate = navigate.clone();"));
+    assert!(renamed("", "    let nav_docs = navigate.clone();"));
+    assert!(renamed(
+        "",
         "let navigate = StoredValue::new_local(use_navigate());"
     ));
-    assert!(!renamed("pub fn use_leave() -> impl Fn(&str) + Clone {"));
-    assert!(renamed("    let go = navigate;"));
+    assert!(!renamed(
+        "",
+        "pub fn use_leave() -> impl Fn(&str) + Clone {"
+    ));
+    assert!(renamed("", "    let go = navigate;"));
     assert!(renamed(
+        "",
         "on:click=move |_| open_now(navigate.clone(), path.clone())>"
     ));
-    assert!(renamed("let kept = StoredValue::new(navigate);"));
+    assert!(renamed("", "let kept = StoredValue::new(navigate);"));
     assert!(renamed(
+        "",
         "let (navigate, path) = (navigate.clone(), path.to_owned());"
     ));
-    assert!(!renamed("let navigate = navigate;"));
+    assert!(!renamed("", "let navigate = navigate;"));
     assert!(!renamed(
+        "",
         "let open_page = super::leave_guard::use_open_after_click();"
     ));
-    assert!(!renamed("Ok(v) => navigate(&path, Default::default()),"));
+    assert!(!renamed(
+        "",
+        "Ok(v) => navigate(&path, Default::default()),"
+    ));
+    // rustfmt puts long arguments and values on lines of their own.
+    assert!(renamed("open_project_now(", "    navigate.clone(),"));
+    assert!(renamed("let go =", "    navigate;"));
+    assert!(renamed("let ctx = Ctx {", "    navigate,"));
+    assert!(renamed("let nav =", "    use_navigate();"));
+    assert!(!renamed("let navigate =", "    navigate.clone();"));
+    assert!(!renamed(
+        "let navigate =",
+        "    super::leave_guard::use_leave();"
+    ));
+    assert!(!renamed(
+        "move |_| {",
+        "    navigate(&path, Default::default());"
+    ));
 }

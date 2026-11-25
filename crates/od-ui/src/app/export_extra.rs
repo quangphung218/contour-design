@@ -72,10 +72,10 @@ pub fn SaveTemplateDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) 
         });
     };
     view! {
-        <div class="overlay center" on:click=move |_| close_later(tasks, open)
+        <div class="overlay center"
             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { close_later(tasks, open); }>
-            <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="template-title" data-testid="template-dialog"
-                on:click=|ev| ev.stop_propagation()>
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| close_later(tasks, open)></div>
+            <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="template-title" data-testid="template-dialog">
                 <div class="dialog-head">
                     <span class="dialog-icon">{icon(Glyph::Grid)}</span>
                     <div class="grow">
@@ -155,10 +155,10 @@ pub fn HandoffDialog(ctx: StudioCtx, open: RwSignal<bool>, status: Status) -> im
         });
     };
     view! {
-        <div class="overlay center" on:click=move |_| close_later(tasks, open)
+        <div class="overlay center"
             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { close_later(tasks, open); }>
-            <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="handoff-title" data-testid="handoff-dialog"
-                on:click=|ev| ev.stop_propagation()>
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| close_later(tasks, open)></div>
+            <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="handoff-title" data-testid="handoff-dialog">
                 <div class="dialog-head">
                     <span class="dialog-icon">{icon(Glyph::Handoff)}</span>
                     <div class="grow">

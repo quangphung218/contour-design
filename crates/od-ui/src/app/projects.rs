@@ -1044,9 +1044,10 @@ fn InstructionsDialog(
         });
     };
     view! {
-        <div class="overlay center" on:click=move |_| open.set(false)
+        <div class="overlay center"
             on:keydown=move |ev: web_sys::KeyboardEvent| if ev.key() == "Escape" { open.set(false) }>
-            <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="instructions-title" data-testid="instructions-dialog" on:click=|ev| ev.stop_propagation()>
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| open.set(false)></div>
+            <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="instructions-title" data-testid="instructions-dialog">
                 <div class="dialog-head">
                     <span class="dialog-icon">{icon(Glyph::Notes)}</span>
                     <div class="grow">
