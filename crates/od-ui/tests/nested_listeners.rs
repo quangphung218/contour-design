@@ -11,9 +11,12 @@
 //!
 //! This test reads every `view!` under `src` and finds each element with
 //! an `on:<event>` inside another with the same `on:<event>`. A component
-//! that puts its `children()` inside a listening element (`Modal` around
+//! that puts its `children` inside a listening element (`Modal` around
 //! its children, for `keydown`) counts as that element where it is used.
-//! A pair that may stay is one whose inner handler never removes the outer
+//! A component is found by its name however it is written:
+//! `<super::lib_ui::Modal>`, or imported `as` another name; its children
+//! under any name it binds them to (`StoredValue::new(children)`). A pair
+//! that may stay is one whose inner handler never removes the outer
 //! element; it is listed in [`KEPT`] with why.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
@@ -125,13 +128,16 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// The name of a `fn` declared at the start of `line`, if any.
 fn declared_fn(line: &str) -> Option<&str> {
-    let rest = line.trim_start();
+    let mut rest = line.trim_start();
+    // `#[component] pub fn Modal(`: attributes before it on the same line.
+    while rest.starts_with("#[") {
+        rest = rest[rest.find(']')? + 1..].trim_start();
+    }
     let at = rest.find("fn ")?;
     let head = &rest[..at];
-    if !head
-        .split_whitespace()
-        .all(|w| w == "pub" || w.starts_with("pub(") || w == "async" || w == "const")
-    {
+    if !head.split_whitespace().all(|w| {
+        matches!(w, "pub" | "async" | "const" | "unsafe" | "extern") || w.starts_with("pub(")
+    }) {
         return None;
     }
     let name = &rest[at + 3..];
@@ -220,11 +226,16 @@ fn tag_at(s: &[u8], i: usize) -> Option<Tag> {
     if !s.get(start)?.is_ascii_alphabetic() {
         return None; // `a < b`, `<=`
     }
+    // `<super::lib_ui::Modal>` is the component `Modal`.
     let len = s[start..]
         .iter()
-        .position(|&b| !(is_ident(b) || b == b'-'))
+        .position(|&b| !(is_ident(b) || b == b'-' || b == b':'))
         .unwrap_or(s.len() - start);
-    let name = String::from_utf8_lossy(&s[start..start + len]).into_owned();
+    let full = String::from_utf8_lossy(&s[start..start + len]);
+    let name = full.rsplit("::").next().unwrap_or_default().to_owned();
+    if name.is_empty() {
+        return None;
+    }
     let mut events = BTreeSet::new();
     let mut depth = 0usize;
     let mut j = start + len;
@@ -271,8 +282,53 @@ struct Nested {
     inner_line: usize,
 }
 
+/// `alias → name` of the components a file imports under another name
+/// (`use super::lib_ui::{Modal as Dialog};`).
+fn use_aliases(src: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let mut rest = src;
+    while let Some(at) = rest.find("use ") {
+        let fresh = at == 0 || rest[..at].ends_with(|c: char| c.is_whitespace() || c == ';');
+        let end = rest[at..].find(';').map_or(rest.len(), |e| at + e);
+        if fresh {
+            let words: Vec<&str> = rest[at..end]
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|w| !w.is_empty())
+                .collect();
+            for w in words.windows(3) {
+                if w[1] == "as" && w[0].starts_with(|c: char| c.is_ascii_uppercase()) {
+                    out.insert(w[2].to_owned(), w[0].to_owned());
+                }
+            }
+        }
+        rest = &rest[end.max(at + 4)..];
+    }
+    out
+}
+
+/// `NAME` when the word at `i` is the value of `let NAME =` (on its line,
+/// or on the line before when rustfmt moved the value down).
+fn let_name(src: &str, i: usize) -> Option<String> {
+    let line_start = src[..i].rfind('\n').map_or(0, |n| n + 1);
+    let mut head = src[line_start..i].trim().to_owned();
+    if !head.starts_with("let ") && line_start > 0 {
+        let prev_start = src[..line_start - 1].rfind('\n').map_or(0, |n| n + 1);
+        let prev = src[prev_start..line_start].trim();
+        if prev.starts_with("let ") && prev.ends_with('=') {
+            head = format!("{prev} {head}");
+        }
+    }
+    let rest = head.strip_prefix("let ")?.trim_start();
+    let rest = rest.strip_prefix("mut ").unwrap_or(rest);
+    let len = rest.find(|c: char| !(c.is_alphanumeric() || c == '_'))?;
+    rest[len..]
+        .trim_start()
+        .starts_with('=')
+        .then(|| rest[..len].to_owned())
+}
+
 /// What the scan knows of each component (by fn name): the events around
-/// its `children()`, and the events any element in it listens for.
+/// its `children`, and the events any element in it listens for.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Components {
     wraps: BTreeMap<String, BTreeSet<String>>,
@@ -306,17 +362,36 @@ fn scan_source(src: &str, known: &Components) -> (Vec<Nested>, Components) {
     let mut open: Vec<(String, usize, String, BTreeSet<String>)> = Vec::new();
     let mut nested = Vec::new();
     let mut found = Components::default();
+    let renamed = use_aliases(src);
+    let real = |name: String| renamed.get(&name).cloned().unwrap_or(name);
+    // Per fn, the names its children go by: `children`, and what it is
+    // bound to (`let kept = StoredValue::new(children);`).
+    let mut kids: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut i = 0;
     while i < s.len() {
         if let Some(end) = skip_literal(s, i) {
             i = end;
             continue;
         }
-        if s[i..].starts_with(b"children()") && (i == 0 || !is_ident(s[i - 1])) {
-            let events: BTreeSet<String> = open.iter().flat_map(|o| o.3.clone()).collect();
-            if !events.is_empty() {
-                found.wraps.entry(fn_at(i)).or_default().extend(events);
+        if is_ident(s[i]) && (i == 0 || !(is_ident(s[i - 1]) || s[i - 1] == b'.')) {
+            let len = s[i..]
+                .iter()
+                .position(|&b| !is_ident(b))
+                .unwrap_or(s.len() - i);
+            let word = &src[i..i + len];
+            let f = fn_at(i);
+            let names = kids.entry(f.clone()).or_default();
+            if word == "children" || names.contains(word) {
+                if let Some(bound) = let_name(src, i) {
+                    names.insert(bound);
+                }
+                let events: BTreeSet<String> = open.iter().flat_map(|o| o.3.clone()).collect();
+                if !events.is_empty() {
+                    found.wraps.entry(f).or_default().extend(events);
+                }
             }
+            i += len;
+            continue;
         }
         if s[i] != b'<' {
             i += 1;
@@ -325,6 +400,10 @@ fn scan_source(src: &str, known: &Components) -> (Vec<Nested>, Components) {
         let Some(tag) = tag_at(s, i) else {
             i += 1;
             continue;
+        };
+        let tag = Tag {
+            name: real(tag.name),
+            ..tag
         };
         let component = tag.name.starts_with(|c: char| c.is_ascii_uppercase());
         if tag.closing {
@@ -368,7 +447,7 @@ fn scan_source(src: &str, known: &Components) -> (Vec<Nested>, Components) {
 }
 
 /// `(file, nested pairs)` for every file under `src`.
-fn scan(src: &Path) -> Vec<(String, Vec<Nested>)> {
+fn scan(src: &Path) -> (Vec<(String, Vec<Nested>)>, Components) {
     let mut files = Vec::new();
     rust_files(src, &mut files);
     files.sort();
@@ -402,17 +481,18 @@ fn scan(src: &Path) -> Vec<(String, Vec<Nested>)> {
         }
         known = next;
     }
-    sources
+    let pairs = sources
         .iter()
         .map(|(rel, text)| (rel.clone(), scan_source(text, &known).0))
-        .collect()
+        .collect();
+    (pairs, known)
 }
 
 #[test]
 fn no_listener_sits_inside_one_for_the_same_event() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut found: BTreeMap<(String, String, String), Vec<Nested>> = BTreeMap::new();
-    for (file, pairs) in scan(&src) {
+    for (file, pairs) in scan(&src).0 {
         for n in pairs {
             found
                 .entry((file.clone(), n.outer_fn.clone(), n.event.clone()))
@@ -564,5 +644,69 @@ fn a_component_with_a_listener_counts_inside_a_listening_element() {
             .map(|n| (n.outer_line, n.inner_line))
             .collect::<Vec<_>>(),
         vec![(2, 3)]
+    );
+    // The same component by its path, or imported under another name.
+    let by_path =
+        "fn Card() { view! {\n<article on:click=open>\n<super::menu::Menu/>\n</article> } }";
+    assert_eq!(scan_source(by_path, &known).0.len(), 1);
+    let open_close = "fn Card() { view! {\n<article on:click=open>\n<super::menu::Menu>\n\
+                      </super::menu::Menu>\n<button on:click=b></button>\n</article> } }";
+    assert_eq!(scan_source(open_close, &known).0.len(), 2);
+    let aliased = "use super::menu::{Menu as Options, Other};\n\
+                   fn Card() { view! {\n<article on:click=open>\n<Options/>\n</article> } }";
+    assert_eq!(scan_source(aliased, &known).0.len(), 1);
+}
+
+#[test]
+fn a_component_keeps_its_children_under_any_name() {
+    let kinds = [
+        "#[component] pub fn Box(children: Children) -> impl IntoView {\n\
+         view! { <div on:click=c>{children()}</div> } }",
+        "fn Box(children: ChildrenFn) -> impl IntoView {\n\
+         let kept = StoredValue::new(children);\n\
+         view! { <div on:click=c>{kept.with_value(|k| k())}</div> } }",
+        "fn Box(children: ChildrenFn) -> impl IntoView {\n\
+         let kept =\n    StoredValue::new(Some(children));\n\
+         view! { <div on:click=c>{move || kept.with_value(|k| k.as_ref().map(|k| k()))}</div> } }",
+        "fn Box(children: Option<ChildrenFn>) -> impl IntoView {\n\
+         view! { <div on:click=c>{children.map(|c| c())}</div> } }",
+    ];
+    for src in kinds {
+        let (_, known) = scan_source(src, &Components::default());
+        assert!(known.wraps.contains_key("Box"), "{src}");
+    }
+    // `children` outside the element does not count.
+    let outside = "fn Box(children: Children) -> impl IntoView {\n\
+                   let c = children();\n view! { <div on:click=c></div> } }";
+    assert!(
+        !scan_source(outside, &Components::default())
+            .1
+            .wraps
+            .contains_key("Box")
+    );
+}
+
+#[test]
+fn the_scan_knows_the_components_used_by_their_path() {
+    // `<quick_menu::QuickMenu>`, `<memory_settings::MemoryToast/>`,
+    // `<super::lib_ui::Modal>`: each brings what it listens for and what
+    // it wraps its children in to where it is used.
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let (_, known) = scan(&src);
+    for name in [
+        "QuickMenu",
+        "MemoryToast",
+        "PlusMenu",
+        "ConversationMenu",
+        "Modal",
+    ] {
+        assert!(
+            known.listens.get(name).is_some_and(|e| e.contains("click")),
+            "{name} listens for clicks"
+        );
+    }
+    assert!(
+        known.wraps.contains_key("Modal"),
+        "Modal wraps its children"
     );
 }
