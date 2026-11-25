@@ -594,7 +594,7 @@ fn skill_export_copies_a_personal_skill_to_claude_code_once() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let dest = home.path().join(".claude/skills/tea-house");
+    let dest = home.path().join(".claude").join("skills").join("tea-house");
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
         format!("copied to {}", dest.display())

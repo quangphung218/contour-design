@@ -236,7 +236,7 @@ pub async fn export(
     }
     let home = agent_home(&state.runs.engine.config().base_env)
         .ok_or_else(|| ApiErr::internal("no home folder"))?;
-    let dest_root = home.join(".claude/skills");
+    let dest_root = home.join(".claude").join("skills");
     let root = user_root(&state);
     let id = entry.info.id.clone();
     let skill_id = id.clone();
