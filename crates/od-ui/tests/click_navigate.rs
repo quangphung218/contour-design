@@ -147,7 +147,7 @@ fn calls(line: &str) -> usize {
 }
 
 /// Whether `line` takes a navigate (`use_navigate()`, `use_leave()`, or a
-/// clone of one) without naming it `navigate`, or wraps it.
+/// clone of one) without naming it `navigate`, wraps it, or hands it on.
 fn renamed(line: &str) -> bool {
     let code = code(line).trim();
     if code.contains("fn use_leave") {
@@ -163,7 +163,33 @@ fn renamed(line: &str) -> bool {
             });
         }
     }
-    code.contains("use_navigate()") || code.contains("use_leave()")
+    code.contains("use_navigate()") || code.contains("use_leave()") || moved(code)
+}
+
+/// Whether `code` hands `navigate` (or `navigate.clone()`) on as a value
+/// (`let go = navigate;`, `StoredValue::new(navigate)`,
+/// `open_now(navigate.clone(), path)`): whatever receives it calls it under
+/// another name. `let navigate = navigate.clone();` keeps the name.
+fn moved(code: &str) -> bool {
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    code.match_indices("navigate").any(|(i, word)| {
+        let before = code[..i].trim_end();
+        let mut after = &code[i + word.len()..];
+        if code[..i]
+            .chars()
+            .next_back()
+            .is_some_and(|c| ident(c) || c == '.')
+            || after.chars().next().is_some_and(ident)
+        {
+            return false;
+        }
+        after = after.strip_prefix(".clone()").unwrap_or(after);
+        if after.trim_start().starts_with('(') {
+            return false; // a call: counted by `calls`
+        }
+        let handed = before.ends_with(['=', '(', ',', '&', '[', '{']);
+        handed && !before.ends_with("let navigate =")
+    })
 }
 
 /// `(file, fn) → calls`, and the `(file, fn)` sites that rename it.
@@ -279,4 +305,17 @@ fn the_scan_sees_a_call_of_navigate_only() {
         "let navigate = StoredValue::new_local(use_navigate());"
     ));
     assert!(!renamed("pub fn use_leave() -> impl Fn(&str) + Clone {"));
+    assert!(renamed("    let go = navigate;"));
+    assert!(renamed(
+        "on:click=move |_| open_now(navigate.clone(), path.clone())>"
+    ));
+    assert!(renamed("let kept = StoredValue::new(navigate);"));
+    assert!(renamed(
+        "let (navigate, path) = (navigate.clone(), path.to_owned());"
+    ));
+    assert!(!renamed("let navigate = navigate;"));
+    assert!(!renamed(
+        "let open_page = super::leave_guard::use_open_after_click();"
+    ));
+    assert!(!renamed("Ok(v) => navigate(&path, Default::default()),"));
 }

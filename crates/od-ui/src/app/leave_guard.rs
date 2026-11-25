@@ -147,7 +147,8 @@ pub fn use_open_after_click() -> impl Fn(&str) + Clone + Send + Sync + 'static {
     let navigate = use_leave();
     let tasks = super::tasks::Tasks::here();
     move |path: &str| {
-        let (navigate, path) = (navigate.clone(), path.to_owned());
+        let navigate = navigate.clone();
+        let path = path.to_owned();
         tasks.spawn(async move {
             gloo_timers::future::TimeoutFuture::new(0).await;
             navigate(&path);
