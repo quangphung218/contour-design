@@ -8,7 +8,7 @@
 
 use super::composer::close_outside;
 use super::icons::{Glyph, icon};
-use super::leave_guard::use_leave;
+use super::leave_guard::use_open_after_click;
 use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{Locale, T, t};
@@ -70,7 +70,7 @@ const SECTIONS: [(&str, T, Glyph); 4] = [
 pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     let shell = Shell::get();
     let tasks = Tasks::here();
-    let navigate = use_leave();
+    let open_page = use_open_after_click();
     let open = RwSignal::new(false);
     let wrap = NodeRef::<Div>::new();
     close_outside(open, wrap);
@@ -97,8 +97,8 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
             Err(e) => show(Err(e)),
         });
     };
-    let nav_docs = navigate.clone();
-    let go_docs = Callback::new(move |()| nav_docs("/docs"));
+    let to_docs = open_page.clone();
+    let go_docs = Callback::new(move |()| to_docs("/docs"));
     // The desktop Help menu.
     let go_docs_menu = move || go_docs.run(());
     let menu = window_event_listener(
@@ -133,7 +133,7 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     };
     let go = move |href: String| {
         open.set(false);
-        navigate(&href);
+        open_page(&href);
     };
     let go_section = go.clone();
     view! {

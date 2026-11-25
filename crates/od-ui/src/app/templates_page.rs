@@ -293,6 +293,7 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
 fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoView {
     let tasks = Tasks::here();
     let navigate = use_navigate();
+    let open_page = super::leave_guard::use_open_after_click();
     let id = template.info.id.clone();
     let name = name_of(&template);
     let src = example_url(&id);
@@ -309,8 +310,8 @@ fn TemplatePreview(template: SkillSummary, on_close: Callback<()>) -> impl IntoV
 
     let use_it = {
         let id = id.clone();
-        let navigate = navigate.clone();
-        move |_| navigate(&format!("/?template={}", api::seg(&id)), Default::default())
+        let open_page = open_page.clone();
+        move |_| open_page(&format!("/?template={}", api::seg(&id)))
     };
     let remix = {
         let id = id.clone();
@@ -430,7 +431,7 @@ fn PromptGallery(
     surface: &'static str,
 ) -> impl IntoView {
     let tasks = Tasks::here();
-    let navigate = use_navigate();
+    let open_page = super::leave_guard::use_open_after_click();
     let category = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
     let copied = RwSignal::new(None::<String>);
@@ -471,7 +472,7 @@ fn PromptGallery(
                         let id = p.id.clone();
                         let path = format!("/api/prompt-templates/{}/{}", surface, api::seg(&p.id));
                         let go = format!("/media?template={}/{}", surface, api::seg(&p.id));
-                        let navigate = navigate.clone();
+                        let open_page = open_page.clone();
                         let license = p.source["license"].as_str().unwrap_or_default().to_owned();
                         let author = p.source["author"].as_str().map(str::to_owned);
                         let id_copied = id.clone();
@@ -499,7 +500,7 @@ fn PromptGallery(
                                     }>
                                         {move || if copied.get().as_deref() == Some(id_copied.as_str()) { view! { {icon(Glyph::Check)}{t(T::Copied)} }.into_any() } else { view! { {icon(Glyph::Duplicate)}{t(T::CopyPrompt)} }.into_any() }}
                                     </button>
-                                    <button class="btn small" data-testid="prompt-generate" on:click=move |_| navigate(&go, Default::default())>{icon(Glyph::Sparkle)}{t(T::Generate)}</button>
+                                    <button class="btn small" data-testid="prompt-generate" on:click=move |_| open_page(&go)>{icon(Glyph::Sparkle)}{t(T::Generate)}</button>
                                 </div>
                             </article>
                         }
