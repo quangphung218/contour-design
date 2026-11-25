@@ -10,7 +10,8 @@
 // buttons working; the mode tabs fit at 375 px; From agent CLI: the skills
 // of a temp HOME, an empty list, a load error and Try again, a filter with
 // no match, a bundled id not picked, a 409 by its row, an import landing
-// late never closes what is being typed; Save as skill from the
+// late never closes what is being typed; Copy to Claude Code (into the
+// temp HOME, once, a warning for a skill that calls `od`); Save as skill from the
 // Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
@@ -925,6 +926,64 @@ try {
   await page.locator('[data-testid="skill-row"][data-id="ad-creative"]').waitFor();
   assert.ok(await pressed('scope-official'), 'a scope picked stays');
   results.skillsDefault = 'ok';
+
+  // ------------------------------------------------- copy to Claude Code
+  // A Personal skill goes to the daemon's HOME/.claude/skills with its side
+  // files; a second copy says Claude Code has it and changes nothing; a
+  // skill that calls `od` warns first and still copies; Official has none.
+  const claudeSkills = join(home, '.claude', 'skills');
+  await page.locator('[data-testid="skill-row"][data-id="ad-creative"] .plugin-row-main').click();
+  await page.getByTestId('skill-body').waitFor();
+  assert.equal(await page.getByTestId('skill-export').count(), 0, 'no copy for an Official skill');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByTestId('scope-personal').click();
+  await page.locator('[data-testid="skill-row"][data-id="tea-b"] .plugin-row-main').click();
+  await page.getByTestId('skill-body').waitFor();
+  await page.getByTestId('skill-export').click();
+  const copied = page.getByTestId('skill-export-done');
+  await copied.waitFor();
+  assert.equal(await copied.textContent(), `Copied to ${join(claudeSkills, 'tea-b')}`);
+  assert.equal(await page.getByTestId('skill-export-warning').count(), 0, 'no warning for a plain skill');
+  assert.ok(readFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'utf8').includes('Use leaf green.'), 'SKILL.md copied');
+  assert.ok(existsSync(join(claudeSkills, 'tea-b', 'assets', 'tokens.css')), 'side files copied');
+  writeFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'edited in Claude Code');
+  await page.getByTestId('skill-export').click();
+  const taken = page.getByTestId('skill-export-failed');
+  await taken.waitFor();
+  assert.match(await taken.textContent(), /already has a skill named tea-b/);
+  assert.equal(await copied.count(), 0, 'the earlier path is gone');
+  assert.equal(readFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'utf8'), 'edited in Claude Code', 'not written over');
+  await page.getByRole('button', { name: 'Back' }).click();
+  // Calls Contour's tools: warned before anything is copied, then copied.
+  const odSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea photos', body: 'Run `$OD_BIN media generate` for each photo.' }) });
+  assert.equal(odSkill.id, 'tea-photos');
+  await page.goto(`${BASE}/skills?scope=personal`);
+  await page.locator('[data-testid="skill-row"][data-id="tea-photos"] .plugin-row-main').click();
+  await page.getByTestId('skill-body').waitFor();
+  await page.getByTestId('skill-export').click();
+  const warning = page.getByTestId('skill-export-warning');
+  await warning.waitFor();
+  assert.match(await warning.textContent(), /This skill calls Contour tools; it may not work outside Contour/);
+  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'nothing copied before the answer');
+  await warning.getByRole('button', { name: 'Cancel' }).click();
+  await warning.waitFor({ state: 'detached' });
+  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'Cancel copies nothing');
+  await page.getByTestId('skill-export').click();
+  await page.getByTestId('skill-export-anyway').click();
+  await page.getByTestId('skill-export-done').waitFor();
+  await warning.waitFor({ state: 'detached' });
+  assert.ok(existsSync(join(claudeSkills, 'tea-photos', 'SKILL.md')), 'copied anyway');
+  await shots('skill-copied-to-claude');
+  // At 375 px the four buttons and the long path stay inside the detail.
+  await page.setViewportSize({ width: 375, height: 812 });
+  const narrow = await page.getByTestId('skill-detail').evaluate((root) => {
+    const box = root.getBoundingClientRect();
+    const parts = [...root.querySelectorAll('.plugin-hero button, [data-testid="skill-export-done"]')];
+    return { out: parts.filter((el) => { const r = el.getBoundingClientRect(); return r.left < box.left - 0.5 || r.right > box.right + 0.5; }).length, parts: parts.length };
+  });
+  await page.setViewportSize({ width: 1360, height: 900 });
+  assert.deepEqual(narrow, { out: 0, parts: 5 }, 'buttons and path fit at 375 px');
+  results.copyToClaude = 'ok';
 
   // ------------------------------------------------------ save as skill
   // "+" ▸ Save as skill: off before a turn has finished and while one

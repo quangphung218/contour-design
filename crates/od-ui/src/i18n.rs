@@ -1238,6 +1238,12 @@ messages! {
     AgentSkillsNoMatch => "No skills match the search.", "Không có skill nào khớp tìm kiếm.";
     SkillNameTaken => "A skill named {0} already exists", "Đã có skill tên {0}";
     AgentSkillsFailed => "Could not read the agent skills: {0}", "Không đọc được skill của agent: {0}";
+    CopyToClaudeCode => "Copy to Claude Code", "Chép sang Claude Code";
+    CopiedToClaudeCode => "Copied to {0}", "Đã chép vào {0}";
+    ClaudeCodeHasSkill => "Claude Code already has a skill named {0} in ~/.claude/skills. Nothing was changed.", "Claude Code đã có skill tên {0} trong ~/.claude/skills. Không có gì bị thay đổi.";
+    SkillCallsContour => "This skill calls Contour tools; it may not work outside Contour.", "Skill này gọi công cụ của Contour; ngoài Contour có thể không chạy.";
+    CopyAnyway => "Copy anyway", "Vẫn chép";
+    CopyToClaudeFailed => "Could not copy: {0}", "Không chép được: {0}";
     MediaPageSub => "Every image, video and audio file across projects. Generate more with the providers you configured.", "Mọi ảnh, video và âm thanh trong các project. Sinh thêm bằng provider đã cấu hình.";
     GenerateMedia => "Generate", "Sinh media";
     Library => "Library", "Thư viện";

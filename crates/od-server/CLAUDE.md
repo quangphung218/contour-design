@@ -74,6 +74,12 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `tests/library.rs::remix_brings_every_file_its_example_uses`, `tests/library.rs::remix_copies_only_what_the_example_loads`
     - `tests/library.rs::remix_copies_past_the_export_limits`, `tests/library.rs::remix_skips_what_it_cannot_follow`
     - `tests/library.rs::remix_keeps_an_example_that_is_not_utf8`
+15. "Copy to Claude Code" (`POST /api/skills/{id}/export`) copies only a Personal skill into the agents'
+    `HOME/.claude/skills/<id>` (the `HOME` "From agent CLI" reads) and never writes over anything there:
+    an entry of that name in any case or Unicode form (`name_key`, folder, file or link) is a 409. Links are
+    not followed, the copy is built in a hidden folder and renamed (`od-content` `user_content::export_skill`).
+    - `tests/library.rs::a_personal_skill_is_copied_to_claude_code_once`, `tests/library.rs::copy_to_claude_code_follows_no_link`
+    - `../od-content/src/user_content.rs::export_copies_a_user_skill_and_never_writes_over`, `::export_follows_no_link`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).

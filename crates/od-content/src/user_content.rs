@@ -314,6 +314,91 @@ pub fn user_skill_exists(user_root: &Path, id: &str) -> bool {
     })
 }
 
+/// The first entry of `dir` whose name is `id` in any case or Unicode
+/// form, of any kind (folder, file, link, broken link); hidden entries
+/// (a copy in progress) do not count.
+fn entry_like(dir: &Path, id: &str) -> Result<Option<String>, WriteError> {
+    let key = od_contracts::name_key(id);
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io(e)),
+    };
+    Ok(entries
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .find(|name| !name.starts_with('.') && od_contracts::name_key(name) == key))
+}
+
+/// One export into an agent's skills at a time in this process: the check
+/// for an entry of that name, the copy and the rename are one step.
+static EXPORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Copies the user skill `id` in `source` (a folder right in `user_root`:
+/// its `SKILL.md` and side files; links and hidden entries are skipped)
+/// into `<dest_root>/<id>`, an agent
+/// CLI's skills (`~/.claude/skills`). Never writes over anything: an entry
+/// of `dest_root` named `id` in any case or Unicode form, of any kind, is
+/// [`WriteError::Exists`]. The copy is built in a hidden folder of
+/// `dest_root` and renamed into place; nothing is left on failure.
+/// Returns the folder written.
+///
+/// # Errors
+/// [`WriteError::BadRequest`] for an invalid id, [`WriteError::NotFound`]
+/// when `source` is no user skill folder (outside `user_root`, a link, or
+/// its `SKILL.md` missing or a link), [`WriteError::Exists`],
+/// [`WriteError::Io`].
+pub fn export_skill(
+    user_root: &Path,
+    source: &Path,
+    id: &str,
+    dest_root: &Path,
+) -> Result<PathBuf, WriteError> {
+    if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
+        return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
+    }
+    let not_found = || WriteError::NotFound(format!("no user skill {id:?}"));
+    // The folder itself and its SKILL.md, not what a link points at; and
+    // the folder right in the user skills, not one a link leads to.
+    let in_root = user_root.canonicalize().ok().is_some_and(|root| {
+        source
+            .parent()
+            .and_then(|p| p.canonicalize().ok())
+            .is_some_and(|p| p == root)
+    });
+    if !in_root
+        || !std::fs::symlink_metadata(source).is_ok_and(|m| m.is_dir())
+        || !std::fs::symlink_metadata(source.join("SKILL.md")).is_ok_and(|m| m.is_file())
+    {
+        return Err(not_found());
+    }
+    std::fs::create_dir_all(dest_root).map_err(io)?;
+    // Checked and placed in one step: no other export lands in between.
+    let _one = EXPORT_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(name) = entry_like(dest_root, id)? {
+        return Err(WriteError::Exists(format!("skill {name:?}")));
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    let tmp = dest_root.join(format!(
+        ".contour-export-{id}-{}-{nanos}",
+        std::process::id()
+    ));
+    if let Err(e) = copy_dir(source, &tmp, MAX_PLUGIN_BYTES) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
+    let dest = dest_root.join(id);
+    std::fs::rename(&tmp, &dest).map_err(|e| {
+        let _ = std::fs::remove_dir_all(&tmp);
+        io(e)
+    })?;
+    Ok(dest)
+}
+
 /// Copies `source` into `<user_root>/<id>`, replacing an older copy: built
 /// in a hidden folder, then renamed into place. Nothing is left behind on
 /// failure.
@@ -898,5 +983,140 @@ mod tests {
         assert!(!is_bare_skill(&loose));
         let bad = skill_dir(tmp.path(), "bad", "---\nname: \"a b\"\n---\n");
         assert!(!is_bare_skill(&bad));
+    }
+
+    /// "Copy to Claude Code": the skill and its side files land in the
+    /// agent's folder; links are not followed, nothing is written over,
+    /// and nothing is left behind when it is refused.
+    #[test]
+    fn export_copies_a_user_skill_and_never_writes_over() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let tea = skill_dir(&user, "tea", "---\nname: tea\n---\nUse cream.\n");
+        let written = export_skill(&user, &tea, "tea", &dest).unwrap();
+        assert_eq!(written, dest.join("tea"));
+        assert_eq!(
+            std::fs::read_to_string(dest.join("tea/SKILL.md")).unwrap(),
+            "---\nname: tea\n---\nUse cream.\n"
+        );
+        assert!(dest.join("tea/assets/tokens.css").is_file());
+        // Again, or in another case or Unicode form: refused, the copy
+        // there stays as it was.
+        std::fs::write(dest.join("tea/SKILL.md"), "mine").unwrap();
+        // Ids are ASCII; a name there may not be: the Kelvin sign `K`
+        // folds to `k`, one folder with `kiwi` on a Mac.
+        let kiwi = skill_dir(&user, "kiwi", "---\nname: kiwi\n---\n");
+        std::fs::create_dir_all(dest.join("\u{212a}iwi")).unwrap();
+        for (dir, id) in [(&tea, "tea"), (&tea, "TEA"), (&kiwi, "kiwi")] {
+            let got = export_skill(&user, dir, id, &dest);
+            assert!(matches!(got, Err(WriteError::Exists(_))), "{id}: {got:?}");
+        }
+        assert_eq!(
+            std::fs::read_to_string(dest.join("tea/SKILL.md")).unwrap(),
+            "mine"
+        );
+        assert_eq!(names(&dest), ["tea", "\u{212a}iwi"]);
+        // A file or a link of that name is no place to write either.
+        let mint = skill_dir(&user, "mint", "---\nname: mint\n---\n");
+        std::fs::write(dest.join("Mint"), "a file").unwrap();
+        assert!(matches!(
+            export_skill(&user, &mint, "mint", &dest),
+            Err(WriteError::Exists(_))
+        ));
+        assert_eq!(
+            std::fs::read_to_string(dest.join("Mint")).unwrap(),
+            "a file"
+        );
+        // A bad id: refused before anything is read or written.
+        for id in ["", "..", "a/b", ".hidden", "_x", "a b"] {
+            let got = export_skill(&user, &tea, id, &dest);
+            assert!(
+                matches!(got, Err(WriteError::BadRequest(_))),
+                "{id:?}: {got:?}"
+            );
+        }
+        // A folder outside the user skills, or missing its SKILL.md.
+        let outside = skill_dir(tmp.path(), "outside", "---\nname: outside\n---\n");
+        assert!(matches!(
+            export_skill(&user, &outside, "outside", &dest),
+            Err(WriteError::NotFound(_))
+        ));
+        let bare = user.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        assert!(matches!(
+            export_skill(&user, &bare, "bare", &dest),
+            Err(WriteError::NotFound(_))
+        ));
+        assert_eq!(
+            names(&dest),
+            ["Mint", "tea", "\u{212a}iwi"],
+            "nothing left behind"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn export_follows_no_link() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let secret = tmp.path().join("secret");
+        std::fs::create_dir_all(&secret).unwrap();
+        std::fs::write(secret.join("key.txt"), "s3cret").unwrap();
+        // A skill holding links: they are not copied.
+        let tea = skill_dir(&user, "tea", "---\nname: tea\n---\n");
+        symlink(&secret, tea.join("assets/linked")).unwrap();
+        symlink(secret.join("key.txt"), tea.join("key.txt")).unwrap();
+        export_skill(&user, &tea, "tea", &dest).unwrap();
+        assert!(!dest.join("tea/assets/linked").exists());
+        assert!(!dest.join("tea/key.txt").exists());
+        assert!(dest.join("tea/assets/tokens.css").is_file());
+        // A skill folder that is a link, or whose SKILL.md is one.
+        let away = skill_dir(tmp.path(), "away", "---\nname: away\n---\n");
+        symlink(&away, user.join("away")).unwrap();
+        assert!(matches!(
+            export_skill(&user, &user.join("away"), "away", &dest),
+            Err(WriteError::NotFound(_))
+        ));
+        let md = user.join("md");
+        std::fs::create_dir_all(&md).unwrap();
+        symlink(away.join("SKILL.md"), md.join("SKILL.md")).unwrap();
+        assert!(matches!(
+            export_skill(&user, &md, "md", &dest),
+            Err(WriteError::NotFound(_))
+        ));
+        // A broken link of that name in the agent's folder: refused, and
+        // nothing is written where it points.
+        let mint = skill_dir(&user, "mint", "---\nname: mint\n---\n");
+        symlink(tmp.path().join("nowhere"), dest.join("mint")).unwrap();
+        assert!(matches!(
+            export_skill(&user, &mint, "mint", &dest),
+            Err(WriteError::Exists(_))
+        ));
+        assert!(!tmp.path().join("nowhere").exists());
+        assert_eq!(names(&dest), ["mint", "tea"]);
+    }
+
+    /// A copy that fails half way (a file it cannot read) leaves nothing in
+    /// the agent's folder, not even its hidden work folder.
+    #[cfg(unix)]
+    #[test]
+    fn an_export_that_fails_leaves_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let tea = skill_dir(&user, "tea", "---\nname: tea\n---\n");
+        let locked = tea.join("assets/locked.css");
+        std::fs::write(&locked, "x").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&locked).is_ok() {
+            return; // root reads it anyway
+        }
+        let got = export_skill(&user, &tea, "tea", &dest);
+        assert!(matches!(got, Err(WriteError::Io(_))), "{got:?}");
+        assert!(names(&dest).is_empty(), "{:?}", names(&dest));
     }
 }

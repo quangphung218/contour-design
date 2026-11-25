@@ -242,3 +242,99 @@ pub struct CraftDetail {
     pub id: String,
     pub body: String,
 }
+
+/// `od` subcommands: `od media …` in a skill is a Contour tool.
+const OD_COMMANDS: &[&str] = &[
+    "daemon", "doctor", "export", "files", "lint", "mcp", "media", "plugin", "project", "research",
+    "run", "skill", "tools",
+];
+
+/// Variables a Contour run gives its agent; outside Contour they are unset.
+const OD_VARS: &[&str] = &["OD_BIN", "OD_DAEMON_URL", "OD_TOOL_TOKEN"];
+
+/// Whether a skill's text calls Contour's own tools: the `od` CLI as a
+/// command (`od media generate`, `$OD_BIN`), the run's `OD_DAEMON_URL` or
+/// `OD_TOOL_TOKEN`, or the daemon's `/api/` on loopback. Such a skill may
+/// not work in an agent CLI outside Contour; "Copy to Claude Code" warns
+/// before it copies (it still copies).
+#[must_use]
+pub fn calls_contour_tools(text: &str) -> bool {
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let alone = |at: usize, len: usize| {
+        !text[..at].chars().next_back().is_some_and(word)
+            && !text[at + len..].chars().next().is_some_and(word)
+    };
+    let found =
+        |needle: &str, ok: &dyn Fn(usize) -> bool| text.match_indices(needle).any(|(at, _)| ok(at));
+    if OD_VARS.iter().any(|v| found(v, &|at| alone(at, v.len()))) {
+        return true;
+    }
+    // `od` where a command starts: not part of a word, path or flag.
+    let od_command = |at: usize| {
+        let before = text[..at].chars().next_back();
+        let starts = before.is_none_or(|c| {
+            c.is_whitespace() || matches!(c, '`' | '(' | '|' | ';' | '&' | '$' | '"' | '\'')
+        });
+        let rest = text[at + 3..].trim_start_matches([' ', '\t']);
+        starts
+            && OD_COMMANDS.iter().any(|cmd| {
+                rest.strip_prefix(cmd)
+                    .is_some_and(|after| !after.chars().next().is_some_and(|c| word(c) || c == '-'))
+            })
+    };
+    if found("od ", &od_command) || found("od\t", &od_command) {
+        return true;
+    }
+    // `http://127.0.0.1:7456/api/…`: the daemon, not a site's API.
+    found("/api/", &|at| {
+        let host = text[..at].trim_end_matches(|c: char| c.is_ascii_digit());
+        host.len() < at
+            && host.strip_suffix(':').is_some_and(|h| {
+                h.ends_with("localhost") || h.ends_with("127.0.0.1") || h.ends_with("[::1]")
+            })
+    })
+}
+
+#[cfg(test)]
+mod contour_tools_tests {
+    use super::calls_contour_tools;
+
+    #[test]
+    fn a_skill_that_calls_contour_tools_is_told_apart() {
+        let calls = [
+            "Run `od media generate --prompt x`.",
+            "od files read index.html",
+            "```sh\n$ od tools directions\n```",
+            "cat a | od  research search tea",
+            "Call \"$OD_BIN\" media generate.",
+            "Use ${OD_BIN} to export.",
+            "curl \"$OD_DAEMON_URL/api/skills/install\"",
+            "The token is OD_TOOL_TOKEN.",
+            "curl http://127.0.0.1:7456/api/projects",
+            "fetch('http://localhost:3000/api/health')",
+            "(od plugin list)",
+        ];
+        for text in calls {
+            assert!(calls_contour_tools(text), "{text:?}");
+        }
+        let plain = [
+            "Use cream and leaf green.",
+            "The period od 1990 ended.",
+            "Run node media.js",
+            "see https://example.com/api/users",
+            "curl http://localhost/api/x",
+            "Model od-media is a name.",
+            "./od media generate",
+            "--od files",
+            "od mediaplayer",
+            "od files-list",
+            "GOOD_BIN and MY_OD_BIN_X",
+            "OD_BINARY",
+            "Prod run",
+            "",
+        ];
+        for text in plain {
+            assert!(!calls_contour_tools(text), "{text:?}");
+        }
+    }
+}

@@ -17,11 +17,19 @@
 //! - `GET    /api/skills/local-sources`: the skill folders of agent CLIs
 //!   (`~/.claude/skills`, `~/.codex/skills`…, one level, read only) with
 //!   whether each is imported; "From agent CLI" installs the ones picked.
+//! - `POST   /api/skills/:id/export` `{target: "claude"}`: "Copy to Claude
+//!   Code" copies a Personal skill (`SKILL.md` and side files) into
+//!   `<agents' HOME>/.claude/skills/<id>`; 201 `{id, path, contourTools}`.
+//!   Only a user skill (403 otherwise); 409 when that folder has an entry
+//!   of that name in any case or Unicode form: nothing is written over.
+//!   `contourTools`: the skill calls `od`, `$OD_BIN`… (it may not work
+//!   outside Contour).
 
 use super::write_and_reload;
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use od_content::user_content::{self, SkillDraft};
@@ -35,6 +43,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/skills/install", post(install))
         .route("/api/skills/local-sources", get(local_sources))
         .route("/api/skills/{id}", put(save).delete(delete))
+        .route("/api/skills/{id}/export", post(export))
 }
 
 #[derive(Debug, Deserialize)]
@@ -198,4 +207,61 @@ pub async fn delete(
     })
     .await?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExportBody {
+    target: String,
+}
+
+pub async fn export(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<ExportBody>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    if body.target != "claude" {
+        return Err(ApiErr::bad_request("target must be \"claude\""));
+    }
+    if !od_content::design_systems::is_valid_id(&id) || id.starts_with(['.', '_']) {
+        return Err(ApiErr::bad_request(format!("invalid skill id {id:?}")));
+    }
+    let entry = state
+        .content
+        .snapshot()
+        .find_skill(&id)
+        .cloned()
+        .ok_or_else(|| ApiErr::not_found("skill not found"))?;
+    if entry.info.source != ContentSource::User {
+        return Err(ApiErr::forbidden("only Personal skills can be copied"));
+    }
+    let home = agent_home(&state.runs.engine.config().base_env)
+        .ok_or_else(|| ApiErr::internal("no home folder"))?;
+    let dest_root = home.join(".claude/skills");
+    let root = user_root(&state);
+    let id = entry.info.id.clone();
+    let skill_id = id.clone();
+    let (path, md) = crate::spawn::spawn_blocking_in_span(move || {
+        let path = user_content::export_skill(&root, &entry.dir, &skill_id, &dest_root)?;
+        let md = std::fs::read_to_string(path.join("SKILL.md")).unwrap_or_default();
+        Ok::<_, user_content::WriteError>((path, md))
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))?
+    .map_err(|e| match e {
+        user_content::WriteError::Exists(_) => ApiErr::new(
+            StatusCode::CONFLICT,
+            od_contracts::ErrorCode::Conflict,
+            format!("Claude Code already has a skill named {id:?} in ~/.claude/skills"),
+        ),
+        other => other.into(),
+    })?;
+    tracing::info!(skill = %id, path = %path.display(), "skill copied to Claude Code");
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "id": id,
+            "path": path,
+            "contourTools": od_contracts::calls_contour_tools(&md),
+        })),
+    ))
 }

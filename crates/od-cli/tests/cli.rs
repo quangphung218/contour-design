@@ -568,6 +568,60 @@ fn doctor_reports_the_data_folder_of_the_daemon_it_asks() {
 }
 
 #[test]
+fn skill_export_copies_a_personal_skill_to_claude_code_once() {
+    let home = tempfile::tempdir().unwrap();
+    let home_str = home.path().to_str().unwrap().to_owned();
+    let d = start_with(false, None, &[], &[("HOME", &home_str)]);
+    let src = tempfile::tempdir().unwrap();
+    let dir = src.path().join("tea");
+    std::fs::create_dir_all(dir.join("assets")).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        "---\nname: tea-house\n---\nRun `$OD_BIN media generate`.\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("assets/tokens.css"), ":root{}").unwrap();
+    let out = od(&d, &["skill", "install", dir.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let out = od(&d, &["skill", "export", "tea-house", "--to", "claude"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let dest = home.path().join(".claude/skills/tea-house");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        format!("copied to {}", dest.display())
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("may not work outside Contour"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(dest.join("assets/tokens.css").is_file());
+    // Twice: refused, and says why.
+    let out = od(&d, &["skill", "export", "tea-house", "--to", "claude"]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("already has a skill"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Only Claude Code; only a Personal skill.
+    let out = od(&d, &["skill", "export", "tea-house", "--to", "codex"]);
+    assert!(!out.status.success());
+    let out = od(&d, &["skill", "export", "demo", "--to", "claude"]);
+    assert!(!out.status.success(), "a bundled skill is not copied");
+    assert!(!home.path().join(".claude/skills/demo").exists());
+}
+
+#[test]
 fn skill_install_copies_a_folder_into_the_user_skills() {
     let d = start(false);
     let src = tempfile::tempdir().unwrap();

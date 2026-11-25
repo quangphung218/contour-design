@@ -120,6 +120,7 @@
 .plugin-hero .plugin-tile { width: 56px; height: 56px; font-size: var(--text-md); border-radius: var(--radius-lg); }
 .plugin-hero h2 { font-size: var(--text-xl); letter-spacing: var(--tracking-tight); margin-bottom: var(--space-1-5); }
 .plugin-hero .muted { margin: var(--space-2) 0 0; max-width: 70ch; }
+.skill-export-done { overflow-wrap: anywhere; }
 .plugin-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-4); align-items: start; }
 .plugin-use, .plugin-meta, .skill-form { display: flex; flex-direction: column; gap: var(--space-3); }
 .plugin-use h3, .plugin-meta h3 { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-base); }

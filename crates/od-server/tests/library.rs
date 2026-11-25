@@ -383,6 +383,173 @@ async fn agent_cli_skills_are_listed_from_the_agents_home() {
     assert_eq!(again["sources"][2]["imported"], false);
 }
 
+/// "Copy to Claude Code": a Personal skill and its side files land in the
+/// agents' `~/.claude/skills/<id>`; never over anything there (any case),
+/// only a Personal skill, only a valid id and target.
+#[tokio::test]
+async fn a_personal_skill_is_copied_to_claude_code_once() {
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude/skills");
+    let export = |id: &str| format!("/api/skills/{id}/export");
+    let to_claude = || Some(json!({ "target": "claude" }));
+    let src = tempfile::tempdir().unwrap();
+    let tea = skill_folder(
+        src.path(),
+        "tea",
+        "---\nname: tea-house\ndescription: Calm tea pages.\n---\n\nUse cream.\n",
+    );
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills/install",
+        Some(json!({ "path": tea.to_string_lossy() })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+
+    let (s, v) = call(&d, "POST", &export("tea-house"), to_claude()).await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(v["id"], "tea-house");
+    assert_eq!(v["contourTools"], false);
+    let dest = claude.join("tea-house");
+    assert_eq!(Path::new(v["path"].as_str().unwrap()), dest);
+    assert!(
+        std::fs::read_to_string(dest.join("SKILL.md"))
+            .unwrap()
+            .contains("Use cream.")
+    );
+    assert!(dest.join("assets/tokens.css").is_file());
+
+    // Twice: 409, the copy there is not written over.
+    std::fs::write(dest.join("SKILL.md"), "edited in Claude Code").unwrap();
+    let (s, v) = call(&d, "POST", &export("tea-house"), to_claude()).await;
+    assert_eq!(s, 409, "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("already has"),
+        "{v}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+        "edited in Claude Code"
+    );
+
+    // A folder there in another case (one folder on macOS): 409 too.
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills",
+        Some(json!({ "name": "Mint", "body": "Run `od media generate` for photos." })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    std::fs::create_dir_all(claude.join("MINT")).unwrap();
+    let (s, v) = call(&d, "POST", &export("mint"), to_claude()).await;
+    assert_eq!(s, 409, "{v}");
+    std::fs::remove_dir(claude.join("MINT")).unwrap();
+    // A skill that calls Contour's tools is copied, and says so.
+    let (s, v) = call(&d, "POST", &export("mint"), to_claude()).await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(v["contourTools"], true);
+
+    // A bundled skill: 403. No such skill: 404.
+    let list = d.get_json("/api/skills").await;
+    let bundled = list["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["source"] == "built-in" && !s["id"].as_str().unwrap().contains(':'))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (s, v) = call(&d, "POST", &export(&bundled), to_claude()).await;
+    assert_eq!(s, 403, "{v}");
+    assert!(!claude.join(&bundled).exists());
+    let (s, v) = call(&d, "POST", &export("no-such-skill"), to_claude()).await;
+    assert_eq!(s, 404, "{v}");
+    // A bad id or another target: 400.
+    for id in ["bad%20id", "a:b", "_x", "caf%C3%A9"] {
+        let (s, v) = call(&d, "POST", &export(id), to_claude()).await;
+        assert_eq!(s, 400, "{id}: {v}");
+    }
+    let (s, v) = call(
+        &d,
+        "POST",
+        &export("tea-house"),
+        Some(json!({ "target": "codex" })),
+    )
+    .await;
+    assert_eq!(s, 400, "{v}");
+    let mut left: Vec<String> = std::fs::read_dir(&claude)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, ["mint", "tea-house"], "nothing else written");
+}
+
+/// A Personal skill folder that is a link (to a folder outside the
+/// skills) is not copied (the index skips it; `export_skill` refuses it
+/// too, see its unit tests); links inside a skill are not followed.
+#[cfg(unix)]
+#[tokio::test]
+async fn copy_to_claude_code_follows_no_link() {
+    use std::os::unix::fs::symlink;
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude/skills");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "s3cret").unwrap();
+    let away = skill_folder(outside.path(), "away", "---\nname: away\n---\nAway.\n");
+    let skills = d.data.join("skills");
+    std::fs::create_dir_all(&skills).unwrap();
+    symlink(&away, skills.join("away")).unwrap();
+    let tea = skill_folder(&skills, "tea", "---\nname: tea\n---\nTea.\n");
+    symlink(outside.path().join("secret.txt"), tea.join("secret.txt")).unwrap();
+    symlink(outside.path(), tea.join("assets/out")).unwrap();
+    // The index reads the skills again on a write.
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills",
+        Some(json!({ "name": "reload", "body": "x" })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+
+    let to_claude = Some(json!({ "target": "claude" }));
+    let (s, v) = call(&d, "POST", "/api/skills/away/export", to_claude.clone()).await;
+    assert_eq!(s, 404, "a linked skill is not copied: {v}");
+    assert!(!claude.join("away").exists());
+    let (s, v) = call(&d, "POST", "/api/skills/tea/export", to_claude).await;
+    assert_eq!(s, 201, "{v}");
+    assert!(claude.join("tea/SKILL.md").is_file());
+    assert!(claude.join("tea/assets/tokens.css").is_file());
+    assert!(!claude.join("tea/secret.txt").exists());
+    assert!(!claude.join("tea/assets/out").exists());
+}
+
 /// "Install from folder": a bare skill goes to the skills; a plugin folder,
 /// or a SKILL.md the skills would refuse, is left to the plugin install
 /// (`{id: null}`, nothing written).

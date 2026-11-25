@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Copy to Claude Code on a Personal skill puts it in ~/.claude/skills, never over an existing one; also `od skill export --to claude`.
+
 ## [0.2.0-beta.65] - 2026-11-25
 
 ### Fixed
