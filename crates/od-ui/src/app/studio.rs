@@ -971,7 +971,10 @@ impl StudioCtx {
                         .context
                         .update(|c| c.retain(|x| !staged.contains(x)));
                     self.conversation_id.set(Some(res.conversation_id));
-                    turn.update(|t| t.run_id = Some(res.run_id.clone()));
+                    turn.update(|t| {
+                        t.run_id = Some(res.run_id.clone());
+                        t.skills.clone_from(&res.skills);
+                    });
                     self.attach(res.run_id, turn, Some(shown.unwrap_or(text)));
                     // The daemon moves them to applying, then resolved or
                     // back to attached when the run ends; mirror it here.
@@ -1388,6 +1391,7 @@ impl StudioCtx {
             turn.update(|t| {
                 *t = AssistantTurn {
                     started_at: t.started_at,
+                    skills: std::mem::take(&mut t.skills),
                     ..AssistantTurn::new()
                 };
             });

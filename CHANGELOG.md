@@ -8,12 +8,19 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Each turn lists the skills its agent got and warns when an @ skill is gone; Your usage counts turns with a skill you picked.
+
+### Fixed
+
+- 'Installed skill' row shows only under Save as skill turns and personal skills (#331).
+
 ## [0.2.0-beta.63] - 2026-11-25
 
 ### Fixed
 
 - Save as skill stays hidden in every conversation of a project once saved, and its Use and Open row survives a reload.
-- The Use and Open row shows only under a Save as skill turn that installed your own skill; a failed save keeps the chip.
 - From agent CLI locks a built-in skill name in any letter case, and picks nothing until your skills have loaded.
 - A folder typed as ~/… works for linked folders, Import folder and project locations, and ~\… in Install from folder.
 

@@ -450,6 +450,7 @@ async fn restart_puts_applying_comments_back_to_attached() {
             attachments: &[],
             agent_id: "claude",
             run_id: "r1",
+            skills: &[],
         })
         .unwrap();
     drop(store);

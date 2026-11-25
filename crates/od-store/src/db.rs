@@ -111,6 +111,11 @@ CREATE TABLE message_event_batches (
     r"
 ALTER TABLE messages ADD COLUMN prepared_message TEXT;
 ",
+    // The skills an assistant turn asked for (`[TurnSkill]`); NULL for a
+    // turn recorded before, which shows none and is not counted.
+    r"
+ALTER TABLE messages ADD COLUMN skills_json TEXT;
+",
 ];
 
 /// Tables that must exist after migration. Used by tests.

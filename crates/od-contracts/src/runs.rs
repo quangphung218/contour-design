@@ -344,6 +344,46 @@ pub struct CreateRunResponse {
     pub client_request_id: Option<String>,
     pub reused: bool,
     pub resumed: bool,
+    /// The skills this turn's agent got, and why ([`Message::skills`]).
+    /// Empty on a reused request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<TurnSkill>,
+}
+
+/// Why a turn's agent got a skill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSource {
+    /// The user picked it for this turn (an `@` chip, or `--skill`).
+    Mention,
+    /// The project's own skill, sent with every turn.
+    Project,
+    /// The plugin applied to the turn brings it.
+    Plugin,
+}
+
+/// A skill asked for in one turn: what the agent got is the ones `found`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnSkill {
+    pub id: String,
+    pub source: SkillSource,
+    /// False when no skill or design template has this id (deleted since):
+    /// the agent did not get it.
+    pub found: bool,
+    /// What the id was found as; `None` when not found. Only a
+    /// [`TurnSkillKind::Skill`] has a skill page (`/skills?skill=`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<TurnSkillKind>,
+}
+
+/// What a turn's skill id names: a skill, or a design template (a Remix
+/// project's `skill_id`), which the agent gets as a skill too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnSkillKind {
+    Skill,
+    DesignTemplate,
 }
 
 /// One run as listed by `GET /api/runs` and `GET /api/runs/:id`.
@@ -501,6 +541,10 @@ pub struct Message {
     /// what the chat shows). `None` for a message the user wrote.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prepared_message: Option<String>,
+    /// An assistant message: the skills its turn asked for, in the order the
+    /// agent got them. Empty for a turn recorded before skills were kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<TurnSkill>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

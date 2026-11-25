@@ -3,7 +3,10 @@
 // chip, media picker, examples, working directory, "+" menu, @ mentions,
 // staged files) → the first turn carries them → Studio composer (attach by
 // button, paste and drop, @ file, / commands, model picker, design system
-// switch) → turn actions (files from this turn, copy, continue remaining
+// switch) → "Skills" under a turn and a warning for one gone, the
+// project's own skill (kept across a reload mid-run), a Remix template not
+// linked, a gone project skill named without `@` → turn
+// actions (files from this turn, copy, continue remaining
 // tasks, design toolbox, quote, reconnect) → conversation rename and delete → chat pane collapse
 // and resize → linked folders and project references → Vietnamese.
 // Screenshots (light and dark) go to $OD_SHOTS or test-results/. Every
@@ -250,6 +253,9 @@ try {
   assert.deepEqual(first.attachments, ['ref.png']);
   assert.deepEqual(first.skillIds, ['web-clone']);
   assert.equal(first.pluginId, 'od-design-refine');
+  // The turn names the skill its agent got, picked with `@`.
+  await page.getByTestId('assistant-msg').first()
+    .locator('[data-testid="turn-skill"][data-id="web-clone"][data-source="mention"]').waitFor();
   await page.getByTestId('assistant-msg').first().getByText('Saw attached files.', { exact: false }).waitFor();
   const project = (await api(`/api/projects/${projectId}`)).project;
   assert.equal(project.metadata.pendingAttachments, undefined, 'staged files cleared once sent');
@@ -470,6 +476,45 @@ try {
       await page.getByTestId('context-chip').first().locator('.chip-x').click();
     }
     results.skillSuggestions = 'ok';
+  }
+
+  // 13c3. "Skills: …" under a turn: the skill taken above, and a warning
+  // for an `@` skill that is gone by the time the turn runs (the request
+  // names one no skill has). The run still goes; both stay after a reload.
+  {
+    const turns = await page.getByTestId('assistant-msg').count();
+    const taken = page.getByTestId('assistant-msg').nth(turns - 1);
+    await taken.locator('[data-testid="turn-skill"][data-id="d3-visualization"]').waitFor();
+    const gone = 'e2e-deleted-skill';
+    const runs = '**/api/runs';
+    await page.route(runs, async (route) => {
+      const req = route.request();
+      if (req.method() !== 'POST') return route.continue();
+      const body = req.postDataJSON();
+      await route.continue({ postData: JSON.stringify({ ...body, skillIds: [...(body.skillIds || []), gone] }) });
+    });
+    await composer.fill('one more pass');
+    await composer.press('Enter');
+    await lastTurnDone(turns + 1);
+    await page.unroute(runs);
+    const last = () => page.getByTestId('assistant-msg').nth(turns);
+    assert.equal(await last().getAttribute('data-state'), 'succeeded', 'the run went without the skill');
+    await last().locator(`[data-testid="turn-skill-missing"][data-id="${gone}"]`).waitFor();
+    assert.match(await last().getByTestId('turn-skill-missing').textContent(), /@e2e-deleted-skill was not found; the agent did not get it/);
+    assert.equal(await last().getByTestId('turn-skills').count(), 0, 'no "Skills" without one the agent got');
+    await page.reload();
+    await page.getByTestId('composer').waitFor();
+    await page.getByTestId('assistant-msg').nth(turns).locator(`[data-testid="turn-skill-missing"][data-id="${gone}"]`).waitFor();
+    await page.getByTestId('assistant-msg').nth(turns - 1).locator('[data-testid="turn-skill"][data-id="d3-visualization"]').waitFor();
+    // A turn without a skill shows none.
+    assert.equal(await page.getByTestId('assistant-msg').nth(1).locator('[data-testid="turn-skill"], [data-testid="turn-skill-missing"]').count(), 0);
+    // The skill's name opens its page; back to the studio.
+    await page.getByTestId('assistant-msg').nth(turns - 1).getByRole('button', { name: 'd3-visualization', exact: true }).click();
+    await page.waitForURL('**/skills?skill=d3-visualization');
+    await page.goBack();
+    // The composer comes before the turns load: wait for all of them.
+    await expectPoll(() => page.getByTestId('assistant-msg').count(), turns + 1, 'turns back after the skill page');
+    results.turnSkills = 'ok';
   }
 
   // 13d. Stick to the bottom: scrolled up while a run streams, new output
@@ -977,6 +1022,56 @@ try {
   const imported = (await api(`/api/projects/${page.url().split('/projects/')[1]}`)).project;
   assert.equal(imported.metadata.baseDir, join(work, 'site'));
   results.fromFolder = 'ok';
+
+  // 17c. Skills the user did not type. A project's own skill is marked
+  // "(from project)" and stays on a turn reloaded while it still runs; a
+  // Remix project's design template is named, not linked (it has no skill
+  // page); a project skill that is gone is warned about without an `@`.
+  {
+    const project = async (body) => {
+      const r = await api('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      return r.project.id;
+    };
+    const first = () => page.getByTestId('assistant-msg').first();
+    const sendIn = async (id, text) => {
+      await page.goto(`${BASE}/projects/${id}`);
+      await page.getByTestId('composer').fill(text);
+      await page.getByTestId('composer').press('Enter');
+    };
+
+    await sendIn(await project({ name: 'Own skill', skillId: 'd3-visualization' }), 'a slow page');
+    const own = '[data-testid="turn-skill"][data-id="d3-visualization"][data-source="project"][data-kind="skill"]';
+    await first().locator(own).waitFor();
+    assert.match(await first().locator(own).textContent(), /\(from project\)/);
+    // A touch target as tall as the next-step actions on a phone.
+    const wide = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectPoll(async () => (await first().locator(own).locator('button').boundingBox()).height >= 44, true, 'skill name 44 px high at 390');
+    await page.setViewportSize(wide);
+    await until(async () => /step2 /.test(await first().textContent()), 'slow run streaming');
+    await page.reload();
+    await first().locator(own).waitFor();
+    assert.equal(await first().getAttribute('data-state'), 'running', 'reloaded while the run goes on');
+    await until(async () => /step3[0-9] /.test(await first().textContent()), 'the run streams again after the reload');
+    await first().locator(own).waitFor();
+    await lastTurnDone(1);
+
+    const remix = await api('/api/design-templates/blog-post/remix', { method: 'POST' });
+    await sendIn(remix.project.id, 'hello');
+    await lastTurnDone(1);
+    const template = first().locator('[data-testid="turn-skill"][data-id="blog-post"][data-kind="design_template"]');
+    await template.waitFor();
+    assert.equal(await template.locator('button').count(), 0, 'a design template is not a link to a skill page');
+
+    await sendIn(await project({ name: 'Gone skill', skillId: 'e2e-gone-project-skill' }), 'hello');
+    await lastTurnDone(1);
+    const gone = first().locator('[data-testid="turn-skill-missing"][data-id="e2e-gone-project-skill"][data-source="project"]');
+    await gone.waitFor();
+    assert.equal((await gone.textContent()).trim(), 'Project skill e2e-gone-project-skill was not found; the agent did not get it');
+    assert.equal(await first().getAttribute('data-state'), 'succeeded', 'the run went without it');
+
+    results.unaskedSkills = 'ok';
+  }
 
   // 18. Dark screenshots of the new pieces, then Vietnamese strings.
   await page.emulateMedia({ colorScheme: 'dark' });

@@ -3,7 +3,7 @@
 //!
 //! - `GET /api/usage` time to first preview, projects put to use,
 //!   finished runs by failure cause, Stops apart, and how far first-run
-//!   setup got ([`UsageResponse`]).
+//!   setup got, and turns with a skill the user picked ([`UsageResponse`]).
 //! - `POST /api/projects/:id/exported` records the project's first export.
 //!   Exports run in several routes and one is read through `raw`, so the UI
 //!   reports a finished download here. The first preview is recorded by the
@@ -19,17 +19,17 @@ use crate::state::AppState;
 use axum::extract::{Path, State};
 use od_contracts::{
     ENGAGED_TURNS, EngagedUsage, FailureCategory, FirstPreviewUsage, RunCause, RunStatus, RunUsage,
-    SetupMark, SetupStep, SetupUsage, UsageResponse,
+    SetupMark, SetupStep, SetupUsage, SkillTurnsUsage, UsageResponse,
 };
 use od_store::usage::{ProjectUsage, UsageMark};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub async fn usage(State(state): State<AppState>) -> ApiResult<ApiJson<UsageResponse>> {
-    let (since, projects, setup) = state
+    let (since, projects, setup, skill_turns) = state
         .blocking(|s| {
             let (since, projects) = s.project_usage()?;
-            Ok((since, projects, s.setup_marks()?))
+            Ok((since, projects, s.setup_marks()?, s.skill_turns()?))
         })
         .await?;
     let runs = state
@@ -44,6 +44,10 @@ pub async fn usage(State(state): State<AppState>) -> ApiResult<ApiJson<UsageResp
         .collect::<Vec<_>>();
     let mut usage = summarize(since, &projects, &runs);
     usage.setup = setup.map(setup_usage);
+    usage.skill_turns = SkillTurnsUsage {
+        turns: skill_turns.turns,
+        picked: skill_turns.picked,
+    };
     Ok(ApiJson(usage))
 }
 
@@ -145,6 +149,7 @@ pub fn summarize(
             canceled,
         },
         setup: None,
+        skill_turns: SkillTurnsUsage::default(),
     }
 }
 

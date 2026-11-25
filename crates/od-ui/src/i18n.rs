@@ -1754,6 +1754,15 @@ messages! {
     SkillInstalledNamed => "Installed skill {0}", "Đã cài skill {0}";
     OpenSkill => "Open skill", "Mở skill";
     UseSkillMention => "Use @{0}", "Dùng @{0}";
+    TurnSkills => "Skills", "Skill";
+    TurnSkillFromProject => "(from project)", "(của project)";
+    TurnSkillFromPlugin => "(from plugin)", "(của plugin)";
+    TurnSkillNotFound => "@{0} was not found; the agent did not get it", "Không thấy @{0}; agent không nhận được skill này";
+    TurnSkillProjectNotFound => "Project skill {0} was not found; the agent did not get it", "Không thấy skill {0} của project; agent không nhận được skill này";
+    TurnSkillPluginNotFound => "Plugin skill {0} was not found; the agent did not get it", "Không thấy skill {0} của plugin; agent không nhận được skill này";
+    UsageSkillTurnsSince => "Counted since {0}", "Tính từ bản {0}";
+    UsageSkillTurns => "Turns with a skill you picked", "Lượt có skill tự chọn";
+    UsageSkillTurnsValue => "{0} of {1}", "{0}/{1}";
     LinkedFolders => "Linked folders", "Thư mục đã liên kết";
     Unlink => "Unlink {0}", "Bỏ liên kết {0}";
     MentionEmpty => "Search files, plugins, skills and MCP servers.", "Tìm file, plugin, skill và MCP server.";

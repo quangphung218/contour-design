@@ -187,7 +187,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
   | Preview | `GET .../raw/<path>` (Range, ETag; `?still=1`: HTML without scripts, for covers), `GET .../preview-url`, `GET .../preview/<scope>/<path>` |
   | Version | `GET/POST .../files/<path>/versions`, `POST .../versions/:vid/restore` |
   | Conversation | `GET/POST .../conversations`, `GET .../conversations/:cid/messages`, `PUT .../messages/:mid` |
-  | Run | `POST /api/runs` → 202 `{runId…}` (idempotent on `clientRequestId`); `POST /api/chat` (creates a run and streams in the response); `GET /api/runs/:id/events` (SSE); `POST /api/runs/:id/cancel`; `POST /api/runs/:id/steer` |
+  | Run | `POST /api/runs` → 202 `{runId…, skills}` (idempotent on `clientRequestId`; Contour: `skills` as kept on the turn); `POST /api/chat` (creates a run and streams in the response); `GET /api/runs/:id/events` (SSE); `POST /api/runs/:id/cancel`; `POST /api/runs/:id/steer` |
   | Project events | `GET /api/projects/:id/events` (SSE: `ready`, `file-changed {path, kind: add/change/unlink}`, `reload-all`, `conversation-created`) |
   | Export | `POST .../export/{html,pdf,pdf-image,image,pptx}`, `GET .../archive` |
   | Config | `GET/PUT /api/app-config`, `POST /api/app-config/recent-dirs` (Contour: adds a recent working folder under the config lock), `GET/PUT /api/media/config` |
@@ -428,7 +428,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
   |---|---|
   | `projects` | id, name, skill_id, design_system_id, pending_prompt, metadata_json, custom_instructions, created_at, updated_at |
   | `conversations` | id, project_id (cascade), title, session_mode, timestamps |
-  | `messages` | id, conversation_id, role, content, agent_id, run_id, run_status, last_run_event_id, position, timestamps; JSON: `events_json` (persisted events), attachments, comment_attachments, produced_files, feedback |
+  | `messages` | id, conversation_id, role, content, agent_id, run_id, run_status, last_run_event_id, position, timestamps; JSON: `events_json` (persisted events), attachments, comment_attachments, produced_files, feedback; Contour: `prepared_message` (user), `skills_json` (assistant: `[{id, source: mention/project/plugin, found, kind?: skill/design_template}]`, the skills the turn asked for; NULL before 0.2.0-beta.64) |
   | `message_event_batches` | Events written incrementally during a run; merged into `messages.events_json` when the run ends |
   | `agent_sessions` | Key (conversation_id, agent_id): session_id, stable_prompt_hash, model, cwd, last_message_id |
   | `templates` | Templates the user saved from a project |

@@ -165,3 +165,115 @@ async fn only_a_send_moves_a_project_up_recent_projects() {
     end_of(&d.events(&late.run_id, None).await);
     assert_eq!(order().await, [first, second]);
 }
+
+/// A turn keeps the skills it asked for, why, and whether each still
+/// exists: the run answers with them, the stored turn lists them, and Your
+/// usage counts the turns with one the user picked.
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_turn_keeps_the_skills_it_asked_for() {
+    let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+    let d = daemon_with(Options {
+        content_root: Some(content),
+        ..Options::default()
+    })
+    .await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let (project, conversation) = d.project().await;
+    let run = d
+        .start(
+            json!({"agentId": "claude", "projectId": project, "conversationId": conversation,
+            "message": "make a deck", "skillIds": ["ad-creative", "my-skill"]}),
+        )
+        .await;
+    let picked = json!([
+        {"id": "ad-creative", "source": "mention", "found": true, "kind": "skill"},
+        {"id": "my-skill", "source": "mention", "found": false},
+    ]);
+    assert_eq!(serde_json::to_value(&run.skills).unwrap(), picked);
+    assert_eq!(
+        end_of(&d.events(&run.run_id, None).await)["status"],
+        "succeeded",
+        "a skill that is gone does not stop the run"
+    );
+    let messages = d.settled_messages(&project, &conversation).await;
+    assert_eq!(messages[1]["skills"], picked);
+    assert!(messages[0].get("skills").is_none(), "{}", messages[0]);
+
+    // A project made with a skill: a turn without `@` gets it from there.
+    let res: Value = d
+        .post(
+            "/api/projects",
+            &json!({"name": "From template", "skillId": "agent-browser"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let (project2, conversation2) = (
+        res["project"]["id"].as_str().unwrap().to_owned(),
+        res["conversationId"].as_str().unwrap().to_owned(),
+    );
+    let run = d
+        .start(
+            json!({"agentId": "claude", "projectId": project2, "conversationId": conversation2,
+            "message": "go", "skillId": "agent-browser"}),
+        )
+        .await;
+    d.events(&run.run_id, None).await;
+    let messages = d.settled_messages(&project2, &conversation2).await;
+    assert_eq!(
+        messages[1]["skills"],
+        json!([{"id": "agent-browser", "source": "project", "found": true, "kind": "skill"}])
+    );
+
+    let usage = d.get_json("/api/usage").await;
+    assert_eq!(usage["skillTurns"], json!({"turns": 2, "picked": 1}));
+}
+
+/// A Remix project's skill is the design template it came from: the
+/// agent gets it, and the turn says it is a template, which has no skill
+/// page (`GET /api/skills/:id` is 404 for it).
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_remix_projects_skill_is_kept_as_a_design_template() {
+    let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+    let d = daemon_with(Options {
+        content_root: Some(content),
+        ..Options::default()
+    })
+    .await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let remix: Value = d
+        .post("/api/design-templates/blog-post/remix", &json!({}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let project = remix["project"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(remix["project"]["skillId"], "blog-post");
+    let res = d
+        .post(
+            "/api/runs",
+            &json!({"agentId": "claude", "projectId": project, "message": "go",
+                "skillId": "blog-post", "skillIds": ["ad-creative"]}),
+        )
+        .await;
+    assert_eq!(res.status().as_u16(), 202);
+    let run: Value = res.json().await.unwrap();
+    assert_eq!(
+        run["skills"],
+        json!([
+            {"id": "ad-creative", "source": "mention", "found": true, "kind": "skill"},
+            {"id": "blog-post", "source": "project", "found": true, "kind": "design_template"},
+        ])
+    );
+    let page = d
+        .http
+        .get(format!("{}/api/skills/blog-post", d.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(page.status().as_u16(), 404, "a template has no skill page");
+    d.events(run["runId"].as_str().unwrap(), None).await;
+}

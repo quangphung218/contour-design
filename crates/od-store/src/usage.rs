@@ -61,6 +61,13 @@ pub struct ProjectUsage {
     pub turns: u32,
 }
 
+/// Turns counted by [`Store::skill_turns`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SkillTurns {
+    pub turns: u32,
+    pub picked: u32,
+}
+
 /// Creates the tables and stamps when recording started. Safe to run on
 /// every open: the stamp is written once.
 pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -143,6 +150,39 @@ impl Store {
                 })
             })?;
             Ok((since, rows.collect::<rusqlite::Result<Vec<_>>>()?))
+        })
+    }
+
+    /// Assistant turns that ran to success and kept their skills
+    /// (`skills_json`, recorded since 0.2.0-beta.64), and how many of them
+    /// the agent got a skill the user picked for (`mention`, found). A turn
+    /// counts once by its run: the copies a fork makes keep the `run_id`
+    /// and are not counted again. Failed, stopped and running turns, and an
+    /// automation's, are left out.
+    ///
+    /// # Errors
+    /// SQLite errors.
+    pub fn skill_turns(&self) -> Result<SkillTurns> {
+        self.with_conn(|conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(DISTINCT m.run_id), \
+                   COUNT(DISTINCT CASE WHEN EXISTS (SELECT 1 FROM json_each(m.skills_json) j \
+                     WHERE json_extract(j.value, '$.source') = 'mention' \
+                       AND json_extract(j.value, '$.found') = 1) THEN m.run_id END) \
+                 FROM messages m JOIN conversations c ON c.id = m.conversation_id \
+                 WHERE m.role = 'assistant' AND m.run_status = 'succeeded' \
+                   AND m.run_id IS NOT NULL \
+                   AND m.skills_json IS NOT NULL AND json_valid(m.skills_json) \
+                   AND NOT EXISTS (SELECT 1 FROM usage_marks WHERE project_id = c.project_id \
+                     AND kind = 'automated')",
+                [],
+                |r| {
+                    Ok(SkillTurns {
+                        turns: r.get(0)?,
+                        picked: r.get(1)?,
+                    })
+                },
+            )?)
         })
     }
 }
