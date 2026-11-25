@@ -383,6 +383,394 @@ async fn agent_cli_skills_are_listed_from_the_agents_home() {
     assert_eq!(again["sources"][2]["imported"], false);
 }
 
+/// "Copy to Claude Code" as the desktop app runs it (its Tauri command calls
+/// `skill_export::copy_to_claude` in process): `(201, {path, contourTools})`,
+/// or the status a failure of that kind would have had.
+async fn copy_to_claude(d: &Daemon, id: &str) -> (u16, Value) {
+    let (state, id) = (d.state.clone(), id.to_owned());
+    let res =
+        tokio::task::spawn_blocking(move || od_server::skill_export::copy_to_claude(&state, &id))
+            .await
+            .unwrap();
+    match res {
+        Ok(c) => (201, serde_json::to_value(c).unwrap()),
+        Err(f) => {
+            let status = match f.kind {
+                "invalid" | "noDescription" => 400,
+                "notFound" => 404,
+                "forbidden" => 403,
+                "exists" => 409,
+                _ => 500,
+            };
+            (
+                status,
+                json!({ "error": { "message": f.message }, "failure": f }),
+            )
+        }
+    }
+}
+
+/// "Copy to Claude Code": a Personal skill and its side files land in the
+/// agents' `~/.claude/skills/<id>`; never over anything there (any case),
+/// only a Personal skill, only a valid id and target.
+#[tokio::test]
+async fn a_personal_skill_is_copied_to_claude_code_once() {
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude/skills");
+    let src = tempfile::tempdir().unwrap();
+    let tea = skill_folder(
+        src.path(),
+        "tea",
+        "---\nname: tea-house\ndescription: Calm tea pages.\n---\n\nUse cream.\n",
+    );
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills/install",
+        Some(json!({ "path": tea.to_string_lossy() })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+
+    let (s, v) = copy_to_claude(&d, "tea-house").await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(v["id"], "tea-house");
+    assert_eq!(v["contourTools"], false);
+    let dest = claude.join("tea-house");
+    assert_eq!(Path::new(v["path"].as_str().unwrap()), dest);
+    assert!(
+        std::fs::read_to_string(dest.join("SKILL.md"))
+            .unwrap()
+            .contains("Use cream.")
+    );
+    assert!(dest.join("assets/tokens.css").is_file());
+
+    // Twice: 409, the copy there is not written over.
+    std::fs::write(dest.join("SKILL.md"), "edited in Claude Code").unwrap();
+    let (s, v) = copy_to_claude(&d, "tea-house").await;
+    assert_eq!(s, 409, "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("already has"),
+        "{v}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+        "edited in Claude Code"
+    );
+
+    // A folder there in another case (one folder on macOS): 409 too.
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills",
+        Some(json!({ "name": "Mint", "description": "Mint pages.", "body": "Run `od media generate` for photos." })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    std::fs::create_dir_all(claude.join("MINT")).unwrap();
+    let (s, v) = copy_to_claude(&d, "mint").await;
+    assert_eq!(s, 409, "{v}");
+    std::fs::remove_dir(claude.join("MINT")).unwrap();
+    // A skill that calls Contour's tools is copied, and says so.
+    let (s, v) = copy_to_claude(&d, "mint").await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(v["contourTools"], true);
+
+    // A bundled skill: 403. No such skill: 404.
+    let list = d.get_json("/api/skills").await;
+    let bundled = list["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["source"] == "built-in" && !s["id"].as_str().unwrap().contains(':'))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (s, v) = copy_to_claude(&d, &bundled).await;
+    assert_eq!(s, 403, "{v}");
+    assert!(!claude.join(&bundled).exists());
+    let (s, v) = copy_to_claude(&d, "no-such-skill").await;
+    assert_eq!(s, 404, "{v}");
+    // A bad id: refused; another target (preview): 400.
+    for id in ["bad%20id", "a:b", "_x", "caf%C3%A9"] {
+        let (s, v) = copy_to_claude(&d, id).await;
+        assert_eq!(s, 400, "{id}: {v}");
+    }
+    let (s, v) = call(&d, "GET", "/api/skills/tea-house/export?target=codex", None).await;
+    assert_eq!(s, 400, "{v}");
+    let mut left: Vec<String> = std::fs::read_dir(&claude)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, ["mint", "tea-house"], "nothing else written");
+}
+
+/// Before and at the copy: the preview says where it goes and whether the
+/// skill calls Contour's tools, read from the whole SKILL.md and its
+/// `scripts/`; a skill with no description is refused (Claude Code offers
+/// its model only skills with one); a 409 names the real folder.
+#[tokio::test]
+async fn copy_to_claude_code_checks_the_whole_skill_first() {
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude").join("skills");
+    let src = tempfile::tempdir().unwrap();
+    let install = |dir: &Path| Some(json!({ "path": dir.to_string_lossy() }));
+    // Contour only in the front matter; only in a script; nowhere.
+    let front = skill_folder(
+        src.path(),
+        "front",
+        "---\nname: tea-front\ndescription: Wraps od media generate.\n---\nPlain body.\n",
+    );
+    let script = skill_folder(
+        src.path(),
+        "script",
+        "---\nname: tea-script\ndescription: Runs a script.\n---\nRun scripts/make.sh.\n",
+    );
+    std::fs::create_dir_all(script.join("scripts/lib")).unwrap();
+    std::fs::write(
+        script.join("scripts/lib/make.sh"),
+        "#!/bin/sh\n\"$OD_BIN\" files write\n",
+    )
+    .unwrap();
+    let plain = skill_folder(
+        src.path(),
+        "plain",
+        "---\nname: tea-plain\ndescription: Plain.\n---\nUse cream.\n",
+    );
+    let bare = skill_folder(
+        src.path(),
+        "bare",
+        "---\nname: tea-bare\n---\nNo description.\n",
+    );
+    for dir in [&front, &script, &plain, &bare] {
+        let (s, v) = call(&d, "POST", "/api/skills/install", install(dir)).await;
+        assert_eq!(s, 200, "{v}");
+    }
+    let preview = |id: &str| format!("/api/skills/{id}/export?target=claude");
+    for (id, tools, described) in [
+        ("tea-front", true, true),
+        ("tea-script", true, true),
+        ("tea-plain", false, true),
+        ("tea-bare", false, false),
+    ] {
+        let (s, v) = call(&d, "GET", &preview(id), None).await;
+        assert_eq!(s, 200, "{id}: {v}");
+        assert_eq!(v["contourTools"], tools, "{id}: {v}");
+        assert_eq!(v["hasDescription"], described, "{id}: {v}");
+        assert_eq!(
+            Path::new(v["path"].as_str().unwrap()),
+            claude.join(id),
+            "{v}"
+        );
+    }
+    assert!(!claude.exists(), "a preview writes nothing");
+    let (s, v) = call(&d, "GET", "/api/skills/tea-plain/export?target=codex", None).await;
+    assert_eq!(s, 400, "{v}");
+
+    let (s, v) = copy_to_claude(&d, "tea-script").await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(v["contourTools"], true, "{v}");
+    assert!(claude.join("tea-script/scripts/lib/make.sh").is_file());
+    // No description: refused, nothing written, and it says what to do.
+    let (s, v) = copy_to_claude(&d, "tea-bare").await;
+    assert_eq!(s, 400, "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("description"),
+        "{v}"
+    );
+    assert!(!claude.join("tea-bare").exists());
+    // Twice: the 409 names the folder in this HOME and how to copy again.
+    let (s, v) = copy_to_claude(&d, "tea-script").await;
+    assert_eq!(s, 409, "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(&claude.join("tea-script").display().to_string()),
+        "{message}"
+    );
+    assert!(
+        message.contains("Remove that folder to copy again."),
+        "{message}"
+    );
+}
+
+/// An agent in a run reaches the daemon on loopback, outside its sandbox:
+/// no HTTP request writes a skill into `~/.claude/skills` (the desktop
+/// app copies it, through its own command). What it can read is the
+/// preview: where the copy would go, its source, and what is there
+/// already, by its real name; an unfinished copy is told apart.
+#[tokio::test]
+async fn no_request_copies_a_skill_to_claude_code() {
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude").join("skills");
+    let src = tempfile::tempdir().unwrap();
+    for (folder, md) in [
+        ("tea", "---\nname: tea\ndescription: Tea.\n---\nTea.\n"),
+        ("mint", "---\nname: mint\ndescription: Mint.\n---\nMint.\n"),
+        ("sage", "---\nname: sage\ndescription: Sage.\n---\nSage.\n"),
+    ] {
+        let dir = skill_folder(src.path(), folder, md);
+        let (s, v) = call(
+            &d,
+            "POST",
+            "/api/skills/install",
+            Some(json!({ "path": dir.to_string_lossy() })),
+        )
+        .await;
+        assert_eq!(s, 200, "{v}");
+    }
+    for method in ["POST", "PUT"] {
+        let (s, v) = call(
+            &d,
+            method,
+            "/api/skills/tea/export",
+            Some(json!({ "target": "claude" })),
+        )
+        .await;
+        assert_eq!(s, 405, "{method}: {v}");
+    }
+    assert!(!claude.exists(), "nothing written");
+
+    let preview = |id: &str| format!("/api/skills/{id}/export?target=claude");
+    let (s, v) = call(&d, "GET", &preview("tea"), None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(v["existing"], Value::Null, "{v}");
+    assert_eq!(
+        Path::new(v["source"].as_str().unwrap())
+            .canonicalize()
+            .unwrap(),
+        d.data.join("skills").join("tea").canonicalize().unwrap()
+    );
+    // There already, in another case: named as it is on disk.
+    std::fs::create_dir_all(claude.join("TEA")).unwrap();
+    std::fs::write(claude.join("TEA").join("SKILL.md"), "---\nname: TEA\n---\n").unwrap();
+    let (_, v) = call(&d, "GET", &preview("tea"), None).await;
+    assert_eq!(v["existing"]["name"], "TEA", "{v}");
+    assert_eq!(
+        Path::new(v["existing"]["path"].as_str().unwrap()),
+        claude.join("TEA")
+    );
+    assert_eq!(v["existing"]["kind"], "skill", "{v}");
+    // A copy cut short by Contour (its mark, no SKILL.md): unfinished.
+    std::fs::create_dir_all(claude.join("mint")).unwrap();
+    std::fs::write(claude.join("mint").join(".contour-copy"), "").unwrap();
+    let (_, v) = call(&d, "GET", &preview("mint"), None).await;
+    assert_eq!(v["existing"]["kind"], "unfinished", "{v}");
+    // A folder of someone else's with no SKILL.md: not a skill, not ours.
+    std::fs::create_dir_all(claude.join("sage")).unwrap();
+    let (_, v) = call(&d, "GET", &preview("sage"), None).await;
+    assert_eq!(v["existing"]["kind"], "other", "{v}");
+
+    // The app's copy: refused by the folder's real name; ours cut short is
+    // replaced; someone else's folder is kept.
+    let (s, v) = copy_to_claude(&d, "tea").await;
+    assert_eq!(s, 409, "{v}");
+    assert_eq!(v["failure"]["existing"]["name"], "TEA", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(&claude.join("TEA").display().to_string()),
+        "{message}"
+    );
+    let (s, v) = copy_to_claude(&d, "mint").await;
+    assert_eq!(s, 201, "{v}");
+    assert!(claude.join("mint/SKILL.md").is_file());
+    assert!(!claude.join("mint/.contour-copy").exists());
+    let (s, v) = copy_to_claude(&d, "sage").await;
+    assert_eq!(s, 409, "{v}");
+    assert_eq!(v["failure"]["existing"]["kind"], "other", "{v}");
+    assert!(
+        !claude.join("sage/SKILL.md").exists(),
+        "theirs kept as it was"
+    );
+}
+
+/// A Personal skill folder that is a link (to a folder outside the
+/// skills) is not copied (the index skips it; `export_skill` refuses it
+/// too, see its unit tests); links inside a skill are not followed.
+#[cfg(unix)]
+#[tokio::test]
+async fn copy_to_claude_code_follows_no_link() {
+    use std::os::unix::fs::symlink;
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude/skills");
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.txt"), "s3cret").unwrap();
+    let away = skill_folder(outside.path(), "away", "---\nname: away\n---\nAway.\n");
+    let skills = d.data.join("skills");
+    std::fs::create_dir_all(&skills).unwrap();
+    symlink(&away, skills.join("away")).unwrap();
+    let tea = skill_folder(
+        &skills,
+        "tea",
+        "---\nname: tea\ndescription: Tea.\n---\nTea.\n",
+    );
+    symlink(outside.path().join("secret.txt"), tea.join("secret.txt")).unwrap();
+    symlink(outside.path(), tea.join("assets/out")).unwrap();
+    // The index reads the skills again on a write.
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills",
+        Some(json!({ "name": "reload", "body": "x" })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+
+    let (s, v) = copy_to_claude(&d, "away").await;
+    assert_eq!(s, 404, "a linked skill is not copied: {v}");
+    assert!(!claude.join("away").exists());
+    let (s, v) = copy_to_claude(&d, "tea").await;
+    assert_eq!(s, 201, "{v}");
+    assert!(claude.join("tea/SKILL.md").is_file());
+    assert!(claude.join("tea/assets/tokens.css").is_file());
+    assert!(!claude.join("tea/secret.txt").exists());
+    assert!(!claude.join("tea/assets/out").exists());
+}
+
 /// "Install from folder": a bare skill goes to the skills; a plugin folder,
 /// or a SKILL.md the skills would refuse, is left to the plugin install
 /// (`{id: null}`, nothing written).

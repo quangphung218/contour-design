@@ -567,6 +567,17 @@ fn doctor_reports_the_data_folder_of_the_daemon_it_asks() {
     }
 }
 
+/// `od` is on every agent's PATH: it has no command that writes a skill
+/// into an agent CLI's folders (the desktop app does, on a click).
+#[test]
+fn od_cannot_copy_a_skill_to_claude_code() {
+    let d = start(false);
+    let out = od(&d, &["skill", "export", "demo", "--to", "claude"]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("unrecognized subcommand"), "{err}");
+}
+
 #[test]
 fn skill_install_copies_a_folder_into_the_user_skills() {
     let d = start(false);

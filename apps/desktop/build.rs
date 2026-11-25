@@ -18,6 +18,7 @@ const APP_COMMANDS: &[&str] = &[
     "reload_ack",
     "set_unsaved",
     "close_answer",
+    "copy_skill_to_claude",
 ];
 
 fn main() {

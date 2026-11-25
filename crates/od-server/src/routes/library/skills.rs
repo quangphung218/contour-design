@@ -17,6 +17,11 @@
 //! - `GET    /api/skills/local-sources`: the skill folders of agent CLIs
 //!   (`~/.claude/skills`, `~/.codex/skills`…, one level, read only) with
 //!   whether each is imported; "From agent CLI" installs the ones picked.
+//! - `GET    /api/skills/:id/export?target=claude`: "Copy to Claude Code",
+//!   read only: where a Personal skill would go (`<agents' HOME>/.claude/
+//!   skills/<id>`), its source folder, what stands there already, whether
+//!   it has a description and calls Contour's tools. The copy itself is
+//!   the desktop app's (`crate::skill_export`); no request writes there.
 
 use super::write_and_reload;
 use crate::error::{ApiErr, ApiJson, ApiResult};
@@ -35,6 +40,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/skills/install", post(install))
         .route("/api/skills/local-sources", get(local_sources))
         .route("/api/skills/{id}", put(save).delete(delete))
+        .route("/api/skills/{id}/export", get(export_preview))
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,19 +129,8 @@ pub async fn install(
     Ok(Json(json!({ "id": id })))
 }
 
-/// `HOME` of the agents' environment (the folders they read their skills
-/// from): the last `HOME` set, as an agent process gets it, else the
-/// daemon's.
-fn agent_home(env: &[(std::ffi::OsString, std::ffi::OsString)]) -> Option<std::path::PathBuf> {
-    env.iter()
-        .rfind(|(k, _)| k == "HOME")
-        .filter(|(_, v)| !v.is_empty())
-        .map(|(_, v)| std::path::PathBuf::from(v))
-        .or_else(od_runtime::login_path::home_dir)
-}
-
 pub async fn local_sources(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let home = agent_home(&state.runs.engine.config().base_env);
+    let home = crate::skill_export::agent_home(&state.runs.engine.config().base_env);
     let root = user_root(&state);
     let sources = crate::spawn::spawn_blocking_in_span(move || {
         home.map(|h| user_content::scan_agent_skills(&user_content::agent_skill_roots(&h), &root))
@@ -198,4 +193,42 @@ pub async fn delete(
     })
     .await?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExportQuery {
+    #[serde(default)]
+    target: String,
+}
+
+/// `GET /api/skills/:id/export?target=claude`: what "Copy to Claude Code"
+/// would do, read only: `{id, path, source, contourTools, hasDescription,
+/// existing}`. Nothing over HTTP copies (`crate::skill_export`).
+pub async fn export_preview(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<ExportQuery>,
+) -> ApiResult<Json<Value>> {
+    let (entry, dest_root) = crate::skill_export::export_source(&state, &id, &q.target)?;
+    let id = entry.info.id.clone();
+    let dest = dest_root.join(&id);
+    let skill_id = id.clone();
+    let (check, existing) = crate::spawn::spawn_blocking_in_span(move || {
+        (
+            user_content::export_check(&entry.dir),
+            user_content::existing_export(&dest_root, &skill_id)
+                .ok()
+                .flatten(),
+        )
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))?;
+    Ok(Json(json!({
+        "id": id,
+        "path": dest,
+        "source": state.content.snapshot().find_skill(&id).map(|e| e.dir.clone()),
+        "contourTools": check.contour_tools,
+        "hasDescription": check.has_description,
+        "existing": existing,
+    })))
 }

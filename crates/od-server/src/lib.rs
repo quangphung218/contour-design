@@ -10,6 +10,7 @@ pub mod lock;
 pub mod logs;
 pub mod request_id;
 pub mod routes;
+pub mod skill_export;
 pub mod spawn;
 pub mod state;
 

@@ -785,6 +785,24 @@ mod tests {
         assert_eq!(exit_code(Err(anyhow::anyhow!("other"))), 1);
     }
 
+    /// "Copy to Claude Code" warns about a skill that runs `od <command>`;
+    /// its list of commands is every top-level command of `od`.
+    #[test]
+    fn the_contour_tools_warning_knows_every_od_command() {
+        let mut ours: Vec<String> = Cli::command()
+            .get_subcommands()
+            .map(|c| c.get_name().to_owned())
+            .filter(|n| n != "help")
+            .collect();
+        ours.sort();
+        let mut listed: Vec<String> = od_contracts::OD_COMMANDS
+            .iter()
+            .map(|&c| c.to_owned())
+            .collect();
+        listed.sort();
+        assert_eq!(listed, ours, "update od_contracts::OD_COMMANDS");
+    }
+
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();

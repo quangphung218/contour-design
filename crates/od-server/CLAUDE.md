@@ -74,6 +74,21 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `tests/library.rs::remix_brings_every_file_its_example_uses`, `tests/library.rs::remix_copies_only_what_the_example_loads`
     - `tests/library.rs::remix_copies_past_the_export_limits`, `tests/library.rs::remix_skips_what_it_cannot_follow`
     - `tests/library.rs::remix_keeps_an_example_that_is_not_utf8`
+15. "Copy to Claude Code" writes only through the desktop app's Tauri command (`copy_skill_to_claude` →
+    `src/skill_export.rs:copy_to_claude`, decision #9): no route and no `od` command writes into an agent CLI's folders,
+    since an agent reaches this daemon on loopback from outside its sandbox. `GET /api/skills/{id}/export?target=claude`
+    only reads. The copy takes only a Personal skill with a `description`, into the agents' `HOME/.claude/skills/<id>`,
+    never over anything there: an entry of that name in any case or Unicode form is refused by its name on disk, the
+    folder is claimed with `create_dir`, nothing hidden is written beside it, `SKILL.md` comes last, and a copy of ours cut
+    short (`.contour-copy` mark, no `SKILL.md`) is replaced. The warning is `user_content::export_check` (whole SKILL.md and
+    `scripts/`).
+    - `tests/library.rs::no_request_copies_a_skill_to_claude_code`, `::a_personal_skill_is_copied_to_claude_code_once`,
+      `::copy_to_claude_code_follows_no_link`, `::copy_to_claude_code_checks_the_whole_skill_first`
+    - `../od-content/src/user_content.rs::an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy`,
+      `::export_copies_a_user_skill_and_never_writes_over`, `::an_export_never_shows_a_hidden_folder_in_the_agents_skills`,
+      `::a_folder_made_right_before_the_copy_is_kept`, `::the_skill_md_lands_after_everything_else`
+    - `../od-cli/tests/cli.rs::od_cannot_copy_a_skill_to_claude_code`,
+      `../../apps/desktop/src/main.rs::the_daemon_ui_may_call_the_app_commands`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).

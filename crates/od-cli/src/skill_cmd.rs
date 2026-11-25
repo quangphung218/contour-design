@@ -1,5 +1,7 @@
 //! `od skill`: install a local skill folder into the user skills. "Save as
-//! skill" in the Studio has the agent run it on the folder it wrote.
+//! skill" in the Studio has the agent run it on the folder it wrote. There
+//! is no command that copies a skill out to an agent CLI: `od` is on every
+//! agent's PATH, and that copy is the desktop app's (decision #9).
 
 use crate::client::Client;
 use anyhow::Context;

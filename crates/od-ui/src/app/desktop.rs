@@ -322,6 +322,31 @@ pub fn opens_another_design(last: Option<&str>, path: &str) -> bool {
     design_in_path(path).is_some_and(|id| last != Some(id))
 }
 
+/// "Copy to Claude Code" (decision #9): the app copies the Personal skill
+/// `id` into the agents' Claude Code skills. `Ok` holds `{id, path,
+/// contourTools}`, `Err` the failure `{kind, message, existing?}`; outside
+/// the app, `Err` of kind `unsupported`.
+///
+/// # Errors
+/// The command's failure, as JSON.
+pub async fn copy_skill_to_claude(id: &str) -> Result<serde_json::Value, serde_json::Value> {
+    let unsupported = || serde_json::json!({ "kind": "unsupported", "message": UNSUPPORTED });
+    let args = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&args, &JsValue::from_str("id"), &JsValue::from_str(id));
+    let promise = invoke("copy_skill_to_claude", &args).ok_or_else(unsupported)?;
+    let as_json = |v: &JsValue| {
+        js_sys::JSON::stringify(v)
+            .ok()
+            .and_then(|s| s.as_string())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({ "kind": "failed", "message": format!("{v:?}") }))
+    };
+    match JsFuture::from(promise).await {
+        Ok(v) => Ok(as_json(&v)),
+        Err(e) => Err(as_json(&e)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

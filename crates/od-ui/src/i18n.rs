@@ -1238,6 +1238,17 @@ messages! {
     AgentSkillsNoMatch => "No skills match the search.", "Không có skill nào khớp tìm kiếm.";
     SkillNameTaken => "A skill named {0} already exists", "Đã có skill tên {0}";
     AgentSkillsFailed => "Could not read the agent skills: {0}", "Không đọc được skill của agent: {0}";
+    CopyToClaudeCode => "Copy to Claude Code", "Chép sang Claude Code";
+    CopiedToClaudeCode => "Copied to {0}", "Đã chép vào {0}";
+    ClaudeCodeHasSkill => "Claude Code already has a skill named {0} at {1}. Remove that folder to copy again.", "Claude Code đã có skill tên {0} tại {1}. Xoá thư mục đó để chép lại.";
+    ClaudeCodeFolderInTheWay => "Something named {0} is in the way at {1} (not a skill). Remove it to copy again.", "Có thứ tên {0} chắn ở {1} (không phải skill). Xoá nó để chép lại.";
+    UseInClaudeCode => "Use in Claude Code", "Dùng trong Claude Code";
+    ShowCommandAnyway => "Show the command anyway", "Vẫn hiện lệnh";
+    RunToCopySkill => "Run this in a terminal to copy the skill into Claude Code (the app copies it in one click):", "Chạy lệnh này trong terminal để chép skill sang Claude Code (bản app chép bằng một cú bấm):";
+    SkillNeedsDescription => "Add a description first (Edit): Claude Code offers its model only skills that have one.", "Thêm mô tả trước (Sửa): Claude Code chỉ đưa cho model những skill có mô tả.";
+    SkillCallsContour => "This skill calls Contour tools; it may not work outside Contour.", "Skill này gọi công cụ của Contour; ngoài Contour có thể không chạy.";
+    CopyAnyway => "Copy anyway", "Vẫn chép";
+    CopyToClaudeFailed => "Could not copy: {0}", "Không chép được: {0}";
     MediaPageSub => "Every image, video and audio file across projects. Generate more with the providers you configured.", "Mọi ảnh, video và âm thanh trong các project. Sinh thêm bằng provider đã cấu hình.";
     GenerateMedia => "Generate", "Sinh media";
     Library => "Library", "Thư viện";

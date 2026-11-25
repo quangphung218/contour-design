@@ -10,7 +10,8 @@
 // buttons working; the mode tabs fit at 375 px; From agent CLI: the skills
 // of a temp HOME, an empty list, a load error and Try again, a filter with
 // no match, a bundled id not picked, a 409 by its row, an import landing
-// late never closes what is being typed; Save as skill from the
+// late never closes what is being typed; Use in Claude Code (the web app
+// shows the cp command, warns for a skill that calls `od`); Save as skill from the
 // Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
@@ -925,6 +926,142 @@ try {
   await page.locator('[data-testid="skill-row"][data-id="ad-creative"]').waitFor();
   assert.ok(await pressed('scope-official'), 'a scope picked stays');
   results.skillsDefault = 'ok';
+
+  // ------------------------------------------------- copy to Claude Code
+  // The web app copies nothing (decision #9: only the desktop app writes
+  // into ~/.claude/skills, and no request does): "Use in Claude Code"
+  // shows the command to run, after the same checks as the app's copy. A
+  // skill that calls `od` (SKILL.md or only scripts/) warns first; one
+  // with no description says so until an edit adds one; what is there
+  // already is named as it is on disk; Official has no button.
+  const claudeSkills = join(home, '.claude', 'skills');
+  const skillsDir = join(data, 'skills');
+  const openSkill = async (id) => {
+    await page.goto(`${BASE}/skills?scope=personal`);
+    await page.locator(`[data-testid="skill-row"][data-id="${id}"] .plugin-row-main`).click();
+    await page.getByTestId('skill-body').waitFor();
+  };
+  const sh = (p) => `'${p.replaceAll("'", "'\\''")}'`;
+  const commandFor = (id) => `mkdir -p ${sh(claudeSkills)} && cp -R ${sh(join(skillsDir, id))} ${sh(join(claudeSkills, id))}`;
+  await page.locator('[data-testid="skill-row"][data-id="ad-creative"] .plugin-row-main').click();
+  await page.getByTestId('skill-body').waitFor();
+  assert.equal(await page.getByTestId('skill-export').count(), 0, 'no copy for an Official skill');
+  await page.getByRole('button', { name: 'Back' }).click();
+  // No request writes there: the copy route is gone.
+  const post = await fetch(`${BASE}/api/skills/tea-b/export`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'claude' }) });
+  assert.equal(post.status, 405, 'no POST copies a skill');
+  // Calls Contour's tools: warned before the command is shown.
+  const odSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea photos', description: 'Tea photos.', body: 'Run `$OD_BIN media generate` for each photo.' }) });
+  assert.equal(odSkill.id, 'tea-photos');
+  await openSkill('tea-photos');
+  const exportButton = page.getByTestId('skill-export');
+  assert.equal((await exportButton.textContent()).trim(), 'Use in Claude Code', 'the web app names what it does');
+  await exportButton.click();
+  const warning = page.getByTestId('skill-export-warning');
+  await warning.waitFor();
+  assert.match(await warning.textContent(), /This skill calls Contour tools; it may not work outside Contour/);
+  assert.equal(await page.getByTestId('skill-export-command').count(), 0, 'no command before the answer');
+  // The warning reads as a line of text with its buttons below it, at
+  // every width: a row that fits the buttons beside the text squeezed it
+  // to a word a line (the page column at 375 px is narrow enough to wrap
+  // them anyway, so wider windows are checked too).
+  const warnBoxes = [];
+  for (const width of [375, 420, 480, 540, 600, 768, 1024, 1360]) {
+    await page.setViewportSize({ width, height: 812 });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const box = await warning.evaluate((root) => {
+      const text = [...root.querySelectorAll('*')].filter((el) => el.children.length === 0 && /calls Contour tools/.test(el.textContent))[0];
+      const t = text.getBoundingClientRect();
+      const style = getComputedStyle(root);
+      const inner = root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const buttons = [...root.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
+      const wraps = t.height > 1.6 * parseFloat(getComputedStyle(text).fontSize);
+      return { share: Math.round((100 * t.width) / inner), wraps, inner: Math.round(inner), below: buttons.every((b) => b.top >= t.bottom - 1) };
+    });
+    if (width === 375) await page.screenshot({ path: join(OUT, 'skill-export-warning-375.png') });
+    warnBoxes.push({ viewport: width, ...box });
+  }
+  await page.setViewportSize({ width: 1360, height: 900 });
+  log('copy warning by width', JSON.stringify(warnBoxes));
+  // A text that wraps fills the warning's width.
+  const squeezed = warnBoxes.filter((b) => !b.below || (b.wraps && b.share < 60));
+  assert.deepEqual(squeezed, [], 'the warning text has its own line and the buttons sit under it');
+  await warning.getByRole('button', { name: 'Cancel' }).click();
+  await warning.waitFor({ state: 'detached' });
+  await exportButton.click();
+  await page.getByTestId('skill-export-anyway').click();
+  const command = page.getByTestId('skill-export-cmd');
+  await command.waitFor();
+  assert.equal(await command.textContent(), commandFor('tea-photos'));
+  await page.getByTestId('skill-export-copy-command').click();
+  await until(async () => (await page.evaluate(() => navigator.clipboard.readText())) === commandFor('tea-photos'), 'the command copied');
+  assert.equal((await page.getByTestId('skill-export-copy-command').textContent()).trim(), 'Copied');
+  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'the web app writes nothing there');
+  // `od` only in a script beside the SKILL.md: warned too.
+  const scripted = join(fixtures, 'tea-script');
+  mkdirSync(join(scripted, 'scripts'), { recursive: true });
+  writeFileSync(join(scripted, 'SKILL.md'), '---\nname: tea-script\ndescription: Tea menus from a script.\n---\nRun scripts/menu.sh.\n');
+  writeFileSync(join(scripted, 'scripts', 'menu.sh'), '#!/bin/sh\nod files write menu.html < menu.html\n');
+  assert.equal((await api('/api/skills/install', { method: 'POST', body: JSON.stringify({ path: scripted }) })).id, 'tea-script');
+  await openSkill('tea-script');
+  await exportButton.click();
+  await warning.waitFor();
+  // No description: said so; an edit that adds one clears it, and the
+  // next try goes through.
+  const bareSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea notes', body: 'Short notes.' }) });
+  assert.equal(bareSkill.id, 'tea-notes');
+  await openSkill('tea-notes');
+  await exportButton.click();
+  const failed = page.getByTestId('skill-export-failed');
+  await failed.waitFor();
+  assert.match(await failed.textContent(), /Add a description first/);
+  await page.getByTestId('skill-edit').click();
+  await failed.waitFor({ state: 'detached' });
+  await page.getByTestId('skill-description').fill('Short tea notes.');
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-form').waitFor({ state: 'detached' });
+  assert.equal(await failed.count(), 0, 'no "add a description" once one is saved');
+  await exportButton.click();
+  await command.waitFor();
+  assert.equal(await command.textContent(), commandFor('tea-notes'));
+  // Edit and Save also clear the last command (it was for the old text).
+  await page.getByTestId('skill-edit').click();
+  await page.getByTestId('skill-export-command').waitFor({ state: 'detached' });
+  await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
+  // There already, in another case: named as it is on disk.
+  mkdirSync(join(claudeSkills, 'Tea-B'), { recursive: true });
+  writeFileSync(join(claudeSkills, 'Tea-B', 'SKILL.md'), '---\nname: Tea-B\n---\n');
+  await openSkill('tea-b');
+  await exportButton.click();
+  await failed.waitFor();
+  assert.equal(
+    await failed.textContent(),
+    `Claude Code already has a skill named Tea-B at ${join(claudeSkills, 'Tea-B')}. Remove that folder to copy again.`,
+  );
+  assert.equal(await page.getByTestId('skill-export-command').count(), 0, 'no command over what is there');
+  await shots('skill-copied-to-claude');
+  // At 375 px the four buttons and the long message stay inside the detail.
+  await page.setViewportSize({ width: 375, height: 812 });
+  const narrow = await page.getByTestId('skill-detail').evaluate((root) => {
+    const box = root.getBoundingClientRect();
+    const parts = [...root.querySelectorAll('.plugin-hero button, [data-testid="skill-export-failed"]')];
+    const out = parts.filter((el) => { const r = el.getBoundingClientRect(); return r.left < box.left - 0.5 || r.right > box.right + 0.5; });
+    return { out: out.map((el) => `${el.dataset.testid || el.className} ${Math.round(el.getBoundingClientRect().right)} > ${Math.round(box.right)}`), parts: parts.length };
+  });
+  await page.setViewportSize({ width: 1360, height: 900 });
+  assert.deepEqual(narrow, { out: [], parts: 5 }, 'buttons and message fit at 375 px');
+  // The page column at 375 px is 95 to 130 px wide from one run to the
+  // next; at its narrowest the long button wraps instead of passing the
+  // edge. Pinned here, so the check does not depend on the run.
+  const pinned = await page.getByTestId('skill-detail').evaluate((root) => {
+    root.style.width = '110px';
+    const box = root.getBoundingClientRect();
+    const out = [...root.querySelectorAll('.plugin-hero button')].filter((el) => el.getBoundingClientRect().right > box.right + 0.5).map((el) => el.dataset.testid);
+    root.style.width = '';
+    return out;
+  });
+  assert.deepEqual(pinned, [], 'the buttons stay inside a 110 px column');
+  results.copyToClaude = 'ok';
 
   // ------------------------------------------------------ save as skill
   // "+" ▸ Save as skill: off before a turn has finished and while one
