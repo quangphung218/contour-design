@@ -232,12 +232,15 @@ pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
 /// Copies `from` into a new folder `to` (folders and regular files only,
 /// with their permission bits; no link at any depth, no FIFO, no hidden
 /// entry but `.claude-plugin`: [`nofollow::read_tree`]). Fails past
-/// `budget` bytes, counted as read.
+/// `budget` bytes, counted as read. `from` itself may be a link the
+/// caller accepted (a folder the user picked, an indexed design system):
+/// it is resolved once, and only what lies under it is read link-free.
 ///
 /// # Errors
 /// [`WriteError::BadRequest`] when too large, [`WriteError::Io`].
 pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> {
-    let tree = nofollow::read_tree(from, keep_entry(true), budget).map_err(tree_error)?;
+    let from = std::fs::canonicalize(from).map_err(io)?;
+    let tree = nofollow::read_tree(&from, keep_entry(true), budget).map_err(tree_error)?;
     std::fs::create_dir_all(to).map_err(io)?;
     nofollow::write_tree(&tree, to, None).map_err(io)?;
     Ok(tree.files.iter().map(|(_, f)| f.bytes.len() as u64).sum())
@@ -1815,5 +1818,33 @@ mod tests {
             ExistingKind::Skill
         );
         assert_eq!(existing_export(&dest, "none").unwrap(), None);
+    }
+
+    /// A folder the user points at through a link (`~/skills/tea` → a
+    /// repo) is still copied: only links under it are skipped.
+    #[cfg(unix)]
+    #[test]
+    fn a_copy_follows_a_link_at_its_root_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(real.join("scripts")).unwrap();
+        std::fs::write(
+            real.join("SKILL.md"),
+            "---\nname: tea\ndescription: Brews tea.\n---\nBody\n",
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("outside.txt"), "secret").unwrap();
+        std::os::unix::fs::symlink(tmp.path().join("outside.txt"), real.join("scripts/out"))
+            .unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let to = tmp.path().join("copy");
+        copy_dir(&link, &to, u64::MAX).unwrap();
+        assert!(to.join("SKILL.md").is_file());
+        assert!(!to.join("scripts/out").exists());
+
+        let user = tmp.path().join("user");
+        assert_eq!(install_skill(&link, &user, |_| false).unwrap(), "tea");
     }
 }
