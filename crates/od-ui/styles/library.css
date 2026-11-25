@@ -126,8 +126,12 @@
 /* A page column narrower than the label (375 px): two lines, not past the edge. */
 .plugin-hero .skill-export-btn { height: auto; min-height: var(--control-md); max-width: 100%; white-space: normal; padding-block: var(--space-1); }
 /* The text on a line of its own, its buttons under it (375 px). */
-.callout.skill-export-warning { flex-direction: column; align-items: stretch; }
-.skill-export-warning > p { margin: 0; align-items: flex-start; }
+.callout.skill-export-review { flex-direction: column; align-items: stretch; min-width: 0; }
+.skill-export-review > p { margin: 0; align-items: flex-start; }
+.skill-export-review h4 { margin: var(--space-1) 0 0; font-size: var(--text-xs); color: var(--color-text-tertiary); }
+/* The whole SKILL.md, scrolled in place (a long one keeps the buttons in view). */
+.skill-export-skill-md { margin: 0; max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-xs); background: var(--color-surface-sunken); padding: var(--space-2); border-radius: var(--radius-sm); }
+.skill-export-files { margin: 0; padding-left: var(--space-5); max-height: 8rem; overflow: auto; font-size: var(--text-xs); overflow-wrap: anywhere; }
 .plugin-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-4); align-items: start; }
 .plugin-use, .plugin-meta, .skill-form { display: flex; flex-direction: column; gap: var(--space-3); }
 .plugin-use h3, .plugin-meta h3 { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-base); }

@@ -36,13 +36,14 @@ pub fn routes() -> Router<AppState> {
 impl From<WriteError> for ApiErr {
     fn from(e: WriteError) -> Self {
         match e {
-            WriteError::BadRequest(m) | WriteError::NoDescription(m) => ApiErr::bad_request(m),
+            WriteError::BadRequest(m) => ApiErr::bad_request(m),
             WriteError::Exists(m) => ApiErr::new(
                 StatusCode::CONFLICT,
                 ErrorCode::Conflict,
                 format!("{m} already exists"),
             ),
             WriteError::NotFound(m) => ApiErr::not_found(m),
+            WriteError::Changed(m) => ApiErr::new(StatusCode::CONFLICT, ErrorCode::Conflict, m),
             WriteError::Io(m) => ApiErr::internal(m),
         }
     }

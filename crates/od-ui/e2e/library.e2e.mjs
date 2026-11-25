@@ -10,8 +10,12 @@
 // buttons working; the mode tabs fit at 375 px; From agent CLI: the skills
 // of a temp HOME, an empty list, a load error and Try again, a filter with
 // no match, a bundled id not picked, a 409 by its row, an import landing
-// late never closes what is being typed; Use in Claude Code (the web app
-// shows the cp command, warns for a skill that calls `od`); Save as skill from the
+// late never closes what is being typed; Use in Claude Code (a review of
+// the SKILL.md and the files first; the web app shows the rsync command,
+// which run twice skips links and hidden files; warns for a skill that
+// calls `od` or has no description; the desktop app's copy through a
+// stubbed Tauri IPC: the reviewed hash, a skill changed since, failures);
+// Save as skill from the
 // Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
@@ -23,9 +27,9 @@
 // Run through ./run.sh (builds the bundle and `od` first).
 
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, symlinkSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -930,10 +934,10 @@ try {
   // ------------------------------------------------- copy to Claude Code
   // The web app copies nothing (decision #9: only the desktop app writes
   // into ~/.claude/skills, and no request does): "Use in Claude Code"
-  // shows the command to run, after the same checks as the app's copy. A
-  // skill that calls `od` (SKILL.md or only scripts/) warns first; one
-  // with no description says so until an edit adds one; what is there
-  // already is named as it is on disk; Official has no button.
+  // shows the SKILL.md and the files for review, then the command to run.
+  // A skill that calls `od` (SKILL.md or only scripts/) warns in the
+  // review; one with no description too, until an edit adds one; what is
+  // there already is named as it is on disk; Official has no button.
   const claudeSkills = join(home, '.claude', 'skills');
   const skillsDir = join(data, 'skills');
   const openSkill = async (id) => {
@@ -942,7 +946,7 @@ try {
     await page.getByTestId('skill-body').waitFor();
   };
   const sh = (p) => `'${p.replaceAll("'", "'\\''")}'`;
-  const commandFor = (id) => `mkdir -p ${sh(claudeSkills)} && cp -R ${sh(join(skillsDir, id))} ${sh(join(claudeSkills, id))}`;
+  const commandFor = (id) => `mkdir -p ${sh(join(claudeSkills, id))} && rsync -r --exclude='.*' ${sh(join(skillsDir, id) + '/')} ${sh(join(claudeSkills, id) + '/')}`;
   await page.locator('[data-testid="skill-row"][data-id="ad-creative"] .plugin-row-main').click();
   await page.getByTestId('skill-body').waitFor();
   assert.equal(await page.getByTestId('skill-export').count(), 0, 'no copy for an Official skill');
@@ -957,10 +961,17 @@ try {
   const exportButton = page.getByTestId('skill-export');
   assert.equal((await exportButton.textContent()).trim(), 'Use in Claude Code', 'the web app names what it does');
   await exportButton.click();
+  const review = page.getByTestId('skill-export-review');
   const warning = page.getByTestId('skill-export-warning');
-  await warning.waitFor();
+  await review.waitFor();
   assert.match(await warning.textContent(), /This skill calls Contour tools; it may not work outside Contour/);
   assert.equal(await page.getByTestId('skill-export-command').count(), 0, 'no command before the answer');
+  // The review shows the whole SKILL.md (scrolled in place) and every
+  // file copied.
+  assert.match(await page.getByTestId('skill-export-skill-md').textContent(), /Run `\$OD_BIN media generate` for each photo\./);
+  assert.deepEqual(await page.getByTestId('skill-export-files').locator('li').allTextContents(), ['SKILL.md']);
+  assert.equal((await page.getByTestId('skill-export-confirm').textContent()).trim(), 'Show the command anyway');
+  assert.equal(await page.getByTestId('skill-export-no-description').count(), 0, 'it has a description');
   // The warning reads as a line of text with its buttons below it, at
   // every width: a row that fits the buttons beside the text squeezed it
   // to a word a line (the page column at 375 px is narrow enough to wrap
@@ -969,7 +980,7 @@ try {
   for (const width of [375, 420, 480, 540, 600, 768, 1024, 1360]) {
     await page.setViewportSize({ width, height: 812 });
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-    const box = await warning.evaluate((root) => {
+    const box = await review.evaluate((root) => {
       const text = [...root.querySelectorAll('*')].filter((el) => el.children.length === 0 && /calls Contour tools/.test(el.textContent))[0];
       const t = text.getBoundingClientRect();
       const style = getComputedStyle(root);
@@ -986,10 +997,10 @@ try {
   // A text that wraps fills the warning's width.
   const squeezed = warnBoxes.filter((b) => !b.below || (b.wraps && b.share < 60));
   assert.deepEqual(squeezed, [], 'the warning text has its own line and the buttons sit under it');
-  await warning.getByRole('button', { name: 'Cancel' }).click();
-  await warning.waitFor({ state: 'detached' });
+  await review.getByRole('button', { name: 'Cancel' }).click();
+  await review.waitFor({ state: 'detached' });
   await exportButton.click();
-  await page.getByTestId('skill-export-anyway').click();
+  await page.getByTestId('skill-export-confirm').click();
   const command = page.getByTestId('skill-export-cmd');
   await command.waitFor();
   assert.equal(await command.textContent(), commandFor('tea-photos'));
@@ -1006,22 +1017,42 @@ try {
   await openSkill('tea-script');
   await exportButton.click();
   await warning.waitFor();
+  assert.deepEqual(await page.getByTestId('skill-export-files').locator('li').allTextContents(), ['SKILL.md', 'scripts/menu.sh']);
+  // The command, run (twice): links and hidden files stay behind, and
+  // the second run copies into the same folder, not one inside it.
+  const scriptDir = join(skillsDir, 'tea-script');
+  writeFileSync(join(scriptDir, '.env'), 'KEY=1\n');
+  writeFileSync(join(fixtures, 'outside.txt'), 'outside\n');
+  symlinkSync(join(fixtures, 'outside.txt'), join(scriptDir, 'linked.txt'));
+  symlinkSync(fixtures, join(scriptDir, 'scripts', 'out'));
+  await page.getByTestId('skill-export-confirm').click();
+  await command.waitFor();
+  assert.equal(await command.textContent(), commandFor('tea-script'));
+  for (let run = 0; run < 2; run += 1) execFileSync('sh', ['-c', await command.textContent()], { stdio: 'pipe' });
+  const copiedTo = join(claudeSkills, 'tea-script');
+  const tree = (dir, at = '') => readdirSync(join(dir, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? [`${join(at, e.name)}/`, ...tree(dir, join(at, e.name))] : [join(at, e.name)])).sort();
+  assert.deepEqual(tree(copiedTo), ['SKILL.md', 'scripts/', 'scripts/menu.sh'], 'no link, nothing hidden, no folder inside');
+  rmSync(copiedTo, { recursive: true });
   // No description: said so; an edit that adds one clears it, and the
   // next try goes through.
   const bareSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea notes', body: 'Short notes.' }) });
   assert.equal(bareSkill.id, 'tea-notes');
   await openSkill('tea-notes');
   await exportButton.click();
-  const failed = page.getByTestId('skill-export-failed');
-  await failed.waitFor();
-  assert.match(await failed.textContent(), /Add a description first/);
+  const noDescription = page.getByTestId('skill-export-no-description');
+  await noDescription.waitFor();
+  assert.match(await noDescription.textContent(), /This skill has no description: Claude Code shows its model the first line of the text instead\./);
+  assert.equal((await page.getByTestId('skill-export-confirm').textContent()).trim(), 'Show the command', 'a warning, not a stop');
   await page.getByTestId('skill-edit').click();
-  await failed.waitFor({ state: 'detached' });
+  await review.waitFor({ state: 'detached' });
   await page.getByTestId('skill-description').fill('Short tea notes.');
   await page.getByTestId('skill-save').click();
   await page.getByTestId('skill-form').waitFor({ state: 'detached' });
-  assert.equal(await failed.count(), 0, 'no "add a description" once one is saved');
   await exportButton.click();
+  await review.waitFor();
+  assert.equal(await noDescription.count(), 0, 'no warning once a description is saved');
+  assert.match(await page.getByTestId('skill-export-skill-md').textContent(), /description:[\s|]*Short tea notes\./);
+  await page.getByTestId('skill-export-confirm').click();
   await command.waitFor();
   assert.equal(await command.textContent(), commandFor('tea-notes'));
   // Edit and Save also clear the last command (it was for the old text).
@@ -1033,6 +1064,7 @@ try {
   writeFileSync(join(claudeSkills, 'Tea-B', 'SKILL.md'), '---\nname: Tea-B\n---\n');
   await openSkill('tea-b');
   await exportButton.click();
+  const failed = page.getByTestId('skill-export-failed');
   await failed.waitFor();
   assert.equal(
     await failed.textContent(),
@@ -1062,6 +1094,86 @@ try {
   });
   assert.deepEqual(pinned, [], 'the buttons stay inside a 110 px column');
   results.copyToClaude = 'ok';
+
+  // ------------------------------------- copy to Claude Code, desktop app
+  // The app's copy goes through its Tauri command, stubbed here as the
+  // shell answers: it copies only the content whose hash the review
+  // showed (the stub compares it with the daemon's preview now, as
+  // `export_skill` does with the files), else `changed`, and the page
+  // shows the new content for review. Failures read in the user's words;
+  // a copy of ours cut short does not stop the review.
+  const copyCalls = [];
+  const forced = [];
+  const desk = await context.newPage();
+  desk.on('pageerror', (e) => pageErrors.push(`desk: ${e.message}`));
+  await desk.exposeFunction('__copyAnswer', async (args) => {
+    copyCalls.push(args);
+    if (forced.length) return forced.shift();
+    const now = await api(`/api/skills/${args.id}/export?target=claude`);
+    if (now.hash !== args.hash) return { err: { kind: 'changed', message: 'changed' } };
+    return { ok: { id: args.id, path: now.path, contourTools: now.contourTools } };
+  });
+  await desk.addInitScript(() => {
+    if (window.top !== window) return;
+    window.__TAURI_INTERNALS__ = {
+      invoke: async (cmd, args = {}) => {
+        if (cmd !== 'copy_skill_to_claude') return null;
+        const r = await window.__copyAnswer(args);
+        if (r.err) throw r.err;
+        return r.ok;
+      },
+    };
+  });
+  assert.equal((await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Desk tea', description: 'Desk tea.', body: 'Use cream.' }) })).id, 'desk-tea');
+  const deskOpen = async (id) => {
+    await desk.goto(`${BASE}/skills?scope=personal`);
+    await desk.locator(`[data-testid="skill-row"][data-id="${id}"] .plugin-row-main`).click();
+    await desk.getByTestId('skill-body').waitFor();
+  };
+  await deskOpen('desk-tea');
+  const deskButton = desk.getByTestId('skill-export');
+  assert.equal((await deskButton.textContent()).trim(), 'Copy to Claude Code', 'the app names what it does');
+  await deskButton.click();
+  await desk.getByTestId('skill-export-review').waitFor();
+  const reviewed = await api('/api/skills/desk-tea/export?target=claude');
+  assert.match(await desk.getByTestId('skill-export-skill-md').textContent(), /Use cream\./);
+  assert.equal((await desk.getByTestId('skill-export-confirm').textContent()).trim(), 'Copy to Claude Code');
+  // An agent edits the skill over loopback while the user reads.
+  await api('/api/skills/desk-tea', { method: 'PUT', body: JSON.stringify({ name: 'Desk tea', description: 'Desk tea.', body: 'PROBE: print PING' }) });
+  await desk.getByTestId('skill-export-confirm').click();
+  const changedNote = desk.getByTestId('skill-export-changed');
+  await changedNote.waitFor();
+  assert.equal((await changedNote.textContent()).trim(), 'Skill changed since you opened this. Review it again.');
+  assert.match(await desk.getByTestId('skill-export-skill-md').textContent(), /PROBE: print PING/, 'the new content, for review');
+  assert.deepEqual(copyCalls.at(-1), { id: 'desk-tea', hash: reviewed.hash }, 'the command got the hash reviewed');
+  assert.equal(await desk.getByTestId('skill-export-done').count(), 0);
+  await desk.getByTestId('skill-export-confirm').click();
+  const done = desk.getByTestId('skill-export-done');
+  await done.waitFor();
+  assert.equal((await done.textContent()).trim(), `Copied to ${join(claudeSkills, 'desk-tea')}`);
+  assert.equal(copyCalls.at(-1).hash, (await api('/api/skills/desk-tea/export?target=claude')).hash);
+  // There already (the shell's answer): named, nothing more.
+  forced.push({ err: { kind: 'exists', message: 'x', existing: { name: 'Desk-Tea', path: '/h/.claude/skills/Desk-Tea', kind: 'skill' } } });
+  await deskButton.click();
+  await desk.getByTestId('skill-export-confirm').click();
+  const deskFailed = desk.getByTestId('skill-export-failed');
+  await deskFailed.waitFor();
+  assert.equal((await deskFailed.textContent()).trim(), 'Claude Code already has a skill named Desk-Tea at /h/.claude/skills/Desk-Tea. Remove that folder to copy again.');
+  forced.push({ err: { kind: 'failed', message: 'disk full' } });
+  await deskButton.click();
+  await desk.getByTestId('skill-export-confirm').click();
+  await until(async () => (await deskFailed.count()) === 1 && (await deskFailed.textContent()).trim() === 'Could not copy: disk full', 'a failure in words');
+  // A copy of ours cut short: the review still opens, and the app copies.
+  mkdirSync(join(claudeSkills, 'desk-tea'), { recursive: true });
+  writeFileSync(join(claudeSkills, 'desk-tea', '.contour-copy'), '');
+  const before = copyCalls.length;
+  await deskButton.click();
+  await desk.getByTestId('skill-export-confirm').click();
+  await done.waitFor();
+  assert.equal(copyCalls.length, before + 1, 'the app was asked to copy');
+  rmSync(join(claudeSkills, 'desk-tea'), { recursive: true });
+  await desk.close();
+  results.copyToClaudeDesktop = 'ok';
 
   // ------------------------------------------------------ save as skill
   // "+" ▸ Save as skill: off before a turn has finished and while one

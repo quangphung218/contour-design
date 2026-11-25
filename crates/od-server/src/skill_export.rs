@@ -7,7 +7,10 @@
 //! desktop app copies, through its Tauri command (`copy_skill_to_claude`,
 //! `apps/desktop`), which calls [`copy_to_claude`] in process. The read
 //! only preview (`GET /api/skills/:id/export?target=claude`) shares
-//! [`export_source`] with it; the web app shows a `cp` command instead.
+//! [`export_source`] with it and shows the content (`SKILL.md`, the files)
+//! with its hash; the copy takes that hash and refuses a skill changed
+//! since (an agent can still edit a Personal skill over loopback). The web
+//! app shows an `rsync` command instead.
 
 use crate::error::{ApiErr, ApiResult};
 use crate::state::AppState;
@@ -71,8 +74,8 @@ pub struct Copied {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopyFailure {
-    /// `invalid`, `notFound`, `forbidden`, `noDescription`, `exists`,
-    /// `failed`.
+    /// `invalid`, `notFound`, `forbidden`, `changed` (not what the user
+    /// reviewed: review it again), `exists`, `failed`.
     pub kind: &'static str,
     pub message: String,
     /// What stands there already, for `exists`.
@@ -91,12 +94,13 @@ impl CopyFailure {
 }
 
 /// Copies the Personal skill `id` into the agents' Claude Code skills
-/// ([`user_content::export_skill`]: never over anything, nothing hidden
-/// there, `SKILL.md` last). Blocking: call it off the async runtime.
+/// ([`user_content::export_skill`]: only the content whose hash the
+/// preview showed, `hash`; never over anything, nothing hidden there,
+/// `SKILL.md` last). Blocking: call it off the async runtime.
 ///
 /// # Errors
 /// [`CopyFailure`] with its `kind`.
-pub fn copy_to_claude(state: &AppState, id: &str) -> Result<Copied, CopyFailure> {
+pub fn copy_to_claude(state: &AppState, id: &str, hash: &str) -> Result<Copied, CopyFailure> {
     let (entry, dest_root) = export_source(state, id, "claude").map_err(|e| {
         let kind = match e.status {
             StatusCode::BAD_REQUEST => "invalid",
@@ -108,13 +112,13 @@ pub fn copy_to_claude(state: &AppState, id: &str) -> Result<Copied, CopyFailure>
     })?;
     let id = entry.info.id.clone();
     let root = state.store.data_dir().user_skills_dir();
-    match user_content::export_skill(&root, &entry.dir, &id, &dest_root) {
-        Ok(path) => {
+    match user_content::export_skill(&root, &entry.dir, &id, &dest_root, hash) {
+        Ok((path, files)) => {
             tracing::info!(skill = %id, path = %path.display(), "skill copied to Claude Code");
             Ok(Copied {
                 id,
                 path,
-                contour_tools: user_content::export_check(&entry.dir).contour_tools,
+                contour_tools: files.check().contour_tools,
             })
         }
         Err(WriteError::Exists(name)) => {
@@ -133,7 +137,7 @@ pub fn copy_to_claude(state: &AppState, id: &str) -> Result<Copied, CopyFailure>
                 existing,
             })
         }
-        Err(WriteError::NoDescription(m)) => Err(CopyFailure::new("noDescription", m)),
+        Err(WriteError::Changed(m)) => Err(CopyFailure::new("changed", m)),
         Err(WriteError::NotFound(m)) => Err(CopyFailure::new("notFound", m)),
         Err(WriteError::BadRequest(m)) => Err(CopyFailure::new("invalid", m)),
         Err(e) => Err(CopyFailure::new("failed", e.to_string())),
