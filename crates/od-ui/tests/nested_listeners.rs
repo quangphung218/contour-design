@@ -282,11 +282,38 @@ struct Nested {
     inner_line: usize,
 }
 
+/// `src` with its comments and string literals blanked out (each byte a
+/// space, newlines kept), as the main scan skips them ([`skip_literal`]).
+fn code_only(src: &str) -> String {
+    let s = src.as_bytes();
+    let mut out = Vec::with_capacity(s.len());
+    let mut i = 0;
+    while i < s.len() {
+        if let Some(end) = skip_literal(s, i) {
+            let end = end.min(s.len());
+            out.extend(
+                s[i..end]
+                    .iter()
+                    .map(|&b| if b == b'\n' { b'\n' } else { b' ' }),
+            );
+            i = end;
+        } else {
+            out.push(s[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).unwrap_or_default()
+}
+
 /// `alias → name` of the components a file imports under another name
-/// (`use super::lib_ui::{Modal as Dialog};`).
+/// (`use super::lib_ui::{Modal as Dialog};`). Only code counts (a comment
+/// "we use Modal as a base" renames nothing), and only an alias that is
+/// itself a component name (capitalised: `view!` takes a lowercase tag
+/// for an element).
 fn use_aliases(src: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    let mut rest = src;
+    let code = code_only(src);
+    let mut rest = code.as_str();
     while let Some(at) = rest.find("use ") {
         let fresh = at == 0 || rest[..at].ends_with(|c: char| c.is_whitespace() || c == ';');
         let end = rest[at..].find(';').map_or(rest.len(), |e| at + e);
@@ -296,7 +323,8 @@ fn use_aliases(src: &str) -> BTreeMap<String, String> {
                 .filter(|w| !w.is_empty())
                 .collect();
             for w in words.windows(3) {
-                if w[1] == "as" && w[0].starts_with(|c: char| c.is_ascii_uppercase()) {
+                let capital = |w: &str| w.starts_with(|c: char| c.is_ascii_uppercase());
+                if w[1] == "as" && capital(w[0]) && capital(w[2]) {
                     out.insert(w[2].to_owned(), w[0].to_owned());
                 }
             }
@@ -655,6 +683,33 @@ fn a_component_with_a_listener_counts_inside_a_listening_element() {
     let aliased = "use super::menu::{Menu as Options, Other};\n\
                    fn Card() { view! {\n<article on:click=open>\n<Options/>\n</article> } }";
     assert_eq!(scan_source(aliased, &known).0.len(), 1);
+    // "use … as" in a comment or a string renames nothing: `<a>` stays an
+    // element listening for clicks, and the button inside it is a pair.
+    let modal = "fn Modal() -> impl IntoView { view! { <div on:click=close></div> } }";
+    let (_, with_modal) = scan_source(modal, &known);
+    for words in [
+        "// We use Modal as a base for the menu.\n",
+        "/* We use Modal as a base; */\n",
+        "const NOTE: &str = \"use Modal as a base;\";\n",
+        // Code, but a lowercase alias is never a component.
+        "use super::lib_ui::Modal as a;\n",
+    ] {
+        let src = format!(
+            "{words}fn Menu() {{ view! {{\n<a on:click=go>\n<button on:click=close></button>\n</a> }} }}"
+        );
+        assert_eq!(scan_source(&src, &with_modal).0.len(), 1, "{words}");
+    }
+    // A capitalised "as" in a comment or a string renames nothing either:
+    // `<Item/>` (no listener) is not taken for `Menu` (listens for clicks).
+    for words in [
+        "// Shown as we use Menu as Item;\n",
+        "const NOTE: &str = \"use Menu as Item;\";\n",
+    ] {
+        let src = format!(
+            "{words}fn Card() {{ view! {{\n<article on:click=open>\n<Item/>\n</article> }} }}"
+        );
+        assert_eq!(scan_source(&src, &known).0.len(), 0, "{words}");
+    }
 }
 
 #[test]
@@ -687,10 +742,14 @@ fn a_component_keeps_its_children_under_any_name() {
 }
 
 #[test]
-fn the_scan_knows_the_components_used_by_their_path() {
-    // `<quick_menu::QuickMenu>`, `<memory_settings::MemoryToast/>`,
-    // `<super::lib_ui::Modal>`: each brings what it listens for and what
-    // it wraps its children in to where it is used.
+fn the_scan_knows_what_the_repos_components_listen_for() {
+    // The components the app uses by their path (`<quick_menu::QuickMenu>`,
+    // `<memory_settings::MemoryToast/>`, `<super::lib_ui::Modal>`) are
+    // known from their own definitions: what each listens for and what it
+    // wraps its children in. This checks the definitions only; that a use
+    // by path counts where it is used is held by the `by_path` and
+    // `open_close` cases of
+    // `a_component_with_a_listener_counts_inside_a_listening_element`.
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let (_, known) = scan(&src);
     for name in [
