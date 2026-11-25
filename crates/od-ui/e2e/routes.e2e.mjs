@@ -4,8 +4,9 @@
 // time on each screen, once leaving each with its requests in flight. Then
 // a message sent as the Studio is left is not back in its composer, and a
 // button that opens a page (quick menu, Generate) leaves once its click
-// is done. A screen's
-// tasks and effects must stop when it is left: no page error and no
+// is done, and a dialog's own Cancel, × and backdrop close it with no page
+// error (New project, instructions, Link local code). A screen's tasks
+// and effects must stop when it is left: no page error and no
 // `panicked at` in the console (a task reading a disposed signal panics
 // in the debug bundle). Every request leaving loopback is blocked and
 // fails the test.
@@ -93,6 +94,7 @@ try {
     [studio]: '[data-testid="composer"], textarea',
     '/media': '.nav-link[href="/media"][aria-current="page"]',
     '/automations': '.nav-link[href="/automations"][aria-current="page"]',
+    '/projects': '[data-testid="new-project"]',
   };
   const go = async (path) => {
     await page.evaluate((to) => {
@@ -227,6 +229,47 @@ try {
   await page.getByTestId('prompt-card').first().waitFor({ timeout: 15_000 });
   await leavesAfterClick(() => page.getByTestId('prompt-generate').first().click(), (u) => u.startsWith('/media?template='), 'Generate');
   await page.getByTestId('media-generate').waitFor();
+
+  // A dialog's own buttons close it inside their click. An element around
+  // the button that listens for clicks too (the dialog that kept clicks
+  // from the overlay, the overlay that closed on a click) went with the
+  // dialog while the click still passed through it, and wasm threw
+  // "closure invoked recursively or after being dropped". The overlay's
+  // click now lands on a backdrop beside the dialog, as in `Modal`
+  // (`tests/nested_listeners.rs`). The round trip after the dialog went
+  // brings in any page error the click raised.
+  const closesClean = async (open, testid, close, label) => {
+    const before = pageErrors.length;
+    await open();
+    const dialog = page.getByTestId(testid);
+    await dialog.waitFor();
+    await close(dialog);
+    await dialog.waitFor({ state: 'detached' });
+    await page.evaluate(() => 0);
+    assert.deepEqual(pageErrors.slice(before), [], `${label}: no page error`);
+    log(label, 'closed');
+  };
+  const button = (name) => (d) => d.getByRole('button', { name, exact: true }).click();
+  const backdrop = async () => {
+    const box = await page.locator('.overlay .modal-backdrop').boundingBox();
+    await page.mouse.click(box.x + 4, box.y + 4);
+  };
+  await go('/projects');
+  const newProject = () => page.getByTestId('new-project').click();
+  await closesClean(newProject, 'new-project-panel', button('Close'), 'New project ▸ ×');
+  await closesClean(newProject, 'new-project-panel', backdrop, 'New project ▸ backdrop');
+  const instructions = () => page.getByTestId('project-instructions').first().click();
+  await closesClean(instructions, 'instructions-dialog', button('Cancel'), 'Instructions ▸ Cancel');
+  await closesClean(instructions, 'instructions-dialog', button('Close'), 'Instructions ▸ ×');
+  await go(studio);
+  // The + menu stays open behind the dialog it opened.
+  const linkFolder = async () => {
+    if (!(await page.getByTestId('link-local-code').isVisible())) await page.getByTestId('plus-menu').click();
+    await page.getByTestId('link-local-code').click();
+  };
+  await closesClean(linkFolder, 'folder-dialog', button('Cancel'), 'Link local code ▸ Cancel');
+  await closesClean(linkFolder, 'folder-dialog', button('Close'), 'Link local code ▸ ×');
+  await closesClean(linkFolder, 'folder-dialog', backdrop, 'Link local code ▸ backdrop');
 
   assert.deepEqual(pageErrors, [], 'no page error or panic after leaving screens');
   assert.deepEqual(external, [], 'no request left loopback');

@@ -10,7 +10,9 @@
 //! of the event behind. A new `navigate(…)` in a handler fails here, and
 //! so does a listed site that went away. The scan only sees the name
 //! `navigate`, so every `use_navigate()` and `use_leave()` is bound to it,
-//! or listed in [`KEPT_ELSEWHERE`] with where its calls are.
+//! or listed in [`KEPT_ELSEWHERE`] with where its calls are: so is a
+//! `navigate` used as a value in any way (handed on, returned, given by a
+//! closure) and a hook imported `as` another name or kept uncalled.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
@@ -148,47 +150,99 @@ fn calls(line: &str) -> usize {
 
 /// Whether `line` takes a navigate (`use_navigate()`, `use_leave()`, or a
 /// clone of one) without naming it `navigate`, wraps it, or hands it on.
-fn renamed(line: &str) -> bool {
+/// `prev` is the code of the line before (rustfmt puts a long call's
+/// arguments, or the value of a long `let`, on lines of their own).
+fn renamed(prev: &str, line: &str, importing: bool) -> bool {
     let code = code(line).trim();
+    if importing {
+        return hook_as_value(code, true);
+    }
     if code.contains("fn use_leave") {
         return false;
     }
     for hook in ["use_navigate();", "use_leave();", "navigate.clone();"] {
         if let Some(head) = code.strip_suffix(hook) {
+            // `let x =` on the line before: the value moved down.
+            let joined = format!("{} {}", prev.trim(), head.trim());
+            let head = if prev.trim_end().ends_with('=') && !head.contains('=') {
+                joined.as_str()
+            } else {
+                head
+            };
             // `let navigate = <path::>hook`: the scan sees its calls.
-            let path = head.strip_prefix("let navigate =").map(str::trim);
+            let path = head
+                .strip_prefix("let navigate =")
+                .or_else(|| head.strip_prefix("let mut navigate ="))
+                .map(str::trim);
             return !path.is_some_and(|p| {
                 p.chars()
                     .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
             });
         }
     }
-    code.contains("use_navigate()") || code.contains("use_leave()") || moved(code)
+    code.contains("use_navigate()")
+        || code.contains("use_leave()")
+        || hook_as_value(code, importing)
+        || moved(prev, code)
 }
 
-/// Whether `code` hands `navigate` (or `navigate.clone()`) on as a value
-/// (`let go = navigate;`, `StoredValue::new(navigate)`,
-/// `open_now(navigate.clone(), path)`): whatever receives it calls it under
-/// another name. `let navigate = navigate.clone();` keeps the name.
-fn moved(code: &str) -> bool {
+/// Whether `code` takes `use_navigate` or `use_leave` without calling it:
+/// imported under another name (`use_navigate as nav`, also inside a
+/// `use` group over several lines) or kept as a value
+/// (`let hook = use_navigate;`). `importing`: `code` is part of a `use`.
+fn hook_as_value(code: &str, importing: bool) -> bool {
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    ["use_navigate", "use_leave"].iter().any(|hook| {
+        code.match_indices(hook).any(|(i, word)| {
+            let rest = &code[i + word.len()..];
+            let after = rest.trim_start();
+            if code[..i].chars().next_back().is_some_and(ident)
+                || rest.starts_with(ident)
+                || code[..i].trim_end().ends_with("fn")
+                || after.starts_with('(')
+                || after.starts_with("::")
+            {
+                return false; // another word, its declaration, a call, a path
+            }
+            after.starts_with("as ") || !importing
+        })
+    })
+}
+
+/// Whether `code` uses `navigate` (or `navigate.clone()`) as a value
+/// rather than calling it: `let go = navigate;`, `open_now(navigate.clone(),
+/// path)`, `Ctx { navigate }`, `move || navigate.clone()`, a fn's last
+/// `navigate`, `return navigate`, `_ => navigate`. Whatever receives it
+/// calls it under another name. Not a value: a call (and `fn navigate(`),
+/// `let navigate = …` or `navigate = …`, a field `navigate: T`, and the
+/// `navigate` of
+/// `let navigate = navigate.clone();`, which keeps the name. At the start
+/// of a line, what comes before it is the end of `prev`.
+fn moved(prev: &str, code: &str) -> bool {
     let ident = |c: char| c.is_alphanumeric() || c == '_';
     code.match_indices("navigate").any(|(i, word)| {
-        let before = code[..i].trim_end();
-        let mut after = &code[i + word.len()..];
+        let own = code[..i].trim_end();
+        let before = if own.is_empty() { prev.trim_end() } else { own };
+        let after = &code[i + word.len()..];
         if code[..i]
             .chars()
             .next_back()
             .is_some_and(|c| ident(c) || c == '.')
-            || after.chars().next().is_some_and(ident)
+            || after.starts_with(ident)
         {
-            return false;
+            return false; // part of another word, or a field
         }
-        after = after.strip_prefix(".clone()").unwrap_or(after);
-        if after.trim_start().starts_with('(') {
-            return false; // a call: counted by `calls`
-        }
-        let handed = before.ends_with(['=', '(', ',', '&', '[', '{']);
-        handed && !before.ends_with("let navigate =")
+        let value = after.strip_prefix(".clone()").unwrap_or(after).trim_start();
+        let field = after.trim_start().starts_with(':') && !after.trim_start().starts_with("::");
+        let assigned = {
+            let a = after.trim_start();
+            a.starts_with('=') && !a.starts_with("==") && !a.starts_with("=>")
+        };
+        !(value.starts_with('(')
+            || field
+            || assigned
+            || before.ends_with("let navigate =")
+            || before.ends_with("let mut navigate ="))
     })
 }
 
@@ -207,20 +261,31 @@ fn scan(src: &Path) -> Scan {
             .to_string_lossy()
             .replace('\\', "/");
         let mut current = String::from("(top)");
+        let mut prev = String::new();
+        // Inside a `use` (or `pub use`) until its `;`, over several lines.
+        let mut importing = false;
         for line in std::fs::read_to_string(&path).unwrap().lines() {
             let trimmed = line.trim_start();
-            if trimmed.starts_with("//") || trimmed.starts_with("use ") {
+            if trimmed.starts_with("//") {
                 continue;
             }
+            let opens = ["use ", "pub use ", "pub(crate) use ", "pub(super) use "];
+            importing |= opens.iter().any(|u| trimmed.starts_with(u));
             if let Some(name) = declared_fn(line) {
                 current = name.to_owned();
             }
-            let n = calls(line);
+            let n = if importing { 0 } else { calls(line) };
             if n > 0 {
                 *found.entry((rel.clone(), current.clone())).or_default() += n;
             }
-            if renamed(line) {
+            if renamed(&prev, line, importing) {
                 renames.push((rel.clone(), current.clone()));
+            }
+            if importing && code(line).contains(';') {
+                importing = false;
+            }
+            if !code(line).trim().is_empty() {
+                code(line).trim().clone_into(&mut prev);
             }
         }
     }
@@ -295,27 +360,121 @@ fn the_scan_sees_a_call_of_navigate_only() {
     assert_eq!(calls("cx.navigate(path, options)"), 0);
     assert_eq!(calls("on:click=move |_| navigate.clone()(&path)>"), 1);
     assert_eq!(calls("open(path); // then navigate(path)"), 0);
-    assert!(renamed("let go = use_leave();"));
-    assert!(renamed("let nav = StoredValue::new_local(use_navigate());"));
-    assert!(!renamed("let navigate = super::leave_guard::use_leave();"));
-    assert!(!renamed("let navigate = use_navigate();"));
-    assert!(!renamed("        let navigate = navigate.clone();"));
-    assert!(renamed("    let nav_docs = navigate.clone();"));
+    assert!(renamed("", "let go = use_leave();", false));
     assert!(renamed(
-        "let navigate = StoredValue::new_local(use_navigate());"
+        "",
+        "let nav = StoredValue::new_local(use_navigate());",
+        false
     ));
-    assert!(!renamed("pub fn use_leave() -> impl Fn(&str) + Clone {"));
-    assert!(renamed("    let go = navigate;"));
-    assert!(renamed(
-        "on:click=move |_| open_now(navigate.clone(), path.clone())>"
-    ));
-    assert!(renamed("let kept = StoredValue::new(navigate);"));
-    assert!(renamed(
-        "let (navigate, path) = (navigate.clone(), path.to_owned());"
-    ));
-    assert!(!renamed("let navigate = navigate;"));
     assert!(!renamed(
-        "let open_page = super::leave_guard::use_open_after_click();"
+        "",
+        "let navigate = super::leave_guard::use_leave();",
+        false
     ));
-    assert!(!renamed("Ok(v) => navigate(&path, Default::default()),"));
+    assert!(!renamed("", "let navigate = use_navigate();", false));
+    assert!(!renamed(
+        "",
+        "        let navigate = navigate.clone();",
+        false
+    ));
+    assert!(renamed("", "    let nav_docs = navigate.clone();", false));
+    assert!(renamed(
+        "",
+        "let navigate = StoredValue::new_local(use_navigate());",
+        false
+    ));
+    assert!(!renamed(
+        "",
+        "pub fn use_leave() -> impl Fn(&str) + Clone {",
+        false
+    ));
+    assert!(renamed("", "    let go = navigate;", false));
+    assert!(renamed(
+        "",
+        "on:click=move |_| open_now(navigate.clone(), path.clone())>",
+        false
+    ));
+    assert!(renamed("", "let kept = StoredValue::new(navigate);", false));
+    assert!(renamed(
+        "",
+        "let (navigate, path) = (navigate.clone(), path.to_owned());",
+        false
+    ));
+    assert!(!renamed("", "let navigate = navigate;", false));
+    assert!(!renamed(
+        "",
+        "let open_page = super::leave_guard::use_open_after_click();",
+        false
+    ));
+    assert!(!renamed(
+        "",
+        "Ok(v) => navigate(&path, Default::default()),",
+        false
+    ));
+    // rustfmt puts long arguments and values on lines of their own.
+    assert!(renamed("open_project_now(", "    navigate.clone(),", false));
+    assert!(renamed("let go =", "    navigate;", false));
+    assert!(renamed("let ctx = Ctx {", "    navigate,", false));
+    assert!(renamed("let nav =", "    use_navigate();", false));
+    assert!(!renamed("let navigate =", "    navigate.clone();", false));
+    assert!(!renamed(
+        "let navigate =",
+        "    super::leave_guard::use_leave();",
+        false
+    ));
+    assert!(!renamed(
+        "move |_| {",
+        "    navigate(&path, Default::default());",
+        false
+    ));
+    // A value however it is written: a fn's last expression, `return`, an
+    // arm, a closure that gives it, a reference, a field, an alias.
+    assert!(renamed(
+        "let navigate = use_navigate();",
+        "    navigate",
+        false
+    ));
+    assert!(renamed("", "    return navigate;", false));
+    assert!(renamed("", "        _ => navigate,", false));
+    assert!(renamed("", "let make = move || navigate.clone();", false));
+    assert!(renamed("", "let go = Clone::clone(&navigate);", false));
+    assert!(renamed("", "    navigate: navigate.clone(),", false));
+    assert!(renamed(
+        "",
+        "let hook = leptos_router::hooks::use_navigate;",
+        false
+    ));
+    assert!(renamed(
+        "",
+        "let go = leptos_router::hooks::use_navigate();",
+        false
+    ));
+    assert!(renamed(
+        "",
+        "use leptos_router::hooks::use_navigate as nav;",
+        true
+    ));
+    assert!(renamed(
+        "use leptos_router::hooks::{",
+        "    use_location, use_navigate as nav,",
+        true
+    ));
+    assert!(!renamed(
+        "",
+        "use leptos_router::hooks::{use_location, use_navigate};",
+        true
+    ));
+    assert!(!renamed(
+        "use leptos_router::hooks::{",
+        "    use_navigate,",
+        true
+    ));
+    assert!(!renamed("", "    navigate: F,", false));
+    assert!(!renamed("", "let mut navigate = use_navigate();", false));
+    assert!(!renamed("", "pub fn navigate(&self, path: &str) {", false));
+    assert!(!renamed(
+        "",
+        "on:click=move |_| navigate.clone()(&path)>",
+        false
+    ));
 }

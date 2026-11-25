@@ -11,6 +11,7 @@ All notable changes to Contour are recorded here. The format follows
 ### Fixed
 
 - Buttons that open another page (quick menu, Generate, Use, the Settings chip, /mcp) no longer throw an error while leaving.
+- Cancel and × in the New project, project instructions and Link local code dialogs no longer throw an error while closing.
 
 ## [0.2.0-beta.64] - 2026-11-25
 

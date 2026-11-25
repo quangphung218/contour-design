@@ -39,6 +39,10 @@ Paths below are relative to this folder.
    A handler (click, key, pick) opens a page with `use_open_after_click`, on the next task: leaving inside
    the event drops listeners it still passes through (#332).
    - `tests/click_navigate.rs` (source scan: every `navigate(` call listed in `KEPT` with why); e2e `e2e/routes.e2e.mjs`
+   No element listens for an event that an element inside it listens for too: a handler that closes the outer one
+   drops its listener while the event still bubbles to it. An overlay closes on a `.modal-backdrop` beside the dialog.
+   - `tests/nested_listeners.rs` (source scan of every `view!`, through components; pairs that stay in `KEPT` with why)
+   - e2e `e2e/routes.e2e.mjs` (dialog Cancel, ×, backdrop), Stay in `e2e/preview.e2e.mjs`, Leave in `e2e/c2.e2e.mjs`
 6. A comment draft is found by `id`, never by path. Sends and upload landings look it up by id or token
    (`src/app/preview_comments.rs:draft_by_id`, `land_upload`).
    - `src/app/preview_comments.rs::a_draft_renamed_while_it_is_sent_goes_when_it_is_saved`

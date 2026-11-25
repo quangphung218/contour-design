@@ -65,13 +65,13 @@ pub fn QuickSwitcher(ctx: StudioCtx) -> impl IntoView {
         }
     };
     view! {
-        <div class="overlay" on:click=move |_| close()>
+        <div class="overlay">
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| close()></div>
             <div
                 class="switcher"
                 role="dialog"
                 aria-label=t(T::QuickOpen)
                 data-testid="quick-switcher"
-                on:click=|ev| ev.stop_propagation()
             >
                 <div class="switcher-search">
                 {icon(Glyph::Search)}

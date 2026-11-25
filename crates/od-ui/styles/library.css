@@ -202,8 +202,6 @@
 .lib-page .page-title { flex: 1; }
 .confirm-bar { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; border-color: var(--color-danger); background: var(--color-danger-soft); }
 .confirm-bar .confirm { padding-left: 0; }
-.modal-backdrop { position: absolute; inset: 0; }
-.overlay > .dialog { position: relative; }
 /* Create dialog modes: five tabs; on a narrow window they wrap into a
    grid, labels on two lines, so none runs out of the dialog. */
 @media (max-width: 600px) {

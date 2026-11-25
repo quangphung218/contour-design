@@ -431,6 +431,11 @@ input[type="color"].swatch.transparent::-moz-color-swatch { opacity: 0; }
   animation: fade-in var(--duration-base) var(--ease-out);
 }
 .overlay.center { align-items: center; padding-top: var(--space-4); }
+/* A click outside the dialog lands on the backdrop beside it, not on the
+   overlay around it: a button that closes the dialog must not bubble into
+   a listener that goes with it (`tests/nested_listeners.rs`). */
+.modal-backdrop { position: absolute; inset: 0; }
+.overlay > .dialog, .overlay > .switcher { position: relative; }
 .dialog {
   width: min(520px, 100%);
   max-height: calc(100vh - 2 * var(--space-8));

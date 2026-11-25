@@ -378,6 +378,9 @@ try {
   assert.ok(page.url().includes('/projects/'), 'still in the Studio while asked');
   await page.getByTestId('leave-go').click();
   await page.waitForURL('**/settings#settings-memory');
+  // Leave closes the question inside its own click: nothing around the
+  // button may listen for that click too (`tests/nested_listeners.rs`).
+  assert.deepEqual(pageErrors, [], 'Leave closes the question with no page error');
   await until(async () => (await page.getByTestId('global-memory-item').count()) === 2, 'learned entry listed');
   results.settingsMemory = 'ok';
 

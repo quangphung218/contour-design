@@ -77,7 +77,8 @@ pub fn ShortcutsDialog() -> impl IntoView {
         });
     };
     view! {
-        <div class="overlay center" on:click=move |_| close()>
+        <div class="overlay center">
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| close()></div>
             <div
                 class="dialog shortcuts"
                 role="dialog"
@@ -85,7 +86,6 @@ pub fn ShortcutsDialog() -> impl IntoView {
                 aria-labelledby="shortcuts-title"
                 data-testid="shortcuts"
                 tabindex="-1"
-                on:click=|ev| ev.stop_propagation()
                 on:keydown=move |ev: web_sys::KeyboardEvent| {
                     if ev.key() == "Escape" {
                         close();

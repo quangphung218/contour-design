@@ -330,14 +330,14 @@ pub fn CommandPalette() -> impl IntoView {
         }
     };
     view! {
-        <div class="overlay" on:click=move |_| close()>
+        <div class="overlay">
+            <div class="modal-backdrop" aria-hidden="true" on:click=move |_| close()></div>
             <div
                 class="switcher palette"
                 role="dialog"
                 aria-modal="true"
                 aria-label=t(T::CommandPalette)
                 data-testid="command-palette"
-                on:click=|ev| ev.stop_propagation()
             >
                 <div class="switcher-search">
                     {icon(Glyph::Command)}
