@@ -5,6 +5,8 @@ Paths below are relative to this folder.
 
 ## Owns
 - Window, native menu, close and quit, updater, folder picker and save dialog, WKWebView quirks.
+- "Copy to Claude Code" (`copy_skill_to_claude`, decision #9): the only way a skill is written into an agent CLI's
+  folders; it calls `od_server::skill_export::copy_to_claude`. Never add an HTTP route or `od` command for it.
 - `src/data_lock.rs`: `daemon.lock`, `daemon-app.url`, single instance. `src/close_guard.rs`: close and quit steps.
 - `src/mac_quit.rs` (macOS `applicationShouldTerminate`), `src/js_dialogs.rs`, `src/web_process.rs`, `src/updater.rs`.
 - The same binary also runs `mcp`, `daemon start` and the `od` client commands without a window.

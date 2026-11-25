@@ -22,6 +22,10 @@ pub enum WriteError {
     Exists(String),
     #[error("{0}")]
     NotFound(String),
+    /// A skill with no `description` that an agent CLI would not offer
+    /// its model ("Copy to Claude Code").
+    #[error("{0}")]
+    NoDescription(String),
     #[error("{0}")]
     Io(String),
 }
@@ -333,6 +337,51 @@ fn entry_like(dir: &Path, id: &str) -> Result<Option<String>, WriteError> {
 /// One export into an agent's skills at a time in this process.
 static EXPORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// The file a copy into an agent's skills holds until its `SKILL.md` is
+/// there: a folder with it and no `SKILL.md` is a copy of Contour's that
+/// was cut short (the app quit), which the next copy replaces.
+pub const EXPORT_MARK: &str = ".contour-copy";
+
+/// What stands at a skill's name in an agent's skills already.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExistingEntry {
+    /// Its name on disk (`TEA` for the skill `tea`).
+    pub name: String,
+    pub path: PathBuf,
+    pub kind: ExistingKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExistingKind {
+    /// A folder with a `SKILL.md`: a skill.
+    Skill,
+    /// Contour's own copy, cut short ([`EXPORT_MARK`], no `SKILL.md`).
+    Unfinished,
+    /// Anything else: a file, a link, a folder with no `SKILL.md`.
+    Other,
+}
+
+/// The entry of `dest_root` at the name `id` (any case or Unicode form),
+/// as [`export_skill`] sees it. Read only.
+///
+/// # Errors
+/// [`WriteError::Io`] when `dest_root` cannot be read.
+pub fn existing_export(dest_root: &Path, id: &str) -> Result<Option<ExistingEntry>, WriteError> {
+    let Some(name) = entry_like(dest_root, id)? else {
+        return Ok(None);
+    };
+    let path = dest_root.join(&name);
+    let is = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+    let kind = match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.is_dir() && is(&path.join("SKILL.md")) => ExistingKind::Skill,
+        Ok(m) if m.is_dir() && is(&path.join(EXPORT_MARK)) => ExistingKind::Unfinished,
+        _ => ExistingKind::Other,
+    };
+    Ok(Some(ExistingEntry { name, path, kind }))
+}
+
 /// What "Copy to Claude Code" checks before it copies a skill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExportCheck {
@@ -409,7 +458,9 @@ fn script_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// into `<dest_root>/<id>`, an agent CLI's skills (`~/.claude/skills`).
 ///
 /// Never writes over anything: an entry of `dest_root` named `id` in any
-/// case or Unicode form, of any kind, is [`WriteError::Exists`]; the
+/// case or Unicode form, of any kind, is [`WriteError::Exists`] with its
+/// name on disk, except a copy of Contour's cut short (see
+/// [`EXPORT_MARK`]), which is replaced; the
 /// folder is then made with `create_dir`, which fails if another program
 /// made it meanwhile (also [`WriteError::Exists`]). Nothing hidden is
 /// written in `dest_root` (Claude Code would load it as a skill), and the
@@ -417,8 +468,8 @@ fn script_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// the folder made here is removed. Returns the folder written.
 ///
 /// # Errors
-/// [`WriteError::BadRequest`] for an invalid id or a skill without a
-/// `description`, [`WriteError::NotFound`] when `source` is no user skill
+/// [`WriteError::BadRequest`] for an invalid id,
+/// [`WriteError::NoDescription`], [`WriteError::NotFound`] when `source` is no user skill
 /// folder (outside `user_root`, a link, or its `SKILL.md` missing or a
 /// link), [`WriteError::Exists`], [`WriteError::Io`].
 pub fn export_skill(
@@ -458,7 +509,7 @@ fn export_skill_with(
         return Err(not_found());
     }
     if !export_check(source).has_description {
-        return Err(WriteError::BadRequest(format!(
+        return Err(WriteError::NoDescription(format!(
             "skill {id:?} has no description: Claude Code offers its model only skills \
              with one. Add a description (Edit), then copy again."
         )));
@@ -467,8 +518,13 @@ fn export_skill_with(
     let _one = EXPORT_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(name) = entry_like(dest_root, id)? {
-        return Err(WriteError::Exists(format!("skill {name:?}")));
+    match existing_export(dest_root, id)? {
+        None => {}
+        // Ours, cut short: never a skill, replaced.
+        Some(e) if e.kind == ExistingKind::Unfinished => {
+            std::fs::remove_dir_all(&e.path).map_err(io)?;
+        }
+        Some(e) => return Err(WriteError::Exists(e.name)),
     }
     let dest = dest_root.join(id);
     before_claim();
@@ -476,11 +532,15 @@ fn export_skill_with(
     match std::fs::create_dir(&dest) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(WriteError::Exists(format!("skill {id:?}")));
+            return Err(WriteError::Exists(id.to_owned()));
         }
         Err(e) => return Err(io(e)),
     }
-    let copied = copy_dir_skill_md_last(source, &dest, MAX_PLUGIN_BYTES);
+    let mark = dest.join(EXPORT_MARK);
+    let copied = std::fs::write(&mark, "")
+        .map_err(io)
+        .and_then(|()| copy_dir_skill_md_last(source, &dest, MAX_PLUGIN_BYTES))
+        .and_then(|()| std::fs::remove_file(&mark).map_err(io));
     if let Err(e) = copied {
         let _ = std::fs::remove_dir_all(&dest);
         return Err(e);
@@ -1424,19 +1484,96 @@ mod tests {
         let watch = {
             let dest = dest.clone();
             std::thread::spawn(move || {
+                let mut marked_while_copying = false;
                 loop {
                     if dest.join("tea/SKILL.md").exists() {
-                        return std::fs::read_dir(dest.join("tea/assets"))
-                            .map_or(0, Iterator::count);
+                        let files =
+                            std::fs::read_dir(dest.join("tea/assets")).map_or(0, Iterator::count);
+                        return (files, marked_while_copying);
+                    }
+                    if dest.join("tea/assets").exists()
+                        && dest.join("tea").join(EXPORT_MARK).exists()
+                    {
+                        marked_while_copying = true;
                     }
                 }
             })
         };
         export_skill(&user, &tea, "tea", &dest).unwrap();
+        let (files, marked) = watch.join().unwrap();
+        assert_eq!(files, 601, "every side file was there first");
+        assert!(marked, "a copy cut short is told by its mark");
+    }
+
+    /// What stands at the name already: told by its name on disk; a copy of
+    /// Contour's cut short is replaced, anything else is kept.
+    #[test]
+    fn an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let skill = |id: &str| {
+            skill_dir(
+                &user,
+                id,
+                &format!("---\nname: {id}\ndescription: D.\n---\n"),
+            )
+        };
+        // Another case: refused by the name it has.
+        let tea = skill("tea");
+        std::fs::create_dir_all(dest.join("TEA")).unwrap();
+        std::fs::write(dest.join("TEA/SKILL.md"), "theirs").unwrap();
         assert_eq!(
-            watch.join().unwrap(),
-            601,
-            "every side file was there first"
+            export_skill(&user, &tea, "tea", &dest),
+            Err(WriteError::Exists("TEA".to_owned()))
         );
+        let there = existing_export(&dest, "tea").unwrap().unwrap();
+        assert_eq!(
+            (there.name.as_str(), there.kind),
+            ("TEA", ExistingKind::Skill)
+        );
+        assert_eq!(there.path, dest.join("TEA"));
+        // Ours, cut short: replaced by a whole copy, with no mark left.
+        let mint = skill("mint");
+        std::fs::create_dir_all(dest.join("mint/assets")).unwrap();
+        std::fs::write(dest.join("mint").join(EXPORT_MARK), "").unwrap();
+        std::fs::write(dest.join("mint/assets/half.css"), "a{").unwrap();
+        assert_eq!(
+            existing_export(&dest, "mint").unwrap().unwrap().kind,
+            ExistingKind::Unfinished
+        );
+        export_skill(&user, &mint, "mint", &dest).unwrap();
+        assert!(dest.join("mint/SKILL.md").is_file());
+        assert!(dest.join("mint/assets/tokens.css").is_file());
+        assert!(
+            !dest.join("mint/assets/half.css").exists(),
+            "the half copy went"
+        );
+        assert!(!dest.join("mint").join(EXPORT_MARK).exists());
+        // A folder with no SKILL.md and no mark is not ours: kept.
+        let sage = skill("sage");
+        std::fs::create_dir_all(dest.join("sage")).unwrap();
+        std::fs::write(dest.join("sage/notes.txt"), "mine").unwrap();
+        assert_eq!(
+            existing_export(&dest, "sage").unwrap().unwrap().kind,
+            ExistingKind::Other
+        );
+        assert_eq!(
+            export_skill(&user, &sage, "sage", &dest),
+            Err(WriteError::Exists("sage".to_owned()))
+        );
+        assert_eq!(
+            std::fs::read_to_string(dest.join("sage/notes.txt")).unwrap(),
+            "mine"
+        );
+        // A whole copy leaves no mark.
+        let rue = skill("rue");
+        export_skill(&user, &rue, "rue", &dest).unwrap();
+        assert_eq!(names(&dest.join("rue")), ["SKILL.md", "assets"]);
+        assert_eq!(
+            existing_export(&dest, "rue").unwrap().unwrap().kind,
+            ExistingKind::Skill
+        );
+        assert_eq!(existing_export(&dest, "none").unwrap(), None);
     }
 }

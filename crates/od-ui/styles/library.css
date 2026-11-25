@@ -121,6 +121,8 @@
 .plugin-hero h2 { font-size: var(--text-xl); letter-spacing: var(--tracking-tight); margin-bottom: var(--space-1-5); }
 .plugin-hero .muted { margin: var(--space-2) 0 0; max-width: 70ch; }
 .skill-export-msg { overflow-wrap: anywhere; }
+.skill-export-command { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.skill-export-command pre { margin: 0; white-space: pre-wrap; max-width: 100%; }
 /* A page column narrower than the label (375 px): two lines, not past the edge. */
 .plugin-hero .skill-export-btn { height: auto; min-height: var(--control-md); max-width: 100%; white-space: normal; padding-block: var(--space-1); }
 /* The text on a line of its own, its buttons under it (375 px). */

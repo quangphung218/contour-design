@@ -17,22 +17,16 @@
 //! - `GET    /api/skills/local-sources`: the skill folders of agent CLIs
 //!   (`~/.claude/skills`, `~/.codex/skills`…, one level, read only) with
 //!   whether each is imported; "From agent CLI" installs the ones picked.
-//! - `POST   /api/skills/:id/export` `{target: "claude"}`: "Copy to Claude
-//!   Code" copies a Personal skill (`SKILL.md` and side files) into
-//!   `<agents' HOME>/.claude/skills/<id>`; 201 `{id, path, contourTools}`.
-//!   Only a user skill (403 otherwise); 409 when that folder has an entry
-//!   of that name in any case or Unicode form: nothing is written over.
-//!   `contourTools`: the skill calls `od`, `$OD_BIN`… in its SKILL.md or
-//!   `scripts/` (it may not work outside Contour). 400 for a skill with no
-//!   `description` (Claude Code offers its model only skills with one).
-//!   `GET` with `?target=claude`: the same checks, read only, as
-//!   `{id, path, contourTools, hasDescription}`.
+//! - `GET    /api/skills/:id/export?target=claude`: "Copy to Claude Code",
+//!   read only: where a Personal skill would go (`<agents' HOME>/.claude/
+//!   skills/<id>`), its source folder, what stands there already, whether
+//!   it has a description and calls Contour's tools. The copy itself is
+//!   the desktop app's (`crate::skill_export`); no request writes there.
 
 use super::write_and_reload;
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use od_content::user_content::{self, SkillDraft};
@@ -46,7 +40,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/skills/install", post(install))
         .route("/api/skills/local-sources", get(local_sources))
         .route("/api/skills/{id}", put(save).delete(delete))
-        .route("/api/skills/{id}/export", post(export).get(export_preview))
+        .route("/api/skills/{id}/export", get(export_preview))
 }
 
 #[derive(Debug, Deserialize)]
@@ -135,19 +129,8 @@ pub async fn install(
     Ok(Json(json!({ "id": id })))
 }
 
-/// `HOME` of the agents' environment (the folders they read their skills
-/// from): the last `HOME` set, as an agent process gets it, else the
-/// daemon's.
-fn agent_home(env: &[(std::ffi::OsString, std::ffi::OsString)]) -> Option<std::path::PathBuf> {
-    env.iter()
-        .rfind(|(k, _)| k == "HOME")
-        .filter(|(_, v)| !v.is_empty())
-        .map(|(_, v)| std::path::PathBuf::from(v))
-        .or_else(od_runtime::login_path::home_dir)
-}
-
 pub async fn local_sources(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let home = agent_home(&state.runs.engine.config().base_env);
+    let home = crate::skill_export::agent_home(&state.runs.engine.config().base_env);
     let root = user_root(&state);
     let sources = crate::spawn::spawn_blocking_in_span(move || {
         home.map(|h| user_content::scan_agent_skills(&user_content::agent_skill_roots(&h), &root))
@@ -213,102 +196,39 @@ pub async fn delete(
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ExportBody {
-    target: String,
-}
-
-/// The Personal skill `id` and the folder "Copy to Claude Code" writes
-/// it to (`<agents' HOME>/.claude/skills/<id>`), after the checks every
-/// export makes: a valid target and id, a user skill.
-fn export_source(
-    state: &AppState,
-    id: &str,
-    target: &str,
-) -> ApiResult<(od_content::skills::SkillEntry, std::path::PathBuf)> {
-    if target != "claude" {
-        return Err(ApiErr::bad_request("target must be \"claude\""));
-    }
-    if !od_content::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
-        return Err(ApiErr::bad_request(format!("invalid skill id {id:?}")));
-    }
-    let entry = state
-        .content
-        .snapshot()
-        .find_skill(id)
-        .cloned()
-        .ok_or_else(|| ApiErr::not_found("skill not found"))?;
-    if entry.info.source != ContentSource::User {
-        return Err(ApiErr::forbidden("only Personal skills can be copied"));
-    }
-    let home = agent_home(&state.runs.engine.config().base_env)
-        .ok_or_else(|| ApiErr::internal("no home folder"))?;
-    // Per component: `.claude/skills` as one string shows `/` on Windows.
-    let dest_root = home.join(".claude").join("skills");
-    Ok((entry, dest_root))
-}
-
-#[derive(Debug, Deserialize)]
 pub struct ExportQuery {
     #[serde(default)]
     target: String,
 }
 
-/// `GET /api/skills/:id/export?target=claude`: what a copy would do, read
-/// only: `{id, path, contourTools, hasDescription}`. The app asks it when
-/// "Copy to Claude Code" is clicked, to warn first and to name the folder.
+/// `GET /api/skills/:id/export?target=claude`: what "Copy to Claude Code"
+/// would do, read only: `{id, path, source, contourTools, hasDescription,
+/// existing}`. Nothing over HTTP copies (`crate::skill_export`).
 pub async fn export_preview(
     State(state): State<AppState>,
     Path(id): Path<String>,
     axum::extract::Query(q): axum::extract::Query<ExportQuery>,
 ) -> ApiResult<Json<Value>> {
-    let (entry, dest_root) = export_source(&state, &id, &q.target)?;
-    let id = entry.info.id.clone();
-    let check =
-        crate::spawn::spawn_blocking_in_span(move || user_content::export_check(&entry.dir))
-            .await
-            .map_err(|e| ApiErr::internal(e.to_string()))?;
-    Ok(Json(json!({
-        "id": id,
-        "path": dest_root.join(&id),
-        "contourTools": check.contour_tools,
-        "hasDescription": check.has_description,
-    })))
-}
-
-pub async fn export(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    ApiJson(body): ApiJson<ExportBody>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
-    let (entry, dest_root) = export_source(&state, &id, &body.target)?;
-    let root = user_root(&state);
+    let (entry, dest_root) = crate::skill_export::export_source(&state, &id, &q.target)?;
     let id = entry.info.id.clone();
     let dest = dest_root.join(&id);
     let skill_id = id.clone();
-    let (path, check) = crate::spawn::spawn_blocking_in_span(move || {
-        let path = user_content::export_skill(&root, &entry.dir, &skill_id, &dest_root)?;
-        Ok::<_, user_content::WriteError>((path, user_content::export_check(&entry.dir)))
+    let (check, existing) = crate::spawn::spawn_blocking_in_span(move || {
+        (
+            user_content::export_check(&entry.dir),
+            user_content::existing_export(&dest_root, &skill_id)
+                .ok()
+                .flatten(),
+        )
     })
     .await
-    .map_err(|e| ApiErr::internal(e.to_string()))?
-    .map_err(|e| match e {
-        user_content::WriteError::Exists(_) => ApiErr::new(
-            StatusCode::CONFLICT,
-            od_contracts::ErrorCode::Conflict,
-            format!(
-                "Claude Code already has a skill named {id:?} at {}. Remove that folder to copy again.",
-                dest.display()
-            ),
-        ),
-        other => other.into(),
-    })?;
-    tracing::info!(skill = %id, path = %path.display(), "skill copied to Claude Code");
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({
-            "id": id,
-            "path": path,
-            "contourTools": check.contour_tools,
-        })),
-    ))
+    .map_err(|e| ApiErr::internal(e.to_string()))?;
+    Ok(Json(json!({
+        "id": id,
+        "path": dest,
+        "source": state.content.snapshot().find_skill(&id).map(|e| e.dir.clone()),
+        "contourTools": check.contour_tools,
+        "hasDescription": check.has_description,
+        "existing": existing,
+    })))
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-copy-skill-to-claude"
+description = "Enables the copy_skill_to_claude command without any pre-configured scope."
+commands.allow = ["copy_skill_to_claude"]
+
+[[permission]]
+identifier = "deny-copy-skill-to-claude"
+description = "Denies the copy_skill_to_claude command without any pre-configured scope."
+commands.deny = ["copy_skill_to_claude"]

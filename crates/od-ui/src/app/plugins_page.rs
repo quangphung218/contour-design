@@ -1095,12 +1095,19 @@ fn SkillDetailView(
     let export_warned = RwSignal::new(false);
     let exporting = RwSignal::new(false);
     let exported = RwSignal::new(None::<ExportStep>);
+    let command_copied = RwSignal::new(false);
+    // An edit changes what a copy would find (a description added): what
+    // the last attempt said no longer holds.
+    let clear_export = move || {
+        exported.set(None);
+        export_warned.set(false);
+        command_copied.set(false);
+    };
     let run_copy = {
         let id = id.clone();
         Callback::new(move |seen_warning: bool| {
-            export_warned.set(false);
+            clear_export();
             exporting.set(true);
-            exported.set(None);
             // The copy runs to its end; only what it shows needs the page.
             tasks.spawn_then(copy_to_claude(id.clone(), seen_warning), move |step| {
                 exporting.set(false);
@@ -1155,8 +1162,8 @@ fn SkillDetailView(
                             </div>
                             <div class="row wrap">
                                 <button class="btn small primary" data-testid="skill-use" on:click=use_skill>{icon(Glyph::ArrowRight)}{t(T::Use)}</button>
-                                <button class="btn small" data-testid="skill-edit" on:click=move |_| editing.set(true)>{icon(Glyph::Rename)}{t(T::Edit)}</button>
-                                {user.then(|| view! { <button class="btn small skill-export-btn" data-testid="skill-export" prop:disabled=move || exporting.get() on:click=on_copy>{icon(Glyph::Export)}{t(T::CopyToClaudeCode)}</button> })}
+                                <button class="btn small" data-testid="skill-edit" on:click=move |_| { clear_export(); editing.set(true); }>{icon(Glyph::Rename)}{t(T::Edit)}</button>
+                                {user.then(|| view! { <button class="btn small skill-export-btn" data-testid="skill-export" prop:disabled=move || exporting.get() on:click=on_copy>{icon(Glyph::Export)}{if super::desktop::is_desktop() { t(T::CopyToClaudeCode) } else { t(T::UseInClaudeCode) }}</button> })}
                                 {user.then(|| view! { <button class="btn small ghost danger" data-testid="skill-delete" on:click=remove>{icon(Glyph::Delete)}{t(T::DeleteOrReset)}</button> })}
                             </div>
                         </header>
@@ -1164,7 +1171,7 @@ fn SkillDetailView(
                             <div class="callout skill-export-warning" role="alert" data-testid="skill-export-warning">
                                 <p class="row">{icon(Glyph::Info)}<span>{t(T::SkillCallsContour)}</span></p>
                                 <div class="row wrap">
-                                    <button class="btn small" data-testid="skill-export-anyway" on:click=move |_| run_copy.run(true)>{t(T::CopyAnyway)}</button>
+                                    <button class="btn small" data-testid="skill-export-anyway" on:click=move |_| run_copy.run(true)>{if super::desktop::is_desktop() { t(T::CopyAnyway) } else { t(T::ShowCommandAnyway) }}</button>
                                     <button class="btn small ghost" on:click=move |_| export_warned.set(false)>{t(T::Cancel)}</button>
                                 </div>
                             </div>
@@ -1175,6 +1182,22 @@ fn SkillDetailView(
                                 {calls_contour.then(|| view! { <p class="subtle small" data-testid="skill-export-late-warning">{t(T::SkillCallsContour)}</p> })}
                             }.into_any(),
                             ExportStep::Failed(e) => view! { <p class="error-text skill-export-msg" role="alert" data-testid="skill-export-failed">{e}</p> }.into_any(),
+                            ExportStep::Command(cmd) => {
+                                let copy = cmd.clone();
+                                view! {
+                                    <div class="skill-export-command" data-testid="skill-export-command">
+                                        <p class="subtle small">{t(T::RunToCopySkill)}</p>
+                                        <pre class="skill-export-msg"><code data-testid="skill-export-cmd">{cmd}</code></pre>
+                                        <button class="btn small" data-testid="skill-export-copy-command" on:click=move |_| {
+                                            let copy = copy.clone();
+                                            tasks.spawn(async move {
+                                                let done = super::lib_ui::copy_text(&copy).await.is_ok();
+                                                command_copied.set(done);
+                                            });
+                                        }>{icon(Glyph::Duplicate)}{move || if command_copied.get() { t(T::Copied) } else { t(T::CopyCommand) }}</button>
+                                    </div>
+                                }.into_any()
+                            }
                             ExportStep::Warn => ().into_any(),
                         })}
                         {move || notice.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
@@ -1188,7 +1211,7 @@ fn SkillDetailView(
                                         let id = id.clone();
                                         tasks.spawn(async move {
                                             match api::put::<_, Value>(&format!("/api/skills/{}", api::seg(&id)), &body).await {
-                                                Ok(_) => { editing.set(false); load.run(()); }
+                                                Ok(_) => { clear_export(); editing.set(false); load.run(()); }
                                                 Err(e) => notice.set(Some(api::failure(T::MdSaveFailed, &e))),
                                             }
                                         });
@@ -1213,20 +1236,53 @@ fn SkillDetailView(
 enum ExportStep {
     /// The skill calls Contour's tools: the user decides first.
     Warn,
-    /// Copied; `calls_contour` when it does and no warning was shown
-    /// (the skill changed after the preview).
+    /// Copied (the app); `calls_contour` when it does and no warning was
+    /// shown (the skill changed after the preview).
     Copied {
         path: String,
         calls_contour: bool,
     },
+    /// The web app copies nothing: the command that does, to run.
+    Command(String),
     Failed(String),
 }
 
-/// "Copy to Claude Code" of the skill `id`: the server's preview (the
-/// folder, a description, whether it calls Contour's tools, all decided
-/// on the server from the whole SKILL.md and its `scripts/`), then the
-/// copy unless it must warn and `seen_warning` is not set. Touches no
-/// signal: it runs to its end after the page goes.
+/// `text` quoted for a POSIX shell.
+fn sh_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+/// The command that copies `source` to `dest` (its parent made first).
+fn copy_command(source: &str, dest: &str) -> String {
+    let parent = std::path::Path::new(dest)
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    format!(
+        "mkdir -p {} && cp -R {} {}",
+        sh_quote(&parent),
+        sh_quote(source),
+        sh_quote(dest)
+    )
+}
+
+/// What stands at the skill's name in Claude Code's skills, in the user's
+/// words: a skill there, or something else in the way.
+fn existing_text(existing: &Value) -> String {
+    let (name, path) = (s(existing, "name"), s(existing, "path"));
+    if existing["kind"] == "skill" {
+        tf(T::ClaudeCodeHasSkill, &[&name, &path])
+    } else {
+        tf(T::ClaudeCodeFolderInTheWay, &[&name, &path])
+    }
+}
+
+/// "Copy to Claude Code" of the skill `id`: the server's read-only preview
+/// (the folders, a description, what is there already, whether it calls
+/// Contour's tools from the whole SKILL.md and its `scripts/`), the
+/// warning unless `seen_warning`, then the copy: the desktop app's own
+/// command (decision #9; no request copies), or on the web the command to
+/// run. Touches no signal: it runs to its end after the page goes.
 async fn copy_to_claude(id: String, seen_warning: bool) -> ExportStep {
     let base = format!("/api/skills/{}/export", api::seg(&id));
     let preview = match api::get::<Value>(&format!("{base}?target=claude")).await {
@@ -1236,18 +1292,29 @@ async fn copy_to_claude(id: String, seen_warning: bool) -> ExportStep {
     if preview["hasDescription"] != true {
         return ExportStep::Failed(t(T::SkillNeedsDescription).to_owned());
     }
+    let desktop = super::desktop::is_desktop();
+    // The app replaces its own copy cut short; the web command would copy
+    // into it.
+    let existing = &preview["existing"];
+    if existing.is_object() && (!desktop || existing["kind"] != "unfinished") {
+        return ExportStep::Failed(existing_text(existing));
+    }
     if preview["contourTools"] == true && !seen_warning {
         return ExportStep::Warn;
     }
-    match api::post::<_, Value>(&base, &json!({ "target": "claude" })).await {
+    if !desktop {
+        return ExportStep::Command(copy_command(&s(&preview, "source"), &s(&preview, "path")));
+    }
+    match super::desktop::copy_skill_to_claude(&id).await {
         Ok(v) => ExportStep::Copied {
             path: s(&v, "path"),
             calls_contour: v["contourTools"] == true && !seen_warning,
         },
-        Err(e) if e.status == 409 => {
-            ExportStep::Failed(tf(T::ClaudeCodeHasSkill, &[&id, &s(&preview, "path")]))
+        Err(f) if f["kind"] == "exists" => ExportStep::Failed(existing_text(&f["existing"])),
+        Err(f) if f["kind"] == "noDescription" => {
+            ExportStep::Failed(t(T::SkillNeedsDescription).to_owned())
         }
-        Err(e) => ExportStep::Failed(api::failure(T::CopyToClaudeFailed, &e)),
+        Err(f) => ExportStep::Failed(tf(T::CopyToClaudeFailed, &[&s(&f, "message")])),
     }
 }
 
@@ -2138,6 +2205,20 @@ mod tests {
         assert_eq!(
             fill_query("Line {{subject}}\nStyle {{style}}\nEnd", &m, &fields),
             "Line tea\nEnd"
+        );
+    }
+
+    /// The web app's command copies the folders it names, whatever they are
+    /// called: spaces, quotes and `$` stay text.
+    #[test]
+    fn the_copy_command_quotes_every_path() {
+        assert_eq!(
+            copy_command("/data/skills/tea", "/home/a/.claude/skills/tea"),
+            "mkdir -p '/home/a/.claude/skills' && cp -R '/data/skills/tea' '/home/a/.claude/skills/tea'"
+        );
+        assert_eq!(
+            copy_command("/My Data/it's $HOME/tea", "/h/o'k/tea"),
+            "mkdir -p '/h/o'\\''k' && cp -R '/My Data/it'\\''s $HOME/tea' '/h/o'\\''k/tea'"
         );
     }
 

@@ -202,6 +202,32 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
     })
 }
 
+/// "Copy to Claude Code" on a Personal skill (decision #9): copies it into
+/// the agents' `HOME/.claude/skills/<id>`. Only the app's window can ask:
+/// no HTTP route writes there, since an agent in a run reaches the daemon
+/// on loopback from outside its sandbox. The skill is the one the app's
+/// daemon knows by `id`; the folder is never one the page names.
+#[tauri::command]
+async fn copy_skill_to_claude(
+    app: AppHandle,
+    id: String,
+) -> Result<od_server::skill_export::Copied, od_server::skill_export::CopyFailure> {
+    let failed = |message: String| od_server::skill_export::CopyFailure {
+        kind: "failed",
+        message,
+        existing: None,
+    };
+    let Some(daemon) = app.try_state::<Daemon>() else {
+        return Err(failed("the app has not started yet".to_owned()));
+    };
+    let state = daemon.state.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        od_server::skill_export::copy_to_claude(&state, &id)
+    })
+    .await
+    .map_err(|e| failed(e.to_string()))?
+}
+
 /// Native folder picker for the UI's "Open folder…" button.
 #[tauri::command]
 async fn pick_folder(app: AppHandle) -> Option<String> {
@@ -1106,7 +1132,7 @@ fn ui_capability(origin: &str) -> CapabilityBuilder {
 /// `allow-<command>` for each app command (`build.rs` generates them): the
 /// daemon's page is a remote origin to Tauri, which refuses it any app
 /// command without one.
-const APP_COMMAND_PERMISSIONS: [&str; 13] = [
+const APP_COMMAND_PERMISSIONS: [&str; 14] = [
     "allow-pick-folder",
     "allow-set-theme",
     "allow-set-menu-labels",
@@ -1120,6 +1146,7 @@ const APP_COMMAND_PERMISSIONS: [&str; 13] = [
     "allow-reload-ack",
     "allow-set-unsaved",
     "allow-close-answer",
+    "allow-copy-skill-to-claude",
 ];
 
 /// The main window stays on the daemon's origin (and the bundled splash
@@ -1622,7 +1649,8 @@ fn main() -> anyhow::Result<()> {
             reset_dialog_gate,
             reload_ack,
             set_unsaved,
-            close_answer
+            close_answer,
+            copy_skill_to_claude
         ])
         .menu(|app| build_menu(app, &MenuLabels::default()))
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -1898,6 +1926,7 @@ mod tests {
             "reload_ack",
             "set_unsaved",
             "close_answer",
+            "copy_skill_to_claude",
         ] {
             assert_eq!(
                 invoke_from(origin, &format!("{origin}/studio"), cmd),

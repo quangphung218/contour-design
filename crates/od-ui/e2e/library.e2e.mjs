@@ -10,8 +10,8 @@
 // buttons working; the mode tabs fit at 375 px; From agent CLI: the skills
 // of a temp HOME, an empty list, a load error and Try again, a filter with
 // no match, a bundled id not picked, a 409 by its row, an import landing
-// late never closes what is being typed; Copy to Claude Code (into the
-// temp HOME, once, a warning for a skill that calls `od`); Save as skill from the
+// late never closes what is being typed; Use in Claude Code (the web app
+// shows the cp command, warns for a skill that calls `od`); Save as skill from the
 // Studio "+" menu → the agent installs it → Personal); Media (provider key and
 // base URL, generate through the queue against a loopback fake provider,
 // library filter, upload, preview, Chat to design, MP4 offers motion
@@ -928,30 +928,39 @@ try {
   results.skillsDefault = 'ok';
 
   // ------------------------------------------------- copy to Claude Code
-  // A Personal skill goes to the daemon's HOME/.claude/skills with its side
-  // files. A skill that calls `od` (in SKILL.md or only in scripts/) warns
-  // first and still copies; one with no description is refused and says
-  // why; a second copy names the folder there and how to copy again;
-  // Official has no button.
+  // The web app copies nothing (decision #9: only the desktop app writes
+  // into ~/.claude/skills, and no request does): "Use in Claude Code"
+  // shows the command to run, after the same checks as the app's copy. A
+  // skill that calls `od` (SKILL.md or only scripts/) warns first; one
+  // with no description says so until an edit adds one; what is there
+  // already is named as it is on disk; Official has no button.
   const claudeSkills = join(home, '.claude', 'skills');
+  const skillsDir = join(data, 'skills');
   const openSkill = async (id) => {
     await page.goto(`${BASE}/skills?scope=personal`);
     await page.locator(`[data-testid="skill-row"][data-id="${id}"] .plugin-row-main`).click();
     await page.getByTestId('skill-body').waitFor();
   };
+  const sh = (p) => `'${p.replaceAll("'", "'\\''")}'`;
+  const commandFor = (id) => `mkdir -p ${sh(claudeSkills)} && cp -R ${sh(join(skillsDir, id))} ${sh(join(claudeSkills, id))}`;
   await page.locator('[data-testid="skill-row"][data-id="ad-creative"] .plugin-row-main').click();
   await page.getByTestId('skill-body').waitFor();
   assert.equal(await page.getByTestId('skill-export').count(), 0, 'no copy for an Official skill');
   await page.getByRole('button', { name: 'Back' }).click();
-  // Calls Contour's tools: warned before anything is copied, then copied.
+  // No request writes there: the copy route is gone.
+  const post = await fetch(`${BASE}/api/skills/tea-b/export`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ target: 'claude' }) });
+  assert.equal(post.status, 405, 'no POST copies a skill');
+  // Calls Contour's tools: warned before the command is shown.
   const odSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea photos', description: 'Tea photos.', body: 'Run `$OD_BIN media generate` for each photo.' }) });
   assert.equal(odSkill.id, 'tea-photos');
   await openSkill('tea-photos');
-  await page.getByTestId('skill-export').click();
+  const exportButton = page.getByTestId('skill-export');
+  assert.equal((await exportButton.textContent()).trim(), 'Use in Claude Code', 'the web app names what it does');
+  await exportButton.click();
   const warning = page.getByTestId('skill-export-warning');
   await warning.waitFor();
   assert.match(await warning.textContent(), /This skill calls Contour tools; it may not work outside Contour/);
-  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'nothing copied before the answer');
+  assert.equal(await page.getByTestId('skill-export-command').count(), 0, 'no command before the answer');
   // The warning reads as a line of text with its buttons below it, at
   // every width: a row that fits the buttons beside the text squeezed it
   // to a word a line (the page column at 375 px is narrow enough to wrap
@@ -979,12 +988,15 @@ try {
   assert.deepEqual(squeezed, [], 'the warning text has its own line and the buttons sit under it');
   await warning.getByRole('button', { name: 'Cancel' }).click();
   await warning.waitFor({ state: 'detached' });
-  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'Cancel copies nothing');
-  await page.getByTestId('skill-export').click();
+  await exportButton.click();
   await page.getByTestId('skill-export-anyway').click();
-  await page.getByTestId('skill-export-done').waitFor();
-  await warning.waitFor({ state: 'detached' });
-  assert.ok(existsSync(join(claudeSkills, 'tea-photos', 'SKILL.md')), 'copied anyway');
+  const command = page.getByTestId('skill-export-cmd');
+  await command.waitFor();
+  assert.equal(await command.textContent(), commandFor('tea-photos'));
+  await page.getByTestId('skill-export-copy-command').click();
+  await until(async () => (await page.evaluate(() => navigator.clipboard.readText())) === commandFor('tea-photos'), 'the command copied');
+  assert.equal((await page.getByTestId('skill-export-copy-command').textContent()).trim(), 'Copied');
+  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'the web app writes nothing there');
   // `od` only in a script beside the SKILL.md: warned too.
   const scripted = join(fixtures, 'tea-script');
   mkdirSync(join(scripted, 'scripts'), { recursive: true });
@@ -992,40 +1004,41 @@ try {
   writeFileSync(join(scripted, 'scripts', 'menu.sh'), '#!/bin/sh\nod files write menu.html < menu.html\n');
   assert.equal((await api('/api/skills/install', { method: 'POST', body: JSON.stringify({ path: scripted }) })).id, 'tea-script');
   await openSkill('tea-script');
-  await page.getByTestId('skill-export').click();
+  await exportButton.click();
   await warning.waitFor();
-  assert.equal(existsSync(join(claudeSkills, 'tea-script')), false, 'a script calling od warns before copying');
-  await page.getByTestId('skill-export-anyway').click();
-  await page.getByTestId('skill-export-done').waitFor();
-  assert.ok(existsSync(join(claudeSkills, 'tea-script', 'scripts', 'menu.sh')), 'scripts copied');
-  // No description: refused before any copy, with what to do.
+  // No description: said so; an edit that adds one clears it, and the
+  // next try goes through.
   const bareSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea notes', body: 'Short notes.' }) });
   assert.equal(bareSkill.id, 'tea-notes');
   await openSkill('tea-notes');
-  await page.getByTestId('skill-export').click();
+  await exportButton.click();
   const failed = page.getByTestId('skill-export-failed');
   await failed.waitFor();
   assert.match(await failed.textContent(), /Add a description first/);
-  assert.equal(existsSync(join(claudeSkills, 'tea-notes')), false, 'no copy without a description');
-  // A plain skill: copied at once; again: the folder there is named, and
-  // how to copy again; nothing written over.
+  await page.getByTestId('skill-edit').click();
+  await failed.waitFor({ state: 'detached' });
+  await page.getByTestId('skill-description').fill('Short tea notes.');
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-form').waitFor({ state: 'detached' });
+  assert.equal(await failed.count(), 0, 'no "add a description" once one is saved');
+  await exportButton.click();
+  await command.waitFor();
+  assert.equal(await command.textContent(), commandFor('tea-notes'));
+  // Edit and Save also clear the last command (it was for the old text).
+  await page.getByTestId('skill-edit').click();
+  await page.getByTestId('skill-export-command').waitFor({ state: 'detached' });
+  await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
+  // There already, in another case: named as it is on disk.
+  mkdirSync(join(claudeSkills, 'Tea-B'), { recursive: true });
+  writeFileSync(join(claudeSkills, 'Tea-B', 'SKILL.md'), '---\nname: Tea-B\n---\n');
   await openSkill('tea-b');
-  await page.getByTestId('skill-export').click();
-  const copied = page.getByTestId('skill-export-done');
-  await copied.waitFor();
-  assert.equal(await copied.textContent(), `Copied to ${join(claudeSkills, 'tea-b')}`);
-  assert.equal(await page.getByTestId('skill-export-warning').count(), 0, 'no warning for a plain skill');
-  assert.ok(readFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'utf8').includes('Use leaf green.'), 'SKILL.md copied');
-  assert.ok(existsSync(join(claudeSkills, 'tea-b', 'assets', 'tokens.css')), 'side files copied');
-  writeFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'edited in Claude Code');
-  await page.getByTestId('skill-export').click();
+  await exportButton.click();
   await failed.waitFor();
   assert.equal(
     await failed.textContent(),
-    `Claude Code already has a skill named tea-b at ${join(claudeSkills, 'tea-b')}. Remove that folder to copy again.`,
+    `Claude Code already has a skill named Tea-B at ${join(claudeSkills, 'Tea-B')}. Remove that folder to copy again.`,
   );
-  assert.equal(await copied.count(), 0, 'the earlier path is gone');
-  assert.equal(readFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'utf8'), 'edited in Claude Code', 'not written over');
+  assert.equal(await page.getByTestId('skill-export-command').count(), 0, 'no command over what is there');
   await shots('skill-copied-to-claude');
   // At 375 px the four buttons and the long message stay inside the detail.
   await page.setViewportSize({ width: 375, height: 812 });
