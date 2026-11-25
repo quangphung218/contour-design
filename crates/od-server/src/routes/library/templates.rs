@@ -400,13 +400,13 @@ pub async fn remix(
 }
 
 #[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use super::*;
 
     /// A plugin's template folder is one an agent can write: an example
     /// page that is a FIFO or a link is not read (a Remix never waits on
     /// it, never copies what a link points at).
-    #[cfg(unix)]
     #[test]
     fn a_remix_reads_no_fifo_and_no_link() {
         let tmp = tempfile::tempdir().unwrap();
