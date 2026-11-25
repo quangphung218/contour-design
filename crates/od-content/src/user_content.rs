@@ -4,6 +4,7 @@
 //! afterwards; user roots shadow bundled ones by id.
 
 use crate::frontmatter;
+use crate::nofollow;
 use crate::plugins::{PluginEntry, load_plugin};
 use std::path::{Path, PathBuf};
 
@@ -192,7 +193,11 @@ pub fn save_skill(
     if !crate::design_systems::is_valid_id(id) {
         return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
     }
-    let previous = std::fs::read_to_string(current_dir.join("SKILL.md")).ok();
+    // Not through a link or from a FIFO an agent put there.
+    let previous = nofollow::read_file(&current_dir.join("SKILL.md"), MAX_PLUGIN_BYTES)
+        .ok()
+        .flatten()
+        .and_then(|f| String::from_utf8(f.bytes).ok());
     let dir = if is_user {
         current_dir.to_path_buf()
     } else {
@@ -224,35 +229,18 @@ pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
     std::fs::remove_dir_all(dir).map_err(io)
 }
 
-/// Copies `from` into a new folder `to` (files and folders only; links
-/// and hidden entries are skipped). Fails past `budget` bytes.
+/// Copies `from` into a new folder `to` (folders and regular files only,
+/// with their permission bits; no link at any depth, no FIFO, no hidden
+/// entry but `.claude-plugin`: [`nofollow::read_tree`]). Fails past
+/// `budget` bytes, counted as read.
 ///
 /// # Errors
 /// [`WriteError::BadRequest`] when too large, [`WriteError::Io`].
 pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> {
+    let tree = nofollow::read_tree(from, keep_entry(true), budget).map_err(tree_error)?;
     std::fs::create_dir_all(to).map_err(io)?;
-    let mut used = 0u64;
-    for entry in std::fs::read_dir(from).map_err(io)? {
-        let entry = entry.map_err(io)?;
-        let name = entry.file_name();
-        if name.to_string_lossy().starts_with('.') && name != ".claude-plugin" {
-            continue;
-        }
-        let kind = entry.file_type().map_err(io)?;
-        let dest = to.join(&name);
-        if kind.is_dir() {
-            used += copy_dir(&entry.path(), &dest, budget.saturating_sub(used))?;
-        } else if kind.is_file() {
-            used += entry.metadata().map_err(io)?.len();
-            if used > budget {
-                return Err(WriteError::BadRequest(
-                    "the folder is larger than 50 MB".to_owned(),
-                ));
-            }
-            std::fs::copy(entry.path(), dest).map_err(io)?;
-        }
-    }
-    Ok(used)
+    nofollow::write_tree(&tree, to, None).map_err(io)?;
+    Ok(tree.files.iter().map(|(_, f)| f.bytes.len() as u64).sum())
 }
 
 /// Installs the plugin in `source` (a local folder with `SKILL.md` or
@@ -405,71 +393,62 @@ const MAX_CHECKED_SCRIPT_BYTES: u64 = 1024 * 1024;
 
 /// A skill folder as "Copy to Claude Code" copies it, read into memory
 /// once: the preview shows it and names it by [`ExportFiles::hash`], and
-/// the copy writes these very bytes after it compared the hash the user
-/// saw, so nothing changed between the two is written (an agent can edit a
-/// Personal skill over loopback while the user reads the preview).
+/// the copy writes these very bytes and permission bits after it compared
+/// the hash the user saw, so nothing changed between the two is written
+/// (an agent can edit a Personal skill over loopback while the user reads
+/// the preview).
 ///
-/// What is read: folders and files, not links; no hidden entry at the top
-/// (Claude Code would load a hidden folder there as a skill), and below it
-/// only `.claude-plugin`, as [`copy_dir`] does.
+/// What is read ([`nofollow::read_tree`]): folders and regular files, no
+/// link at any depth and no FIFO, even one swapped in while it reads; no
+/// hidden entry at the top (Claude Code would load a hidden folder there
+/// as a skill), and below it only `.claude-plugin`, as [`copy_dir`] does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportFiles {
     /// Folders under the skill folder, parents first.
     dirs: Vec<PathBuf>,
-    /// Files and their bytes, by path.
-    files: Vec<(PathBuf, Vec<u8>)>,
+    /// Files by path: bytes and permission bits.
+    files: Vec<(PathBuf, nofollow::ReadFile)>,
+}
+
+/// Hidden entries a copy keeps: `.claude-plugin`, below the top only when
+/// `top_too` is false.
+fn keep_entry(top_too: bool) -> impl Fn(bool, &std::ffi::OsStr) -> bool {
+    move |top, name| {
+        !name.to_string_lossy().starts_with('.') || (name == ".claude-plugin" && (top_too || !top))
+    }
+}
+
+fn tree_error(e: nofollow::TreeError) -> WriteError {
+    match e {
+        nofollow::TreeError::TooLarge => {
+            WriteError::BadRequest("the folder is larger than 50 MB".to_owned())
+        }
+        nofollow::TreeError::Io(e) => io(e),
+    }
 }
 
 impl ExportFiles {
-    /// Reads the skill folder `source` (at most [`MAX_PLUGIN_BYTES`]).
+    /// Reads the skill folder `source` (at most [`MAX_PLUGIN_BYTES`],
+    /// counted as read).
     ///
     /// # Errors
     /// [`WriteError::NotFound`] without a `SKILL.md` file,
     /// [`WriteError::BadRequest`] when too large, [`WriteError::Io`].
     pub fn read(source: &Path) -> Result<Self, WriteError> {
-        let mut out = Self {
-            dirs: Vec::new(),
-            files: Vec::new(),
+        let tree =
+            nofollow::read_tree(source, keep_entry(false), MAX_PLUGIN_BYTES).map_err(tree_error)?;
+        let out = Self {
+            dirs: tree.dirs,
+            files: tree.files,
         };
-        let mut used = 0u64;
-        out.read_dir(source, Path::new(""), &mut used)?;
-        out.dirs.sort();
-        out.files.sort_by(|a, b| a.0.cmp(&b.0));
-        if !out.files.iter().any(|(p, _)| p == Path::new("SKILL.md")) {
+        if out.file(Path::new("SKILL.md")).is_none() {
             return Err(WriteError::NotFound("the skill has no SKILL.md".to_owned()));
         }
         Ok(out)
     }
 
-    fn read_dir(&mut self, dir: &Path, rel: &Path, used: &mut u64) -> Result<(), WriteError> {
-        let top = rel.as_os_str().is_empty();
-        for entry in std::fs::read_dir(dir).map_err(io)? {
-            let entry = entry.map_err(io)?;
-            let name = entry.file_name();
-            if name.to_string_lossy().starts_with('.') && (top || name != ".claude-plugin") {
-                continue;
-            }
-            let kind = entry.file_type().map_err(io)?;
-            let path = rel.join(&name);
-            if kind.is_dir() {
-                self.dirs.push(path.clone());
-                self.read_dir(&entry.path(), &path, used)?;
-            } else if kind.is_file() {
-                *used += entry.metadata().map_err(io)?.len();
-                if *used > MAX_PLUGIN_BYTES {
-                    return Err(WriteError::BadRequest(
-                        "the folder is larger than 50 MB".to_owned(),
-                    ));
-                }
-                let bytes = std::fs::read(entry.path()).map_err(io)?;
-                self.files.push((path, bytes));
-            }
-        }
-        Ok(())
-    }
-
-    /// Names this content: every folder and file path and every file's
-    /// bytes (sha256, hex).
+    /// Names this content: every folder and file path, every file's
+    /// permission bits and bytes (sha256, hex). A `chmod` changes it too.
     #[must_use]
     pub fn hash(&self) -> String {
         use sha2::{Digest, Sha256};
@@ -479,12 +458,13 @@ impl ExportFiles {
             h.update(d.to_string_lossy().as_bytes());
             h.update(b"\0");
         }
-        for (p, bytes) in &self.files {
+        for (p, f) in &self.files {
             h.update(b"f\0");
             h.update(p.to_string_lossy().as_bytes());
             h.update(b"\0");
-            h.update((bytes.len() as u64).to_le_bytes());
-            h.update(bytes);
+            h.update(f.mode.to_le_bytes());
+            h.update((f.bytes.len() as u64).to_le_bytes());
+            h.update(&f.bytes);
         }
         hex::encode(h.finalize())
     }
@@ -516,7 +496,7 @@ impl ExportFiles {
         self.files
             .iter()
             .find(|(p, _)| p == path)
-            .map(|(_, b)| b.as_slice())
+            .map(|(_, f)| f.bytes.as_slice())
     }
 
     /// [`ExportCheck`] of this content. The one place the warnings are
@@ -534,31 +514,27 @@ impl ExportFiles {
             || self
                 .files
                 .iter()
-                .filter(|(p, b)| {
-                    p.starts_with("scripts") && b.len() as u64 <= MAX_CHECKED_SCRIPT_BYTES
+                .filter(|(p, f)| {
+                    p.starts_with("scripts") && f.bytes.len() as u64 <= MAX_CHECKED_SCRIPT_BYTES
                 })
                 .take(MAX_CHECKED_SCRIPTS)
-                .any(|(_, b)| od_contracts::calls_contour_tools(&String::from_utf8_lossy(b)));
+                .any(|(_, f)| {
+                    od_contracts::calls_contour_tools(&String::from_utf8_lossy(&f.bytes))
+                });
         ExportCheck {
             contour_tools,
             has_description,
         }
     }
 
-    /// Writes this content into the folder `to` (made already), the top
-    /// `SKILL.md` last.
+    /// Writes this content into the folder `to` (made already), with each
+    /// file's permission bits, the top `SKILL.md` last.
     fn write_into(&self, to: &Path) -> Result<(), WriteError> {
-        for d in &self.dirs {
-            std::fs::create_dir(to.join(d)).map_err(io)?;
-        }
-        let skill_md = Path::new("SKILL.md");
-        for (p, bytes) in self.files.iter().filter(|(p, _)| p != skill_md) {
-            std::fs::write(to.join(p), bytes).map_err(io)?;
-        }
-        if let Some(bytes) = self.file(skill_md) {
-            std::fs::write(to.join(skill_md), bytes).map_err(io)?;
-        }
-        Ok(())
+        let tree = nofollow::Tree {
+            dirs: self.dirs.clone(),
+            files: self.files.clone(),
+        };
+        nofollow::write_tree(&tree, to, Some(Path::new("SKILL.md"))).map_err(io)
     }
 }
 
@@ -723,15 +699,22 @@ fn read_skill(
     source: &Path,
 ) -> Result<(String, serde_json::Map<String, serde_json::Value>), WriteError> {
     let skill_md = source.join("SKILL.md");
-    // A link is refused here: `copy_dir` skips links, so the copy would
-    // have no SKILL.md.
-    let raw = match std::fs::symlink_metadata(&skill_md) {
-        Ok(m) if m.is_file() => std::fs::read_to_string(&skill_md)
+    // A link is refused here, even one swapped in after a check, and a
+    // FIFO is no file (`nofollow::read_file`): `copy_dir` skips both, so
+    // the copy would have no SKILL.md.
+    let raw = match nofollow::read_file(&skill_md, MAX_PLUGIN_BYTES) {
+        Ok(Some(f)) => String::from_utf8(f.bytes)
             .map_err(|e| WriteError::BadRequest(format!("SKILL.md cannot be read: {e}")))?,
-        _ => {
+        Ok(None) => {
             return Err(WriteError::BadRequest(
                 "the folder has no SKILL.md".to_owned(),
             ));
+        }
+        Err(e) => {
+            let e = tree_error(e);
+            return Err(WriteError::BadRequest(format!(
+                "SKILL.md cannot be read: {e}"
+            )));
         }
     };
     let front = skill_front_matter(&raw)?;
@@ -1373,6 +1356,42 @@ mod tests {
         let two = folder("two", &[("a", b"X"), ("b", b"Y")]);
         assert_ne!(one.paths(), two.paths());
         assert_ne!(one.hash(), two.hash());
+    }
+
+    /// A script keeps its permission bits (`+x`) in the copy, as the bytes:
+    /// Claude Code runs `scripts/…` as the SKILL.md says. A `chmod` after
+    /// the review changes the hash: refused like any other change.
+    #[cfg(unix)]
+    #[test]
+    fn a_copy_keeps_the_permission_bits_it_reviewed() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let tea = skill_dir(
+            &user,
+            "tea",
+            "---\nname: tea\ndescription: D.\n---\nRun scripts/x.py.\n",
+        );
+        std::fs::create_dir_all(tea.join("scripts")).unwrap();
+        let script = tea.join("scripts/x.py");
+        std::fs::write(&script, "print(1)\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let hash = hash_of(&tea);
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(
+            export_skill(&user, &tea, "tea", &dest, &hash),
+            Err(WriteError::Changed(_))
+        ));
+        assert!(!dest.exists(), "nothing written");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let (written, _) = export_skill(&user, &tea, "tea", &dest, &hash).unwrap();
+        assert_eq!(mode(&written.join("scripts/x.py")), 0o755);
+        // An install or an override copy keeps them too.
+        let copy = tmp.path().join("copy");
+        copy_dir(&tea, &copy, u64::MAX).unwrap();
+        assert_eq!(mode(&copy.join("scripts/x.py")), 0o755);
     }
 
     /// A skill with no description is copied: Claude Code 2.1.332 still

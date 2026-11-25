@@ -79,7 +79,8 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     since an agent reaches this daemon on loopback from outside its sandbox. `GET /api/skills/{id}/export?target=claude`
     only reads; it shows the content (`SKILL.md`, every file copied) and its `hash` (`user_content::ExportFiles`).
     The copy takes that `hash` and copies only that content: a skill changed since (an agent can `PUT` it over loopback)
-    is refused as `changed` with nothing written, and the bytes compared are the bytes written. It takes only a Personal
+    is refused as `changed` with nothing written, and the bytes and permission bits compared are the ones written. Every
+    file and folder is read through `od_content::nofollow` (opened from its parent's descriptor, no link, no FIFO). It takes only a Personal
     skill (no `description` is a warning), into the agents' `HOME/.claude/skills/<id>`,
     never over anything there: an entry of that name in any case or Unicode form is refused by its name on disk, the
     folder is claimed with `create_dir`, nothing hidden is written beside it, `SKILL.md` comes last, and a copy of ours cut
@@ -88,6 +89,8 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `tests/library.rs::no_request_copies_a_skill_to_claude_code`, `::a_personal_skill_is_copied_to_claude_code_once`,
       `::copy_to_claude_code_follows_no_link`, `::copy_to_claude_code_checks_the_whole_skill_first`,
       `::a_skill_changed_after_its_preview_is_not_copied`; e2e `../od-ui/e2e/library.e2e.mjs` (`copyToClaudeDesktop`)
+    - `../od-content/src/nofollow.rs::a_link_swapped_in_for_a_file_is_never_followed`, `::a_link_swapped_in_for_a_folder_is_never_followed`,
+      `::a_fifo_swapped_in_for_a_file_never_blocks`, `::the_budget_counts_what_is_read`; `user_content.rs::a_copy_keeps_the_permission_bits_it_reviewed`
     - `../od-content/src/user_content.rs::an_export_copies_only_the_content_reviewed`, `::a_skill_with_no_description_is_copied`,
       `::an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy`,
       `::export_copies_a_user_skill_and_never_writes_over`, `::an_export_never_shows_a_hidden_folder_in_the_agents_skills`,

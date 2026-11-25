@@ -83,30 +83,14 @@ pub const MAX_PACKAGE_FILE_BYTES: u64 = 16 * 1024 * 1024;
 /// would block the reader forever), up to [`MAX_PACKAGE_FILE_BYTES`].
 #[must_use]
 pub fn read_package_file(dir: &Path, name: &str) -> Option<String> {
-    use std::io::Read;
     let real = std::fs::canonicalize(dir.join(name)).ok()?;
     if real.parent()? != std::fs::canonicalize(dir).ok()? {
         return None;
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // ELOOP on a link planted after `canonicalize`; a FIFO opens
-        // without waiting for a writer and is refused below.
-        options.custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
-    }
-    let file = options.open(&real).ok()?;
-    let meta = file.metadata().ok()?;
-    if !meta.is_file() || meta.len() > MAX_PACKAGE_FILE_BYTES {
-        return None;
-    }
-    let mut text = String::new();
-    file.take(MAX_PACKAGE_FILE_BYTES)
-        .read_to_string(&mut text)
-        .ok()?;
-    Some(text)
+    // A link planted after `canonicalize` reads nothing; a FIFO is no
+    // file (`nofollow::read_file`).
+    let file = crate::nofollow::read_file(&real, MAX_PACKAGE_FILE_BYTES).ok()??;
+    String::from_utf8(file.bytes).ok()
 }
 
 #[derive(Debug, Default)]

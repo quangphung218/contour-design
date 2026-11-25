@@ -47,7 +47,7 @@ http-body-util = "0.1"
 httpdate = "1"
 lol_html = "3"
 lopdf = { version = "0.47", default-features = false }
-nix = { version = "0.31", default-features = false, features = ["signal", "process", "fs"] }
+nix = { version = "0.31", default-features = false, features = ["signal", "process", "fs", "dir"] }
 notify = "8"
 notify-debouncer-full = "0.7"
 png = "0.18"

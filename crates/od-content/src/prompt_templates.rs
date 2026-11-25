@@ -83,6 +83,9 @@ pub fn validate(raw: &Value, surface: &'static str, file_stem: &str) -> Option<P
     })
 }
 
+/// Largest template file read (they are a few kilobytes).
+const MAX_TEMPLATE_BYTES: u64 = 1024 * 1024;
+
 /// Every valid template, image first, then by title.
 #[must_use]
 pub fn list_prompt_templates(root: &Path) -> Vec<PromptTemplate> {
@@ -99,9 +102,12 @@ pub fn list_prompt_templates(root: &Path) -> Vec<PromptTemplate> {
             if !entry.file_type().is_ok_and(|t| t.is_file()) {
                 continue;
             }
-            let parsed = std::fs::read(entry.path())
+            // Opened without following a link swapped in since the check,
+            // and never a FIFO (`nofollow::read_file`).
+            let parsed = crate::nofollow::read_file(&entry.path(), MAX_TEMPLATE_BYTES)
                 .ok()
-                .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+                .flatten()
+                .and_then(|f| serde_json::from_slice::<Value>(&f.bytes).ok());
             match parsed.and_then(|v| validate(&v, surface, stem)) {
                 Some(t) => out.push(t),
                 None => {
