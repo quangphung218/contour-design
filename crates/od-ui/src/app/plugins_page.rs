@@ -1186,15 +1186,20 @@ fn SkillDetailView(
                                 (false, false) => t(T::ShowCommand),
                             };
                             let files = r.files.clone();
-                            let skill_md = r.skill_md.clone();
+                            let skill_md = mark_hidden(&r.skill_md);
+                            let hidden = skill_md.iter().any(|p| matches!(p, Shown::Hidden(_)));
                             let reviewed = r.clone();
                             view! {
                                 <div class="callout skill-export-review" data-testid="skill-export-review">
                                     {r.changed.then(|| view! { <p class="error-text" role="alert" data-testid="skill-export-changed">{t(T::SkillChangedReview)}</p> })}
                                     {r.contour_tools.then(|| view! { <p class="row" data-testid="skill-export-warning">{icon(Glyph::Info)}<span>{t(T::SkillCallsContour)}</span></p> })}
                                     {(!r.has_description).then(|| view! { <p class="row" data-testid="skill-export-no-description">{icon(Glyph::Info)}<span>{t(T::SkillHasNoDescription)}</span></p> })}
+                                    {hidden.then(|| view! { <p class="row" data-testid="skill-export-hidden">{icon(Glyph::Info)}<span>{t(T::SkillHasHiddenCharacters)}</span></p> })}
                                     <h4>{t(T::SkillCopyReview)}</h4>
-                                    <pre class="skill-export-skill-md" data-testid="skill-export-skill-md" tabindex="0">{skill_md}</pre>
+                                    <pre class="skill-export-skill-md" data-testid="skill-export-skill-md" tabindex="0">{skill_md.into_iter().map(|part| match part {
+                                        Shown::Text(text) => text.into_any(),
+                                        Shown::Hidden(c) => view! { <mark class="skill-export-hidden-char" data-testid="skill-export-hidden-char">{hidden_label(c)}</mark> }.into_any(),
+                                    }).collect_view()}</pre>
                                     <h4>{t(T::FilesToCopy)}</h4>
                                     <ul class="skill-export-files" data-testid="skill-export-files">
                                         {files.into_iter().map(|f| view! { <li><code>{f}</code></li> }).collect_view()}
@@ -1259,6 +1264,50 @@ fn SkillDetailView(
             }}
         </div>
     }
+}
+
+/// A character Claude Code reads but the review would show as nothing:
+/// Unicode tags (U+E0000–E007F), zero-width (U+200B–U+200D, U+2060,
+/// U+FEFF) and bidi controls (U+202A–U+202E, U+2066–U+2069). Text in them
+/// can tell the model what the user never saw.
+fn is_hidden_char(c: char) -> bool {
+    matches!(
+        u32::from(c),
+        0xE0000..=0xE007F | 0x200B..=0x200D | 0x2060 | 0xFEFF | 0x202A..=0x202E | 0x2066..=0x2069
+    )
+}
+
+/// A part of the `SKILL.md` shown for review.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Shown {
+    Text(String),
+    /// A hidden character, shown by its code point ([`hidden_label`]).
+    Hidden(char),
+}
+
+/// `text` split into what shows as it is and each hidden character.
+fn mark_hidden(text: &str) -> Vec<Shown> {
+    let mut out = Vec::new();
+    let mut plain = String::new();
+    for c in text.chars() {
+        if is_hidden_char(c) {
+            if !plain.is_empty() {
+                out.push(Shown::Text(std::mem::take(&mut plain)));
+            }
+            out.push(Shown::Hidden(c));
+        } else {
+            plain.push(c);
+        }
+    }
+    if !plain.is_empty() {
+        out.push(Shown::Text(plain));
+    }
+    out
+}
+
+/// `⟨U+200B⟩`: a hidden character, written so it shows.
+fn hidden_label(c: char) -> String {
+    format!("\u{27e8}U+{:04X}\u{27e9}", u32::from(c))
 }
 
 /// What "Copy to Claude Code" shows for review before it copies: the
@@ -2014,6 +2063,62 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every hidden character the review marks, at each end of its
+    /// ranges, shows as its code; text around it is kept as it is.
+    #[test]
+    fn the_review_marks_every_hidden_character() {
+        for (c, label) in [
+            ('\u{E0000}', "\u{27e8}U+E0000\u{27e9}"),
+            ('\u{E0041}', "\u{27e8}U+E0041\u{27e9}"),
+            ('\u{E007F}', "\u{27e8}U+E007F\u{27e9}"),
+            ('\u{200B}', "\u{27e8}U+200B\u{27e9}"),
+            ('\u{200D}', "\u{27e8}U+200D\u{27e9}"),
+            ('\u{2060}', "\u{27e8}U+2060\u{27e9}"),
+            ('\u{FEFF}', "\u{27e8}U+FEFF\u{27e9}"),
+            ('\u{202A}', "\u{27e8}U+202A\u{27e9}"),
+            ('\u{202E}', "\u{27e8}U+202E\u{27e9}"),
+            ('\u{2066}', "\u{27e8}U+2066\u{27e9}"),
+            ('\u{2069}', "\u{27e8}U+2069\u{27e9}"),
+        ] {
+            let text = format!("Brew{c} tea.");
+            assert_eq!(
+                mark_hidden(&text),
+                [
+                    Shown::Text("Brew".to_owned()),
+                    Shown::Hidden(c),
+                    Shown::Text(" tea.".to_owned())
+                ],
+                "{label}"
+            );
+            assert_eq!(hidden_label(c), label);
+        }
+        // Next to the ranges, and text people read (Vietnamese, emoji with
+        // a joiner's neighbours, RTL letters): shown as is.
+        for c in [
+            '\u{200A}',
+            '\u{200E}',
+            '\u{2061}',
+            '\u{2065}',
+            '\u{206A}',
+            '\u{202F}',
+            '\u{E0080}',
+            'ư',
+            '🎨',
+            'ب',
+        ] {
+            assert_eq!(
+                mark_hidden(&format!("a{c}b")),
+                [Shown::Text(format!("a{c}b"))],
+                "{c:?}"
+            );
+        }
+        assert_eq!(
+            mark_hidden("\u{200B}\u{200B}"),
+            [Shown::Hidden('\u{200B}'), Shown::Hidden('\u{200B}')]
+        );
+        assert!(mark_hidden("").is_empty());
+    }
 
     #[test]
     fn an_agent_skill_named_like_a_bundled_one_in_any_case_or_form_is_taken() {

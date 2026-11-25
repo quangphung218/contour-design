@@ -1014,6 +1014,7 @@ UseInClaudeCode = 在 Claude Code 中使用
 ShowCommandAnyway = 仍然显示命令
 RunToCopySkill = 在终端运行此命令，把技能复制到 Claude Code（应用里一键即可复制）：
 SkillHasNoDescription = 此技能没有描述：Claude Code 会改为向模型展示正文的第一行。
+SkillHasHiddenCharacters = 此技能含有隐藏字符。Claude Code 会读取这些字符；下方每个字符都以代码标出，例如 ⟨U+200B⟩。
 SkillChangedReview = 打开后技能已更改。请重新检查。
 SkillCopyReview = 要复制的 SKILL.md
 FilesToCopy = 要复制的文件

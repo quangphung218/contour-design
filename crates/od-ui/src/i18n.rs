@@ -1246,6 +1246,7 @@ messages! {
     ShowCommandAnyway => "Show the command anyway", "Vẫn hiện lệnh";
     RunToCopySkill => "Run this in a terminal to copy the skill into Claude Code (the app copies it in one click):", "Chạy lệnh này trong terminal để chép skill sang Claude Code (bản app chép bằng một cú bấm):";
     SkillHasNoDescription => "This skill has no description: Claude Code shows its model the first line of the text instead.", "Skill này chưa có mô tả: Claude Code lấy dòng đầu của nội dung làm mô tả cho model.";
+    SkillHasHiddenCharacters => "This skill has hidden characters. Claude Code reads them; below each is marked by its code, such as ⟨U+200B⟩.", "Skill này có ký tự ẩn. Claude Code vẫn đọc các ký tự này; bên dưới, mỗi ký tự hiện bằng mã của nó, ví dụ ⟨U+200B⟩.";
     SkillChangedReview => "Skill changed since you opened this. Review it again.", "Skill đã đổi từ lúc mở màn này. Xem lại trước khi chép.";
     SkillCopyReview => "SKILL.md to copy", "SKILL.md sẽ chép";
     FilesToCopy => "Files to copy", "Các file sẽ chép";

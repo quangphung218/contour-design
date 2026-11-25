@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Copy to Claude Code marks hidden characters in SKILL.md; Library lists no longer wait on a FIFO or read oversized files.
+
 ## [0.2.0-beta.67] - 2026-11-26
 
 ### Changed

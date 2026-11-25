@@ -1014,6 +1014,7 @@ UseInClaudeCode = Pakai di Claude Code
 ShowCommandAnyway = Tetap tampilkan perintah
 RunToCopySkill = Jalankan ini di terminal untuk menyalin skill ke Claude Code (aplikasi menyalinnya dengan satu klik):
 SkillHasNoDescription = Skill ini tidak punya deskripsi: Claude Code menampilkan baris pertama teksnya ke model sebagai gantinya.
+SkillHasHiddenCharacters = Skill ini berisi karakter tersembunyi. Claude Code membacanya; di bawah, tiap karakter ditandai dengan kodenya, misalnya ⟨U+200B⟩.
 SkillChangedReview = Skill berubah sejak ini dibuka. Tinjau lagi.
 SkillCopyReview = SKILL.md yang disalin
 FilesToCopy = File yang disalin

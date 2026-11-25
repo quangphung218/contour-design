@@ -1014,6 +1014,7 @@ UseInClaudeCode = ใช้ใน Claude Code
 ShowCommandAnyway = แสดงคำสั่งต่อไป
 RunToCopySkill = รันคำสั่งนี้ในเทอร์มินัลเพื่อคัดลอกสกิลไป Claude Code (แอปคัดลอกได้ในคลิกเดียว):
 SkillHasNoDescription = สกิลนี้ไม่มีคำอธิบาย: Claude Code จะแสดงบรรทัดแรกของข้อความให้โมเดลแทน
+SkillHasHiddenCharacters = สกิลนี้มีอักขระที่มองไม่เห็น Claude Code อ่านอักขระเหล่านี้ ด้านล่างแสดงแต่ละตัวด้วยรหัส เช่น ⟨U+200B⟩
 SkillChangedReview = สกิลเปลี่ยนไปตั้งแต่เปิดหน้านี้ ตรวจดูอีกครั้ง
 SkillCopyReview = SKILL.md ที่จะคัดลอก
 FilesToCopy = ไฟล์ที่จะคัดลอก

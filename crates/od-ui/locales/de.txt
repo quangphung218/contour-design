@@ -1014,6 +1014,7 @@ UseInClaudeCode = In Claude Code verwenden
 ShowCommandAnyway = Befehl trotzdem zeigen
 RunToCopySkill = Führe dies im Terminal aus, um den Skill nach Claude Code zu kopieren (die App kopiert ihn mit einem Klick):
 SkillHasNoDescription = Dieser Skill hat keine Beschreibung: Claude Code zeigt seinem Modell stattdessen die erste Zeile des Textes.
+SkillHasHiddenCharacters = Dieser Skill enthält versteckte Zeichen. Claude Code liest sie; unten ist jedes mit seinem Code markiert, etwa ⟨U+200B⟩.
 SkillChangedReview = Der Skill hat sich seit dem Öffnen geändert. Prüfe ihn erneut.
 SkillCopyReview = Zu kopierende SKILL.md
 FilesToCopy = Zu kopierende Dateien

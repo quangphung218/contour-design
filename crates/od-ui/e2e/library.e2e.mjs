@@ -1071,6 +1071,20 @@ try {
   await page.getByTestId('skill-edit').click();
   await page.getByTestId('skill-export-command').waitFor({ state: 'detached' });
   await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
+  // Hidden characters (a zero-width space, a Unicode tag): each shown by
+  // its code, with a warning; none in tea-notes above.
+  assert.equal(await page.getByTestId('skill-export-hidden').count(), 0, 'no hidden characters in tea-notes');
+  const hiddenSkill = await api('/api/skills', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Tea hidden', description: 'Tea with a note.', body: 'Brew​ tea.\u{E0041}' }),
+  });
+  await openSkill(hiddenSkill.id);
+  await exportButton.click();
+  const hiddenNote = page.getByTestId('skill-export-hidden');
+  await hiddenNote.waitFor();
+  assert.match(await hiddenNote.textContent(), /^This skill has hidden characters\./);
+  assert.deepEqual(await page.getByTestId('skill-export-hidden-char').allTextContents(), ['⟨U+200B⟩', '⟨U+E0041⟩']);
+  assert.match(await page.getByTestId('skill-export-skill-md').textContent(), /Brew⟨U\+200B⟩ tea\.⟨U\+E0041⟩/);
   // There already, in another case: named as it is on disk.
   mkdirSync(join(claudeSkills, 'Tea-B'), { recursive: true });
   writeFileSync(join(claudeSkills, 'Tea-B', 'SKILL.md'), '---\nname: Tea-B\n---\n');

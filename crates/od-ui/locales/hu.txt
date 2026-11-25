@@ -1014,6 +1014,7 @@ UseInClaudeCode = Használat a Claude Code-ban
 ShowCommandAnyway = Parancs megjelenítése mégis
 RunToCopySkill = Futtasd ezt terminálban a skill Claude Code-ba másolásához (az app egy kattintással másolja):
 SkillHasNoDescription = Ennek a skillnek nincs leírása: a Claude Code helyette a szöveg első sorát mutatja a modellnek.
+SkillHasHiddenCharacters = Ez a skill rejtett karaktereket tartalmaz. A Claude Code beolvassa őket; lent mindegyik a kódjával látszik, például ⟨U+200B⟩.
 SkillChangedReview = A skill megváltozott, mióta megnyitottad. Nézd át újra.
 SkillCopyReview = Másolandó SKILL.md
 FilesToCopy = Másolandó fájlok
