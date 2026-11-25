@@ -135,6 +135,27 @@ pub fn use_leave() -> impl Fn(&str) + Clone + Send + Sync + 'static {
     }
 }
 
+/// [`use_leave`] for a handler (a click, a key, a pick): the page opens on
+/// the next task. Leaving inside the handler takes the screen away while
+/// the same event still passes through its listeners, and wasm throws
+/// `closure invoked recursively or after being dropped` (#332, as dialogs
+/// closed inside their click did: `docs/design-system.md`). Call it in the
+/// body of a component that stays while the handler runs (the menu, not
+/// its item). `tests/click_navigate.rs` keeps any other call of a
+/// `navigate` out of handlers.
+pub fn use_open_after_click() -> impl Fn(&str) + Clone + Send + Sync + 'static {
+    let navigate = use_leave();
+    let tasks = super::tasks::Tasks::here();
+    move |path: &str| {
+        let navigate = navigate.clone();
+        let path = path.to_owned();
+        tasks.spawn(async move {
+            gloo_timers::future::TimeoutFuture::new(0).await;
+            navigate(&path);
+        });
+    }
+}
+
 /// Handed to a [`leave_then`] action: [`Release::now`] right before the
 /// page unloads keeps the browser from asking a second time.
 #[derive(Clone, Copy)]

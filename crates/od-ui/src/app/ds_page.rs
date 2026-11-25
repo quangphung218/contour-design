@@ -478,6 +478,7 @@ fn DsDetail(
     let shell = Shell::get();
     let detail = Tasks::here();
     let navigate = use_navigate();
+    let open_page = super::leave_guard::use_open_after_click();
     let id = summary.id.clone();
     let mine = is_mine(&summary);
     let kit = RwSignal::new(None::<Result<Kit, String>>);
@@ -844,8 +845,7 @@ fn DsDetail(
     };
     let use_in_project = {
         let id = id.clone();
-        let navigate = navigate.clone();
-        move |_| navigate(&format!("/?ds={}", api::seg(&id)), Default::default())
+        move |_| open_page(&format!("/?ds={}", api::seg(&id)))
     };
     let looks_good = {
         let id = id.clone();

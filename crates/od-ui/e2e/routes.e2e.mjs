@@ -2,7 +2,9 @@
 // moves Studio ▸ Media ▸ Automations ▸ Studio ▸ Home ▸ … by link clicks
 // (no page load in between), twice over, and ends on Home: once with
 // time on each screen, once leaving each with its requests in flight. Then
-// a message sent as the Studio is left is not back in its composer. A screen's
+// a message sent as the Studio is left is not back in its composer, and a
+// button that opens a page (quick menu, Generate) leaves once its click
+// is done. A screen's
 // tasks and effects must stop when it is left: no page error and no
 // `panicked at` in the console (a task reading a disposed signal panics
 // in the debug bundle). Every request leaving loopback is blocked and
@@ -196,6 +198,35 @@ try {
   await go(studio);
   await sleep(500); // the held queue is put back right after the mount
   assert.equal(await page.getByTestId('queued').count(), 0, 'the steered message is not back in the held queue');
+
+  // A button that opens another page (not a link) leaves once its click is
+  // done: leaving inside the click takes the screen away while the click
+  // still passes through its listeners, and wasm throws "closure invoked
+  // recursively or after being dropped" (#332, seen on CI only). A
+  // listener on the window, added after the app's own, sees the address
+  // the click ended on: still the page the click was made on.
+  const here = () => page.evaluate(() => location.pathname + location.search + location.hash);
+  const leavesAfterClick = async (click, opened, label) => {
+    const from = await here();
+    await page.evaluate(() => {
+      window.__clickEnd = null;
+      window.addEventListener('click', () => { window.__clickEnd = location.pathname + location.search + location.hash; }, { once: true });
+    });
+    await click();
+    await until(async () => opened(await here()), `${label} opens its page`);
+    assert.equal(await page.evaluate(() => window.__clickEnd), from, `${label}: the click ends on the page it was made on`);
+    log(label, from, '→', await here());
+  };
+  // Quick menu ▸ Settings section, from the Studio.
+  await go(studio);
+  await page.getByTestId('quick-menu').click();
+  await leavesAfterClick(() => page.getByTestId('quick-section-mcp').click(), (u) => u === '/settings#settings-mcp', 'quick menu section');
+  await page.locator('#settings-mcp').waitFor();
+  // Templates ▸ an image prompt ▸ Generate opens Media with it.
+  await page.goto(`${BASE}/templates?tab=image`);
+  await page.getByTestId('prompt-card').first().waitFor({ timeout: 15_000 });
+  await leavesAfterClick(() => page.getByTestId('prompt-generate').first().click(), (u) => u.startsWith('/media?template='), 'Generate');
+  await page.getByTestId('media-generate').waitFor();
 
   assert.deepEqual(pageErrors, [], 'no page error or panic after leaving screens');
   assert.deepEqual(external, [], 'no request left loopback');

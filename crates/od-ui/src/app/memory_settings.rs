@@ -400,16 +400,16 @@ pub fn MemoryToast() -> impl IntoView {
     });
     on_cleanup(move || stream.set_value(None));
     // Shown over the Studio too: Settings through the leave guard.
-    let navigate = super::leave_guard::use_leave();
+    let open_page = super::leave_guard::use_open_after_click();
     move || {
-        let navigate = navigate.clone();
+        let open_page = open_page.clone();
         shown.get().map(|(_, text, global)| view! {
             <div class="toast-region memory-toast-region">
                 <button class="toast memory-toast" data-testid="memory-toast" role="status"
                     on:click=move |_| {
                         shown.set(None);
                         if global {
-                            navigate("/settings#settings-memory");
+                            open_page("/settings#settings-memory");
                         }
                     }>
                     {icon(Glyph::Memory)}

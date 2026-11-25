@@ -1070,7 +1070,7 @@ fn SkillDetailView(
     held: RwSignal<bool>,
 ) -> impl IntoView {
     let tasks = Tasks::here();
-    let navigate = use_navigate();
+    let open_page = super::leave_guard::use_open_after_click();
     let detail = RwSignal::new(None::<Result<SkillDetail, String>>);
     let editing = RwSignal::new(false);
     let notice = RwSignal::new(None::<String>);
@@ -1088,7 +1088,7 @@ fn SkillDetailView(
     load.run(());
     let use_skill = {
         let id = id.clone();
-        move |_| navigate(&format!("/?skill={}", api::seg(&id)), Default::default())
+        move |_| open_page(&format!("/?skill={}", api::seg(&id)))
     };
     let remove = {
         let id = id.clone();

@@ -502,7 +502,7 @@ fn AssetPreview(
     /// preview may be closed or moved on meanwhile.
     library: Tasks,
 ) -> impl IntoView {
-    let navigate = use_navigate();
+    let open_page = super::leave_guard::use_open_after_click();
     let src = asset.src();
     let stage = match asset.kind.as_str() {
         "image" => view! { <img class="media-stage" src=src.clone() alt=asset.file_name()/> }.into_any(),
@@ -510,8 +510,7 @@ fn AssetPreview(
         _ => view! { <audio class="media-audio" data-testid="media-audio" src=src.clone() controls=true></audio> }.into_any(),
     };
     let pid = asset.project_id.clone();
-    let open_project =
-        move |_| navigate(&format!("/projects/{}", api::seg(&pid)), Default::default());
+    let open_project = move |_| open_page(&format!("/projects/{}", api::seg(&pid)));
     let dl = {
         let src = src.clone();
         let name = asset.file_name();

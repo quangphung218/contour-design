@@ -12,7 +12,7 @@ Paths below are relative to this folder.
 - Shell and config: `src/app/mod.rs:Shell::save_config`, `Shell::reload_config`, `Shell::add_recent_dir`.
 - Studio: `src/app/studio.rs:StudioCtx::send`, `StudioCtx::attach`, `StudioCtx::follow_moves`.
 - Tasks: `src/app/tasks.rs:Tasks::spawn_then`, `detached`.
-- Leave guard: `src/app/leave_guard.rs:use_leave`, `leave_then`, `guard_leaving`.
+- Leave guard: `src/app/leave_guard.rs:use_leave`, `use_open_after_click`, `leave_then`, `guard_leaving`.
 - Comment drafts: `src/app/preview_comments.rs:CommentDraft`; draft sessions: `src/app/drafts.rs`.
 
 ## Invariants
@@ -36,6 +36,9 @@ Paths below are relative to this folder.
    `leave_then` for full loads and menus. "Unsent" counts an image still uploading (`CommentDraft::unsent`).
    - `src/app/preview_comments.rs::an_image_on_its_way_is_work_not_sent`
    - e2e `e2e/qa/drafts.qa.mjs:"DL-14"`, `e2e/qa/drafts.qa.mjs:"DL-31"`
+   A handler (click, key, pick) opens a page with `use_open_after_click`, on the next task: leaving inside
+   the event drops listeners it still passes through (#332).
+   - `tests/click_navigate.rs` (source scan: every `navigate(` call listed in `KEPT` with why); e2e `e2e/routes.e2e.mjs`
 6. A comment draft is found by `id`, never by path. Sends and upload landings look it up by id or token
    (`src/app/preview_comments.rs:draft_by_id`, `land_upload`).
    - `src/app/preview_comments.rs::a_draft_renamed_while_it_is_sent_goes_when_it_is_saved`

@@ -374,8 +374,8 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         last
     });
 
-    let navigate = super::leave_guard::use_leave();
-    let to_mcp = Callback::new(move |()| navigate("/settings#settings-mcp"));
+    let open_page = super::leave_guard::use_open_after_click();
+    let to_mcp = Callback::new(move |()| open_page("/settings#settings-mcp"));
     let send = move || {
         if ctx
             .chat
@@ -1392,19 +1392,18 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
     let sources = use_context::<Sources>();
     let saved = use_context::<SavedSkills>();
-    let navigate = super::leave_guard::use_leave();
-    let tasks = Tasks::here();
+    let open_page = super::leave_guard::use_open_after_click();
     let ids = Memo::new(move |_| {
         let (sources, saved) = (sources?, saved?);
         turn.with(|t| saved.of(sources, t)).map(|id| vec![id])
     });
     let ids = move || ids.get();
     move || {
-        let navigate = navigate.clone();
+        let open_page = open_page.clone();
         ids().map(|ids| {
             ids.into_iter()
                 .map(|id| {
-                    let navigate = navigate.clone();
+                    let open_page = open_page.clone();
                     let (open_id, use_id) = (id.clone(), id.clone());
                     view! {
                         <div class="next-actions saved-skill" data-testid="saved-skill" data-id=id.clone()>
@@ -1419,7 +1418,7 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                                 {icon(Glyph::Magic)}{tf(T::UseSkillMention, &[&id])}
                             </button>
                             <button class="btn ghost small next-action" data-testid="saved-skill-open"
-                                on:click=move |_| open_after_click(tasks, navigate.clone(), format!("/skills?skill={}", super::api::seg(&open_id)))>
+                                on:click=move |_| open_page(&format!("/skills?skill={}", super::api::seg(&open_id)))>
                                 {icon(Glyph::ArrowRight)}{t(T::OpenSkill)}
                             </button>
                         </div>
@@ -1430,17 +1429,6 @@ fn SavedSkillActions(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     }
 }
 
-/// Opens `path` on the next task. Leaving inside the click drops the
-/// studio's listeners that the same click still passes through, and wasm
-/// throws `closure invoked recursively or after being dropped`
-/// (`docs/design-system.md`, QA-010).
-fn open_after_click(tasks: Tasks, navigate: impl Fn(&str) + 'static, path: String) {
-    tasks.spawn(async move {
-        gloo_timers::future::TimeoutFuture::new(0).await;
-        navigate(&path);
-    });
-}
-
 /// The skills the turn's agent got ("Skills: a, b (from project)"), each
 /// opening its page, and a warning for each `@` skill that is gone (the
 /// agent did not get it). Nothing for a turn without skills, or one stored
@@ -1449,18 +1437,17 @@ fn open_after_click(tasks: Tasks, navigate: impl Fn(&str) + 'static, path: Strin
 #[component]
 fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
     use od_contracts::{SkillSource, TurnSkillKind};
-    let navigate = super::leave_guard::use_leave();
-    let tasks = Tasks::here();
+    let open_page = super::leave_guard::use_open_after_click();
     let skills = Memo::new(move |_| turn.with(|t| t.skills.clone()));
     move || {
         let skills = skills.get();
         let (got, gone): (Vec<_>, Vec<_>) = skills.into_iter().partition(|s| s.found);
-        let navigate = navigate.clone();
+        let open_page = open_page.clone();
         let got = (!got.is_empty()).then(|| {
             let items = got
                 .into_iter()
                 .map(|s| {
-                    let navigate = navigate.clone();
+                    let open_page = open_page.clone();
                     let open = format!("/skills?skill={}", super::api::seg(&s.id));
                     let from = match s.source {
                         SkillSource::Mention => None,
@@ -1471,7 +1458,7 @@ fn TurnSkills(turn: RwSignal<AssistantTurn>) -> impl IntoView {
                     // template is named, not linked.
                     let name = if s.kind == Some(TurnSkillKind::Skill) {
                         view! {
-                            <button class="btn ghost small" on:click=move |_| open_after_click(tasks, navigate.clone(), open.clone())>
+                            <button class="btn ghost small" on:click=move |_| open_page(&open)>
                                 {s.id.clone()}
                             </button>
                         }
@@ -1541,7 +1528,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
     let ctx = expect_context::<StudioCtx>();
     let sources = use_context::<Sources>();
     let shell = Shell::get();
-    let navigate = super::leave_guard::use_leave();
+    let open_page = super::leave_guard::use_open_after_click();
     let tasks = Tasks::here();
     let item_id = StoredValue::new(item_id);
     // The user message this turn answered, and its files, for a retry:
@@ -1599,7 +1586,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
             )
         }) && !holding;
         (!steps.is_empty() || offer_skill).then(|| {
-            let navigate = navigate.clone();
+            let open_page = open_page.clone();
             let (chips, actions): (Vec<NextStep>, Vec<NextStep>) =
                 steps.into_iter().partition(|s| s.is_chip() || matches!(s, NextStep::Retry | NextStep::Settings));
             view! {
@@ -1656,7 +1643,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                             {chips
                                 .into_iter()
                                 .map(|step| {
-                                    let navigate = navigate.clone();
+                                    let open_page = open_page.clone();
                                     // Retry waits for Contour to be back, then turns on
                                     // by itself (UI-008).
                                     let offline = matches!(step, NextStep::Retry);
@@ -1685,7 +1672,7 @@ fn NextSteps(turn: RwSignal<AssistantTurn>, item_id: String) -> impl IntoView {
                                                 None => {}
                                             }
                                         }
-                                        _ => navigate("/settings"),
+                                        _ => open_page("/settings"),
                                     };
                                     view! {
                                         <button class="chip next-step" data-testid=testid on:click=run
