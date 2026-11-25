@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.66] - 2026-11-25
+
 ### Added
 
 - Copy to Claude Code on a Personal skill (desktop app) puts it in ~/.claude/skills, never over one there; the web app shows the command.
@@ -1470,7 +1472,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.65...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.66...HEAD
+[0.2.0-beta.66]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.65...v0.2.0-beta.66
 [0.2.0-beta.65]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.64...v0.2.0-beta.65
 [0.2.0-beta.64]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.63...v0.2.0-beta.64
 [0.2.0-beta.63]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.62...v0.2.0-beta.63
