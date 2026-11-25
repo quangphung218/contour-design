@@ -61,6 +61,8 @@ const REVISIONS_DIR: &str = "revisions";
 const ASSETS_DIR: &str = "assets";
 const REVISION_FILE: &str = "revision.json";
 const MAX_ASSET_BYTES: usize = 20 * 1024 * 1024;
+/// The most one package file read here holds (an asset at most).
+const MAX_READ_BYTES: u64 = MAX_ASSET_BYTES as u64;
 /// Files a revision may propose.
 const REVISABLE: [&str; 2] = ["DESIGN.md", "tokens.css"];
 
@@ -125,7 +127,7 @@ fn a2(state: &AppState) -> Vec<Token> {
         .config
         .resource_root
         .join("design-systems/_schema/defaults.css");
-    design_kit::a2_defaults(&std::fs::read_to_string(path).unwrap_or_default())
+    design_kit::a2_defaults(&read_text(path).unwrap_or_default())
 }
 
 fn user_root(state: &AppState) -> PathBuf {
@@ -156,10 +158,28 @@ fn inside_io(dir: &std::path::Path, rel: &str) -> std::io::Result<PathBuf> {
     inside(dir, rel).map_err(|e| std::io::Error::other(e.message))
 }
 
+/// Reads the package file at `path` (a real path from [`inside`]): a
+/// regular file only, no link planted since at its name, never waiting on
+/// a FIFO, at most [`MAX_READ_BYTES`] (`od_content::nofollow::read_file`).
+/// `NotFound` when it is missing or no regular file.
+fn read_bytes(path: impl AsRef<std::path::Path>) -> std::io::Result<Vec<u8>> {
+    use od_content::nofollow::TreeError;
+    match od_content::nofollow::read_file(path.as_ref(), MAX_READ_BYTES) {
+        Ok(Some(file)) => Ok(file.bytes),
+        Ok(None) => Err(std::io::ErrorKind::NotFound.into()),
+        Err(TreeError::TooLarge) => Err(std::io::Error::other("file too large")),
+        Err(TreeError::Io(e)) => Err(e),
+    }
+}
+
+/// [`read_bytes`] as UTF-8 text.
+fn read_text(path: impl AsRef<std::path::Path>) -> std::io::Result<String> {
+    String::from_utf8(read_bytes(path)?)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
 fn read(dir: &std::path::Path, name: &str) -> String {
-    inside_io(dir, name)
-        .and_then(std::fs::read_to_string)
-        .unwrap_or_default()
+    inside_io(dir, name).and_then(read_text).unwrap_or_default()
 }
 
 fn mime_of(name: &str) -> &'static str {
@@ -364,13 +384,12 @@ fn revisions_of(dir: &std::path::Path) -> Vec<Revision> {
             let rdir = format!("{REVISIONS_DIR}/{}", e.file_name().to_string_lossy());
             let file = |n: &str| inside_io(dir, &format!("{rdir}/{n}"));
             let mut r: Revision =
-                serde_json::from_str(&file(REVISION_FILE).and_then(std::fs::read_to_string).ok()?)
-                    .ok()?;
+                serde_json::from_str(&file(REVISION_FILE).and_then(read_text).ok()?).ok()?;
             r.files = REVISABLE
                 .iter()
                 .filter_map(|n| {
                     file(n)
-                        .and_then(std::fs::read_to_string)
+                        .and_then(read_text)
                         .ok()
                         .map(|content| RevisionFile {
                             name: (*n).to_owned(),
@@ -469,7 +488,7 @@ pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiRe
     let a2 = a2(&state);
     let kit = crate::spawn::spawn_blocking_in_span(move || {
         let body = inside_io(&e.dir, "DESIGN.md")
-            .and_then(std::fs::read_to_string)
+            .and_then(read_text)
             .unwrap_or(e.body.clone());
         let tokens = design_kit::parse_tokens(&read(&e.dir, "tokens.css"));
         let mut previews: Vec<String> = inside_io(&e.dir, "preview")
@@ -506,11 +525,10 @@ pub async fn showcase(
 ) -> ApiResult<Response> {
     let e = entry(&state, &id)?;
     let components = inside(&e.dir, "components.html")?;
-    let html = match tokio::fs::read(&components).await {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            design_kit::showcase_html(&e.summary.title, &read(&e.dir, "tokens.css")).into_bytes()
-        }
+    let found = crate::spawn::spawn_blocking_in_span(move || read_bytes(&components)).await;
+    let html = match found {
+        Ok(Ok(bytes)) => bytes,
+        _ => design_kit::showcase_html(&e.summary.title, &read(&e.dir, "tokens.css")).into_bytes(),
     };
     Ok(page(rebrand_example(html), "text/html; charset=utf-8"))
 }
@@ -524,9 +542,11 @@ pub async fn file(
     if target.starts_with(inside(&e.dir, REVISIONS_DIR)?) {
         return Err(ApiErr::not_found("file not found"));
     }
-    let bytes = tokio::fs::read(&target)
+    let bytes = crate::spawn::spawn_blocking_in_span(move || read_bytes(&target))
         .await
-        .map_err(|_| ApiErr::not_found("file not found"))?;
+        .ok()
+        .and_then(Result::ok)
+        .ok_or_else(|| ApiErr::not_found("file not found"))?;
     let mime = mime_of(&path);
     let bytes = if mime.starts_with("text/") {
         rebrand_example(bytes)
@@ -562,7 +582,7 @@ pub async fn save_design_md(
 /// Merges `patch` into the package's `metadata.json`.
 fn patch_metadata(dir: &std::path::Path, patch: &Value) -> std::io::Result<()> {
     let path = inside_io(dir, "metadata.json")?;
-    let mut meta = std::fs::read_to_string(&path)
+    let mut meta = read_text(&path)
         .ok()
         .and_then(|t| serde_json::from_str::<Value>(&t).ok())
         .filter(Value::is_object)
@@ -656,7 +676,7 @@ pub async fn copy(
         write_sent_names(&dest, &read_sent_names(&e.dir)).map_err(ApiErr::io)?;
         // The manifest names its folder; keep it valid for the new one.
         let manifest_path = dest.join("manifest.json");
-        if let Some(mut m) = std::fs::read_to_string(&manifest_path)
+        if let Some(mut m) = read_text(&manifest_path)
             .ok()
             .and_then(|t| serde_json::from_str::<Value>(&t).ok())
         {
@@ -810,11 +830,8 @@ static ASSET_WRITES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// [`SENT_NAMES`] of package folder `dir`; empty when missing,
 /// unreadable or a link (never followed out of the package).
 fn read_sent_names(dir: &std::path::Path) -> BTreeMap<String, String> {
-    let path = dir.join(SENT_NAMES);
-    std::fs::symlink_metadata(&path)
-        .is_ok_and(|m| m.is_file())
-        .then(|| std::fs::read(&path).ok())
-        .flatten()
+    read_bytes(dir.join(SENT_NAMES))
+        .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default()
 }
@@ -1173,10 +1190,21 @@ fn accept_files_with(
         .filter(|f| REVISABLE.contains(&f.name.as_str()))
         .try_for_each(|f| {
             let path = inside(dir, &f.name)?;
-            let old = match std::fs::read(&path) {
-                Ok(bytes) => Some(bytes),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-                Err(err) => return Err(ApiErr::io(err)),
+            let old = match od_content::nofollow::read_file(&path, MAX_READ_BYTES) {
+                Ok(Some(file)) => Some(file.bytes),
+                // Missing: the accept makes it.
+                Ok(None) if std::fs::symlink_metadata(&path).is_err() => None,
+                // A FIFO or a device: writing would wait on it.
+                Ok(None) => {
+                    return Err(ApiErr::bad_request(format!(
+                        "{} is not a regular file",
+                        f.name
+                    )));
+                }
+                Err(od_content::nofollow::TreeError::TooLarge) => {
+                    return Err(ApiErr::bad_request(format!("{} is too large", f.name)));
+                }
+                Err(od_content::nofollow::TreeError::Io(err)) => return Err(ApiErr::io(err)),
             };
             // Listed before the write: one that fails half way is put back.
             prior.push(Prior {
@@ -1207,7 +1235,7 @@ fn accept_files_with(
 fn put_back(prior: &[Prior]) {
     for p in prior.iter().rev() {
         if let Some(wrote) = &p.wrote {
-            match std::fs::read(&p.path) {
+            match read_bytes(&p.path) {
                 Ok(now) if now == *wrote => {}
                 _ => {
                     tracing::warn!(file = %p.path.display(), "a file an accept wrote changed since: left as it is");
@@ -1361,7 +1389,7 @@ pub async fn revise(
                 .iter()
                 .filter_map(|n| {
                     inside_io(work.path(), n)
-                        .and_then(std::fs::read_to_string)
+                        .and_then(read_text)
                         .ok()
                         .map(|content| RevisionFile {
                             name: (*n).to_owned(),
@@ -1685,6 +1713,45 @@ mod tests {
             !d.join("tokens.css").exists(),
             "a file deleted since put back"
         );
+    }
+
+    /// A package an agent edits in place can hold a FIFO where a file is
+    /// read (DESIGN.md, tokens.css, a revision, the sent names):
+    /// every read comes back, reading it as nothing, and an accept refuses
+    /// to write into it. A file past the limit is not read either.
+    #[cfg(unix)]
+    #[test]
+    fn package_reads_never_wait_on_a_fifo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().to_path_buf();
+        let fifo = |p: &std::path::Path| {
+            nix::unistd::mkfifo(p, nix::sys::stat::Mode::from_bits_truncate(0o644)).unwrap();
+        };
+        for name in ["DESIGN.md", "tokens.css", SENT_NAMES] {
+            fifo(&d.join(name));
+        }
+        let rev = d.join(REVISIONS_DIR).join("r1");
+        std::fs::create_dir_all(&rev).unwrap();
+        fifo(&rev.join(REVISION_FILE));
+        let big = "x".repeat(MAX_ASSET_BYTES + 1);
+        std::fs::write(d.join("big.css"), &big).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let read_all = (
+                read(&d, "tokens.css"),
+                read(&d, "big.css"),
+                revisions_of(&d).len(),
+                read_sent_names(&d).len(),
+                inside_io(&d, "DESIGN.md").and_then(read_bytes).is_err(),
+            );
+            let accepted = accept_files(&d, &revision(&[("DESIGN.md", "new")]));
+            let _ = tx.send((read_all, accepted.is_err()));
+        });
+        let (read_all, accepted) = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a package read never came back (blocked on a FIFO?)");
+        assert_eq!(read_all, (String::new(), String::new(), 0, 0, true));
+        assert!(accepted, "an accept wrote into a FIFO");
     }
 
     /// An accept failing on a file it cannot read (so not listed to put

@@ -17,7 +17,8 @@ pub fn list_craft(dir: &Path) -> Vec<CraftEntry> {
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
             let slug = name.strip_suffix(".md")?.to_owned();
-            let text = std::fs::read_to_string(e.path()).ok()?;
+            let text =
+                crate::nofollow::read_text(&e.path(), crate::nofollow::MAX_INDEX_FILE_BYTES)?;
             let label = text.split('\n').find(|l| l.starts_with("# ")).map_or_else(
                 || slug.clone(),
                 |l| l.trim_start_matches('#').trim().to_owned(),
@@ -83,7 +84,10 @@ pub fn load_craft_sections(dir: &Path, requested: &[String]) -> (String, Vec<Str
             .map(Value::String)
             .collect::<Vec<_>>(),
     ) {
-        let Ok(text) = std::fs::read_to_string(dir.join(format!("{slug}.md"))) else {
+        let Some(text) = crate::nofollow::read_text(
+            &dir.join(format!("{slug}.md")),
+            crate::nofollow::MAX_INDEX_FILE_BYTES,
+        ) else {
             continue;
         };
         let trimmed = text.trim();

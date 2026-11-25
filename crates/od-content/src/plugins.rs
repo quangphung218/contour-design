@@ -111,7 +111,8 @@ pub fn localized(v: Option<&Value>, locale: Option<&str>) -> Option<String> {
 
 fn read_manifest(dir: &Path) -> Option<Map<String, Value>> {
     [MANIFEST, CLAUDE_PLUGIN_MANIFEST].iter().find_map(|name| {
-        let text = std::fs::read_to_string(dir.join(name)).ok()?;
+        let text =
+            crate::nofollow::read_text(&dir.join(name), crate::nofollow::MAX_INDEX_FILE_BYTES)?;
         serde_json::from_str::<Value>(&text)
             .ok()?
             .as_object()
@@ -123,7 +124,9 @@ fn read_manifest(dir: &Path) -> Option<Map<String, Value>> {
 /// `SKILL.md`, or they are unreadable (discovery, not validation).
 #[must_use]
 pub fn load_plugin(dir: &Path, folder: &str, source: &'static str) -> Option<PluginEntry> {
-    let skill = std::fs::read_to_string(dir.join("SKILL.md")).ok();
+    // Not a link, not a FIFO, bounded (`nofollow::read_text`).
+    let skill =
+        crate::nofollow::read_text(&dir.join("SKILL.md"), crate::nofollow::MAX_INDEX_FILE_BYTES);
     let (front, body) = match &skill {
         Some(text) => frontmatter::parse(text).ok()?,
         None => (Map::new(), ""),

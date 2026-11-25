@@ -309,7 +309,18 @@ fn remix_metadata(kind: Option<ProjectKind>) -> ProjectMetadata {
 /// the page's folder, so a project made from it opens and exports as the
 /// gallery page does.
 fn example_with_files(example: &std::path::Path) -> Result<(Vec<u8>, SideFiles), StoreError> {
-    let html = std::fs::read(example)?;
+    // A plugin's template lives where an agent can write: a regular file
+    // only, no link at its name, never a FIFO, bounded.
+    let html = match od_content::nofollow::read_file(example, MAX_TEMPLATE_BYTES) {
+        Ok(Some(file)) => file.bytes,
+        Ok(None) => return Err(StoreError::FileNotFound),
+        Err(od_content::nofollow::TreeError::TooLarge) => {
+            return Err(StoreError::Io(std::io::Error::other(
+                "the example page is too large",
+            )));
+        }
+        Err(od_content::nofollow::TreeError::Io(e)) => return Err(StoreError::from_read_io(e)),
+    };
     let (Some(dir), Some(name)) = (example.parent(), example.file_name()) else {
         return Ok((html, Vec::new()));
     };
@@ -386,4 +397,33 @@ pub async fn remix(
     Ok(Json(
         json!({ "project": project, "conversationId": conversation_id }),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A plugin's template folder is one an agent can write: an example
+    /// page that is a FIFO or a link is not read (a Remix never waits on
+    /// it, never copies what a link points at).
+    #[cfg(unix)]
+    #[test]
+    fn a_remix_reads_no_fifo_and_no_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (fifo, link) = (tmp.path().join("fifo.html"), tmp.path().join("link.html"));
+        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::from_bits_truncate(0o644)).unwrap();
+        std::fs::write(tmp.path().join("secret"), "s3cret").unwrap();
+        std::os::unix::fs::symlink(tmp.path().join("secret"), &link).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send((
+                example_with_files(&fifo).is_err(),
+                example_with_files(&link).is_err(),
+            ));
+        });
+        let refused = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a Remix never came back (blocked on a FIFO?)");
+        assert_eq!(refused, (true, true));
+    }
 }

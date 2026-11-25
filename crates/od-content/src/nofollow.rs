@@ -97,6 +97,20 @@ pub fn read_file(path: &Path, limit: u64) -> Result<Option<ReadFile>, TreeError>
     }
 }
 
+/// The most an index reads of one content file (a `SKILL.md`, a plugin
+/// manifest, a craft rule); the largest bundled one is under 100 KB.
+pub const MAX_INDEX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// [`read_file`] as UTF-8 text: `None` when it is not a regular file (a
+/// link at its last component, a FIFO), missing, unreadable, past
+/// `limit`, or not UTF-8. The folders above it are followed: an index
+/// takes an entry that is itself a link (the user's own symlink).
+#[must_use]
+pub fn read_text(path: &Path, limit: u64) -> Option<String> {
+    let file = read_file(path, limit).ok()??;
+    String::from_utf8(file.bytes).ok()
+}
+
 /// An open that met a link (`ELOOP`), nothing (gone meanwhile), or a
 /// socket: not a file to read, skipped.
 fn skipped(e: &std::io::Error) -> bool {

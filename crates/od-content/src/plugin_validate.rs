@@ -75,7 +75,9 @@ pub fn validate_plugin_dir(dir: &Path) -> Validation {
     let has_manifest = dir.join(MANIFEST).is_file() || dir.join(CLAUDE_PLUGIN_MANIFEST).is_file();
     if has_manifest {
         for name in [MANIFEST, CLAUDE_PLUGIN_MANIFEST] {
-            if let Ok(text) = std::fs::read_to_string(dir.join(name)) {
+            if let Some(text) =
+                crate::nofollow::read_text(&dir.join(name), crate::nofollow::MAX_INDEX_FILE_BYTES)
+            {
                 match serde_json::from_str::<Value>(&text) {
                     Ok(Value::Object(_)) => {}
                     Ok(_) => errors.push(format!("{name} must be a JSON object")),

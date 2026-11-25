@@ -111,11 +111,10 @@ pub fn list_skills(roots: &[PathBuf], first_is_user: bool) -> Vec<SkillEntry> {
 /// Loads one folder: the parent entry followed by its derived examples.
 /// `None` when there is no readable `SKILL.md` (discovery, not validation).
 fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<Vec<SkillEntry>> {
-    let skill_path = dir.join("SKILL.md");
-    if !std::fs::metadata(&skill_path).ok()?.is_file() {
-        return None;
-    }
-    let raw = std::fs::read_to_string(&skill_path).ok()?;
+    // Not a link, not a FIFO (an agent can plant either), at most
+    // `MAX_INDEX_FILE_BYTES`; `dir` itself may be the user's symlink.
+    let raw =
+        crate::nofollow::read_text(&dir.join("SKILL.md"), crate::nofollow::MAX_INDEX_FILE_BYTES)?;
     let (data, body) = frontmatter::parse(&raw).ok()?;
     let od = data.get("od").filter(|v| v.is_object());
     let od_get = |key: &str| od.and_then(|o| o.get(key));
