@@ -929,16 +929,87 @@ try {
 
   // ------------------------------------------------- copy to Claude Code
   // A Personal skill goes to the daemon's HOME/.claude/skills with its side
-  // files; a second copy says Claude Code has it and changes nothing; a
-  // skill that calls `od` warns first and still copies; Official has none.
+  // files. A skill that calls `od` (in SKILL.md or only in scripts/) warns
+  // first and still copies; one with no description is refused and says
+  // why; a second copy names the folder there and how to copy again;
+  // Official has no button.
   const claudeSkills = join(home, '.claude', 'skills');
+  const openSkill = async (id) => {
+    await page.goto(`${BASE}/skills?scope=personal`);
+    await page.locator(`[data-testid="skill-row"][data-id="${id}"] .plugin-row-main`).click();
+    await page.getByTestId('skill-body').waitFor();
+  };
   await page.locator('[data-testid="skill-row"][data-id="ad-creative"] .plugin-row-main').click();
   await page.getByTestId('skill-body').waitFor();
   assert.equal(await page.getByTestId('skill-export').count(), 0, 'no copy for an Official skill');
   await page.getByRole('button', { name: 'Back' }).click();
-  await page.getByTestId('scope-personal').click();
-  await page.locator('[data-testid="skill-row"][data-id="tea-b"] .plugin-row-main').click();
-  await page.getByTestId('skill-body').waitFor();
+  // Calls Contour's tools: warned before anything is copied, then copied.
+  const odSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea photos', description: 'Tea photos.', body: 'Run `$OD_BIN media generate` for each photo.' }) });
+  assert.equal(odSkill.id, 'tea-photos');
+  await openSkill('tea-photos');
+  await page.getByTestId('skill-export').click();
+  const warning = page.getByTestId('skill-export-warning');
+  await warning.waitFor();
+  assert.match(await warning.textContent(), /This skill calls Contour tools; it may not work outside Contour/);
+  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'nothing copied before the answer');
+  // The warning reads as a line of text with its buttons below it, at
+  // every width: a row that fits the buttons beside the text squeezed it
+  // to a word a line (the page column at 375 px is narrow enough to wrap
+  // them anyway, so wider windows are checked too).
+  const warnBoxes = [];
+  for (const width of [375, 420, 480, 540, 600, 768, 1024, 1360]) {
+    await page.setViewportSize({ width, height: 812 });
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const box = await warning.evaluate((root) => {
+      const text = [...root.querySelectorAll('*')].filter((el) => el.children.length === 0 && /calls Contour tools/.test(el.textContent))[0];
+      const t = text.getBoundingClientRect();
+      const style = getComputedStyle(root);
+      const inner = root.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const buttons = [...root.querySelectorAll('button')].map((b) => b.getBoundingClientRect());
+      const wraps = t.height > 1.6 * parseFloat(getComputedStyle(text).fontSize);
+      return { share: Math.round((100 * t.width) / inner), wraps, inner: Math.round(inner), below: buttons.every((b) => b.top >= t.bottom - 1) };
+    });
+    if (width === 375) await page.screenshot({ path: join(OUT, 'skill-export-warning-375.png') });
+    warnBoxes.push({ viewport: width, ...box });
+  }
+  await page.setViewportSize({ width: 1360, height: 900 });
+  log('copy warning by width', JSON.stringify(warnBoxes));
+  // A text that wraps fills the warning's width.
+  const squeezed = warnBoxes.filter((b) => !b.below || (b.wraps && b.share < 60));
+  assert.deepEqual(squeezed, [], 'the warning text has its own line and the buttons sit under it');
+  await warning.getByRole('button', { name: 'Cancel' }).click();
+  await warning.waitFor({ state: 'detached' });
+  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'Cancel copies nothing');
+  await page.getByTestId('skill-export').click();
+  await page.getByTestId('skill-export-anyway').click();
+  await page.getByTestId('skill-export-done').waitFor();
+  await warning.waitFor({ state: 'detached' });
+  assert.ok(existsSync(join(claudeSkills, 'tea-photos', 'SKILL.md')), 'copied anyway');
+  // `od` only in a script beside the SKILL.md: warned too.
+  const scripted = join(fixtures, 'tea-script');
+  mkdirSync(join(scripted, 'scripts'), { recursive: true });
+  writeFileSync(join(scripted, 'SKILL.md'), '---\nname: tea-script\ndescription: Tea menus from a script.\n---\nRun scripts/menu.sh.\n');
+  writeFileSync(join(scripted, 'scripts', 'menu.sh'), '#!/bin/sh\nod files write menu.html < menu.html\n');
+  assert.equal((await api('/api/skills/install', { method: 'POST', body: JSON.stringify({ path: scripted }) })).id, 'tea-script');
+  await openSkill('tea-script');
+  await page.getByTestId('skill-export').click();
+  await warning.waitFor();
+  assert.equal(existsSync(join(claudeSkills, 'tea-script')), false, 'a script calling od warns before copying');
+  await page.getByTestId('skill-export-anyway').click();
+  await page.getByTestId('skill-export-done').waitFor();
+  assert.ok(existsSync(join(claudeSkills, 'tea-script', 'scripts', 'menu.sh')), 'scripts copied');
+  // No description: refused before any copy, with what to do.
+  const bareSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea notes', body: 'Short notes.' }) });
+  assert.equal(bareSkill.id, 'tea-notes');
+  await openSkill('tea-notes');
+  await page.getByTestId('skill-export').click();
+  const failed = page.getByTestId('skill-export-failed');
+  await failed.waitFor();
+  assert.match(await failed.textContent(), /Add a description first/);
+  assert.equal(existsSync(join(claudeSkills, 'tea-notes')), false, 'no copy without a description');
+  // A plain skill: copied at once; again: the folder there is named, and
+  // how to copy again; nothing written over.
+  await openSkill('tea-b');
   await page.getByTestId('skill-export').click();
   const copied = page.getByTestId('skill-export-done');
   await copied.waitFor();
@@ -948,41 +1019,35 @@ try {
   assert.ok(existsSync(join(claudeSkills, 'tea-b', 'assets', 'tokens.css')), 'side files copied');
   writeFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'edited in Claude Code');
   await page.getByTestId('skill-export').click();
-  const taken = page.getByTestId('skill-export-failed');
-  await taken.waitFor();
-  assert.match(await taken.textContent(), /already has a skill named tea-b/);
+  await failed.waitFor();
+  assert.equal(
+    await failed.textContent(),
+    `Claude Code already has a skill named tea-b at ${join(claudeSkills, 'tea-b')}. Remove that folder to copy again.`,
+  );
   assert.equal(await copied.count(), 0, 'the earlier path is gone');
   assert.equal(readFileSync(join(claudeSkills, 'tea-b', 'SKILL.md'), 'utf8'), 'edited in Claude Code', 'not written over');
-  await page.getByRole('button', { name: 'Back' }).click();
-  // Calls Contour's tools: warned before anything is copied, then copied.
-  const odSkill = await api('/api/skills', { method: 'POST', body: JSON.stringify({ name: 'Tea photos', body: 'Run `$OD_BIN media generate` for each photo.' }) });
-  assert.equal(odSkill.id, 'tea-photos');
-  await page.goto(`${BASE}/skills?scope=personal`);
-  await page.locator('[data-testid="skill-row"][data-id="tea-photos"] .plugin-row-main').click();
-  await page.getByTestId('skill-body').waitFor();
-  await page.getByTestId('skill-export').click();
-  const warning = page.getByTestId('skill-export-warning');
-  await warning.waitFor();
-  assert.match(await warning.textContent(), /This skill calls Contour tools; it may not work outside Contour/);
-  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'nothing copied before the answer');
-  await warning.getByRole('button', { name: 'Cancel' }).click();
-  await warning.waitFor({ state: 'detached' });
-  assert.equal(existsSync(join(claudeSkills, 'tea-photos')), false, 'Cancel copies nothing');
-  await page.getByTestId('skill-export').click();
-  await page.getByTestId('skill-export-anyway').click();
-  await page.getByTestId('skill-export-done').waitFor();
-  await warning.waitFor({ state: 'detached' });
-  assert.ok(existsSync(join(claudeSkills, 'tea-photos', 'SKILL.md')), 'copied anyway');
   await shots('skill-copied-to-claude');
-  // At 375 px the four buttons and the long path stay inside the detail.
+  // At 375 px the four buttons and the long message stay inside the detail.
   await page.setViewportSize({ width: 375, height: 812 });
   const narrow = await page.getByTestId('skill-detail').evaluate((root) => {
     const box = root.getBoundingClientRect();
-    const parts = [...root.querySelectorAll('.plugin-hero button, [data-testid="skill-export-done"]')];
-    return { out: parts.filter((el) => { const r = el.getBoundingClientRect(); return r.left < box.left - 0.5 || r.right > box.right + 0.5; }).length, parts: parts.length };
+    const parts = [...root.querySelectorAll('.plugin-hero button, [data-testid="skill-export-failed"]')];
+    const out = parts.filter((el) => { const r = el.getBoundingClientRect(); return r.left < box.left - 0.5 || r.right > box.right + 0.5; });
+    return { out: out.map((el) => `${el.dataset.testid || el.className} ${Math.round(el.getBoundingClientRect().right)} > ${Math.round(box.right)}`), parts: parts.length };
   });
   await page.setViewportSize({ width: 1360, height: 900 });
-  assert.deepEqual(narrow, { out: 0, parts: 5 }, 'buttons and path fit at 375 px');
+  assert.deepEqual(narrow, { out: [], parts: 5 }, 'buttons and message fit at 375 px');
+  // The page column at 375 px is 95 to 130 px wide from one run to the
+  // next; at its narrowest the long button wraps instead of passing the
+  // edge. Pinned here, so the check does not depend on the run.
+  const pinned = await page.getByTestId('skill-detail').evaluate((root) => {
+    root.style.width = '110px';
+    const box = root.getBoundingClientRect();
+    const out = [...root.querySelectorAll('.plugin-hero button')].filter((el) => el.getBoundingClientRect().right > box.right + 0.5).map((el) => el.dataset.testid);
+    root.style.width = '';
+    return out;
+  });
+  assert.deepEqual(pinned, [], 'the buttons stay inside a 110 px column');
   results.copyToClaude = 'ok';
 
   // ------------------------------------------------------ save as skill

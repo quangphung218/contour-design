@@ -1240,7 +1240,8 @@ messages! {
     AgentSkillsFailed => "Could not read the agent skills: {0}", "Không đọc được skill của agent: {0}";
     CopyToClaudeCode => "Copy to Claude Code", "Chép sang Claude Code";
     CopiedToClaudeCode => "Copied to {0}", "Đã chép vào {0}";
-    ClaudeCodeHasSkill => "Claude Code already has a skill named {0} in ~/.claude/skills. Nothing was changed.", "Claude Code đã có skill tên {0} trong ~/.claude/skills. Không có gì bị thay đổi.";
+    ClaudeCodeHasSkill => "Claude Code already has a skill named {0} at {1}. Remove that folder to copy again.", "Claude Code đã có skill tên {0} tại {1}. Xoá thư mục đó để chép lại.";
+    SkillNeedsDescription => "Add a description first (Edit): Claude Code offers its model only skills that have one.", "Thêm mô tả trước (Sửa): Claude Code chỉ đưa cho model những skill có mô tả.";
     SkillCallsContour => "This skill calls Contour tools; it may not work outside Contour.", "Skill này gọi công cụ của Contour; ngoài Contour có thể không chạy.";
     CopyAnyway => "Copy anyway", "Vẫn chép";
     CopyToClaudeFailed => "Could not copy: {0}", "Không chép được: {0}";

@@ -1090,40 +1090,25 @@ fn SkillDetailView(
         let id = id.clone();
         move |_| open_page(&format!("/?skill={}", api::seg(&id)))
     };
-    // "Copy to Claude Code": the warning shown first for a skill that
-    // calls Contour's tools, then what the copy answered.
+    // "Copy to Claude Code": the server's preview first (a description,
+    // whether it calls Contour's tools), the warning if it does, the copy.
     let export_warned = RwSignal::new(false);
     let exporting = RwSignal::new(false);
-    let exported = RwSignal::new(None::<Result<String, String>>);
-    let copy_to_claude = {
+    let exported = RwSignal::new(None::<ExportStep>);
+    let run_copy = {
         let id = id.clone();
-        Callback::new(move |()| {
-            let id = id.clone();
+        Callback::new(move |seen_warning: bool| {
             export_warned.set(false);
             exporting.set(true);
             exported.set(None);
             // The copy runs to its end; only what it shows needs the page.
-            tasks.spawn_then(
-                async move {
-                    api::post::<_, Value>(
-                        &format!("/api/skills/{}/export", api::seg(&id)),
-                        &json!({ "target": "claude" }),
-                    )
-                    .await
-                    .map(|v| s(&v, "path"))
-                    .map_err(|e| {
-                        if e.status == 409 {
-                            tf(T::ClaudeCodeHasSkill, &[&id])
-                        } else {
-                            api::failure(T::CopyToClaudeFailed, &e)
-                        }
-                    })
-                },
-                move |res| {
-                    exporting.set(false);
-                    exported.set(Some(res));
-                },
-            );
+            tasks.spawn_then(copy_to_claude(id.clone(), seen_warning), move |step| {
+                exporting.set(false);
+                match step {
+                    ExportStep::Warn => export_warned.set(true),
+                    other => exported.set(Some(other)),
+                }
+            });
         })
     };
     let remove = {
@@ -1156,15 +1141,7 @@ fn SkillDetailView(
                     let id = d.info.id.clone();
                     let remove = remove.clone();
                     let use_skill = use_skill.clone();
-                    let calls_contour = od_contracts::calls_contour_tools(&strip_preamble(&d.body));
-                    let on_copy = move |_| {
-                        if calls_contour && !export_warned.get_untracked() {
-                            exported.set(None);
-                            export_warned.set(true);
-                        } else {
-                            copy_to_claude.run(());
-                        }
-                    };
+                    let on_copy = move |_| run_copy.run(false);
                     view! {
                         <header class="plugin-hero">
                             {tile(&d.info.id, initials(&d.info.name))}
@@ -1179,21 +1156,26 @@ fn SkillDetailView(
                             <div class="row wrap">
                                 <button class="btn small primary" data-testid="skill-use" on:click=use_skill>{icon(Glyph::ArrowRight)}{t(T::Use)}</button>
                                 <button class="btn small" data-testid="skill-edit" on:click=move |_| editing.set(true)>{icon(Glyph::Rename)}{t(T::Edit)}</button>
-                                {user.then(|| view! { <button class="btn small" data-testid="skill-export" prop:disabled=move || exporting.get() on:click=on_copy>{icon(Glyph::Export)}{t(T::CopyToClaudeCode)}</button> })}
+                                {user.then(|| view! { <button class="btn small skill-export-btn" data-testid="skill-export" prop:disabled=move || exporting.get() on:click=on_copy>{icon(Glyph::Export)}{t(T::CopyToClaudeCode)}</button> })}
                                 {user.then(|| view! { <button class="btn small ghost danger" data-testid="skill-delete" on:click=remove>{icon(Glyph::Delete)}{t(T::DeleteOrReset)}</button> })}
                             </div>
                         </header>
                         {move || export_warned.get().then(|| view! {
-                            <div class="callout row wrap" role="alert" data-testid="skill-export-warning">
-                                {icon(Glyph::Info)}
-                                <span class="grow">{t(T::SkillCallsContour)}</span>
-                                <button class="btn small" data-testid="skill-export-anyway" on:click=move |_| copy_to_claude.run(())>{t(T::CopyAnyway)}</button>
-                                <button class="btn small ghost" on:click=move |_| export_warned.set(false)>{t(T::Cancel)}</button>
+                            <div class="callout skill-export-warning" role="alert" data-testid="skill-export-warning">
+                                <p class="row">{icon(Glyph::Info)}<span>{t(T::SkillCallsContour)}</span></p>
+                                <div class="row wrap">
+                                    <button class="btn small" data-testid="skill-export-anyway" on:click=move |_| run_copy.run(true)>{t(T::CopyAnyway)}</button>
+                                    <button class="btn small ghost" on:click=move |_| export_warned.set(false)>{t(T::Cancel)}</button>
+                                </div>
                             </div>
                         })}
-                        {move || exported.get().map(|res| match res {
-                            Ok(path) => view! { <p class="subtle small skill-export-done" role="status" data-testid="skill-export-done">{tf(T::CopiedToClaudeCode, &[&path])}</p> }.into_any(),
-                            Err(e) => view! { <p class="error-text" role="alert" data-testid="skill-export-failed">{e}</p> }.into_any(),
+                        {move || exported.get().map(|step| match step {
+                            ExportStep::Copied { path, calls_contour } => view! {
+                                <p class="subtle small skill-export-msg" role="status" data-testid="skill-export-done">{tf(T::CopiedToClaudeCode, &[&path])}</p>
+                                {calls_contour.then(|| view! { <p class="subtle small" data-testid="skill-export-late-warning">{t(T::SkillCallsContour)}</p> })}
+                            }.into_any(),
+                            ExportStep::Failed(e) => view! { <p class="error-text skill-export-msg" role="alert" data-testid="skill-export-failed">{e}</p> }.into_any(),
+                            ExportStep::Warn => ().into_any(),
                         })}
                         {move || notice.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                         {move || if editing.get() {
@@ -1223,6 +1205,49 @@ fn SkillDetailView(
                 }
             }}
         </div>
+    }
+}
+
+/// Where "Copy to Claude Code" got to.
+#[derive(Clone)]
+enum ExportStep {
+    /// The skill calls Contour's tools: the user decides first.
+    Warn,
+    /// Copied; `calls_contour` when it does and no warning was shown
+    /// (the skill changed after the preview).
+    Copied {
+        path: String,
+        calls_contour: bool,
+    },
+    Failed(String),
+}
+
+/// "Copy to Claude Code" of the skill `id`: the server's preview (the
+/// folder, a description, whether it calls Contour's tools, all decided
+/// on the server from the whole SKILL.md and its `scripts/`), then the
+/// copy unless it must warn and `seen_warning` is not set. Touches no
+/// signal: it runs to its end after the page goes.
+async fn copy_to_claude(id: String, seen_warning: bool) -> ExportStep {
+    let base = format!("/api/skills/{}/export", api::seg(&id));
+    let preview = match api::get::<Value>(&format!("{base}?target=claude")).await {
+        Ok(v) => v,
+        Err(e) => return ExportStep::Failed(api::failure(T::CopyToClaudeFailed, &e)),
+    };
+    if preview["hasDescription"] != true {
+        return ExportStep::Failed(t(T::SkillNeedsDescription).to_owned());
+    }
+    if preview["contourTools"] == true && !seen_warning {
+        return ExportStep::Warn;
+    }
+    match api::post::<_, Value>(&base, &json!({ "target": "claude" })).await {
+        Ok(v) => ExportStep::Copied {
+            path: s(&v, "path"),
+            calls_contour: v["contourTools"] == true && !seen_warning,
+        },
+        Err(e) if e.status == 409 => {
+            ExportStep::Failed(tf(T::ClaudeCodeHasSkill, &[&id, &s(&preview, "path")]))
+        }
+        Err(e) => ExportStep::Failed(api::failure(T::CopyToClaudeFailed, &e)),
     }
 }
 

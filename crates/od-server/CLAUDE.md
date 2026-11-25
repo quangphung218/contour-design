@@ -74,12 +74,19 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `tests/library.rs::remix_brings_every_file_its_example_uses`, `tests/library.rs::remix_copies_only_what_the_example_loads`
     - `tests/library.rs::remix_copies_past_the_export_limits`, `tests/library.rs::remix_skips_what_it_cannot_follow`
     - `tests/library.rs::remix_keeps_an_example_that_is_not_utf8`
-15. "Copy to Claude Code" (`POST /api/skills/{id}/export`) copies only a Personal skill into the agents'
-    `HOME/.claude/skills/<id>` (the `HOME` "From agent CLI" reads) and never writes over anything there:
-    an entry of that name in any case or Unicode form (`name_key`, folder, file or link) is a 409. Links are
-    not followed, the copy is built in a hidden folder and renamed (`od-content` `user_content::export_skill`).
-    - `tests/library.rs::a_personal_skill_is_copied_to_claude_code_once`, `tests/library.rs::copy_to_claude_code_follows_no_link`
-    - `../od-content/src/user_content.rs::export_copies_a_user_skill_and_never_writes_over`, `::export_follows_no_link`
+15. "Copy to Claude Code" (`POST /api/skills/{id}/export`) copies only a Personal skill that has a `description` into the
+    agents' `HOME/.claude/skills/<id>` (the `HOME` "From agent CLI" reads) and never writes over anything there: an entry
+    of that name in any case or Unicode form (`name_key`, folder, file or link) is a 409 naming that folder, and the folder
+    is claimed with `create_dir` (fails if another program made it). Nothing hidden is written there (Claude Code loads
+    hidden folders as skills); `SKILL.md` is copied last; links are not followed (`od-content` `user_content::export_skill`).
+    The warning (`contourTools`) is decided once, on the server, from the whole SKILL.md and `scripts/`
+    (`user_content::export_check`); the app reads it from `GET …/export?target=claude`.
+    - `tests/library.rs::a_personal_skill_is_copied_to_claude_code_once`, `::copy_to_claude_code_follows_no_link`,
+      `::copy_to_claude_code_checks_the_whole_skill_first`
+    - `../od-content/src/user_content.rs::export_copies_a_user_skill_and_never_writes_over`, `::export_follows_no_link`,
+      `::an_export_never_shows_a_hidden_folder_in_the_agents_skills`, `::a_folder_made_elsewhere_during_an_export_is_not_replaced`,
+      `::the_export_check_reads_the_whole_skill`
+    - `../od-cli/src/lib.rs::the_contour_tools_warning_knows_every_od_command`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).

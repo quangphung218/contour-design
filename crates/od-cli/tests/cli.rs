@@ -577,7 +577,7 @@ fn skill_export_copies_a_personal_skill_to_claude_code_once() {
     std::fs::create_dir_all(dir.join("assets")).unwrap();
     std::fs::write(
         dir.join("SKILL.md"),
-        "---\nname: tea-house\n---\nRun `$OD_BIN media generate`.\n",
+        "---\nname: tea-house\ndescription: Tea photos.\n---\nRun `$OD_BIN media generate`.\n",
     )
     .unwrap();
     std::fs::write(dir.join("assets/tokens.css"), ":root{}").unwrap();
@@ -609,10 +609,26 @@ fn skill_export_copies_a_personal_skill_to_claude_code_once() {
     let out = od(&d, &["skill", "export", "tea-house", "--to", "claude"]);
     assert!(!out.status.success());
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("already has a skill"),
+        String::from_utf8_lossy(&out.stderr).contains("Remove that folder to copy again."),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+    // No description: refused, with what to do.
+    std::fs::write(dir.join("SKILL.md"), "---\nname: tea-bare\n---\nTea.\n").unwrap();
+    let out = od(&d, &["skill", "install", dir.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = od(&d, &["skill", "export", "tea-bare", "--to", "claude"]);
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no description"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!home.path().join(".claude/skills/tea-bare").exists());
     // Only Claude Code; only a Personal skill.
     let out = od(&d, &["skill", "export", "tea-house", "--to", "codex"]);
     assert!(!out.status.success());

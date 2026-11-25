@@ -244,7 +244,7 @@ pub struct CraftDetail {
 }
 
 /// `od` subcommands: `od media …` in a skill is a Contour tool.
-const OD_COMMANDS: &[&str] = &[
+pub const OD_COMMANDS: &[&str] = &[
     "daemon", "doctor", "export", "files", "lint", "mcp", "media", "plugin", "project", "research",
     "run", "skill", "tools",
 ];
