@@ -203,7 +203,9 @@ pub struct ExportQuery {
 
 /// `GET /api/skills/:id/export?target=claude`: what "Copy to Claude Code"
 /// would do, read only: `{id, path, source, contourTools, hasDescription,
-/// existing}`. Nothing over HTTP copies (`crate::skill_export`).
+/// existing, hash, files, skillMd}`. `hash` names the content shown
+/// (`files`, `skillMd`); the app's copy takes it and refuses a skill
+/// changed since. Nothing over HTTP copies (`crate::skill_export`).
 pub async fn export_preview(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -212,10 +214,11 @@ pub async fn export_preview(
     let (entry, dest_root) = crate::skill_export::export_source(&state, &id, &q.target)?;
     let id = entry.info.id.clone();
     let dest = dest_root.join(&id);
+    let source = entry.dir.clone();
     let skill_id = id.clone();
-    let (check, existing) = crate::spawn::spawn_blocking_in_span(move || {
+    let (files, existing) = crate::spawn::spawn_blocking_in_span(move || {
         (
-            user_content::export_check(&entry.dir),
+            user_content::ExportFiles::read(&entry.dir),
             user_content::existing_export(&dest_root, &skill_id)
                 .ok()
                 .flatten(),
@@ -223,12 +226,17 @@ pub async fn export_preview(
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?;
+    let files = files?;
+    let check = files.check();
     Ok(Json(json!({
         "id": id,
         "path": dest,
-        "source": state.content.snapshot().find_skill(&id).map(|e| e.dir.clone()),
+        "source": source,
         "contourTools": check.contour_tools,
         "hasDescription": check.has_description,
         "existing": existing,
+        "hash": files.hash(),
+        "files": files.paths(),
+        "skillMd": files.skill_md(),
     })))
 }

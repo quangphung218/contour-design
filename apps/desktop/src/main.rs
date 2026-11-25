@@ -206,11 +206,14 @@ async fn start_daemon(data_dir: DataDir, resource_root: PathBuf) -> anyhow::Resu
 /// the agents' `HOME/.claude/skills/<id>`. Only the app's window can ask:
 /// no HTTP route writes there, since an agent in a run reaches the daemon
 /// on loopback from outside its sandbox. The skill is the one the app's
-/// daemon knows by `id`; the folder is never one the page names.
+/// daemon knows by `id`; the folder is never one the page names. `hash`
+/// is the content the page showed (the preview's `hash`): a skill changed
+/// since, by an agent over loopback for one, is refused (`changed`).
 #[tauri::command]
 async fn copy_skill_to_claude(
     app: AppHandle,
     id: String,
+    hash: String,
 ) -> Result<od_server::skill_export::Copied, od_server::skill_export::CopyFailure> {
     let failed = |message: String| od_server::skill_export::CopyFailure {
         kind: "failed",
@@ -222,7 +225,7 @@ async fn copy_skill_to_claude(
     };
     let state = daemon.state.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        od_server::skill_export::copy_to_claude(&state, &id)
+        od_server::skill_export::copy_to_claude(&state, &id, &hash)
     })
     .await
     .map_err(|e| failed(e.to_string()))?

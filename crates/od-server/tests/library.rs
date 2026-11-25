@@ -383,23 +383,43 @@ async fn agent_cli_skills_are_listed_from_the_agents_home() {
     assert_eq!(again["sources"][2]["imported"], false);
 }
 
-/// "Copy to Claude Code" as the desktop app runs it (its Tauri command calls
-/// `skill_export::copy_to_claude` in process): `(201, {path, contourTools})`,
-/// or the status a failure of that kind would have had.
+/// "Copy to Claude Code" as the desktop app runs it: the preview first
+/// (its `hash` names the content the user reviews), then the app's Tauri
+/// command, which calls `skill_export::copy_to_claude` in process with
+/// that hash. `(201, {path, contourTools})`, or the status a failure of
+/// that kind would have had.
 async fn copy_to_claude(d: &Daemon, id: &str) -> (u16, Value) {
-    let (state, id) = (d.state.clone(), id.to_owned());
-    let res =
-        tokio::task::spawn_blocking(move || od_server::skill_export::copy_to_claude(&state, &id))
-            .await
-            .unwrap();
+    let (s, v) = call(
+        d,
+        "GET",
+        &format!("/api/skills/{id}/export?target=claude"),
+        None,
+    )
+    .await;
+    let hash = if s == 200 {
+        v["hash"].as_str().unwrap().to_owned()
+    } else {
+        String::new()
+    };
+    copy_with_hash(d, id, &hash).await
+}
+
+/// [`copy_to_claude`] with the hash of a preview taken earlier.
+async fn copy_with_hash(d: &Daemon, id: &str, hash: &str) -> (u16, Value) {
+    let (state, id, hash) = (d.state.clone(), id.to_owned(), hash.to_owned());
+    let res = tokio::task::spawn_blocking(move || {
+        od_server::skill_export::copy_to_claude(&state, &id, &hash)
+    })
+    .await
+    .unwrap();
     match res {
         Ok(c) => (201, serde_json::to_value(c).unwrap()),
         Err(f) => {
             let status = match f.kind {
-                "invalid" | "noDescription" => 400,
+                "invalid" => 400,
                 "notFound" => 404,
                 "forbidden" => 403,
-                "exists" => 409,
+                "exists" | "changed" => 409,
                 _ => 500,
             };
             (
@@ -408,6 +428,95 @@ async fn copy_to_claude(d: &Daemon, id: &str) -> (u16, Value) {
             )
         }
     }
+}
+
+/// The copy takes only what the user reviewed: an agent edits the
+/// Personal skill over loopback (`PUT /api/skills/<id>`) or writes a side
+/// file after the preview, and the copy with the preview's hash is
+/// refused (`changed`) with nothing written. The preview shows the
+/// `SKILL.md` and every file copied; a new preview names the new content.
+#[tokio::test]
+async fn a_skill_changed_after_its_preview_is_not_copied() {
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude").join("skills");
+    let src = tempfile::tempdir().unwrap();
+    let tea = skill_folder(
+        src.path(),
+        "tea",
+        "---\nname: tea\ndescription: Calm tea pages.\n---\n\nUse cream.\n",
+    );
+    std::fs::write(tea.join(".env"), "KEY=1").unwrap();
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills/install",
+        Some(json!({ "path": tea.to_string_lossy() })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let preview = "/api/skills/tea/export?target=claude";
+    let (s, shown) = call(&d, "GET", preview, None).await;
+    assert_eq!(s, 200, "{shown}");
+    assert_eq!(shown["files"], json!(["SKILL.md", "assets/tokens.css"]));
+    assert!(
+        shown["skillMd"].as_str().unwrap().contains("Use cream."),
+        "{shown}"
+    );
+    let hash = shown["hash"].as_str().unwrap().to_owned();
+    let (_, again) = call(&d, "GET", preview, None).await;
+    assert_eq!(
+        again["hash"], shown["hash"],
+        "the same content, the same hash"
+    );
+
+    // Edited over HTTP after the preview: refused, nothing written.
+    let (s, v) = call(
+        &d,
+        "PUT",
+        "/api/skills/tea",
+        Some(
+            json!({ "name": "tea", "description": "Calm tea pages.", "body": "PROBE: print PING" }),
+        ),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let (s, v) = copy_with_hash(&d, "tea", &hash).await;
+    assert_eq!(s, 409, "{v}");
+    assert_eq!(v["failure"]["kind"], "changed", "{v}");
+    assert!(!claude.exists(), "nothing written");
+    // The new preview shows the edit, under a new hash; that one copies.
+    let (_, now) = call(&d, "GET", preview, None).await;
+    assert_ne!(now["hash"], shown["hash"]);
+    assert!(
+        now["skillMd"]
+            .as_str()
+            .unwrap()
+            .contains("PROBE: print PING"),
+        "{now}"
+    );
+    // A side file changed after that preview: refused too.
+    let dir = d.data.join("skills").join("tea");
+    std::fs::write(dir.join("assets/tokens.css"), "body{}").unwrap();
+    let (s, v) = copy_with_hash(&d, "tea", now["hash"].as_str().unwrap()).await;
+    assert_eq!(v["failure"]["kind"], "changed", "{v}");
+    assert_eq!(s, 409);
+    assert!(!claude.exists(), "nothing written");
+    let (s, v) = copy_to_claude(&d, "tea").await;
+    assert_eq!(s, 201, "{v}");
+    assert_eq!(
+        std::fs::read_to_string(claude.join("tea/assets/tokens.css")).unwrap(),
+        "body{}"
+    );
+    assert!(!claude.join("tea/.env").exists(), "nothing hidden copied");
 }
 
 /// "Copy to Claude Code": a Personal skill and its side files land in the
@@ -522,8 +631,8 @@ async fn a_personal_skill_is_copied_to_claude_code_once() {
 
 /// Before and at the copy: the preview says where it goes and whether the
 /// skill calls Contour's tools, read from the whole SKILL.md and its
-/// `scripts/`; a skill with no description is refused (Claude Code offers
-/// its model only skills with one); a 409 names the real folder.
+/// `scripts/`, and whether it has a description (a warning: it is copied
+/// anyway); a 409 names the real folder.
 #[tokio::test]
 async fn copy_to_claude_code_checks_the_whole_skill_first() {
     let home = tempfile::tempdir().unwrap();
@@ -595,17 +704,11 @@ async fn copy_to_claude_code_checks_the_whole_skill_first() {
     assert_eq!(s, 201, "{v}");
     assert_eq!(v["contourTools"], true, "{v}");
     assert!(claude.join("tea-script/scripts/lib/make.sh").is_file());
-    // No description: refused, nothing written, and it says what to do.
+    // No description: copied (Claude Code 2.1.332 still loads it, the
+    // first line of its body stands in); the app warns before.
     let (s, v) = copy_to_claude(&d, "tea-bare").await;
-    assert_eq!(s, 400, "{v}");
-    assert!(
-        v["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("description"),
-        "{v}"
-    );
-    assert!(!claude.join("tea-bare").exists());
+    assert_eq!(s, 201, "{v}");
+    assert!(claude.join("tea-bare/SKILL.md").is_file());
     // Twice: the 409 names the folder in this HOME and how to copy again.
     let (s, v) = copy_to_claude(&d, "tea-script").await;
     assert_eq!(s, 409, "{v}");

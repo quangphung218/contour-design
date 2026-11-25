@@ -348,8 +348,21 @@ jobs:
       - name: ffmpeg
         shell: bash
         run: |
-          scripts/ci-retry.sh choco install ffmpeg -y --no-progress > /dev/null
+          # choco exits 0 when its feed is down and installs nothing
+          # (25/11): then take the build from GitHub instead.
+          scripts/ci-retry.sh choco install ffmpeg -y --no-progress > "$RUNNER_TEMP/choco.log" 2>&1 || true
+          if ! command -v ffmpeg > /dev/null; then
+            tail -n 20 "$RUNNER_TEMP/choco.log"
+            echo "::warning::choco did not install ffmpeg; using the GitHub build"
+            scripts/ci-retry.sh curl -fsSL -o "$RUNNER_TEMP/ffmpeg.zip" \
+              https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+            unzip -q "$RUNNER_TEMP/ffmpeg.zip" -d "$RUNNER_TEMP/ffmpeg"
+            bin=$(dirname "$(find "$RUNNER_TEMP/ffmpeg" -name ffmpeg.exe | head -n1)")
+            export PATH="$bin:$PATH"
+            cygpath -w "$bin" >> "$GITHUB_PATH"
+          fi
           ffmpeg -version | head -n1
+          ffprobe -version | head -n1
       - name: UI bundle
         working-directory: crates/od-ui
         run: trunk build

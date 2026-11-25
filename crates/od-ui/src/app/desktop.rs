@@ -323,16 +323,21 @@ pub fn opens_another_design(last: Option<&str>, path: &str) -> bool {
 }
 
 /// "Copy to Claude Code" (decision #9): the app copies the Personal skill
-/// `id` into the agents' Claude Code skills. `Ok` holds `{id, path,
+/// `id` into the agents' Claude Code skills, if its content is still the
+/// one reviewed (`hash`, from the preview; else `Err` of kind `changed`). `Ok` holds `{id, path,
 /// contourTools}`, `Err` the failure `{kind, message, existing?}`; outside
 /// the app, `Err` of kind `unsupported`.
 ///
 /// # Errors
 /// The command's failure, as JSON.
-pub async fn copy_skill_to_claude(id: &str) -> Result<serde_json::Value, serde_json::Value> {
+pub async fn copy_skill_to_claude(
+    id: &str,
+    hash: &str,
+) -> Result<serde_json::Value, serde_json::Value> {
     let unsupported = || serde_json::json!({ "kind": "unsupported", "message": UNSUPPORTED });
     let args = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&args, &JsValue::from_str("id"), &JsValue::from_str(id));
+    let _ = js_sys::Reflect::set(&args, &JsValue::from_str("hash"), &JsValue::from_str(hash));
     let promise = invoke("copy_skill_to_claude", &args).ok_or_else(unsupported)?;
     let as_json = |v: &JsValue| {
         js_sys::JSON::stringify(v)

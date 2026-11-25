@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Copy to Claude Code first shows the skill's SKILL.md and files, and refuses a skill changed since; a missing description only warns.
+
 ## [0.2.0-beta.66] - 2026-11-25
 
 ### Added

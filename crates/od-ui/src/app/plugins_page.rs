@@ -1090,32 +1090,42 @@ fn SkillDetailView(
         let id = id.clone();
         move |_| open_page(&format!("/?skill={}", api::seg(&id)))
     };
-    // "Copy to Claude Code": the server's preview first (a description,
-    // whether it calls Contour's tools), the warning if it does, the copy.
-    let export_warned = RwSignal::new(false);
+    // "Copy to Claude Code": the server's preview first, shown for review
+    // (the SKILL.md, the files, the warnings), then the copy of exactly
+    // that content (its hash).
+    let review = RwSignal::new(None::<ExportReview>);
     let exporting = RwSignal::new(false);
     let exported = RwSignal::new(None::<ExportStep>);
     let command_copied = RwSignal::new(false);
     // An edit changes what a copy would find (a description added): what
-    // the last attempt said no longer holds.
+    // the last attempt said, or showed for review, no longer holds.
     let clear_export = move || {
         exported.set(None);
-        export_warned.set(false);
+        review.set(None);
         command_copied.set(false);
     };
-    let run_copy = {
+    let show_step = move |step: ExportStep| {
+        exporting.set(false);
+        match step {
+            ExportStep::Review(r) => review.set(Some(r)),
+            other => exported.set(Some(other)),
+        }
+    };
+    let start_copy = {
         let id = id.clone();
-        Callback::new(move |seen_warning: bool| {
+        Callback::new(move |()| {
             clear_export();
             exporting.set(true);
-            // The copy runs to its end; only what it shows needs the page.
-            tasks.spawn_then(copy_to_claude(id.clone(), seen_warning), move |step| {
-                exporting.set(false);
-                match step {
-                    ExportStep::Warn => export_warned.set(true),
-                    other => exported.set(Some(other)),
-                }
-            });
+            // The work runs to its end; only what it shows needs the page.
+            tasks.spawn_then(review_copy(id.clone(), false), show_step);
+        })
+    };
+    let confirm_copy = {
+        let id = id.clone();
+        Callback::new(move |reviewed: ExportReview| {
+            clear_export();
+            exporting.set(true);
+            tasks.spawn_then(copy_to_claude(id.clone(), reviewed), show_step);
         })
     };
     let remove = {
@@ -1148,7 +1158,7 @@ fn SkillDetailView(
                     let id = d.info.id.clone();
                     let remove = remove.clone();
                     let use_skill = use_skill.clone();
-                    let on_copy = move |_| run_copy.run(false);
+                    let on_copy = move |_| start_copy.run(());
                     view! {
                         <header class="plugin-hero">
                             {tile(&d.info.id, initials(&d.info.name))}
@@ -1167,14 +1177,34 @@ fn SkillDetailView(
                                 {user.then(|| view! { <button class="btn small ghost danger" data-testid="skill-delete" on:click=remove>{icon(Glyph::Delete)}{t(T::DeleteOrReset)}</button> })}
                             </div>
                         </header>
-                        {move || export_warned.get().then(|| view! {
-                            <div class="callout skill-export-warning" role="alert" data-testid="skill-export-warning">
-                                <p class="row">{icon(Glyph::Info)}<span>{t(T::SkillCallsContour)}</span></p>
-                                <div class="row wrap">
-                                    <button class="btn small" data-testid="skill-export-anyway" on:click=move |_| run_copy.run(true)>{if super::desktop::is_desktop() { t(T::CopyAnyway) } else { t(T::ShowCommandAnyway) }}</button>
-                                    <button class="btn small ghost" on:click=move |_| export_warned.set(false)>{t(T::Cancel)}</button>
+                        {move || review.get().map(|r| {
+                            let desktop = super::desktop::is_desktop();
+                            let label = match (desktop, r.contour_tools) {
+                                (true, true) => t(T::CopyAnyway),
+                                (true, false) => t(T::CopyToClaudeCode),
+                                (false, true) => t(T::ShowCommandAnyway),
+                                (false, false) => t(T::ShowCommand),
+                            };
+                            let files = r.files.clone();
+                            let skill_md = r.skill_md.clone();
+                            let reviewed = r.clone();
+                            view! {
+                                <div class="callout skill-export-review" data-testid="skill-export-review">
+                                    {r.changed.then(|| view! { <p class="error-text" role="alert" data-testid="skill-export-changed">{t(T::SkillChangedReview)}</p> })}
+                                    {r.contour_tools.then(|| view! { <p class="row" data-testid="skill-export-warning">{icon(Glyph::Info)}<span>{t(T::SkillCallsContour)}</span></p> })}
+                                    {(!r.has_description).then(|| view! { <p class="row" data-testid="skill-export-no-description">{icon(Glyph::Info)}<span>{t(T::SkillHasNoDescription)}</span></p> })}
+                                    <h4>{t(T::SkillCopyReview)}</h4>
+                                    <pre class="skill-export-skill-md" data-testid="skill-export-skill-md" tabindex="0">{skill_md}</pre>
+                                    <h4>{t(T::FilesToCopy)}</h4>
+                                    <ul class="skill-export-files" data-testid="skill-export-files">
+                                        {files.into_iter().map(|f| view! { <li><code>{f}</code></li> }).collect_view()}
+                                    </ul>
+                                    <div class="row wrap">
+                                        <button class="btn small" data-testid="skill-export-confirm" on:click=move |_| confirm_copy.run(reviewed.clone())>{label}</button>
+                                        <button class="btn small ghost" data-testid="skill-export-cancel" on:click=move |_| review.set(None)>{t(T::Cancel)}</button>
+                                    </div>
                                 </div>
-                            </div>
+                            }
                         })}
                         {move || exported.get().map(|step| match step {
                             ExportStep::Copied { path, calls_contour } => view! {
@@ -1198,7 +1228,7 @@ fn SkillDetailView(
                                     </div>
                                 }.into_any()
                             }
-                            ExportStep::Warn => ().into_any(),
+                            ExportStep::Review(_) => ().into_any(),
                         })}
                         {move || notice.get().map(|e| view! { <p class="error-text" role="alert">{e}</p> })}
                         {move || if editing.get() {
@@ -1231,13 +1261,29 @@ fn SkillDetailView(
     }
 }
 
+/// What "Copy to Claude Code" shows for review before it copies: the
+/// server's preview of the content, named by its `hash`.
+#[derive(Clone, Debug, PartialEq)]
+struct ExportReview {
+    hash: String,
+    skill_md: String,
+    files: Vec<String>,
+    contour_tools: bool,
+    has_description: bool,
+    /// The skill changed after the last review: this is the new content.
+    changed: bool,
+    /// Where it goes, and its folder (for the web command).
+    path: String,
+    source: String,
+}
+
 /// Where "Copy to Claude Code" got to.
 #[derive(Clone)]
 enum ExportStep {
-    /// The skill calls Contour's tools: the user decides first.
-    Warn,
+    /// The content to copy, for the user to review first.
+    Review(ExportReview),
     /// Copied (the app); `calls_contour` when it does and no warning was
-    /// shown (the skill changed after the preview).
+    /// shown.
     Copied {
         path: String,
         calls_contour: bool,
@@ -1252,17 +1298,17 @@ fn sh_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
-/// The command that copies `source` to `dest` (its parent made first).
+/// The command that copies the skill folder `source` into `dest` as the
+/// app does: links and hidden entries left out (`rsync -r` without `-l`
+/// skips links, `--exclude='.*'` hidden names), and run twice it copies
+/// into the same folder, never one inside it. Without `rsync` it stops
+/// before it makes any folder.
 fn copy_command(source: &str, dest: &str) -> String {
-    let parent = std::path::Path::new(dest)
-        .parent()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
     format!(
-        "mkdir -p {} && cp -R {} {}",
-        sh_quote(&parent),
-        sh_quote(source),
-        sh_quote(dest)
+        "command -v rsync >/dev/null && mkdir -p {} && rsync -r --exclude='.*' {} {}",
+        sh_quote(dest),
+        sh_quote(&format!("{}/", source.trim_end_matches('/'))),
+        sh_quote(&format!("{}/", dest.trim_end_matches('/'))),
     )
 }
 
@@ -1277,43 +1323,58 @@ fn existing_text(existing: &Value) -> String {
     }
 }
 
-/// "Copy to Claude Code" of the skill `id`: the server's read-only preview
-/// (the folders, a description, what is there already, whether it calls
-/// Contour's tools from the whole SKILL.md and its `scripts/`), the
-/// warning unless `seen_warning`, then the copy: the desktop app's own
-/// command (decision #9; no request copies), or on the web the command to
-/// run. Touches no signal: it runs to its end after the page goes.
-async fn copy_to_claude(id: String, seen_warning: bool) -> ExportStep {
-    let base = format!("/api/skills/{}/export", api::seg(&id));
-    let preview = match api::get::<Value>(&format!("{base}?target=claude")).await {
+/// The server's read-only preview of "Copy to Claude Code" for the skill
+/// `id` (the folders, what is there already, the content and its hash,
+/// whether it calls Contour's tools or lacks a description), as the step
+/// to show: the review, or why it cannot be copied. `changed` when the
+/// last review no longer held. Touches no signal.
+async fn review_copy(id: String, changed: bool) -> ExportStep {
+    let url = format!("/api/skills/{}/export?target=claude", api::seg(&id));
+    let preview = match api::get::<Value>(&url).await {
         Ok(v) => v,
         Err(e) => return ExportStep::Failed(api::failure(T::CopyToClaudeFailed, &e)),
     };
-    if preview["hasDescription"] != true {
-        return ExportStep::Failed(t(T::SkillNeedsDescription).to_owned());
-    }
-    let desktop = super::desktop::is_desktop();
     // The app replaces its own copy cut short; the web command would copy
     // into it.
     let existing = &preview["existing"];
-    if existing.is_object() && (!desktop || existing["kind"] != "unfinished") {
+    if existing.is_object() && (!super::desktop::is_desktop() || existing["kind"] != "unfinished") {
         return ExportStep::Failed(existing_text(existing));
     }
-    if preview["contourTools"] == true && !seen_warning {
-        return ExportStep::Warn;
+    ExportStep::Review(ExportReview {
+        hash: s(&preview, "hash"),
+        skill_md: s(&preview, "skillMd"),
+        files: preview["files"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|f| f.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        contour_tools: preview["contourTools"] == true,
+        has_description: preview["hasDescription"] == true,
+        changed,
+        path: s(&preview, "path"),
+        source: s(&preview, "source"),
+    })
+}
+
+/// "Copy to Claude Code" of the content the user reviewed: the desktop
+/// app's own command with its hash (decision #9; no request copies), or
+/// on the web the command to run. A skill changed since is not copied:
+/// the new content comes back for review. Touches no signal: it runs to
+/// its end after the page goes.
+async fn copy_to_claude(id: String, reviewed: ExportReview) -> ExportStep {
+    if !super::desktop::is_desktop() {
+        return ExportStep::Command(copy_command(&reviewed.source, &reviewed.path));
     }
-    if !desktop {
-        return ExportStep::Command(copy_command(&s(&preview, "source"), &s(&preview, "path")));
-    }
-    match super::desktop::copy_skill_to_claude(&id).await {
+    match super::desktop::copy_skill_to_claude(&id, &reviewed.hash).await {
         Ok(v) => ExportStep::Copied {
             path: s(&v, "path"),
-            calls_contour: v["contourTools"] == true && !seen_warning,
+            calls_contour: v["contourTools"] == true && !reviewed.contour_tools,
         },
+        Err(f) if f["kind"] == "changed" => review_copy(id, true).await,
         Err(f) if f["kind"] == "exists" => ExportStep::Failed(existing_text(&f["existing"])),
-        Err(f) if f["kind"] == "noDescription" => {
-            ExportStep::Failed(t(T::SkillNeedsDescription).to_owned())
-        }
         Err(f) => ExportStep::Failed(tf(T::CopyToClaudeFailed, &[&s(&f, "message")])),
     }
 }
@@ -2214,11 +2275,11 @@ mod tests {
     fn the_copy_command_quotes_every_path() {
         assert_eq!(
             copy_command("/data/skills/tea", "/home/a/.claude/skills/tea"),
-            "mkdir -p '/home/a/.claude/skills' && cp -R '/data/skills/tea' '/home/a/.claude/skills/tea'"
+            "command -v rsync >/dev/null && mkdir -p '/home/a/.claude/skills/tea' && rsync -r --exclude='.*' '/data/skills/tea/' '/home/a/.claude/skills/tea/'"
         );
         assert_eq!(
-            copy_command("/My Data/it's $HOME/tea", "/h/o'k/tea"),
-            "mkdir -p '/h/o'\\''k' && cp -R '/My Data/it'\\''s $HOME/tea' '/h/o'\\''k/tea'"
+            copy_command("/My Data/it's $HOME/tea/", "/h/o'k/tea"),
+            "command -v rsync >/dev/null && mkdir -p '/h/o'\\''k/tea' && rsync -r --exclude='.*' '/My Data/it'\\''s $HOME/tea/' '/h/o'\\''k/tea/'"
         );
     }
 
