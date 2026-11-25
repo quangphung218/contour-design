@@ -348,7 +348,15 @@ jobs:
       - name: ffmpeg
         shell: bash
         run: |
-          scripts/ci-retry.sh choco install ffmpeg -y --no-progress > /dev/null
+          # choco has exited 0 without installing ffmpeg (25/11): show its
+          # log and install once more with --force before giving up.
+          scripts/ci-retry.sh choco install ffmpeg -y --no-progress > "$RUNNER_TEMP/choco.log" 2>&1 \
+            || { tail -n 40 "$RUNNER_TEMP/choco.log"; exit 1; }
+          if ! command -v ffmpeg > /dev/null; then
+            tail -n 40 "$RUNNER_TEMP/choco.log"
+            scripts/ci-retry.sh choco install ffmpeg -y --force --no-progress
+            export PATH="/c/ProgramData/chocolatey/bin:$PATH"
+          fi
           ffmpeg -version | head -n1
       - name: UI bundle
         working-directory: crates/od-ui
