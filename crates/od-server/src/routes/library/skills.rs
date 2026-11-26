@@ -5,8 +5,8 @@
 //!   user skill in `<data>/skills/<slug>/SKILL.md`; 409 when the id exists.
 //! - `PUT    /api/skills/:id` (same body): edits a user skill, or writes a
 //!   user override of a bundled one (side files copied once).
-//! - `DELETE /api/skills/:id`: removes a user skill or override; the
-//!   bundled skill shows again.
+//! - `DELETE /api/skills/:id`: removes a user skill or override (and the
+//!   copy a replace kept for it); the bundled skill shows again.
 //! - `POST   /api/skills/install` `{path, replace?}`: copies a local skill
 //!   folder (`SKILL.md` and its side files) into `<data>/skills/<id>`; 409
 //!   for a bundled id, and for a user skill's id unless `replace` is set
@@ -211,8 +211,11 @@ pub async fn delete(
         return Err(ApiErr::forbidden("only user skills can be deleted"));
     }
     let root = user_root(&state);
+    let skill_id = entry.info.id.clone();
     write_and_reload(&state, move || {
-        Ok(user_content::delete_user_dir(&root, &entry.dir)?)
+        user_content::delete_user_dir(&root, &entry.dir)?;
+        // A new skill of that id must not offer to restore this one.
+        Ok(user_content::forget_previous_skill(&root, &skill_id)?)
     })
     .await?;
     Ok(Json(json!({ "ok": true })))

@@ -1063,7 +1063,9 @@ pub fn replace_skill_from_source(
 /// the user skill `id`.
 #[must_use]
 pub fn has_previous_skill(user_root: &Path, id: &str) -> bool {
-    std::fs::symlink_metadata(user_root.join(PREVIOUS_DIR)).is_ok_and(|m| m.is_dir())
+    // An id is a folder name: never a path (`/etc`, `..`) asked about.
+    valid_skill_id(id)
+        && std::fs::symlink_metadata(user_root.join(PREVIOUS_DIR)).is_ok_and(|m| m.is_dir())
         && std::fs::symlink_metadata(user_root.join(PREVIOUS_DIR).join(id))
             .is_ok_and(|m| m.is_dir())
 }
@@ -1088,7 +1090,7 @@ pub fn restore_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteErr
             "no previous version of skill {id:?}"
         )));
     }
-    let held = user_root.join(PREVIOUS_DIR);
+    let held = previous_root(user_root)?;
     let previous = held.join(id);
     let Some(current) = user_skill_dir(user_root, id) else {
         refuse_case_twin(user_root, id, "skill")?;
@@ -1106,10 +1108,20 @@ pub fn restore_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteErr
 
 /// `<user_root>/.previous`, made if missing; a link or file there is
 /// refused, never followed.
+/// What a replace or restore cut short (the app quit between its steps)
+/// left there, `.incoming-<id>-<pid>` and `.swap-<id>-<pid>`, is removed:
+/// the pid of the next run differs, so nothing else would.
 fn previous_root(user_root: &Path) -> Result<PathBuf, WriteError> {
     let held = user_root.join(PREVIOUS_DIR);
     match std::fs::symlink_metadata(&held) {
-        Ok(m) if m.is_dir() => {}
+        Ok(m) if m.is_dir() => {
+            for entry in std::fs::read_dir(&held).map_err(io)?.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with(".incoming-") || name.starts_with(".swap-") {
+                    remove_any(&entry.path()).map_err(io)?;
+                }
+            }
+        }
         Ok(_) => {
             return Err(WriteError::Io(format!(
                 "{} is not a folder",
@@ -1122,6 +1134,31 @@ fn previous_root(user_root: &Path) -> Result<PathBuf, WriteError> {
         Err(e) => return Err(io(e)),
     }
     Ok(held)
+}
+
+/// Drops the copy kept for the user skill `id` (the skill is deleted: a
+/// new skill of that id must not offer to restore it). Nothing kept is
+/// fine; a `.previous` that is a link is left alone.
+///
+/// # Errors
+/// [`WriteError::Io`].
+pub fn forget_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteError> {
+    if !valid_skill_id(id) {
+        return Ok(());
+    }
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let held = user_root.join(PREVIOUS_DIR);
+    if !std::fs::symlink_metadata(&held).is_ok_and(|m| m.is_dir()) {
+        return Ok(());
+    }
+    remove_any(&held.join(id)).map_err(io)
+}
+
+/// An id a skill folder can have: letters, digits and `-`, not hidden.
+fn valid_skill_id(id: &str) -> bool {
+    crate::design_systems::is_valid_id(id) && !id.starts_with(['.', '_'])
 }
 
 /// Removes whatever is at `path` (a folder and all in it, a file, a link
@@ -2432,5 +2469,97 @@ mod tests {
 
     fn home_skills(tmp: &Path) -> PathBuf {
         tmp.join("home/.claude/skills")
+    }
+
+    /// The user skill deleted after a replace: Restore brings the kept
+    /// copy back as the skill. An entry of that name in another case that
+    /// is no skill folder (a file) is in the way: refused, both kept.
+    #[test]
+    fn a_restore_brings_back_a_deleted_skill_unless_a_twin_is_in_the_way() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        std::fs::write(user.join("tea/notes.md"), "mine").unwrap();
+        let edited = snapshot(&user.join("tea"));
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        delete_user_dir(&user, &user.join("tea")).unwrap();
+        // A file named `Tea`: in the way of `tea` on every file system.
+        std::fs::write(user.join("Tea"), "not a skill").unwrap();
+        assert!(matches!(
+            restore_previous_skill(&user, "tea"),
+            Err(WriteError::Exists(_))
+        ));
+        assert_eq!(snapshot(&user.join(".previous/tea")), edited, "kept");
+        assert_eq!(std::fs::read(user.join("Tea")).unwrap(), b"not a skill");
+        std::fs::remove_file(user.join("Tea")).unwrap();
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), edited, "back as the skill");
+        assert!(!has_previous_skill(&user, "tea"), "nothing kept any more");
+        assert_eq!(names(&user.join(".previous")), Vec::<String>::new());
+    }
+
+    /// `.previous` a link to a folder elsewhere: a replace writes nothing
+    /// there and keeps the skill; restore and forget never follow it.
+    #[cfg(unix)]
+    #[test]
+    fn a_previous_folder_that_is_a_link_is_never_followed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(outside.join("tea")).unwrap();
+        std::fs::write(outside.join("tea/keep.txt"), "theirs").unwrap();
+        std::os::unix::fs::symlink(&outside, user.join(PREVIOUS_DIR)).unwrap();
+        let mine = snapshot(&user.join("tea"));
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        assert!(matches!(
+            replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)),
+            Err(WriteError::Io(_))
+        ));
+        assert_eq!(snapshot(&user.join("tea")), mine);
+        assert_eq!(names(&outside), ["tea"]);
+        assert_eq!(names(&outside.join("tea")), ["keep.txt"]);
+        assert!(!has_previous_skill(&user, "tea"));
+        assert!(matches!(
+            restore_previous_skill(&user, "tea"),
+            Err(WriteError::NotFound(_))
+        ));
+        forget_previous_skill(&user, "tea").unwrap();
+        assert_eq!(names(&outside.join("tea")), ["keep.txt"]);
+        assert_eq!(snapshot(&user.join("tea")), mine);
+    }
+
+    /// Only an id is asked about: a path (`/…`, `..`) is no skill.
+    #[test]
+    fn a_kept_copy_is_looked_up_by_id_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        assert!(has_previous_skill(&user, "tea"));
+        let outside = tmp.path().to_string_lossy().into_owned();
+        for id in [outside.as_str(), "..", "../skills", ".", ""] {
+            assert!(!has_previous_skill(&user, id), "{id:?}");
+            assert!(restore_previous_skill(&user, id).is_err(), "{id:?}");
+            forget_previous_skill(&user, id).unwrap();
+        }
+        assert!(user.join("tea").is_dir() && has_previous_skill(&user, "tea"));
+        // Forgotten (the skill deleted): nothing to restore.
+        forget_previous_skill(&user, "tea").unwrap();
+        assert!(!has_previous_skill(&user, "tea"));
+    }
+
+    /// A replace or restore cut short between its steps leaves a hidden
+    /// folder in `.previous`; the next one removes it.
+    #[test]
+    fn what_a_replace_cut_short_left_is_removed_next_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        for left in [".incoming-tea-1", ".swap-tea-2"] {
+            std::fs::create_dir_all(user.join(PREVIOUS_DIR).join(left)).unwrap();
+            std::fs::write(user.join(PREVIOUS_DIR).join(left).join("SKILL.md"), "x").unwrap();
+        }
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
     }
 }

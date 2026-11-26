@@ -585,6 +585,11 @@ async fn an_imported_skill_is_replaced_from_its_source_and_restored() {
     let (s, v) = call(&d, "POST", "/api/skills/mint/restore-previous", None).await;
     assert_eq!(s, 404, "{v}");
 
+    // `previous` takes an id, never a path to ask about.
+    let outside = home.path().to_string_lossy().replace('/', "%2F");
+    let v = d.get_json(&format!("/api/skills/{outside}/previous")).await;
+    assert_ne!(v["previous"], true, "{v}");
+
     // Renamed at its source: no longer listed as `tea`, 400, `tea` kept.
     std::fs::write(tea.join("SKILL.md"), "---\nname: tea2\n---\nOther.\n").unwrap();
     let hash = d.get_json(&q("tea", &tea)).await;
@@ -592,6 +597,29 @@ async fn an_imported_skill_is_replaced_from_its_source_and_restored() {
     let (s, v) = replace("anything".to_owned()).await;
     assert_eq!(s, 400, "{v}");
     assert_eq!(files_under(&user.join("tea")), edited);
+
+    // Deleted: the copy kept goes too, so a new `tea` offers no Restore.
+    assert_eq!(
+        d.get_json("/api/skills/tea/previous").await["previous"],
+        true
+    );
+    let (s, v) = call(&d, "DELETE", "/api/skills/tea", None).await;
+    assert_eq!(s, 200, "{v}");
+    assert!(!user.join(".previous/tea").exists());
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills",
+        Some(json!({ "name": "tea", "body": "A new tea." })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(
+        d.get_json("/api/skills/tea/previous").await["previous"],
+        false
+    );
+    let (s, v) = call(&d, "POST", "/api/skills/tea/restore-previous", None).await;
+    assert_eq!(s, 404, "{v}");
 }
 
 /// "Copy to Claude Code" as the desktop app runs it: the preview first
