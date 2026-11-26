@@ -125,10 +125,18 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     (the extractor refuses it); a write over whatever is there sends `If-Match: *`. The `ETag` is of the bytes the body
     shown came from, never of a second read.
     GET and PUT tag the same file: for a skill, the one a save writes over (`user_content::skill_write_dir`:
-    an override on disk before the bundled folder); a skill changed on disk since the index read it is read
-    again by its `GET` (`SkillEntry.tag`). Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
+    an override on disk, named `id` byte for byte, before the bundled folder; a user skill named like it in
+    another case or Unicode form is a 409, never written over); a skill changed on disk since the index read it is read
+    again by its `GET` for its own answer (`SkillEntry.tag`, `routes/content.rs:steady_read`), never stored in the
+    shared index (a read may find it half written in place; a run's prompt reads the index). A Save writes `SKILL.md`
+    through a file renamed over it (no half-written read, no write through a link).
+    Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and
-      24 saves at once from one copy land once, per lock), `src/cas.rs::tests`
+      24 saves at once from one copy land once, per lock; `a_skill_read_while_written_in_place_leaves_the_index_whole`,
+      `a_bundled_skill_saved_beside_one_named_alike_writes_nothing`), `src/cas.rs::tests`
+    - `src/routes/library/design_systems.rs::an_accept_waits_for_a_save_of_design_md` (the lock in `decide`),
+      `src/routes/content.rs::a_skill_md_cut_to_nothing_is_not_read_as_the_skill`,
+      `../od-content/src/user_content.rs::a_save_never_lands_in_a_skill_named_alike`, `::a_save_replaces_a_link_and_writes_nothing_through_it`
     - e2e `../od-ui/e2e/library.e2e.mjs` (skill form, DESIGN.md editor), `../od-ui/e2e/c2.e2e.mjs` (memory index)
 
 ## Traps

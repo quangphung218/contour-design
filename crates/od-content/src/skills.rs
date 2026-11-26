@@ -116,6 +116,15 @@ pub fn list_skills(roots: &[PathBuf], first_is_user: bool) -> Vec<SkillEntry> {
     out
 }
 
+/// Reads the one skill folder `dir` as the index would list it from a root
+/// of `source`: the parent entry followed by its derived examples. `None`
+/// when there is no readable `SKILL.md`.
+#[must_use]
+pub fn read_skill_dir(dir: &Path, source: ContentSource) -> Option<Vec<SkillEntry>> {
+    let name = dir.file_name()?.to_string_lossy().into_owned();
+    load_skill_dir(&name, dir, source)
+}
+
 /// Loads one folder: the parent entry followed by its derived examples.
 /// `None` when there is no readable `SKILL.md` (discovery, not validation).
 fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<Vec<SkillEntry>> {

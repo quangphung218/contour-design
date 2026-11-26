@@ -284,8 +284,23 @@ pub fn save_skill(
     let text = render_skill_md(draft, id, previous.as_deref());
     // Validate before writing: a broken file would drop the skill.
     frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
-    std::fs::write(dir.join("SKILL.md"), text).map_err(io)?;
+    write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)?;
     Ok(dir)
+}
+
+/// Writes `bytes` as `path` through a hidden file of its own beside it,
+/// renamed over `path`: a read never finds it half written (the index, a
+/// form's `GET`), and a link put there is replaced, never written through.
+fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = path.file_name().map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
+    let tmp = path.with_file_name(format!(".{name}.{}.{n}.tmp", std::process::id()));
+    let written = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 /// Removes a user skill or override folder (never a bundled one).
@@ -1645,6 +1660,32 @@ mod tests {
         )
         .unwrap();
         assert!(std::fs::read_to_string(over.join("SKILL.md")).unwrap().contains("Typed."));
+    }
+
+    /// A save writes a new `SKILL.md` and renames it into place (PR #349
+    /// review): a link an agent put there is replaced, the file it points
+    /// at is never written, and no read finds the file half written.
+    #[cfg(unix)]
+    #[test]
+    fn a_save_replaces_a_link_and_writes_nothing_through_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user");
+        let dir = user.join("tea");
+        std::fs::create_dir_all(&dir).unwrap();
+        let outside = tmp.path().join("outside.md");
+        std::fs::write(&outside, "---\nname: tea\n---\nNot yours.\n").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("SKILL.md")).unwrap();
+        save_skill(&user, "tea", &dir, true, &draft("tea", "Typed."), None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&outside).unwrap(),
+            "---\nname: tea\n---\nNot yours.\n",
+            "written through the link"
+        );
+        let meta = std::fs::symlink_metadata(dir.join("SKILL.md")).unwrap();
+        assert!(meta.is_file(), "the link is still there");
+        assert!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap().contains("Typed."));
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(left.len(), 1, "a temp file left: {left:?}");
     }
 
     #[test]

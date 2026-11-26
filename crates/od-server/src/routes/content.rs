@@ -71,7 +71,9 @@ pub async fn list_skills(State(state): State<AppState>) -> ApiJson<SkillsRespons
 /// passing it unseen. A `SKILL.md` changed on disk since the index read it
 /// (an agent's shell), or an override written beside a bundled skill
 /// (`user_content::skill_write_dir`, the file a Save compares), is read
-/// again first.
+/// again first, for this answer alone ([`steady_read`]): the index others
+/// read (a run's prompt) is never set from a read that may have found the
+/// file half written in place.
 pub async fn get_skill(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -90,8 +92,18 @@ pub async fn get_skill(
         let mut entry = content.snapshot().find_skill(&id).cloned()?;
         let dir = write_dir(&entry);
         if dir != entry.dir || user_content::skill_tag(&dir) != entry.tag {
-            content.reload();
-            entry = content.snapshot().find_skill(&id).cloned()?;
+            // An override is listed from the user root.
+            let source = if dir == entry.dir {
+                entry.info.source
+            } else {
+                ContentSource::User
+            };
+            // For this answer only: a read cannot tell a file being
+            // written in place from a short one, and the index is what a
+            // run's prompt reads. Never steady: the copy the index has.
+            if let Some(now) = steady_read(&dir, source, &entry.info.id) {
+                entry = now;
+            }
         }
         let dir = write_dir(&entry);
         // An override the index still leaves out (unreadable, broken): the
@@ -107,6 +119,28 @@ pub async fn get_skill(
     .map_err(|e| ApiErr::internal(e.to_string()))?;
     let (entry, tag) = found.ok_or_else(|| ApiErr::not_found("skill not found"))?;
     Ok((crate::cas::etag(&tag), ApiJson(detail(&entry))))
+}
+
+/// How many times [`steady_read`] reads a file being written.
+const STEADY_TRIES: usize = 5;
+
+/// Skill `id` read from folder `dir` alone, once its `SKILL.md` held still
+/// over the read: the same tag before, in the entry and after, and not
+/// empty. A file an agent writes in place is cut to nothing, then filled:
+/// a read in between is of part of it, or of nothing (which holds still
+/// while the writer has not written yet).
+fn steady_read(dir: &std::path::Path, source: ContentSource, id: &str) -> Option<SkillEntry> {
+    let empty = user_content::tag_of(b"");
+    (0..STEADY_TRIES).find_map(|_| {
+        let before = user_content::skill_tag(dir);
+        if before == empty {
+            return None;
+        }
+        let entry = od_content::skills::read_skill_dir(dir, source)?
+            .into_iter()
+            .find(|e| e.info.id == id)?;
+        (entry.tag == before && user_content::skill_tag(dir) == before).then_some(entry)
+    })
 }
 
 pub async fn list_design_templates(
@@ -292,7 +326,22 @@ pub async fn get_craft(
 
 #[cfg(test)]
 mod tests {
-    use super::{rebrand_example, without_google_fonts};
+    use super::{ContentSource, rebrand_example, steady_read, without_google_fonts};
+
+    /// A `SKILL.md` cut to nothing is a write in place under way (`>`
+    /// truncates first): it holds still until the writer writes, and would
+    /// parse as a skill with no body. It is never taken as the skill.
+    #[test]
+    fn a_skill_md_cut_to_nothing_is_not_read_as_the_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("tea");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "").unwrap();
+        assert!(steady_read(&dir, ContentSource::User, "tea").is_none());
+        std::fs::write(dir.join("SKILL.md"), "---\nname: tea\n---\nBody.\n").unwrap();
+        let read = steady_read(&dir, ContentSource::User, "tea").unwrap();
+        assert_eq!(read.body.trim(), "Body.");
+    }
 
     #[test]
     fn gallery_examples_load_no_google_fonts() {

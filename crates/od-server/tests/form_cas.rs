@@ -498,3 +498,92 @@ async fn a_skill_read_while_it_is_written_is_tagged_with_what_it_shows() {
         written.load(Ordering::Relaxed)
     );
 }
+
+/// An agent's shell writes `SKILL.md` in place (`>`: cut to nothing, then
+/// filled) again and again while the form opens the skill (PR #349
+/// review): a `GET` then finds the file changed, and reads it again for
+/// its own answer, tagged with what it shows, but never puts that read in
+/// the index others read (a run's prompt): it may be of part of a write.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_skill_read_while_written_in_place_leaves_the_index_whole() {
+    let d = daemon().await;
+    post(
+        &d,
+        "/api/skills",
+        &json!({ "name": "tea", "description": "Mine.", "body": "Body-0" }),
+    )
+    .await;
+    let indexed = || {
+        d.state
+            .content
+            .snapshot()
+            .find_skill("tea")
+            .map(|e| e.body.clone())
+    };
+    let before = indexed();
+    let file = d.data.join("skills/tea/SKILL.md");
+    // Large enough that a read lands half way through a write.
+    let filler = "Steep the leaves. ".repeat(12_000);
+    let version = move |n: u64| {
+        format!("---\nname: tea\ndescription: Mine.\n---\nBody-{n}\n{filler}\nEnd-{n}\n")
+    };
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let writer = {
+        let (file, stop) = (file.clone(), std::sync::Arc::clone(&stop));
+        std::thread::spawn(move || {
+            let mut n = 1u64;
+            while !stop.load(Ordering::Relaxed) && n < 5_000 {
+                // In place, as `>` does; Windows may refuse while read.
+                let _ = std::fs::write(&file, version(n));
+                n += 1;
+            }
+        })
+    };
+    for _ in 0..200 {
+        let res = d
+            .http
+            .get(format!("{}/api/skills/tea", d.base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status().as_u16(), 200);
+        assert!(res.headers().contains_key("etag"));
+        assert_eq!(indexed(), before, "a GET put what it read in the index");
+    }
+    stop.store(true, Ordering::Relaxed);
+    writer.join().unwrap();
+}
+
+/// A user skill `Ad-Creative` beside the bundled `ad-creative` (PR #349
+/// review): the form of `ad-creative` shows and tags the bundled copy, and
+/// its Save is refused (409) instead of writing over the other skill,
+/// which on macOS and Windows is the folder `skills/ad-creative`.
+#[tokio::test]
+async fn a_bundled_skill_saved_beside_one_named_alike_writes_nothing() {
+    let d = daemon().await;
+    let twin = d.data.join("skills/Ad-Creative");
+    std::fs::create_dir_all(&twin).unwrap();
+    let mine = "---\nname: Ad-Creative\ndescription: Mine.\n---\nMY OWN SKILL\n";
+    std::fs::write(twin.join("SKILL.md"), mine).unwrap();
+    let (shown, tag) = tagged(&d, "/api/skills/ad-creative").await;
+    assert!(
+        !shown["body"].as_str().unwrap().contains("MY OWN SKILL"),
+        "the bundled copy is shown"
+    );
+    let bundled = std::fs::read(content_root().join("skills/ad-creative/SKILL.md")).unwrap();
+    assert_eq!(
+        tag,
+        format!("\"{}\"", od_server::cas::tag_of(&bundled)),
+        "tagged as the copy shown"
+    );
+    let status = put(
+        &d,
+        "/api/skills/ad-creative",
+        &json!({ "name": "ad-creative", "body": "Typed." }),
+        Some(&tag),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(std::fs::read_to_string(twin.join("SKILL.md")).unwrap(), mine);
+}
