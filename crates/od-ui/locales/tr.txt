@@ -1013,6 +1013,7 @@ UseInClaudeCode = Claude Code'da kullan
 ShowCommandAnyway = Yine de komutu göster
 RunToCopySkill = Skill'i Claude Code'a kopyalamak için bunu terminalde çalıştırın (uygulama tek tıkla kopyalar):
 SkillHasNoDescription = Bu skill'in açıklaması yok: Claude Code modeline bunun yerine metnin ilk satırını gösterir.
+SkillHasHiddenCharacters = Bu skill gizli karakterler içeriyor. Claude Code bunları okur; aşağıda her biri koduyla işaretlendi, örneğin ⟨U+200B⟩.
 SkillChangedReview = Skill, bunu açtığından beri değişti. Yeniden gözden geçir.
 SkillCopyReview = Kopyalanacak SKILL.md
 FilesToCopy = Kopyalanacak dosyalar

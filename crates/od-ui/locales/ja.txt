@@ -1014,6 +1014,7 @@ UseInClaudeCode = Claude Code で使う
 ShowCommandAnyway = それでもコマンドを表示
 RunToCopySkill = ターミナルで実行するとスキルを Claude Code にコピーします（アプリならワンクリックでコピー）:
 SkillHasNoDescription = このスキルには説明がありません。Claude Code は代わりに本文の最初の行をモデルに示します。
+SkillHasHiddenCharacters = このスキルには隠れた文字があります。Claude Code はこれを読み取ります。下では各文字を ⟨U+200B⟩ のようにコードで示しています。
 SkillChangedReview = 開いた後にスキルが変更されました。もう一度確認してください。
 SkillCopyReview = コピーする SKILL.md
 FilesToCopy = コピーするファイル

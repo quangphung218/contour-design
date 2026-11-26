@@ -1014,6 +1014,7 @@ UseInClaudeCode = Використати в Claude Code
 ShowCommandAnyway = Усе одно показати команду
 RunToCopySkill = Виконайте це в терміналі, щоб скопіювати навичку в Claude Code (застосунок копіює одним кліком):
 SkillHasNoDescription = Цей навик не має опису: Claude Code натомість покаже моделі перший рядок тексту.
+SkillHasHiddenCharacters = У цьому навику є приховані символи. Claude Code їх читає; нижче кожен позначено його кодом, наприклад ⟨U+200B⟩.
 SkillChangedReview = Навик змінився відтоді, як ви це відкрили. Перегляньте його знову.
 SkillCopyReview = SKILL.md для копіювання
 FilesToCopy = Файли для копіювання

@@ -51,6 +51,9 @@ nix.workspace = true
 
 [dev-dependencies]
 tokio-tungstenite = "0.30"
+# tests/no_path_reads.rs reads the sources as Rust (versions already in Cargo.lock).
+syn = { version = "2.0.119", features = ["full", "visit"] }
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 http-body-util.workspace = true
 lopdf.workspace = true
 reqwest.workspace = true

@@ -97,6 +97,91 @@ pub fn read_file(path: &Path, limit: u64) -> Result<Option<ReadFile>, TreeError>
     }
 }
 
+/// The most an index reads of one content file (a `SKILL.md`, a plugin
+/// manifest, a craft rule); the largest bundled one is under 100 KB.
+pub const MAX_INDEX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// [`read_file`] as UTF-8 text: `None` when it is not a regular file (a
+/// link at its last component, a FIFO), missing, unreadable, past
+/// `limit`, or not UTF-8. The folders above it are followed: an index
+/// takes an entry that is itself a link (the user's own symlink).
+#[must_use]
+pub fn read_text(path: &Path, limit: u64) -> Option<String> {
+    let file = read_file(path, limit).ok()??;
+    String::from_utf8(file.bytes).ok()
+}
+
+/// Reads the regular file at `rel` under `root` as [`read_file`] does, and
+/// follows no link below `root` either: each folder of `rel` is opened from
+/// the one above it with `O_NOFOLLOW` (`.claude-plugin/plugin.json`, where
+/// `.claude-plugin` could be a link an agent planted). `root` itself is
+/// followed (an index takes an entry that is the user's own symlink).
+/// `Ok(None)` when a folder or the file is a link, missing, or not what it
+/// should be, or when `rel` is not a plain relative path.
+///
+/// # Errors
+/// [`TreeError::TooLarge`] past `limit`; [`TreeError::Io`] when it cannot
+/// be read (permission).
+pub fn read_file_under(root: &Path, rel: &Path, limit: u64) -> Result<Option<ReadFile>, TreeError> {
+    let names: Option<Vec<&OsStr>> = rel
+        .components()
+        .map(|c| match c {
+            std::path::Component::Normal(n) => Some(n),
+            _ => None,
+        })
+        .collect();
+    let Some(names) = names else {
+        return Ok(None);
+    };
+    let Some((file, dirs)) = names.split_last() else {
+        return Ok(None);
+    };
+    #[cfg(unix)]
+    {
+        use nix::errno::Errno;
+        use nix::fcntl::{OFlag, open, openat};
+        use nix::sys::stat::Mode;
+        let dir_flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC;
+        let gone = |e: Errno| matches!(e, Errno::ELOOP | Errno::ENOENT | Errno::ENOTDIR);
+        let mut fd = match open(root, dir_flags, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(e) if gone(e) => return Ok(None),
+            Err(e) => return Err(std::io::Error::from(e).into()),
+        };
+        for dir in dirs {
+            fd = match openat(&fd, *dir, dir_flags | OFlag::O_NOFOLLOW, Mode::empty()) {
+                Ok(next) => next,
+                Err(e) if gone(e) => return Ok(None),
+                Err(e) => return Err(std::io::Error::from(e).into()),
+            };
+        }
+        let flags = OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC;
+        match openat(&fd, *file, flags, Mode::empty()) {
+            Ok(opened) => read_opened(File::from(opened), limit),
+            Err(e) if skipped(&std::io::Error::from(e)) => Ok(None),
+            Err(e) => Err(std::io::Error::from(e).into()),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let mut at = root.to_path_buf();
+        for dir in dirs {
+            at.push(dir);
+            if std::fs::symlink_metadata(&at).is_ok_and(|m| m.file_type().is_symlink()) {
+                return Ok(None);
+            }
+        }
+        read_file(&at.join(file), limit)
+    }
+}
+
+/// [`read_file_under`] as UTF-8 text; `None` as [`read_text`].
+#[must_use]
+pub fn read_text_under(root: &Path, rel: &Path, limit: u64) -> Option<String> {
+    let file = read_file_under(root, rel, limit).ok()??;
+    String::from_utf8(file.bytes).ok()
+}
+
 /// An open that met a link (`ELOOP`), nothing (gone meanwhile), or a
 /// socket: not a file to read, skipped.
 fn skipped(e: &std::io::Error) -> bool {
@@ -444,6 +529,50 @@ mod tests {
         assert_eq!(read_file(&tmp.path().join("x"), 100).unwrap(), None);
         let read = read_file(&tmp.path().join("secret"), 100).unwrap().unwrap();
         assert_eq!(read.bytes, b"s3cret");
+    }
+
+    /// A file under a root: no link below the root (a folder or the file),
+    /// the root itself followed, no FIFO wait.
+    #[test]
+    fn a_file_under_a_root_follows_no_link_below_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(outside.join("meta")).unwrap();
+        std::fs::write(outside.join("meta/plugin.json"), "s3cret").unwrap();
+        let root = tmp.path().join("entry");
+        std::fs::create_dir_all(root.join("real")).unwrap();
+        std::fs::write(root.join("real/plugin.json"), "{}").unwrap();
+        let rel = |p: &str| PathBuf::from(p);
+        let under = |root: &Path, p: &str| read_file_under(root, &rel(p), 100).unwrap();
+        assert_eq!(under(&root, "real/plugin.json").unwrap().bytes, b"{}");
+        // The folder on the way is a link: not followed.
+        std::os::unix::fs::symlink(outside.join("meta"), root.join(".claude-plugin")).unwrap();
+        assert_eq!(under(&root, ".claude-plugin/plugin.json"), None);
+        // The file is a link, or a FIFO: not read.
+        std::os::unix::fs::symlink(outside.join("meta/plugin.json"), root.join("real/l.json"))
+            .unwrap();
+        assert_eq!(under(&root, "real/l.json"), None);
+        nix::unistd::mkfifo(
+            &root.join("real/f.json"),
+            nix::sys::stat::Mode::from_bits_truncate(0o644),
+        )
+        .unwrap();
+        assert_eq!(under(&root, "real/f.json"), None);
+        // The root itself a link (the user's): followed.
+        std::os::unix::fs::symlink(&root, tmp.path().join("linked")).unwrap();
+        assert_eq!(
+            under(&tmp.path().join("linked"), "real/plugin.json")
+                .unwrap()
+                .bytes,
+            b"{}"
+        );
+        // Not a plain relative path; missing.
+        assert_eq!(under(&root, "../outside/meta/plugin.json"), None);
+        assert_eq!(under(&root, "nope/plugin.json"), None);
+        assert!(matches!(
+            read_file_under(&root, &rel("real/plugin.json"), 1),
+            Err(TreeError::TooLarge)
+        ));
     }
 
     /// The budget counts the bytes read; a file is read up to it only.

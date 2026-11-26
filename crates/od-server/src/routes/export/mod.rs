@@ -207,11 +207,12 @@ impl AssetSource for StoreSource {
     }
 }
 
-/// A [`StoreSource`] that notes every file the bundler reads. A file it
-/// may not read (a hidden segment, a link out of the root) is missing.
+/// A [`StoreSource`] that keeps every file the bundler reads, with the
+/// bytes read ([`read_page_file`]). A file it may not read (a hidden
+/// segment, a link out of the root, a FIFO) is missing.
 struct Recording {
     inner: StoreSource,
-    read: std::cell::RefCell<std::collections::BTreeSet<String>>,
+    read: std::cell::RefCell<std::collections::BTreeMap<String, Vec<u8>>>,
 }
 
 impl AssetSource for Recording {
@@ -220,23 +221,54 @@ impl AssetSource for Recording {
     }
 
     fn read(&self, path: &str) -> std::io::Result<Vec<u8>> {
-        let bytes = self.inner.read(path)?;
-        self.read.borrow_mut().insert(path.to_owned());
+        // A template folder is one an agent can write: no FIFO wait.
+        let bytes = read_page_file(&self.inner.root, path)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        self.read
+            .borrow_mut()
+            .insert(path.to_owned(), bytes.clone());
         Ok(bytes)
+    }
+}
+
+/// The most one file a page loads may hold when it is copied (Remix):
+/// past the export limits, as copying is not exporting.
+const MAX_PAGE_FILE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Reads the file `path` under `root` that a page loads, for a copy of the
+/// page (Remix): resolved and checked as the store does (`stat_file`: no
+/// hidden segment, no link out of `root`), then read through
+/// `od_content::nofollow` (a regular file on the opened descriptor, never
+/// waiting on a FIFO, at most [`MAX_PAGE_FILE_BYTES`]).
+///
+/// # Errors
+/// [`StoreError::FileNotFound`] when it is missing or no regular file, the
+/// store's errors for a path it refuses, I/O errors.
+pub(crate) fn read_page_file(root: &ProjectRoot, path: &str) -> Result<Vec<u8>, StoreError> {
+    let (_, full) = od_store::files::stat_file(root, path)?;
+    match od_content::nofollow::read_file(&full, MAX_PAGE_FILE_BYTES) {
+        Ok(Some(file)) => Ok(file.bytes),
+        Ok(None) => Err(StoreError::FileNotFound),
+        Err(od_content::nofollow::TreeError::TooLarge) => Err(StoreError::Io(
+            std::io::Error::other(format!("{path} is too large to copy")),
+        )),
+        Err(od_content::nofollow::TreeError::Io(e)) => Err(StoreError::from_read_io(e)),
     }
 }
 
 /// Every local file the page `entry` (content `html`) under `root` loads, at
 /// any depth, as the one-file export walks it: stylesheets and their
 /// `url()`/`@import`, scripts, modules, images, iframes. Paths are relative
-/// to `root`, sorted, without `entry` itself unless the page loads it.
+/// to `root`, sorted, without `entry` itself unless the page loads it;
+/// each with the bytes the walk read, so the copy is what was walked
+/// (no second read).
 ///
 /// What a project made from bundled content copies beside its entry, so it
 /// opens and exports as the bundled page does. Copying is not exporting:
 /// the export's size limits do not apply, a file the walk cannot follow
 /// (missing, out of `root`, hidden) is skipped, and a walk that stops on an
 /// error (a stylesheet cycle) gives the files it read until then.
-pub(crate) fn page_files(root: &ProjectRoot, entry: &str, html: &str) -> Vec<String> {
+pub(crate) fn page_files(root: &ProjectRoot, entry: &str, html: &str) -> Vec<(String, Vec<u8>)> {
     let source = Recording {
         inner: StoreSource { root: root.clone() },
         read: std::cell::RefCell::default(),

@@ -309,7 +309,18 @@ fn remix_metadata(kind: Option<ProjectKind>) -> ProjectMetadata {
 /// the page's folder, so a project made from it opens and exports as the
 /// gallery page does.
 fn example_with_files(example: &std::path::Path) -> Result<(Vec<u8>, SideFiles), StoreError> {
-    let html = std::fs::read(example)?;
+    // A plugin's template lives where an agent can write: a regular file
+    // only, no link at its name, never a FIFO, bounded.
+    let html = match od_content::nofollow::read_file(example, MAX_TEMPLATE_BYTES) {
+        Ok(Some(file)) => file.bytes,
+        Ok(None) => return Err(StoreError::FileNotFound),
+        Err(od_content::nofollow::TreeError::TooLarge) => {
+            return Err(StoreError::Io(std::io::Error::other(
+                "the example page is too large",
+            )));
+        }
+        Err(od_content::nofollow::TreeError::Io(e)) => return Err(StoreError::from_read_io(e)),
+    };
     let (Some(dir), Some(name)) = (example.parent(), example.file_name()) else {
         return Ok((html, Vec::new()));
     };
@@ -319,11 +330,10 @@ fn example_with_files(example: &std::path::Path) -> Result<(Vec<u8>, SideFiles),
     };
     // Read as text only to find what it loads; the page is copied as is.
     let text = String::from_utf8_lossy(&html);
-    let mut side = Vec::new();
-    for path in crate::routes::export::page_files(&root, &name.to_string_lossy(), &text) {
-        let (_, bytes) = od_store::files::read_file(&root, &path)?;
-        side.push((path, bytes));
-    }
+    // With the bytes the walk read through `od_content::nofollow`
+    // (`export::read_page_file`): no second read of a folder an agent can
+    // write.
+    let side = crate::routes::export::page_files(&root, &name.to_string_lossy(), &text);
     Ok((html, side))
 }
 
@@ -386,4 +396,90 @@ pub async fn remix(
     Ok(Json(
         json!({ "project": project, "conversationId": conversation_id }),
     ))
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod tests {
+    use super::*;
+
+    /// A plugin's template folder is one an agent can write: an example
+    /// page that is a FIFO or a link is not read (a Remix never waits on
+    /// it, never copies what a link points at).
+    #[test]
+    fn a_remix_reads_no_fifo_and_no_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (fifo, link) = (tmp.path().join("fifo.html"), tmp.path().join("link.html"));
+        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::from_bits_truncate(0o644)).unwrap();
+        std::fs::write(tmp.path().join("secret"), "s3cret").unwrap();
+        std::os::unix::fs::symlink(tmp.path().join("secret"), &link).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send((
+                example_with_files(&fifo).is_err(),
+                example_with_files(&link).is_err(),
+            ));
+        });
+        let refused = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a Remix never came back (blocked on a FIFO?)");
+        assert_eq!(refused, (true, true));
+    }
+
+    /// A file the page loads, swapped back and forth between a regular file
+    /// and a FIFO while the Remix walks and copies it, never keeps the Remix
+    /// waiting; what it copies is what it read (the CSS, never a FIFO).
+    #[test]
+    fn a_remix_never_waits_on_a_side_file_swapped_for_a_fifo() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        let page = dir.join("example.html");
+        std::fs::write(
+            &page,
+            r#"<link rel="stylesheet" href="assets/a.css"><h1>Deck</h1>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("assets/a.css"), "h1{color:red}").unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let swapper = {
+            let (dir, stop) = (dir.join("assets"), Arc::clone(&stop));
+            std::thread::spawn(move || {
+                let (file, fifo) = (dir.join(".file"), dir.join(".fifo"));
+                while !stop.load(Ordering::SeqCst) {
+                    std::fs::write(&file, "h1{color:red}").unwrap();
+                    std::fs::rename(&file, dir.join("a.css")).unwrap();
+                    let _ = std::fs::remove_file(&fifo);
+                    nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::from_bits_truncate(0o644))
+                        .unwrap();
+                    std::fs::rename(&fifo, dir.join("a.css")).unwrap();
+                }
+            })
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let until = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+            let (mut runs, mut wrong) = (0, 0);
+            while std::time::Instant::now() < until {
+                if let Ok((_, side)) = example_with_files(&page) {
+                    runs += 1;
+                    if side
+                        .iter()
+                        .any(|(p, b)| p != "assets/a.css" || b != b"h1{color:red}")
+                    {
+                        wrong += 1;
+                    }
+                }
+            }
+            let _ = tx.send((runs, wrong));
+        });
+        let got = rx.recv_timeout(std::time::Duration::from_secs(15));
+        stop.store(true, Ordering::SeqCst);
+        swapper.join().unwrap();
+        let (runs, wrong) = got.expect("a Remix never came back (blocked on a FIFO)");
+        assert!(runs > 50, "{runs} runs");
+        assert_eq!(wrong, 0);
+    }
 }

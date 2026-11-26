@@ -2007,6 +2007,68 @@ async fn css_package(d: &Daemon, name: &str) -> (String, PathBuf) {
     (id, dir)
 }
 
+/// A FIFO planted in a package where a route reads (an agent editing it
+/// in place can make one) never keeps the request waiting: the kit, the
+/// showcase, a file and a revision (which copies DESIGN.md and tokens.css
+/// to the agent's folder) all answer. Multi-thread: a read that blocks
+/// takes its worker, not the client's.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn design_system_routes_never_wait_on_a_fifo() {
+    let d = daemon().await;
+    design_agent(&d);
+    let (id, dir) = css_package(&d, "Fifos").await;
+    const FIFOS: [&str; 4] = ["DESIGN.md", "tokens.css", "components.html", "assets/x.css"];
+    for name in FIFOS {
+        let at = dir.join(name);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        let _ = std::fs::remove_file(&at);
+        nix::unistd::mkfifo(&at, nix::sys::stat::Mode::from_bits_truncate(0o644)).unwrap();
+    }
+    let answers = |method: &'static str, path: String, body: Option<Value>| {
+        let (d, dir) = (&d, &dir);
+        async move {
+            let answer =
+                tokio::time::timeout(Duration::from_secs(10), call(d, method, &path, body)).await;
+            answer.unwrap_or_else(|_| {
+                // Let a reader blocked on a FIFO go (an open for writing,
+                // closed at once: it reads the end), so the test ends red
+                // instead of waiting on that thread for good.
+                // Over and over for 5 s: the next FIFO is only opened
+                // once the one before is let go.
+                for _ in 0..50 {
+                    for name in FIFOS {
+                        use std::os::unix::fs::OpenOptionsExt;
+                        let _ = std::fs::OpenOptions::new()
+                            .write(true)
+                            .custom_flags(nix::libc::O_NONBLOCK)
+                            .open(dir.join(name));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                panic!("{method} {path} never answered (blocked on a FIFO?)")
+            })
+        }
+    };
+    let (s, _) = answers("GET", format!("/api/design-systems/{id}/kit"), None).await;
+    assert_eq!(s, 200);
+    answers("GET", format!("/api/design-systems/{id}/showcase"), None).await;
+    let (s, _) = answers(
+        "GET",
+        format!("/api/design-systems/{id}/file/assets/x.css"),
+        None,
+    )
+    .await;
+    assert_eq!(s, 404);
+    let (s, v) = answers(
+        "POST",
+        format!("/api/design-systems/{id}/revisions"),
+        Some(json!({ "feedback": "Warmer accent" })),
+    )
+    .await;
+    assert_eq!(s, 202, "{v}");
+}
+
 /// A symlink planted in a package (an agent editing it in place can make
 /// one) never takes a route's read or write outside the package.
 // Escapes are planted as symlinks, so Unix only.

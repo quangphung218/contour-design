@@ -1014,6 +1014,7 @@ UseInClaudeCode = استفاده در Claude Code
 ShowCommandAnyway = در هر حال فرمان را نشان بده
 RunToCopySkill = این را در ترمینال اجرا کنید تا مهارت به Claude Code کپی شود (برنامه با یک کلیک کپی می‌کند):
 SkillHasNoDescription = این مهارت توضیح ندارد: Claude Code به‌جای آن خط اول متن را به مدلش نشان می‌دهد.
+SkillHasHiddenCharacters = این مهارت نویسه‌های پنهان دارد. Claude Code آن‌ها را می‌خواند؛ در پایین هر کدام با کدش نشان داده شده، مثل ⟨U+200B⟩.
 SkillChangedReview = مهارت از وقتی این را باز کردید تغییر کرده است. دوباره بررسی کنید.
 SkillCopyReview = SKILL.md برای کپی
 FilesToCopy = فایل‌های کپی‌شونده
