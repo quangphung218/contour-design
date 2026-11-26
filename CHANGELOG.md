@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Copy to Claude Code marks every invisible Unicode character; template previews and craft sections no longer wait on a FIFO.
+
 ## [0.2.0-beta.68] - 2026-11-26
 
 ### Fixed
