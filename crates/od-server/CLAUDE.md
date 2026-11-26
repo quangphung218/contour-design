@@ -108,6 +108,15 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `tests/library.rs::design_system_routes_never_wait_on_a_fifo`, `::content_routes_never_wait_on_a_fifo`, `../od-content/src/plugin_validate.rs::a_manifest_the_index_skips_is_named`
     - `../od-cli/tests/cli.rs::od_cannot_copy_a_skill_to_claude_code`,
       `../../apps/desktop/src/main.rs::the_daemon_ui_may_call_the_app_commands`
+    - The other way, "Review and replace" (From agent CLI) writes only `<data>/skills`: `GET /api/skills/{id}/source-preview`
+      reads an agent folder `local-sources` lists under that id (any other path is a 400), and
+      `POST /api/skills/{id}/replace-from-source` takes the `hash` shown (`ExportFiles::read_copy`: what an install copies) and is
+      refused as `changed` (409) with nothing written once the folder changed. The copy in Contour moves to
+      `<data>/skills/.previous/<id>` (`restore-previous` swaps it back, one level); the index lists no hidden folder.
+      `tests/library.rs::an_imported_skill_is_replaced_from_its_source_and_restored`;
+      `../od-content/src/user_content.rs::a_replace_keeps_the_copy_in_contour_for_one_restore`,
+      `::a_replace_writes_nothing_for_a_source_changed_or_renamed`, `::a_replace_follows_no_link_and_waits_on_no_fifo`,
+      `::only_a_listed_agent_folder_is_taken`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).

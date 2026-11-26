@@ -383,6 +383,217 @@ async fn agent_cli_skills_are_listed_from_the_agents_home() {
     assert_eq!(again["sources"][2]["imported"], false);
 }
 
+/// Every file under `dir` by path, with its bytes (hidden ones too).
+fn files_under(dir: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).unwrap().flatten() {
+            let p = e.path();
+            if e.file_type().unwrap().is_dir() {
+                stack.push(p);
+            } else {
+                let rel = p.strip_prefix(dir).unwrap().to_string_lossy().into_owned();
+                out.insert(rel, std::fs::read(&p).unwrap());
+            }
+        }
+    }
+    out
+}
+
+/// "From agent CLI" ▸ Review and replace: an imported skill whose source
+/// changed is listed as `differs`; the preview shows both sides; the
+/// replace takes the hash shown (409 once the source changed again, with
+/// nothing written), keeps the copy in Contour for one restore, and never
+/// writes in the agent's folder (decision #9). A path the listing does not
+/// show under that id is a 400.
+#[tokio::test]
+async fn an_imported_skill_is_replaced_from_its_source_and_restored() {
+    let home = tempfile::tempdir().unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content_root()),
+        extra_env: vec![(
+            "HOME".to_owned(),
+            home.path().to_string_lossy().into_owned(),
+        )],
+        ..Options::default()
+    })
+    .await;
+    let claude = home.path().join(".claude/skills");
+    let tea = skill_folder(
+        &claude,
+        "tea",
+        "---\nname: tea\ndescription: Tea.\n---\nCream.\n",
+    );
+    let mint = skill_folder(&claude, "mint", "---\nname: mint\n---\nMint.\n");
+    let user = d.data.join("skills");
+    for dir in [&tea, &mint] {
+        let (s, v) = call(
+            &d,
+            "POST",
+            "/api/skills/install",
+            Some(json!({ "path": dir.to_string_lossy() })),
+        )
+        .await;
+        assert_eq!(s, 200, "{v}");
+    }
+    let row = |v: &Value, id: &str| {
+        v["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == id)
+            .cloned()
+            .unwrap()
+    };
+    let v = d.get_json("/api/skills/local-sources").await;
+    assert_eq!(row(&v, "tea")["imported"], true);
+    assert_eq!(row(&v, "tea")["differs"], false, "{v}");
+
+    // Edited in Contour, then at its source.
+    let (s, v) = call(
+        &d,
+        "PUT",
+        "/api/skills/tea",
+        Some(json!({ "name": "tea", "description": "Mine.", "body": "Mine." })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let edited = files_under(&user.join("tea"));
+    std::fs::write(
+        tea.join("SKILL.md"),
+        "---\nname: tea\ndescription: Tea.\n---\nMilk.\n",
+    )
+    .unwrap();
+    let v = d.get_json("/api/skills/local-sources").await;
+    assert_eq!(row(&v, "tea")["differs"], true, "{v}");
+    assert_eq!(row(&v, "mint")["differs"], false, "{v}");
+
+    let q = |id: &str, path: &Path| {
+        format!(
+            "/api/skills/{id}/source-preview?path={}",
+            path.to_string_lossy()
+        )
+    };
+    let (s, p) = call(&d, "GET", &q("tea", &tea), None).await;
+    assert_eq!(s, 200, "{p}");
+    assert_eq!(p["changedFiles"], json!(["SKILL.md"]));
+    assert_eq!(
+        p["source"]["skillMd"],
+        "---\nname: tea\ndescription: Tea.\n---\nMilk.\n"
+    );
+    assert!(
+        p["current"]["skillMd"].as_str().unwrap().contains("Mine."),
+        "{p}"
+    );
+    assert_eq!(
+        p["source"]["files"],
+        json!(["SKILL.md", "assets/tokens.css"])
+    );
+    let hash = p["source"]["hash"].as_str().unwrap().to_owned();
+
+    // Paths the listing does not show under `tea`: 400.
+    let elsewhere = skill_folder(home.path(), "tea", "---\nname: tea\n---\nX.\n");
+    for path in [&elsewhere, &mint, &claude.join("none")] {
+        let (s, v) = call(&d, "GET", &q("tea", path), None).await;
+        assert_eq!(s, 400, "{path:?}: {v}");
+        let (s, v) = call(
+            &d,
+            "POST",
+            "/api/skills/tea/replace-from-source",
+            Some(json!({ "path": path.to_string_lossy(), "hash": hash })),
+        )
+        .await;
+        assert_eq!(s, 400, "{path:?}: {v}");
+    }
+    // Listed, not imported: 404.
+    let sage = skill_folder(&claude, "sage", "---\nname: sage\n---\nSage.\n");
+    let (s, v) = call(&d, "GET", &q("sage", &sage), None).await;
+    assert_eq!(s, 404, "{v}");
+
+    // Changed again after the preview: 409, nothing written.
+    std::fs::write(tea.join("assets/tokens.css"), ":root{--accent:red}").unwrap();
+    let replace = |hash: String| {
+        let path = tea.to_string_lossy().into_owned();
+        let d = &d;
+        async move {
+            call(
+                d,
+                "POST",
+                "/api/skills/tea/replace-from-source",
+                Some(json!({ "path": path, "hash": hash })),
+            )
+            .await
+        }
+    };
+    let (s, v) = replace(hash).await;
+    assert_eq!(s, 409, "{v}");
+    assert_eq!(files_under(&user.join("tea")), edited);
+    assert!(!user.join(".previous").exists());
+    let (_, p) = call(&d, "GET", &q("tea", &tea), None).await;
+    assert_eq!(p["changedFiles"], json!(["SKILL.md", "assets/tokens.css"]));
+    // What the agent folders hold now (`elsewhere` and `sage` added).
+    let in_agent = files_under(home.path());
+
+    // As shown: replaced, the edited copy kept, the source untouched.
+    let (s, v) = replace(p["source"]["hash"].as_str().unwrap().to_owned()).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(files_under(&user.join("tea")), files_under(&tea));
+    assert_eq!(files_under(&user.join(".previous/tea")), edited);
+    assert_eq!(
+        files_under(home.path()),
+        in_agent,
+        "nothing written in the agent's folders"
+    );
+    let v = d.get_json("/api/skills/local-sources").await;
+    assert_eq!(row(&v, "tea")["differs"], false, "{v}");
+    let detail = d.get_json("/api/skills/tea").await;
+    assert!(
+        detail["body"].as_str().unwrap().contains("Milk."),
+        "{detail}"
+    );
+    let list = d.get_json("/api/skills").await;
+    assert!(
+        list["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["id"] == "tea")
+            .count()
+            == 1,
+        "the kept copy is no skill"
+    );
+    assert_eq!(
+        d.get_json("/api/skills/tea/previous").await["previous"],
+        true
+    );
+    assert_eq!(
+        d.get_json("/api/skills/mint/previous").await["previous"],
+        false
+    );
+
+    // Restore: the edited copy back, byte for byte.
+    let (s, v) = call(&d, "POST", "/api/skills/tea/restore-previous", None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(files_under(&user.join("tea")), edited);
+    assert!(
+        d.get_json("/api/skills/tea").await["body"]
+            .as_str()
+            .unwrap()
+            .contains("Mine.")
+    );
+    let (s, v) = call(&d, "POST", "/api/skills/mint/restore-previous", None).await;
+    assert_eq!(s, 404, "{v}");
+
+    // Renamed at its source: no longer listed as `tea`, 400, `tea` kept.
+    std::fs::write(tea.join("SKILL.md"), "---\nname: tea2\n---\nOther.\n").unwrap();
+    let hash = d.get_json(&q("tea", &tea)).await;
+    assert_eq!(hash["error"]["code"], "BAD_REQUEST", "{hash}");
+    let (s, v) = replace("anything".to_owned()).await;
+    assert_eq!(s, 400, "{v}");
+    assert_eq!(files_under(&user.join("tea")), edited);
+}
+
 /// "Copy to Claude Code" as the desktop app runs it: the preview first
 /// (its `hash` names the content the user reviews), then the app's Tauri
 /// command, which calls `skill_export::copy_to_claude` in process with

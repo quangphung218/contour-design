@@ -16,7 +16,18 @@
 //!   answer is `{id: null}`: "Install from folder" then installs a plugin.
 //! - `GET    /api/skills/local-sources`: the skill folders of agent CLIs
 //!   (`~/.claude/skills`, `~/.codex/skills`…, one level, read only) with
-//!   whether each is imported; "From agent CLI" installs the ones picked.
+//!   whether each is imported, and whether an imported one `differs` from
+//!   the copy in Contour; "From agent CLI" installs the ones picked.
+//! - `GET    /api/skills/:id/source-preview?path=…`: read only, the agent
+//!   CLI folder `path` (one `local-sources` lists as `id`) as an install
+//!   would copy it, the user skill `id`, the files that differ.
+//! - `POST   /api/skills/:id/replace-from-source` `{path, hash}`: replaces
+//!   the user skill with that folder if it is still the content shown
+//!   (`hash`), else 409 with nothing written. The copy in Contour is kept
+//!   in `<data>/skills/.previous/<id>`. Only `<data>/skills` is written,
+//!   never the agent's folder (decision #9).
+//! - `GET    /api/skills/:id/previous`: whether a copy is kept.
+//! - `POST   /api/skills/:id/restore-previous`: swaps it back; 404 without.
 //! - `GET    /api/skills/:id/export?target=claude`: "Copy to Claude Code",
 //!   read only: where a Personal skill would go (`<agents' HOME>/.claude/
 //!   skills/<id>`), its source folder, what stands there already, whether
@@ -41,6 +52,13 @@ pub fn routes() -> Router<AppState> {
         .route("/api/skills/local-sources", get(local_sources))
         .route("/api/skills/{id}", put(save).delete(delete))
         .route("/api/skills/{id}/export", get(export_preview))
+        .route("/api/skills/{id}/source-preview", get(source_preview))
+        .route(
+            "/api/skills/{id}/replace-from-source",
+            post(replace_from_source),
+        )
+        .route("/api/skills/{id}/previous", get(previous))
+        .route("/api/skills/{id}/restore-previous", post(restore_previous))
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,12 +147,17 @@ pub async fn install(
     Ok(Json(json!({ "id": id })))
 }
 
+fn agent_roots(state: &AppState) -> Vec<(String, std::path::PathBuf)> {
+    crate::skill_export::agent_home(&state.runs.engine.config().base_env)
+        .map(|h| user_content::agent_skill_roots(&h))
+        .unwrap_or_default()
+}
+
 pub async fn local_sources(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    let home = crate::skill_export::agent_home(&state.runs.engine.config().base_env);
+    let roots = agent_roots(&state);
     let root = user_root(&state);
     let sources = crate::spawn::spawn_blocking_in_span(move || {
-        home.map(|h| user_content::scan_agent_skills(&user_content::agent_skill_roots(&h), &root))
-            .unwrap_or_default()
+        user_content::scan_agent_skills(&roots, &root)
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?;
@@ -239,4 +262,117 @@ pub async fn export_preview(
         "files": files.paths(),
         "skillMd": files.skill_md(),
     })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SourceQuery {
+    #[serde(default)]
+    path: String,
+}
+
+/// The agent CLI folder `path` when `local-sources` lists it as the
+/// imported skill `id`: 400 for any other path (or one listed under
+/// another id), 404 when no user skill `id` was imported.
+fn listed_source(
+    roots: &[(String, std::path::PathBuf)],
+    path: &str,
+    user_root: &std::path::Path,
+    id: &str,
+) -> ApiResult<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(path);
+    let listed = user_content::agent_skill_at(roots, &path, user_root)
+        .filter(|s| s.error.is_none() && s.id == id)
+        .ok_or_else(|| ApiErr::bad_request("path is no agent CLI skill listed under this id"))?;
+    if !listed.imported {
+        return Err(ApiErr::not_found("skill not found"));
+    }
+    Ok(listed.path)
+}
+
+/// `GET /api/skills/:id/source-preview?path=…`: `{source: {skillMd,
+/// files, hash}, current: {skillMd, files}, changedFiles}`, read only.
+/// `hash` names the source content shown; the replace takes it.
+pub async fn source_preview(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<SourceQuery>,
+) -> ApiResult<Json<Value>> {
+    let roots = agent_roots(&state);
+    let root = user_root(&state);
+    let preview = crate::spawn::spawn_blocking_in_span(move || {
+        let source = listed_source(&roots, &q.path, &root, &id)?;
+        Ok::<_, ApiErr>(user_content::source_preview(&source, &root, &id)?)
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))??;
+    Ok(Json(json!({
+        "source": {
+            "skillMd": preview.source.skill_md(),
+            "files": preview.source.paths(),
+            "hash": preview.source.hash(),
+        },
+        "current": {
+            "skillMd": preview.current.skill_md(),
+            "files": preview.current.paths(),
+        },
+        "changedFiles": preview.changed_files,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReplaceBody {
+    path: String,
+    hash: String,
+}
+
+/// `POST /api/skills/:id/replace-from-source` `{path, hash}`: 200 `{id}`;
+/// 409 when the folder changed since its preview (nothing written); 400
+/// for a path not listed under `id` or a source that names another skill
+/// now; 404 without the user skill.
+pub async fn replace_from_source(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<ReplaceBody>,
+) -> ApiResult<Json<Value>> {
+    let roots = agent_roots(&state);
+    let root = user_root(&state);
+    let skill_id = id.clone();
+    let source = write_and_reload(&state, move || {
+        let source = listed_source(&roots, &body.path, &root, &skill_id)?;
+        user_content::replace_skill_from_source(&source, &root, &skill_id, &body.hash)?;
+        Ok(source)
+    })
+    .await?;
+    tracing::info!(skill = %id, source = %source.display(), "skill replaced from its source");
+    Ok(Json(json!({ "id": id })))
+}
+
+/// `GET /api/skills/:id/previous`: `{previous}`, whether a replace kept
+/// a copy to restore.
+pub async fn previous(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let root = user_root(&state);
+    let kept =
+        crate::spawn::spawn_blocking_in_span(move || user_content::has_previous_skill(&root, &id))
+            .await
+            .map_err(|e| ApiErr::internal(e.to_string()))?;
+    Ok(Json(json!({ "previous": kept })))
+}
+
+/// `POST /api/skills/:id/restore-previous`: the kept copy and the user
+/// skill swap places; 404 when none is kept.
+pub async fn restore_previous(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let root = user_root(&state);
+    let skill_id = id.clone();
+    write_and_reload(&state, move || {
+        Ok(user_content::restore_previous_skill(&root, &skill_id)?)
+    })
+    .await?;
+    tracing::info!(skill = %id, "skill restored to its previous version");
+    Ok(Json(json!({ "id": id })))
 }
