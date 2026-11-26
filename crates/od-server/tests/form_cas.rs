@@ -177,7 +177,10 @@ async fn a_bundled_skill_saved_over_an_override_written_on_disk_writes_nothing()
     std::fs::write(dir.join("SKILL.md"), &theirs).unwrap();
     let typed = json!({ "name": id, "body": "Typed." });
     assert_eq!(put(&d, &path, &typed, Some(&opened)).await, 412);
-    assert_eq!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap(), theirs);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
+        theirs
+    );
 }
 
 #[tokio::test]
