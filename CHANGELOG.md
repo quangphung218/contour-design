@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.70] - 2026-11-26
+
 ### Fixed
 
 - Review and replace keeps Replace in view and the focus after a failure; Save warns when the skill changed under the form.
@@ -1499,7 +1501,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.69...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.70...HEAD
+[0.2.0-beta.70]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.69...v0.2.0-beta.70
 [0.2.0-beta.69]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.68...v0.2.0-beta.69
 [0.2.0-beta.68]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.67...v0.2.0-beta.68
 [0.2.0-beta.67]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.66...v0.2.0-beta.67
