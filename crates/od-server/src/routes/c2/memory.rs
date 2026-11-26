@@ -10,6 +10,7 @@
 //!
 //! Runs call [`prepare_turn`] for the memory a prompt carries.
 
+use crate::cas::IfMatch;
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::State;
@@ -166,22 +167,30 @@ pub struct IndexResponse {
     pub root_dir: String,
 }
 
-pub async fn get_index(State(state): State<AppState>) -> ApiResult<ApiJson<IndexResponse>> {
-    state
+/// `GET /api/memory/index`, with the `ETag` of the index shown: the
+/// editor saves with it as `If-Match` (`crate::cas`).
+pub async fn get_index(State(state): State<AppState>) -> ApiResult<impl IntoResponse> {
+    let res = state
         .blocking(|s| {
             let f = files(s);
-            Ok(ApiJson(IndexResponse {
+            Ok(IndexResponse {
                 index: f.index(&s.list_global_memory()?),
                 root_dir: f.dir().display().to_string(),
-            }))
+            })
         })
-        .await
+        .await?;
+    let tag = crate::cas::tag_of(res.index.as_bytes());
+    Ok((crate::cas::etag(&tag), ApiJson(res)))
 }
 
+/// `PUT /api/memory/index`, only over the index its `If-Match` tags (a
+/// memory learnt since links itself in), else 412; answers the `ETag` of
+/// the index written, the tag of the editor's next Save.
 pub async fn put_index(
     State(state): State<AppState>,
+    if_match: IfMatch,
     ApiJson(body): ApiJson<IndexBody>,
-) -> ApiResult<ApiJson<IndexResponse>> {
+) -> ApiResult<impl IntoResponse> {
     if body.index.len() > MAX_INDEX_BYTES {
         return Err(ApiErr::bad_request(format!(
             "the index is limited to {} KiB",
@@ -191,15 +200,20 @@ pub async fn put_index(
     let res = state
         .blocking(move |s| {
             let f = files(s);
-            f.write_index(&body.index)?;
-            Ok(ApiJson(IndexResponse {
+            let written = f.write_index_if(&body.index, |f| {
+                let shown = f.index(&s.list_global_memory()?);
+                Ok::<_, StoreError>(if_match.allows(&crate::cas::tag_of(shown.as_bytes())))
+            })?;
+            Ok(written.then(|| IndexResponse {
                 index: body.index,
                 root_dir: f.dir().display().to_string(),
             }))
         })
-        .await?;
+        .await?
+        .ok_or_else(crate::cas::changed)?;
     announce(&state.store, change("index", json!({})));
-    Ok(res)
+    let tag = crate::cas::tag_of(res.index.as_bytes());
+    Ok((crate::cas::etag(&tag), ApiJson(res)))
 }
 
 #[derive(Debug, Deserialize)]

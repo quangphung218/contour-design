@@ -252,6 +252,7 @@ messages! {
     TranscriptFailed => "Could not download the conversation: {0}", "Không tải được cuộc trò chuyện: {0}";
     SessionModeFailed => "Could not change the mode: {0}", "Không đổi được chế độ: {0}";
     MemoryFailed => "Could not update the memory: {0}", "Không cập nhật được bộ nhớ: {0}";
+    MemoryIndexLoadFailed => "Could not load the index: {0}", "Không tải được mục lục: {0}";
     FileCreateFailed => "Could not create the file: {0}", "Không tạo được file: {0}";
     FolderCreateFailed => "Could not create the folder: {0}", "Không tạo được thư mục: {0}";
     RenameFailed => "Could not rename: {0}", "Không đổi tên được: {0}";
@@ -1268,7 +1269,8 @@ messages! {
     SourceReviewFailed => "Could not load the source: {0}", "Không tải được bản nguồn: {0}";
     UndoRestore => "Undo restore", "Hoàn tác khôi phục";
     RestoreUndone => "Restore undone.", "Đã hoàn tác khôi phục.";
-    SkillChangedSinceEdit => "This skill changed since you opened Edit. Save anyway writes over it; Cancel shows the new copy.", "Skill đã đổi từ lúc mở Edit. Vẫn lưu sẽ ghi đè bản đó; Huỷ để xem bản mới.";
+    ChangedElsewhere => "Changed elsewhere since you opened it. Reload shows the new copy and drops what you typed; Save anyway writes over it.", "Đã bị sửa ở nơi khác từ lúc mở. Tải lại để xem bản mới, phần đang gõ sẽ mất; Vẫn lưu sẽ ghi đè bản đó.";
+    ReloadNewCopy => "Reload", "Tải lại";
     SaveAnyway => "Save anyway", "Vẫn lưu";
     FilesToCopy => "Files to copy", "Các file sẽ chép";
     ShowCommand => "Show the command", "Hiện lệnh";

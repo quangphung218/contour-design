@@ -338,14 +338,90 @@ try {
   await page.getByTestId('memory-import-save').click();
   await page.getByTestId('memory-import-status').getByText('Saved 1 memories.').waitFor();
   await until(async () => (await page.getByTestId('global-memory-item').count()) === 1, 'imported entry listed');
+  // The index read first fails, then comes late: until it lands the
+  // editor takes no typing and Save is off, so no draft exists without
+  // the tag of the index it started from (it could only write blind).
+  const indexUrl = `${BASE}/api/memory/index`;
+  await page.route(indexUrl, (route) => (route.request().method() === 'GET'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' })
+    : route.fallback()), { times: 1 });
   await page.getByTestId('memory-index-open').click();
   const index = page.getByTestId('memory-index-text');
+  await page.getByTestId('memory-index-load-failed').waitFor();
+  assert.equal(await index.evaluate((el) => el.readOnly), true, 'no typing while the index is not read');
+  assert.equal(await page.getByTestId('memory-index-save').isDisabled(), true, 'no Save while the index is not read');
+  let releaseFirst;
+  const firstHeld = new Promise((r) => (releaseFirst = r));
+  let firstAsked = false;
+  await page.route(indexUrl, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    firstAsked = true;
+    await firstHeld;
+    return route.continue();
+  }, { times: 1 });
+  await page.getByTestId('memory-index-retry').click();
+  await until(async () => firstAsked, 'Try again reads the index');
+  await index.press('x');
+  assert.equal(await page.getByTestId('memory-index-dirty').count(), 0, 'a key typed before the read lands makes no draft');
+  assert.equal(await index.evaluate((el) => el.readOnly), true);
+  releaseFirst();
+  await until(async () => !(await index.evaluate((el) => el.readOnly)), 'the editor takes typing once the index is read');
+  assert.equal(await page.getByTestId('memory-index-load-failed').count(), 0, 'the error goes');
   await until(async () => (await index.inputValue()).includes('No emoji icons'), 'index lists the entry');
   await index.fill((await index.inputValue()).split('\n').filter((l) => !l.includes('No emoji icons')).join('\n'));
   await page.getByTestId('memory-index-dirty').waitFor();
   await page.getByTestId('memory-index-save').click();
   await page.getByTestId('memory-index-saved').waitFor();
   assert.ok(!(await api('/api/memory/index')).index.includes('No emoji icons'));
+  // A memory learnt while the index is being edited links itself in:
+  // Save writes nothing and asks, keeping the draft; Reload shows the
+  // index with it; Save anyway writes the draft.
+  await index.fill('# Drafted while a memory was learnt\n');
+  const learnt = await api('/api/memory', { method: 'POST', body: JSON.stringify({ kind: 'rule', text: 'Learnt under the draft' }) });
+  await page.getByTestId('memory-index-save').click();
+  await page.getByTestId('memory-index-save-changed').waitFor();
+  assert.equal(await index.inputValue(), '# Drafted while a memory was learnt\n', 'a 412 keeps the draft');
+  assert.ok((await api('/api/memory/index')).index.includes('Learnt under the draft'), 'nothing written over it');
+  await page.getByTestId('memory-index-save-reload').click();
+  await until(async () => (await index.inputValue()).includes('Learnt under the draft'), 'Reload shows the index now');
+  await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'memory-index-text', 'Reload gives the focus to the text');
+  assert.equal(await page.getByTestId('memory-index-save-changed').count(), 0);
+  const kept = await index.inputValue();
+  await index.fill(`${kept}\n`);
+  const again = await api('/api/memory', { method: 'POST', body: JSON.stringify({ kind: 'rule', text: 'Learnt again' }) });
+  await page.getByTestId('memory-index-save').click();
+  await page.getByTestId('memory-index-save-anyway').click();
+  await page.getByTestId('memory-index-saved').waitFor();
+  assert.equal((await api('/api/memory/index')).index, `${kept}\n`, 'Save anyway writes the draft');
+  // The two learnt here go, so the list counts as before.
+  for (const m of [learnt, again]) await api(`/api/memory/${m.memory.id}`, { method: 'DELETE' });
+  await until(async () => (await page.getByTestId('global-memory-item').count()) === 1, 'the two learnt here are gone');
+  // A read of the index on its way as the first key is typed (a memory
+  // added here reads the index again): the draft keeps the tag of the
+  // index it started from, so its Save still finds the index changed.
+  let releaseRead;
+  const readHeld = new Promise((r) => (releaseRead = r));
+  let readAsked = false;
+  const indexRoute = `${BASE}/api/memory/index`;
+  await page.route(indexRoute, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    readAsked = true;
+    await readHeld;
+    await route.continue();
+  }, { times: 1 });
+  await page.getByTestId('global-memory-text').fill('Added while the index is read');
+  await page.getByTestId('global-memory-add').click();
+  await until(async () => readAsked, 'the index is being read again');
+  await index.fill('# Typed while a read was on its way\n');
+  const readLanded = page.waitForResponse((r) => r.url() === indexRoute && r.request().method() === 'GET');
+  releaseRead();
+  await readLanded;
+  await page.getByTestId('memory-index-save').click();
+  await page.getByTestId('memory-index-save-changed').waitFor();
+  assert.ok((await api('/api/memory/index')).index.includes('Added while the index is read'), 'the late read does not let the draft write over it');
+  await page.getByTestId('memory-index-save-reload').click();
+  await page.getByTestId('global-memory-item').filter({ hasText: 'Added while the index is read' }).getByRole('button', { name: 'Delete' }).click();
+  await until(async () => (await page.getByTestId('global-memory-item').count()) === 1, 'the one added here is gone');
   await shot('settings-memory', async () => page.getByTestId('memory-controls').scrollIntoViewIfNeeded());
   await page.getByTestId('memory-enabled').uncheck();
   await page.getByTestId('memory-off').waitFor();

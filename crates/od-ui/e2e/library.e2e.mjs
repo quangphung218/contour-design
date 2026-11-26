@@ -273,6 +273,27 @@ try {
   await page.getByTestId('ds-md-save').click();
   await page.getByTestId('ds-md').locator('h1', { hasText: 'Airbnb copy' }).waitFor();
   assert.ok(readFileSync(join(data, 'design-systems', 'airbnb-copy', 'DESIGN.md'), 'utf8').includes('#ff5a5f'));
+  // Written under the open editor (an agent, an accepted revision): Save
+  // writes nothing and asks, keeping what is typed; Reload opens it on
+  // the file as it is now; Save anyway writes what is typed.
+  const designMd = join(data, 'design-systems', 'airbnb-copy', 'DESIGN.md');
+  await page.getByTestId('ds-md-edit').click();
+  await editor.fill('# Typed in the editor\n');
+  writeFileSync(designMd, '# Written by an agent\n');
+  await page.getByTestId('ds-md-save').click();
+  await page.getByTestId('ds-md-save-changed').waitFor();
+  assert.equal(await editor.inputValue(), '# Typed in the editor\n', 'a 412 keeps what is typed');
+  assert.equal(readFileSync(designMd, 'utf8'), '# Written by an agent\n', 'nothing written');
+  await page.getByTestId('ds-md-save-reload').click();
+  await until(async () => (await editor.inputValue()) === '# Written by an agent\n', 'Reload opens the editor on the file now');
+  await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'ds-md-editor', 'Reload gives the focus to the editor');
+  assert.equal(await page.getByTestId('ds-md-save-changed').count(), 0);
+  await editor.fill('# Airbnb copy\n\n## Color\n\n- **Coral** `#ff5a5f`\n- **Ink** `#222222`\n');
+  writeFileSync(designMd, '# Written again\n');
+  await page.getByTestId('ds-md-save').click();
+  await page.getByTestId('ds-md-save-anyway').click();
+  await page.getByTestId('ds-md').locator('h1', { hasText: 'Airbnb copy' }).waitFor();
+  assert.ok(readFileSync(designMd, 'utf8').includes('#ff5a5f'), 'Save anyway writes what is typed');
   results.edit = 'ok';
 
   // Upload a logo (U opens the picker), then delete it with Backspace.
@@ -524,9 +545,25 @@ try {
   await page.getByTestId('skill-body').waitFor();
   await page.getByTestId('skill-edit').click();
   await page.getByTestId('override-notice').waitFor();
+  // An agent's shell writes an override of it while the form is open (the
+  // daemon not told): Save writes nothing and asks; Reload opens the form
+  // on the agent's override; a Save from there writes.
+  const overrideMd = join(data, 'skills', skillId, 'SKILL.md');
+  await page.getByTestId('skill-description').fill('Typed over a bundled skill.');
+  mkdirSync(join(data, 'skills', skillId), { recursive: true });
+  writeFileSync(overrideMd, `---\nname: ${skillId}\ndescription: The agent's.\n---\nWritten by an agent.\n`);
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.equal(await page.getByTestId('skill-description').inputValue(), 'Typed over a bundled skill.', 'a 412 keeps what is typed');
+  assert.match(readFileSync(overrideMd, 'utf8'), /Written by an agent\./, "the agent's override stays");
+  await page.getByTestId('skill-save-reload').click();
+  await until(async () => /Written by an agent\./.test(await page.getByTestId('skill-body-input').inputValue()), "Reload shows the agent's override");
+  assert.equal(await page.getByTestId('skill-save-changed').count(), 0, 'and asks no more');
   await page.getByTestId('skill-description').fill('My override.');
   await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-form').waitFor({ state: 'detached' });
   await page.getByTestId('skill-delete').waitFor();
+  assert.match(readFileSync(overrideMd, 'utf8'), /My override\./, 'the Save after Reload writes');
   assert.ok(existsSync(join(data, 'skills', skillId, 'SKILL.md')), 'override saved');
   // The delete's reply is held until the next skill is saved and open, as
   // on a busy machine (CI): the late reply must not close that skill.
@@ -931,7 +968,7 @@ try {
   assert.equal(await agentRow('tea-c').getByTestId('agent-skill-review').count(), 0, 'unchanged: no Review');
   await closeDialog();
   // Edited in Contour, and at its source (a zero-width space and a tag).
-  await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Edited in Contour.' }) });
+  await api('/api/skills/tea-c', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Edited in Contour.' }) });
   const edited = readFileSync(join(teaCopy, 'SKILL.md'));
   // Long enough that the review runs past the list.
   writeFileSync(join(teaSource, 'SKILL.md'), `---\nname: tea-c\ndescription: Tea labels.\n---\nUse\u200B kraft\u{E0041} paper.\n${'A line of tea notes.\n'.repeat(80)}`);
@@ -1035,6 +1072,13 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'BUTTON');
   assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'a failed replace writes nothing');
   await page.unroute(replaceRoute);
+  // Called off after the failure: its error goes with the review, not
+  // left under the row (read out again as an alert).
+  await sourceReview.getByTestId('source-review-cancel').click();
+  await sourceReview.waitFor({ state: 'detached' });
+  assert.equal(await agentRow('tea-c').getByTestId('agent-skill-replace-error').count(), 0, 'Cancel takes the failed replace\'s error away');
+  await agentRow('tea-c').getByTestId('agent-skill-review').click();
+  await sourceReview.waitFor();
   // Replace: the source copied, the edited copy kept, the row the same now.
   await sourceReview.getByTestId('source-review-replace').click();
   await agentRow('tea-c').getByTestId('agent-skill-replaced').waitFor();
@@ -1055,6 +1099,7 @@ try {
   assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')), 'a Save does not write over the replace');
   assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed while it was replaced.');
   await page.getByTestId('skill-save-anyway').waitFor();
+  await page.getByTestId('skill-save-reload').waitFor();
   await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
   await until(async () => /kraft/.test(await page.getByTestId('skill-body').textContent()), 'closed, the form shows the replaced skill');
   // Restore from the skill: back byte for byte. A skill never replaced
@@ -1100,6 +1145,37 @@ try {
   await until(async () => (await restoreBtn.textContent()).trim() === 'Undo restore', 'Restore reads Undo restore');
   // A second Enter while it ran was dropped: restored once, not swapped back.
   assert.deepEqual(readFileSync(join(data, 'skills', '.previous', 'tea-c', 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')));
+  // Undo restore: swapped back to the source's copy, and it says so; the
+  // button offers the restore again. Pressed once more, the copy edited
+  // in Contour is back and the button reads Undo restore again.
+  const restoredNote = page.getByTestId('skill-restored');
+  const noteIs = (text) => async () => (await restoredNote.count()) === 1 && (await restoredNote.textContent()).trim() === text;
+  await restoreBtn.click();
+  await until(noteIs('Restore undone.'), 'Undo restore says the restore is undone');
+  await until(async () => (await restoreBtn.textContent()).trim() === 'Restore previous version', 'Restore offered again after the undo');
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')), 'undone byte for byte');
+  await restoreBtn.click();
+  await until(noteIs('Previous version restored.'), 'restored again');
+  await until(async () => (await restoreBtn.textContent()).trim() === 'Undo restore', 'Undo restore again');
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'restored again byte for byte');
+  // Replaced from its source in the dialog over this page: the page reads
+  // the skill again, so the button no longer offers to undo a restore it
+  // would not undo (it would bring back the copy edited in Contour).
+  await openAgentCli();
+  await agentRow('tea-c').getByTestId('agent-skill-differs').waitFor();
+  await agentRow('tea-c').getByTestId('agent-skill-review').click();
+  await sourceReview.waitFor();
+  await sourceReview.getByTestId('source-review-replace').click();
+  await agentRow('tea-c').getByTestId('agent-skill-replaced').waitFor();
+  await closeDialog();
+  await until(async () => (await restoreBtn.textContent()).trim() === 'Restore previous version', 'a replace under the page resets Undo restore');
+  assert.equal(await restoredNote.count(), 0, 'the note of the last restore goes');
+  await until(async () => /kraft/.test(await page.getByTestId('skill-body').textContent()), 'the page shows the skill replaced');
+  // Restore now brings back the copy edited in Contour, as it says.
+  await restoreBtn.click();
+  await until(noteIs('Previous version restored.'), 'restored after the replace');
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'the copy edited in Contour is back');
+  await until(async () => (await restoreBtn.textContent()).trim() === 'Undo restore', 'Undo restore after it');
   // Edit opens on the copy restored. Saved, the skill is read again: Edit
   // waits for that read (held here), so the form never opens on the copy
   // before the save; then it opens on what was saved.
@@ -1131,8 +1207,29 @@ try {
   assert.match(await page.getByTestId('skill-body-input').inputValue(), /Saved after the restore\./, 'the form opens on what was saved');
   // Changed under the open form (another window): Save asks, and
   // "Save anyway" writes what is typed.
+  // "Reload" opens the form again on the copy there now.
+  await page.getByTestId('skill-body-input').fill('Typed, then reloaded.');
+  await api('/api/skills/tea-c', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed in another window.' }) });
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed, then reloaded.', 'a 412 keeps what is typed');
+  assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Changed in another window\./, 'nothing written');
+  await page.getByTestId('skill-save-reload').click();
+  await until(async () => /Changed in another window\./.test(await page.getByTestId('skill-body-input').inputValue()), 'Reload shows the copy there now');
+  await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'skill-body-input', 'Reload gives the focus to the text');
+  assert.equal(await page.getByTestId('skill-save-changed').count(), 0, 'and asks no more');
+  // An agent writes the file itself (no daemon in between) under the
+  // form: the Save still finds it changed.
+  await page.getByTestId('skill-body-input').fill('Typed over an agent.');
+  writeFileSync(join(teaCopy, 'SKILL.md'), '---\nname: tea-c\ndescription: Mine.\n---\nAn agent wrote this.\n');
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /An agent wrote this\./, 'the agent\'s file stays');
+  await page.getByTestId('skill-save-reload').click();
+  await until(async () => /An agent wrote this\./.test(await page.getByTestId('skill-body-input').inputValue()), 'Reload shows the file the agent wrote');
+  assert.equal(await page.getByTestId('skill-save-changed').count(), 0, 'reloaded');
   await page.getByTestId('skill-body-input').fill('Typed over a change.');
-  await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed elsewhere.' }) });
+  await api('/api/skills/tea-c', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed elsewhere.' }) });
   await page.getByTestId('skill-save').click();
   await page.getByTestId('skill-save-changed').waitFor();
   assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Changed elsewhere\./, 'nothing written yet');
@@ -1230,10 +1327,15 @@ try {
   assert.deepEqual(squeezed, [], 'the warning text has its own line and the buttons sit under it');
   await review.getByRole('button', { name: 'Cancel' }).click();
   await review.waitFor({ state: 'detached' });
+  assert.equal(await focusedId(), 'skill-export', 'Cancel gives the focus back to the copy button');
   await exportButton.click();
+  // The review goes as the copy starts: the focus goes to the copy
+  // button, not the page's body, and stays there while it runs.
   await page.getByTestId('skill-export-confirm').click();
+  assert.equal(await focusedId(), 'skill-export', 'the focus goes to the copy button');
   const command = page.getByTestId('skill-export-cmd');
   await command.waitFor();
+  assert.equal(await focusedId(), 'skill-export', 'and stays there once it is done');
   assert.equal(await command.textContent(), commandFor('tea-photos'));
   await page.getByTestId('skill-export-copy-command').click();
   await until(async () => (await page.evaluate(() => navigator.clipboard.readText())) === commandFor('tea-photos'), 'the command copied');
@@ -1396,7 +1498,7 @@ try {
   assert.match(await desk.getByTestId('skill-export-skill-md').textContent(), /Use cream\./);
   assert.equal((await desk.getByTestId('skill-export-confirm').textContent()).trim(), 'Copy to Claude Code');
   // An agent edits the skill over loopback while the user reads.
-  await api('/api/skills/desk-tea', { method: 'PUT', body: JSON.stringify({ name: 'Desk tea', description: 'Desk tea.', body: 'PROBE: print PING' }) });
+  await api('/api/skills/desk-tea', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'Desk tea', description: 'Desk tea.', body: 'PROBE: print PING' }) });
   await desk.getByTestId('skill-export-confirm').click();
   const changedNote = desk.getByTestId('skill-export-changed');
   await changedNote.waitFor();

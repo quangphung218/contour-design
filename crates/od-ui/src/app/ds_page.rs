@@ -8,7 +8,9 @@
 use super::ds_create::CreateFlow;
 use super::export_menu::download;
 use super::icons::{Glyph, icon};
-use super::lib_ui::{Modal, copy_text, picked_files, query_param, size_label, upload};
+use super::lib_ui::{
+    ChangedElsewhere, Modal, copy_text, picked_files, query_param, size_label, upload,
+};
 use super::tasks::{Tasks, live};
 use super::{Shell, api};
 use crate::i18n::{T, t, tf};
@@ -485,6 +487,13 @@ fn DsDetail(
     let tab = RwSignal::new(KitTab::Kit);
     let notice = RwSignal::new(None::<Result<String, String>>);
     let editing = RwSignal::new(None::<String>);
+    // The tag (`ETag`) of the kit shown, and of the one the editor opened
+    // on: its Save goes only over that DESIGN.md (`If-Match`). Changed
+    // since (an agent, an accepted revision, another window), nothing is
+    // written and the editor asks (`md_changed`), keeping what is typed.
+    let kit_tag = StoredValue::new(None::<String>);
+    let edit_tag = StoredValue::new(None::<String>);
+    let md_changed = RwSignal::new(false);
     // E (or Edit) pressed before the kit loaded.
     let edit_on_load = RwSignal::new(false);
     let feedback_open = RwSignal::new(false);
@@ -500,18 +509,20 @@ fn DsDetail(
         move || {
             let id = id.clone();
             detail.spawn(async move {
-                let res = api::get::<Kit>(&ds_url(&id, "kit"))
+                let res = api::get_tagged::<Kit>(&ds_url(&id, "kit"))
                     .await
                     .map_err(|e| e.to_string());
                 let running = res
                     .as_ref()
-                    .is_ok_and(|k| k.revisions.iter().any(|r| r.status == "running"));
-                kit.set(Some(res));
+                    .is_ok_and(|k| k.value.revisions.iter().any(|r| r.status == "running"));
+                kit_tag.set_value(res.as_ref().ok().and_then(|k| k.tag.clone()));
+                kit.set(Some(res.map(|k| k.value)));
                 if running {
                     gloo_timers::future::TimeoutFuture::new(POLL_MS).await;
                     // Refetch until the agent's revision is ready.
-                    if let Ok(k) = api::get::<Kit>(&ds_url(&id, "kit")).await {
-                        kit.set(Some(Ok(k)));
+                    if let Ok(k) = api::get_tagged::<Kit>(&ds_url(&id, "kit")).await {
+                        kit_tag.set_value(k.tag);
+                        kit.set(Some(Ok(k.value)));
                     }
                 }
             });
@@ -544,6 +555,8 @@ fn DsDetail(
         });
         if let Some(body) = body {
             edit_on_load.set(false);
+            edit_tag.set_value(kit_tag.get_value());
+            md_changed.set(false);
             editing.set(Some(body));
         }
     });
@@ -594,29 +607,67 @@ fn DsDetail(
             });
             tab.set(KitTab::Design);
             match body {
-                Some(body) => editing.set(Some(body)),
+                Some(body) => {
+                    edit_tag.set_value(kit_tag.get_value());
+                    md_changed.set(false);
+                    editing.set(Some(body));
+                }
                 // Still loading: the editor opens once the kit is in.
                 None => edit_on_load.set(true),
             }
         }
     };
+    // `force` ("Save anyway") writes over a DESIGN.md changed since.
     let save_edit = {
         let id = id.clone();
         let load = load.clone();
-        move || {
+        move |force: bool| {
             let Some(body) = editing.get_untracked() else {
                 return;
             };
             let id = id.clone();
             let load = load.clone();
+            let tag = if force {
+                Some(api::ANY.to_owned())
+            } else {
+                edit_tag.get_value()
+            };
+            // No tag (the kit came without one): nothing is sent; the
+            // editor asks as for a changed file.
+            let Some(tag) = tag else {
+                md_changed.set(true);
+                return;
+            };
             detail.spawn(async move {
-                match api::put::<_, Value>(&ds_url(&id, "design-md"), &json!({ "body": body }))
-                    .await
-                {
+                let url = ds_url(&id, "design-md");
+                match api::put_if_match::<_, Value>(&url, &json!({ "body": body }), &tag).await {
                     Ok(_) => {
+                        md_changed.set(false);
                         editing.set(None);
                         say(Ok(t(T::Saved).to_owned()));
                         load();
+                    }
+                    Err(e) if e.changed_since() => md_changed.set(true),
+                    Err(e) => say(Err(api::failure(T::MdSaveFailed, &e))),
+                }
+            });
+        }
+    };
+    // "Reload" in an editor that found DESIGN.md changed: it opens again
+    // on the file as it is now (what was typed goes, as asked).
+    let reload_edit = {
+        let id = id.clone();
+        move || {
+            let id = id.clone();
+            detail.spawn(async move {
+                match api::get_tagged::<Kit>(&ds_url(&id, "kit")).await {
+                    Ok(k) => {
+                        kit_tag.set_value(k.tag.clone());
+                        edit_tag.set_value(k.tag);
+                        md_changed.set(false);
+                        editing.set(Some(k.value.body.clone()));
+                        kit.set(Some(Ok(k.value)));
+                        super::focus::focus_testid_next_frame("ds-md-editor");
                     }
                     Err(e) => say(Err(api::failure(T::MdSaveFailed, &e))),
                 }
@@ -1064,15 +1115,26 @@ fn DsDetail(
                     KitTab::Tokens => view! { <TokenTable tokens=k.tokens.clone()/> }.into_any(),
                     KitTab::Design => {
                         let save = save_edit.clone();
+                        let save_anyway = save_edit.clone();
+                        let reload_edit = reload_edit.clone();
                         match editing.get() {
                             Some(_) => view! {
                                 <div class="kit-editor">
                                     <textarea class="input mono" rows="22" data-testid="ds-md-editor" aria-label=t(T::DesignMd)
                                         prop:value=move || editing.get().unwrap_or_default()
                                         on:input=live(move |ev| editing.set(Some(event_target_value(&ev))))></textarea>
+                                    {move || md_changed.get().then(|| {
+                                        let save_anyway = save_anyway.clone();
+                                        let reload_edit = reload_edit.clone();
+                                        view! {
+                                            <ChangedElsewhere testid="ds-md-save"
+                                                on_reload=Callback::new(move |()| reload_edit())
+                                                on_save_anyway=Callback::new(move |()| save_anyway(true))/>
+                                        }
+                                    })}
                                     <div class="row end">
-                                        <button class="btn small ghost" on:click=move |_| editing.set(None)>{t(T::Cancel)}</button>
-                                        <button class="btn small primary" data-testid="ds-md-save" on:click=move |_| save()>{t(T::Save)}</button>
+                                        <button class="btn small ghost" on:click=move |_| { md_changed.set(false); editing.set(None); }>{t(T::Cancel)}</button>
+                                        <button class="btn small primary" data-testid="ds-md-save" on:click=move |_| save(false)>{t(T::Save)}</button>
                                     </div>
                                 </div>
                             }.into_any(),

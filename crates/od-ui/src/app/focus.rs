@@ -56,6 +56,23 @@ where
     });
 }
 
+/// On the next frame (once a view rebuilt from a signal set just now is
+/// in the page), focuses the element with `data-testid` `testid`, if any:
+/// a form opened again on new content (Reload) takes the focus back to
+/// its text.
+pub fn focus_testid_next_frame(testid: &'static str) {
+    request_animation_frame(move || {
+        if let Some(el) = document()
+            .query_selector(&format!("[data-testid=\"{testid}\"]"))
+            .ok()
+            .flatten()
+            .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok())
+        {
+            let _ = el.focus();
+        }
+    });
+}
+
 /// Call in a component that takes the focus while it is shown: when it
 /// unmounts and focus was left on nothing, it goes back to the element
 /// that had it when the component mounted.

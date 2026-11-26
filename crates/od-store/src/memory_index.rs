@@ -152,6 +152,26 @@ impl MemoryFiles {
         self.write_index_locked(index)
     }
 
+    /// Writes `index` only if `unchanged` (asked under the lock `link` and
+    /// `unlink` take, so no entry lands between) still holds: a Save of the
+    /// index editor goes only over the index it opened on. `Ok(false)`
+    /// when nothing was written.
+    ///
+    /// # Errors
+    /// What `unchanged` returns, I/O errors.
+    pub fn write_index_if<E: From<std::io::Error>>(
+        &self,
+        index: &str,
+        unchanged: impl FnOnce(&Self) -> Result<bool, E>,
+    ) -> Result<bool, E> {
+        let _g = self.guard();
+        if !unchanged(self)? {
+            return Ok(false);
+        }
+        self.write_index_locked(index)?;
+        Ok(true)
+    }
+
     fn write_index_locked(&self, index: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         write_atomic(&self.dir.join(INDEX_FILE), index.as_bytes())

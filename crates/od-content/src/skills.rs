@@ -30,6 +30,10 @@ pub struct SkillEntry {
     /// folder ships side files.
     pub body: String,
     pub dir: PathBuf,
+    /// The tag of the `SKILL.md` read ([`crate::user_content::skill_tag`]
+    /// of the same bytes): a `GET` that finds the file changed on disk
+    /// since reads the index again.
+    pub tag: String,
 }
 
 impl SkillEntry {
@@ -120,6 +124,7 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
     let raw =
         crate::nofollow::read_text(&dir.join("SKILL.md"), crate::nofollow::MAX_INDEX_FILE_BYTES)?;
     let (data, body) = frontmatter::parse(&raw).ok()?;
+    let tag = crate::user_content::tag_of(raw.as_bytes());
     let od = data.get("od").filter(|v| v.is_object());
     let od_get = |key: &str| od.and_then(|o| o.get(key));
     let od_get2 = |a: &str, b: &str| od_get(a).and_then(|v| v.get(b));
@@ -234,6 +239,7 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
             },
             body: full_body.clone(),
             dir: dir.to_path_buf(),
+            tag: tag.clone(),
         });
     }
     out.insert(
@@ -242,6 +248,7 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
             info: parent,
             body: full_body,
             dir: dir.to_path_buf(),
+            tag,
         },
     );
     Some(out)
