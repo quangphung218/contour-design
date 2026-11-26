@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Installing a skill again keeps the replaced copy for Restore; a failed replace keeps it too, and deleted skills stay deleted after a crash.
+
 ## [0.2.0-beta.69] - 2026-11-26
 
 ### Added

@@ -112,11 +112,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       reads an agent folder `local-sources` lists under that id (any other path is a 400), and
       `POST /api/skills/{id}/replace-from-source` takes the `hash` shown (`ExportFiles::read_copy`: what an install copies) and is
       refused as `changed` (409) with nothing written once the folder changed. The copy in Contour moves to
-      `<data>/skills/.previous/<id>` (`restore-previous` swaps it back, one level; a `.previous` that is a link is refused; `DELETE` drops it; what a restore cut short left in a `.swap-*` is put back, never removed); the index lists no hidden folder.
+      `<data>/skills/.previous/<id>` (`restore-previous` swaps it back, one level; a `.previous` that is a link is refused; `DELETE` drops it and every `.swap-<id>-*`/`.old-<id>-*` left; an install over a user skill keeps it there too; a failed replace keeps the copy kept before (set aside as `.old-*`, removed only once both land); what a replace or restore cut short left is put back, never removed, and one entry that cannot move is logged, never stops another skill); the index lists no hidden folder.
       `tests/library.rs::an_imported_skill_is_replaced_from_its_source_and_restored`;
       `../od-content/src/user_content.rs::a_replace_keeps_the_copy_in_contour_for_one_restore`,
       `::a_replace_writes_nothing_for_a_source_changed_or_renamed`, `::a_replace_follows_no_link_and_waits_on_no_fifo`,
-      `::only_a_listed_agent_folder_is_taken`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`
+      `::only_a_listed_agent_folder_is_taken`; `::a_replace_cut_short_at_any_step_loses_nothing`, `::a_restore_cut_short_at_any_step_loses_nothing`, `::a_replace_that_fails_keeps_the_copy_kept_before`, `::a_deleted_skill_never_comes_back_from_what_a_restore_left`, `::one_leftover_that_cannot_move_stops_nothing_else`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).

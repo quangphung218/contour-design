@@ -683,7 +683,9 @@ fn export_skill_with(
     Ok((dest, files))
 }
 
-/// Copies `source` into `<user_root>/<id>`, replacing an older copy: built
+/// Copies `source` into `<user_root>/<id>`, replacing an older copy (a
+/// plugin, or what is no skill folder: a skill folder goes through
+/// [`install_skill_with`], which keeps it): built
 /// in a hidden folder, then renamed into place. Nothing is left behind on
 /// failure.
 fn place_copy(source: &Path, user_root: &Path, id: &str) -> Result<(), WriteError> {
@@ -732,8 +734,35 @@ pub fn install_skill(
         return Err(WriteError::Exists(format!("skill {id:?}")));
     }
     refuse_case_twin(user_root, &id, "skill")?;
-    place_copy(source, user_root, &id)?;
+    install_skill_with(source, user_root, &id, &mut |from, to| {
+        std::fs::rename(from, to)
+    })?;
     Ok(id)
+}
+
+/// [`install_skill`] once the id is checked. A user skill `id` already
+/// there is kept as a replace keeps it ([`swap_in`]): in `.previous/<id>`,
+/// for one restore.
+fn install_skill_with(
+    source: &Path,
+    user_root: &Path,
+    id: &str,
+    rename: Rename<'_>,
+) -> Result<(), WriteError> {
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(current) = user_skill_dir(user_root, id) else {
+        return place_copy(source, user_root, id);
+    };
+    let held = previous_root(user_root)?;
+    let incoming = held.join(format!(".incoming-{id}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&incoming);
+    if let Err(e) = copy_dir(source, &incoming, MAX_PLUGIN_BYTES) {
+        let _ = std::fs::remove_dir_all(&incoming);
+        return Err(e);
+    }
+    swap_in(&held, id, &current, &incoming, rename)
 }
 
 /// The id and front matter of the skill in `source`: the front matter's
@@ -997,6 +1026,22 @@ pub fn replace_skill_from_source(
     id: &str,
     expected_hash: &str,
 ) -> Result<ExportFiles, WriteError> {
+    replace_skill_from_source_with(source, user_root, id, expected_hash, &mut |from, to| {
+        std::fs::rename(from, to)
+    })
+}
+
+/// How a replace, an install or a restore moves a folder: `std::fs::rename`,
+/// or in a test one that fails or stops (the app quitting) at a step.
+type Rename<'a> = &'a mut dyn FnMut(&Path, &Path) -> std::io::Result<()>;
+
+fn replace_skill_from_source_with(
+    source: &Path,
+    user_root: &Path,
+    id: &str,
+    expected_hash: &str,
+    rename: Rename<'_>,
+) -> Result<ExportFiles, WriteError> {
     if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
         return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
     }
@@ -1035,28 +1080,63 @@ pub fn replace_skill_from_source(
     let built = std::fs::create_dir(&incoming)
         .map_err(io)
         .and_then(|()| files.write_into(&incoming));
-    let undo_incoming = || {
-        let _ = std::fs::remove_dir_all(&incoming);
-    };
     if let Err(e) = built {
-        undo_incoming();
+        let _ = std::fs::remove_dir_all(&incoming);
         return Err(e);
     }
-    let previous = held.join(id);
-    if let Err(e) = remove_any(&previous) {
-        undo_incoming();
-        return Err(io(e));
-    }
-    if let Err(e) = std::fs::rename(&current, &previous) {
-        undo_incoming();
-        return Err(io(e));
-    }
-    if let Err(e) = std::fs::rename(&incoming, &current) {
-        let _ = std::fs::rename(&previous, &current);
-        undo_incoming();
-        return Err(io(e));
-    }
+    swap_in(&held, id, &current, &incoming, rename)?;
     Ok(files)
+}
+
+/// Puts `incoming` (a new copy built in `held`) in place of the user skill
+/// folder `current`, which moves to `held/<id>`. An older copy kept there
+/// is set aside (`.old-<id>-<pid>`) first and removed only once both have
+/// landed; on a failure everything goes back, so a failed replace keeps
+/// the copy a restore offers. Cut short (the app quit), the next replace,
+/// install or restore sorts it out ([`recover_cut_short`]). `incoming` is
+/// removed on a failure.
+fn swap_in(
+    held: &Path,
+    id: &str,
+    current: &Path,
+    incoming: &Path,
+    rename: Rename<'_>,
+) -> Result<(), WriteError> {
+    let undo_incoming = || {
+        let _ = std::fs::remove_dir_all(incoming);
+    };
+    let previous = held.join(id);
+    let old = held.join(format!(".old-{id}-{}", std::process::id()));
+    if std::fs::symlink_metadata(&old).is_ok() {
+        undo_incoming();
+        return Err(WriteError::Io(format!("{} is in the way", old.display())));
+    }
+    let had_previous = std::fs::symlink_metadata(&previous).is_ok();
+    if had_previous && let Err(e) = rename(&previous, &old) {
+        undo_incoming();
+        return Err(io(e));
+    }
+    if let Err(e) = rename(current, &previous) {
+        if had_previous {
+            let _ = rename(&old, &previous);
+        }
+        undo_incoming();
+        return Err(io(e));
+    }
+    if let Err(e) = rename(incoming, current) {
+        let _ = rename(&previous, current);
+        if had_previous {
+            let _ = rename(&old, &previous);
+        }
+        undo_incoming();
+        return Err(io(e));
+    }
+    // Landed: the older copy goes, as one level is kept. Left there, the
+    // next run removes it (both the skill and `held/<id>` are there).
+    if let Err(e) = remove_any(&old) {
+        tracing::warn!(path = %old.display(), error = %e, "older kept copy not removed");
+    }
+    Ok(())
 }
 
 /// Whether a copy taken out by [`replace_skill_from_source`] is kept for
@@ -1079,6 +1159,14 @@ pub fn has_previous_skill(user_root: &Path, id: &str) -> bool {
 /// [`WriteError::NotFound`] when no copy is kept, [`WriteError::BadRequest`]
 /// for an invalid id, [`WriteError::Io`].
 pub fn restore_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteError> {
+    restore_previous_skill_with(user_root, id, &mut |from, to| std::fs::rename(from, to))
+}
+
+fn restore_previous_skill_with(
+    user_root: &Path,
+    id: &str,
+    rename: Rename<'_>,
+) -> Result<(), WriteError> {
     if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
         return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
     }
@@ -1098,7 +1186,7 @@ pub fn restore_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteErr
     let previous = held.join(id);
     let Some(current) = user_skill_dir(user_root, id) else {
         refuse_case_twin(user_root, id, "skill")?;
-        return std::fs::rename(&previous, user_root.join(id)).map_err(io);
+        return rename(&previous, &user_root.join(id)).map_err(io);
     };
     // Never removed: a swap left there is someone's only copy, and
     // `previous_root` has just put every one back.
@@ -1106,15 +1194,15 @@ pub fn restore_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteErr
     if std::fs::symlink_metadata(&swap).is_ok() {
         return Err(WriteError::Io(format!("{} is in the way", swap.display())));
     }
-    std::fs::rename(&current, &swap).map_err(io)?;
-    if let Err(e) = std::fs::rename(&previous, &current) {
-        let _ = std::fs::rename(&swap, &current);
+    rename(&current, &swap).map_err(io)?;
+    if let Err(e) = rename(&previous, &current) {
+        let _ = rename(&swap, &current);
         return Err(io(e));
     }
     // The user's copy is only in the swap until this lands: tried twice,
     // and left for the next replace or restore to put back if both fail.
-    if let Err(e) = std::fs::rename(&swap, &previous) {
-        std::fs::rename(&swap, &previous).map_err(|_| io(e))?;
+    if let Err(e) = rename(&swap, &previous) {
+        rename(&swap, &previous).map_err(|_| io(e))?;
     }
     Ok(())
 }
@@ -1143,51 +1231,127 @@ fn previous_root(user_root: &Path) -> Result<PathBuf, WriteError> {
     Ok(held)
 }
 
-/// Deals with what a replace or restore cut short left in `held`
+/// What a replace, install or restore leaves in `.previous` between its
+/// steps, by name, with the skill id it is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Left<'a> {
+    /// `.incoming-<id>-<pid>`: a new copy being put in place.
+    Incoming,
+    /// `.old-<id>-<pid>`: the copy kept before, set aside by [`swap_in`].
+    Old(&'a str),
+    /// `.swap-<id>-<pid>`: the user skill a restore took out.
+    Swap(&'a str),
+    /// `.swap-<id>-<pid>-kept`, `…-kept2`…: a swap with nowhere to go.
+    Kept(&'a str),
+}
+
+fn left_by(name: &str) -> Option<Left<'_>> {
+    // `<id>-<pid>`: an id (`-` allowed) and a pid, digits only.
+    fn id_of(rest: &str) -> Option<&str> {
+        let (id, pid) = rest.rsplit_once('-')?;
+        (valid_skill_id(id) && !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
+            .then_some(id)
+    }
+    if name.starts_with(".incoming-") {
+        return Some(Left::Incoming);
+    }
+    if let Some(rest) = name.strip_prefix(".old-") {
+        return id_of(rest).map(Left::Old);
+    }
+    let rest = name.strip_prefix(".swap-")?;
+    if let Some((head, tail)) = rest.rsplit_once('-')
+        && let Some(n) = tail.strip_prefix("kept")
+        && n.bytes().all(|b| b.is_ascii_digit())
+    {
+        return id_of(head).map(Left::Kept);
+    }
+    id_of(rest).map(Left::Swap)
+}
+
+/// Deals with what a replace, install or restore cut short left in `held`
 /// (`.previous`), never deleting a copy that may be the user's only one:
 ///
-/// - `.incoming-<id>-<pid>`: a copy of an agent CLI folder being put in
-///   place. The folder is still there: removed.
+/// - `.incoming-<id>-<pid>`: a copy of a source being put in place. The
+///   source is still there: removed.
+/// - `.old-<id>-<pid>`: the copy kept before a replace ([`swap_in`]). With
+///   the skill and `.previous/<id>` both there, the replace landed and it
+///   goes. With no skill, the replace stopped after moving the skill
+///   aside: `.previous/<id>` goes back as the skill. Then it goes back to
+///   `.previous/<id>`.
 /// - `.swap-<id>-<pid>`: the user skill a restore took out, between its
 ///   steps the only copy of it. Moved back to the user skill `<id>` when
 ///   there is none (the restore stopped after its first step), else to
 ///   `.previous/<id>` when that is free (it stopped after its second);
-///   with both there it is kept, renamed `….-kept`, never removed.
+///   with both there it is kept, renamed `….-kept` (`-kept2`… when taken),
+///   never removed. A swap that is no folder is left alone.
+///
+/// An entry that cannot be dealt with is logged and left: it never stops
+/// a replace or restore of any skill.
 fn recover_cut_short(user_root: &Path, held: &Path) -> Result<(), WriteError> {
     for entry in std::fs::read_dir(held).map_err(io)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
-        if name.starts_with(".incoming-") {
-            remove_any(&path).map_err(io)?;
-            continue;
-        }
-        let Some((id, pid)) = name
-            .strip_prefix(".swap-")
-            .and_then(|rest| rest.rsplit_once('-'))
-        else {
-            continue;
+        let done = match left_by(&name) {
+            Some(Left::Incoming) => remove_any(&path),
+            Some(Left::Old(id)) => recover_old(user_root, held, id, &path),
+            Some(Left::Swap(id)) => recover_swap(user_root, held, id, &name, &path),
+            Some(Left::Kept(_)) | None => Ok(()),
         };
-        if !valid_skill_id(id) || pid.is_empty() || !pid.bytes().all(|b| b.is_ascii_digit()) {
-            continue;
+        if let Err(e) = done {
+            tracing::warn!(path = %path.display(), error = %e, "left from a replace cut short, kept as is");
         }
-        let to = if entry_like(user_root, id).ok().flatten().is_none() {
-            user_root.join(id)
-        } else if std::fs::symlink_metadata(held.join(id)).is_err() {
-            held.join(id)
-        } else {
-            held.join(format!("{name}-kept"))
-        };
-        std::fs::rename(&path, &to).map_err(io)?;
     }
     Ok(())
 }
 
+fn recover_old(user_root: &Path, held: &Path, id: &str, old: &Path) -> std::io::Result<()> {
+    let previous = held.join(id);
+    let skill = entry_like(user_root, id).ok().flatten().is_some();
+    let kept = std::fs::symlink_metadata(&previous).is_ok();
+    match (skill, kept) {
+        (true, true) => remove_any(old),
+        (false, true) => {
+            std::fs::rename(&previous, user_root.join(id))?;
+            std::fs::rename(old, &previous)
+        }
+        (_, false) => std::fs::rename(old, &previous),
+    }
+}
+
+fn recover_swap(
+    user_root: &Path,
+    held: &Path,
+    id: &str,
+    name: &str,
+    swap: &Path,
+) -> std::io::Result<()> {
+    if !std::fs::symlink_metadata(swap)?.is_dir() {
+        return Err(std::io::Error::other("not a folder"));
+    }
+    let to = if entry_like(user_root, id).ok().flatten().is_none() {
+        user_root.join(id)
+    } else if std::fs::symlink_metadata(held.join(id)).is_err() {
+        held.join(id)
+    } else {
+        (1..=100)
+            .map(|n| {
+                let n = if n == 1 { String::new() } else { n.to_string() };
+                held.join(format!("{name}-kept{n}"))
+            })
+            .find(|p| std::fs::symlink_metadata(p).is_err())
+            .ok_or_else(|| std::io::Error::other("no free -kept name"))?
+    };
+    std::fs::rename(swap, to)
+}
+
 /// Drops the copy kept for the user skill `id` (the skill is deleted: a
-/// new skill of that id must not offer to restore it). Nothing kept is
+/// new skill of that id must not offer to restore it), and what a
+/// replace or restore of it cut short left (`.swap-<id>-…`, `.old-<id>-…`:
+/// else the next run would bring the deleted skill back). Nothing kept is
 /// fine; a `.previous` that is a link is left alone.
 ///
 /// # Errors
-/// [`WriteError::Io`].
+/// [`WriteError::Io`], once every entry of `id` was tried.
 pub fn forget_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteError> {
     if !valid_skill_id(id) {
         return Ok(());
@@ -1199,7 +1363,18 @@ pub fn forget_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteErro
     if !std::fs::symlink_metadata(&held).is_ok_and(|m| m.is_dir()) {
         return Ok(());
     }
-    remove_any(&held.join(id)).map_err(io)
+    let mut failed = remove_any(&held.join(id)).err();
+    for entry in std::fs::read_dir(&held).map_err(io)?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let of_id = matches!(
+            left_by(&name),
+            Some(Left::Old(i) | Left::Swap(i) | Left::Kept(i)) if i == id
+        );
+        if of_id && let Err(e) = remove_any(&entry.path()) {
+            failed.get_or_insert(e);
+        }
+    }
+    failed.map_or(Ok(()), |e| Err(io(e)))
 }
 
 /// An id a skill folder can have: letters, digits and `-`, not hidden.
@@ -1419,7 +1594,10 @@ mod tests {
         let text = std::fs::read_to_string(user.join("tea-house/SKILL.md")).unwrap();
         assert!(text.contains("Use green."));
         assert!(!user.join("tea-house/assets/tokens.css").exists());
-        assert_eq!(names(&user), ["tea-house"]);
+        // The copy replaced is kept for one restore, hidden from the index.
+        assert_eq!(names(&user), [".previous", "tea-house"]);
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea-house"]);
+        assert!(user.join(".previous/tea-house/assets/tokens.css").is_file());
     }
 
     #[test]
@@ -2711,5 +2889,246 @@ mod tests {
         restore_previous_skill(&user, "tea").unwrap();
         assert!(kept.join("notes.md").is_file());
         assert_eq!(names(&user.join(PREVIOUS_DIR)), [".swap-tea-7-kept", "tea"]);
+    }
+
+    /// A rename that fails at the steps in `fail` (1-based, counted over
+    /// the run), and stops the run there as the app quitting would at
+    /// step `stop` (before it is done).
+    fn steps(
+        fail: &'static [usize],
+        stop: usize,
+    ) -> impl FnMut(&Path, &Path) -> std::io::Result<()> {
+        let mut n = 0;
+        move |from, to| {
+            n += 1;
+            assert!(n != stop, "quit at step {stop}");
+            if fail.contains(&n) {
+                return Err(std::io::Error::other(format!("step {n} failed")));
+            }
+            std::fs::rename(from, to)
+        }
+    }
+
+    /// `tea` replaced once: `.previous/tea` is the first copy (`A`), and
+    /// `tea` is edited after (`B`, the user's only copy of it). The source
+    /// then changed (`N`).
+    fn replaced_and_edited(tmp: &Path) -> (PathBuf, PathBuf, Snapshot, Snapshot) {
+        let (source, user, a, b) = cut_short_restore(tmp);
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNewer.\n").unwrap();
+        (source, user, a, b)
+    }
+
+    fn tea_and_kept(user: &Path) -> (Snapshot, Snapshot) {
+        (
+            snapshot(&user.join("tea")),
+            snapshot(&user.join(".previous/tea")),
+        )
+    }
+
+    /// A replace that fails at any of its renames leaves both copies as
+    /// they were: the kept one too (it was removed first, before #346).
+    #[test]
+    fn a_replace_that_fails_keeps_the_copy_kept_before() {
+        for step in [1, 2, 3] {
+            let tmp = tempfile::tempdir().unwrap();
+            let (source, user, a, b) = replaced_and_edited(tmp.path());
+            let fail: &'static [usize] = match step {
+                1 => &[1],
+                2 => &[2],
+                _ => &[3],
+            };
+            let hash = hash_of_copy(&source);
+            assert!(
+                replace_skill_from_source_with(&source, &user, "tea", &hash, &mut steps(fail, 0))
+                    .is_err(),
+                "step {step}"
+            );
+            assert_eq!(tea_and_kept(&user), (b, a), "step {step}");
+            assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"], "step {step}");
+        }
+    }
+
+    /// The same on a real file system: the skill cannot move out of
+    /// `<data>/skills` (read-only), `.previous` can be written.
+    #[cfg(unix)]
+    #[test]
+    fn a_replace_that_cannot_move_the_skill_keeps_the_copy_kept_before() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let (source, user, a, b) = replaced_and_edited(tmp.path());
+        std::fs::set_permissions(&user, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let done = replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source));
+        std::fs::set_permissions(&user, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(matches!(done, Err(WriteError::Io(_))));
+        assert_eq!(tea_and_kept(&user), (b, a));
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
+    }
+
+    /// The app quits before any step of a replace: what the next run finds
+    /// is the state before the replace or after it, nothing in between and
+    /// nothing left over.
+    #[test]
+    fn a_replace_cut_short_at_any_step_loses_nothing() {
+        for stop in 1..=4 {
+            let tmp = tempfile::tempdir().unwrap();
+            let (source, user, a, b) = replaced_and_edited(tmp.path());
+            let hash = hash_of_copy(&source);
+            let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                replace_skill_from_source_with(&source, &user, "tea", &hash, &mut steps(&[], stop))
+                    .unwrap();
+            }));
+            assert_eq!(quit.is_err(), stop <= 3, "step {stop}");
+            previous_root(&user).unwrap();
+            let now = tea_and_kept(&user);
+            let after = (snapshot(&source), b.clone());
+            assert!(now == (b.clone(), a.clone()) || now == after, "step {stop}");
+            assert_eq!(now == after, stop > 3, "step {stop}");
+            assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"], "step {stop}");
+            assert_eq!(names(&user), [".previous", "tea"], "step {stop}");
+        }
+        // Landed, then quit before the older copy went: the next run
+        // removes it, and only it.
+        let tmp = tempfile::tempdir().unwrap();
+        let (source, user, _, b) = replaced_and_edited(tmp.path());
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        std::fs::create_dir_all(user.join(".previous/.old-tea-9/x")).unwrap();
+        previous_root(&user).unwrap();
+        assert_eq!(tea_and_kept(&user), (snapshot(&source), b));
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
+    }
+
+    /// Install again over a user skill of that id: the copy there is kept
+    /// for one restore, as a replace keeps it; cut short at any step, the
+    /// next run finds it before or after.
+    #[test]
+    fn an_install_over_a_skill_keeps_it_for_one_restore() {
+        for stop in 1..=4 {
+            let tmp = tempfile::tempdir().unwrap();
+            let (source, user, a, b) = replaced_and_edited(tmp.path());
+            let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                install_skill_with(&source, &user, "tea", &mut steps(&[], stop)).unwrap();
+            }));
+            assert_eq!(quit.is_err(), stop <= 3, "step {stop}");
+            previous_root(&user).unwrap();
+            let now = tea_and_kept(&user);
+            let after = (snapshot(&source), b.clone());
+            assert_eq!(
+                now,
+                if stop > 3 {
+                    after
+                } else {
+                    (b.clone(), a.clone())
+                },
+                "step {stop}"
+            );
+            assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"], "step {stop}");
+        }
+        // Through `install_skill`, with no copy kept yet.
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        std::fs::write(user.join("tea/notes.md"), "mine").unwrap();
+        let mine = snapshot(&user.join("tea"));
+        install_skill(&source, &user, |_| false).unwrap();
+        assert_eq!(snapshot(&user.join("tea")), snapshot(&source));
+        assert_eq!(snapshot(&user.join(".previous/tea")), mine);
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), mine);
+    }
+
+    /// The app quits before any step of a restore: the next run finds the
+    /// state before or after it.
+    #[test]
+    fn a_restore_cut_short_at_any_step_loses_nothing() {
+        for stop in 1..=4 {
+            let tmp = tempfile::tempdir().unwrap();
+            let (_, user, a, b) = cut_short_restore(tmp.path());
+            let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                restore_previous_skill_with(&user, "tea", &mut steps(&[], stop)).unwrap();
+            }));
+            assert_eq!(quit.is_err(), stop <= 3, "step {stop}");
+            previous_root(&user).unwrap();
+            let now = tea_and_kept(&user);
+            assert!(
+                now == (b.clone(), a.clone()) || now == (a.clone(), b.clone()),
+                "step {stop}"
+            );
+            assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"], "step {stop}");
+        }
+    }
+
+    /// The last step of a restore (the user's copy into `.previous`) is
+    /// tried twice: one failure is no failure; two leave the swap for the
+    /// next run, which puts it where it was going.
+    #[test]
+    fn a_restore_tries_its_last_step_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, user, a, b) = cut_short_restore(tmp.path());
+        restore_previous_skill_with(&user, "tea", &mut steps(&[3], 0)).unwrap();
+        assert_eq!(tea_and_kept(&user), (a.clone(), b.clone()));
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
+
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, user, a, b) = cut_short_restore(tmp.path());
+        assert!(restore_previous_skill_with(&user, "tea", &mut steps(&[3, 4], 0)).is_err());
+        assert_eq!(snapshot(&user.join("tea")), a);
+        assert!(!has_previous_skill(&user, "tea"));
+        previous_root(&user).unwrap();
+        assert_eq!(tea_and_kept(&user), (a, b));
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
+    }
+
+    /// A restore cut short after its second step, then the skill deleted:
+    /// what it left goes with it, and no later run brings it back.
+    #[test]
+    fn a_deleted_skill_never_comes_back_from_what_a_restore_left() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, user, _, _) = cut_short_restore(tmp.path());
+        let held = user.join(PREVIOUS_DIR);
+        std::fs::rename(user.join("tea"), held.join(".swap-tea-424242")).unwrap();
+        std::fs::rename(held.join("tea"), user.join("tea")).unwrap();
+        // Older leftovers of `tea` too, and one of another skill kept.
+        std::fs::create_dir_all(held.join(".swap-tea-7-kept/x")).unwrap();
+        std::fs::create_dir_all(held.join(".old-tea-8")).unwrap();
+        std::fs::create_dir_all(held.join(".swap-tea-house-9-kept")).unwrap();
+        delete_user_dir(&user, &user.join("tea")).unwrap();
+        forget_previous_skill(&user, "tea").unwrap();
+        assert_eq!(names(&held), [".swap-tea-house-9-kept"]);
+        previous_root(&user).unwrap();
+        assert!(!user.join("tea").exists());
+        assert!(!has_previous_skill(&user, "tea"));
+    }
+
+    /// A swap whose `-kept` name is taken gets the next one, and one that
+    /// cannot move (or is no folder) is left with a warning: either way
+    /// every other skill still replaces and restores.
+    #[test]
+    fn one_leftover_that_cannot_move_stops_nothing_else() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (source, user, a, b) = cut_short_restore(tmp.path());
+        let held = user.join(PREVIOUS_DIR);
+        for kept in [".swap-tea-5", ".swap-tea-5-kept"] {
+            std::fs::create_dir_all(held.join(kept)).unwrap();
+            std::fs::write(held.join(kept).join("notes.md"), kept).unwrap();
+        }
+        // No folder: a file, and on Unix a link to a folder elsewhere.
+        std::fs::write(held.join(".swap-mint-6"), "not a folder").unwrap();
+        #[cfg(unix)]
+        {
+            let outside = tmp.path().join("outside");
+            std::fs::create_dir_all(&outside).unwrap();
+            std::os::unix::fs::symlink(&outside, held.join(".swap-lime-7")).unwrap();
+        }
+        previous_root(&user).unwrap();
+        assert_eq!(
+            std::fs::read(held.join(".swap-tea-5-kept2/notes.md")).unwrap(),
+            b".swap-tea-5"
+        );
+        assert!(!user.join("mint").exists() && !user.join("lime").exists());
+        assert!(held.join(".swap-mint-6").is_file());
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNewer.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(tea_and_kept(&user), (b, snapshot(&source)));
+        let _ = a;
     }
 }

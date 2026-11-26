@@ -297,9 +297,20 @@ async fn skills_install_from_a_folder() {
         detail["body"].as_str().unwrap().contains("Use jade."),
         "{detail}"
     );
-    let mut want = vec![bundled, "tea-house".to_owned()];
+    // The copy replaced is kept for one restore, as "Replace from source"
+    // keeps it, in the hidden `.previous`.
+    let kept = d.get_json("/api/skills/tea-house/previous").await;
+    assert_eq!(kept["previous"], json!(true), "{kept}");
+    let mut want = vec![bundled, "tea-house".to_owned(), ".previous".to_owned()];
     want.sort();
     assert_eq!(user_skill_folders(&d), want);
+    let (s, v) = call(&d, "POST", "/api/skills/tea-house/restore-previous", None).await;
+    assert_eq!(s, 200, "{v}");
+    let back = d.get_json("/api/skills/tea-house").await;
+    assert!(
+        back["body"].as_str().unwrap().contains("Use cream"),
+        "{back}"
+    );
 }
 
 /// "From agent CLI": the skill folders of the agents' `HOME`, one level,
