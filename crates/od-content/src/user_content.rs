@@ -197,14 +197,28 @@ pub fn skill_tag(dir: &Path) -> String {
 /// one the index has not read yet), else `entry_dir`, the folder the
 /// index has for it. A form's `GET` tags this folder and its `PUT`
 /// compares this folder ([`save_skill`]), so both see the same file.
+/// The override is a folder named `id` byte for byte: on macOS and
+/// Windows `<user_root>/<id>` also opens `Ad-Creative` for `ad-creative`,
+/// another skill.
 #[must_use]
 pub fn skill_write_dir(user_root: &Path, id: &str, entry_dir: &Path, is_user: bool) -> PathBuf {
     let over = user_root.join(id);
-    if !is_user && crate::design_systems::is_valid_id(id) && over.join("SKILL.md").exists() {
+    if !is_user
+        && crate::design_systems::is_valid_id(id)
+        && named_exactly(user_root, id)
+        && over.join("SKILL.md").exists()
+    {
         over
     } else {
         entry_dir.to_path_buf()
     }
+}
+
+/// Whether `dir` lists an entry named `name`, byte for byte (not one that
+/// differs in case or Unicode form, which macOS and Windows open as it).
+fn named_exactly(dir: &Path, name: &str) -> bool {
+    std::fs::read_dir(dir)
+        .is_ok_and(|entries| entries.flatten().any(|e| e.file_name() == name))
 }
 
 /// The tag of content `bytes`: sha256, hex.
@@ -239,6 +253,15 @@ pub fn save_skill(
     let _one = REPLACE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A user skill named like it in another case or Unicode form is the
+    // folder `<user_root>/<id>` opens on macOS and Windows: an override
+    // there would write over that skill.
+    if !is_user
+        && !named_exactly(user_root, id)
+        && let Some(twin) = entry_like(user_root, id)?
+    {
+        return Err(WriteError::Exists(format!("skill {twin:?}")));
+    }
     if let Some(expected) = expected
         && skill_tag(&skill_write_dir(user_root, id, current_dir, is_user)) != expected
     {
@@ -1559,6 +1582,69 @@ mod tests {
         assert!(delete_user_dir(&user, &bundled).is_err());
         delete_user_dir(&user, &dir).unwrap();
         assert!(!dir.exists());
+    }
+
+    /// A user skill `Ad-Creative` beside the bundled `ad-creative` (PR #349
+    /// review): on macOS and Windows `<user>/ad-creative` is that folder.
+    /// The form opens on the bundled copy, so its tag is the bundled one,
+    /// and a Save of `ad-creative` is refused, never written into the
+    /// other skill.
+    #[test]
+    fn a_save_never_lands_in_a_skill_named_alike() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled/ad-creative");
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::write(
+            bundled.join("SKILL.md"),
+            "---\nname: ad-creative\n---\nBundled.\n",
+        )
+        .unwrap();
+        let user = tmp.path().join("user");
+        let twin = user.join("Ad-Creative");
+        std::fs::create_dir_all(&twin).unwrap();
+        let mine = "---\nname: Ad-Creative\n---\nMy own skill.\n";
+        std::fs::write(twin.join("SKILL.md"), mine).unwrap();
+
+        assert_eq!(
+            skill_write_dir(&user, "ad-creative", &bundled, false),
+            bundled,
+            "the form tags the copy it shows"
+        );
+        let tag = skill_tag(&bundled);
+        let saved = save_skill(
+            &user,
+            "ad-creative",
+            &bundled,
+            false,
+            &draft("ad-creative", "Typed."),
+            Some(&tag),
+        );
+        assert!(matches!(saved, Err(WriteError::Exists(_))), "{saved:?}");
+        assert_eq!(std::fs::read_to_string(twin.join("SKILL.md")).unwrap(), mine);
+        let names: Vec<String> = std::fs::read_dir(&user)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["Ad-Creative"], "no second folder made");
+
+        // An override of that very name is written as before.
+        std::fs::remove_dir_all(&twin).unwrap();
+        let over = user.join("ad-creative");
+        std::fs::create_dir_all(&over).unwrap();
+        std::fs::write(over.join("SKILL.md"), "---\nname: ad-creative\n---\nOver.\n").unwrap();
+        assert_eq!(skill_write_dir(&user, "ad-creative", &bundled, false), over);
+        let tag = skill_tag(&over);
+        save_skill(
+            &user,
+            "ad-creative",
+            &bundled,
+            false,
+            &draft("ad-creative", "Typed."),
+            Some(&tag),
+        )
+        .unwrap();
+        assert!(std::fs::read_to_string(over.join("SKILL.md")).unwrap().contains("Typed."));
     }
 
     #[test]
