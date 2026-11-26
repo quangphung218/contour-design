@@ -4458,6 +4458,7 @@ dependencies = [
  "console_error_panic_hook",
  "gloo-net 0.7.0",
  "gloo-timers",
+ "icu_properties",
  "js-sys",
  "leptos",
  "leptos_router",

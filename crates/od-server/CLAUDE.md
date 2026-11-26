@@ -95,9 +95,10 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `::an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy`,
       `::export_copies_a_user_skill_and_never_writes_over`, `::an_export_never_shows_a_hidden_folder_in_the_agents_skills`,
       `::a_folder_made_right_before_the_copy_is_kept`, `::the_skill_md_lands_after_everything_else`
-    - The review marks hidden characters in `SKILL.md` (Unicode tags, zero-width, bidi controls and marks, variation selectors, soft hyphen,
-      invisible operators, U+180E) as `⟨U+…⟩` with a warning
-      (`../od-ui/src/app/plugins_page.rs::the_review_marks_every_hidden_character`).
+    - The review marks hidden characters in `SKILL.md` (Unicode `Default_Ignorable_Code_Point` and `Bidi_Control`: tags, zero-width,
+      bidi controls and marks, variation selectors, soft hyphen, Hangul fillers…) as `⟨U+…⟩` with a warning
+      (`../od-ui/src/app/plugins_page.rs::the_review_marks_every_hidden_character`; the table checked against ICU's data:
+      `::hidden_ranges_are_unicodes`).
     - The Library routes (`src/routes/library`), the content routes (`src/routes/content.rs`: a design template's example, a craft section) and the content index (`../od-content/src`) read a file only through
       `od_content::nofollow` (`O_NONBLOCK`, regular file checked on the descriptor, bounded); the index still takes an
       entry that is itself a link, but no link below it (`nofollow::read_file_under`: `.claude-plugin`). No `fs::copy` and no `od_store::files::read_file` there either (a Remix copies the bytes

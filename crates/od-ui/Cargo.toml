@@ -99,6 +99,8 @@ web-sys = { version = "0.3", features = [
 
 [dev-dependencies]
 od-content.workspace = true
+# Unicode's properties, to check the hidden-character table (native tests only).
+icu_properties = "2.1"
 
 [lints]
 workspace = true
