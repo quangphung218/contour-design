@@ -122,9 +122,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     `GET /api/memory/index`), its `PUT` sends it as `If-Match`, and a file changed since is a 412 with nothing written.
     The compare runs under the lock the file's other writers take (`REPLACE_LOCK` for `SKILL.md`, `DESIGN_MD_WRITES`
     with accepted revisions, `MemoryFiles::guard` with `link`/`unlink`). No `If-Match` writes as before (agents, `od`).
-    A skill changed on disk since the index read it is read again by its `GET` (`SkillEntry.tag`).
-    Every `PUT` route takes `IfMatch` or is listed in `KEPT` with why.
-    - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs`, `src/cas.rs::tests`
+    GET and PUT tag the same file: for a skill, the one a save writes over (`user_content::skill_write_dir`:
+    an override on disk before the bundled folder); a skill changed on disk since the index read it is read
+    again by its `GET` (`SkillEntry.tag`). Every `PUT` route takes `IfMatch` or is listed in `KEPT` with why.
+    - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and
+      24 saves at once from one copy land once, per lock), `src/cas.rs::tests`
     - e2e `../od-ui/e2e/library.e2e.mjs` (skill form, DESIGN.md editor), `../od-ui/e2e/c2.e2e.mjs` (memory index)
 
 ## Traps
