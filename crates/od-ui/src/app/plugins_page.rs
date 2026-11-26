@@ -1268,12 +1268,24 @@ fn SkillDetailView(
 
 /// A character Claude Code reads but the review would show as nothing:
 /// Unicode tags (U+E0000–E007F), zero-width (U+200B–U+200D, U+2060,
-/// U+FEFF) and bidi controls (U+202A–U+202E, U+2066–U+2069). Text in them
-/// can tell the model what the user never saw.
+/// U+FEFF), bidi controls (U+202A–U+202E, U+2066–U+2069), variation
+/// selectors (U+FE00–FE0F, U+E0100–E01EF), the soft hyphen (U+00AD),
+/// invisible operators (U+2061–U+2064) and the Mongolian vowel separator
+/// (U+180E). Text in them can tell the model what the user never saw.
+/// An emoji's U+FE0F is marked too: one mark costs less than a hidden line.
 fn is_hidden_char(c: char) -> bool {
     matches!(
         u32::from(c),
-        0xE0000..=0xE007F | 0x200B..=0x200D | 0x2060 | 0xFEFF | 0x202A..=0x202E | 0x2066..=0x2069
+        0xE0000..=0xE007F
+            | 0xE0100..=0xE01EF
+            | 0x200B..=0x200D
+            | 0x2060..=0x2064
+            | 0xFEFF
+            | 0xFE00..=0xFE0F
+            | 0x202A..=0x202E
+            | 0x2066..=0x2069
+            | 0x00AD
+            | 0x180E
     )
 }
 
@@ -2080,6 +2092,14 @@ mod tests {
             ('\u{202E}', "\u{27e8}U+202E\u{27e9}"),
             ('\u{2066}', "\u{27e8}U+2066\u{27e9}"),
             ('\u{2069}', "\u{27e8}U+2069\u{27e9}"),
+            ('\u{2061}', "\u{27e8}U+2061\u{27e9}"),
+            ('\u{2064}', "\u{27e8}U+2064\u{27e9}"),
+            ('\u{FE00}', "\u{27e8}U+FE00\u{27e9}"),
+            ('\u{FE0F}', "\u{27e8}U+FE0F\u{27e9}"),
+            ('\u{E0100}', "\u{27e8}U+E0100\u{27e9}"),
+            ('\u{E01EF}', "\u{27e8}U+E01EF\u{27e9}"),
+            ('\u{00AD}', "\u{27e8}U+00AD\u{27e9}"),
+            ('\u{180E}', "\u{27e8}U+180E\u{27e9}"),
         ] {
             let text = format!("Brew{c} tea.");
             assert_eq!(
@@ -2098,11 +2118,18 @@ mod tests {
         for c in [
             '\u{200A}',
             '\u{200E}',
-            '\u{2061}',
             '\u{2065}',
             '\u{206A}',
             '\u{202F}',
             '\u{E0080}',
+            '\u{E00FF}',
+            '\u{E01F0}',
+            '\u{FDFF}',
+            '\u{FE10}',
+            '\u{00AC}',
+            '\u{00AE}',
+            '\u{180D}',
+            '\u{180F}',
             'ư',
             '🎨',
             'ب',
