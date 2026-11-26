@@ -116,7 +116,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `tests/library.rs::an_imported_skill_is_replaced_from_its_source_and_restored`;
       `../od-content/src/user_content.rs::a_replace_keeps_the_copy_in_contour_for_one_restore`,
       `::a_replace_writes_nothing_for_a_source_changed_or_renamed`, `::a_replace_follows_no_link_and_waits_on_no_fifo`,
-      `::only_a_listed_agent_folder_is_taken`; `::a_replace_cut_short_at_any_step_loses_nothing`, `::a_restore_cut_short_at_any_step_loses_nothing`, `::a_replace_that_fails_keeps_the_copy_kept_before`, `::a_deleted_skill_never_comes_back_from_what_a_restore_left`, `::one_leftover_that_cannot_move_stops_nothing_else`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`
+      `::only_a_listed_agent_folder_is_taken`; `::a_replace_cut_short_at_any_step_loses_nothing`, `::a_first_replace_or_install_cut_short_at_any_step_loses_nothing`, `::a_restore_cut_short_at_any_step_loses_nothing`, `::a_replace_that_fails_keeps_the_copy_kept_before`, `::a_deleted_skill_never_comes_back_from_what_a_restore_left`, `::one_leftover_that_cannot_move_stops_nothing_else`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).
