@@ -1131,6 +1131,7 @@ fn SkillDetailView(
                 changed.set(false);
                 detail.set(Some(res.map(|r| r.value)));
                 reading.set(false);
+                super::focus::focus_testid_next_frame("skill-body-input");
             });
         })
     };
@@ -1419,7 +1420,7 @@ fn SkillDetailView(
                                         if !force {
                                             changed.set(false);
                                         }
-                                        let tag = if force { None } else { opened_tag.get_value() };
+                                        let tag = if force { Some(api::ANY.to_owned()) } else { opened_tag.get_value() };
                                         // The save runs to its end; the page shows how it went.
                                         tasks.spawn_then(save_skill_edit(id.clone(), body, tag), move |step| match step {
                                             EditSave::Saved => { clear_export(); undo.set(false); changed.set(false); editing.set(false); load.run(()); }
@@ -1482,11 +1483,16 @@ enum EditSave {
 
 /// Saves the skill form's `body` over the skill `id`, only if it is still
 /// the copy tagged `tag` (the one the form opened on; the server compares
-/// and writes in one step). `None` writes whatever is there ("Save
-/// anyway"). Touches no signal: it runs to its end.
+/// and writes in one step); [`api::ANY`] writes over whatever is there
+/// ("Save anyway"). No tag (the read the form opened on came without
+/// one): nothing is sent, and the form asks as for a changed skill.
+/// Touches no signal: it runs to its end.
 async fn save_skill_edit(id: String, body: Value, tag: Option<String>) -> EditSave {
+    let Some(tag) = tag else {
+        return EditSave::Changed;
+    };
     let url = format!("/api/skills/{}", api::seg(&id));
-    match api::put_if_match::<_, Value>(&url, &body, tag.as_deref()).await {
+    match api::put_if_match::<_, Value>(&url, &body, &tag).await {
         Ok(_) => EditSave::Saved,
         Err(e) if e.changed_since() => EditSave::Changed,
         Err(e) => EditSave::Failed(api::failure(T::MdSaveFailed, &e)),

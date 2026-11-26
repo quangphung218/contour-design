@@ -9,9 +9,11 @@
 //! or `on(MethodFilter::PUT, h)` / `.on(…PUT…, h)`. Its handler is found
 //! by name (through `use … as`, module paths) among the `fn`s of `src/`; a
 //! closure, or a name not found, fails. The handler reads `If-Match` when
-//! one of its arguments has the type `IfMatch` (through `use … as` and
-//! `type … =`) under a name that does not start with `_` (an unused one
-//! fails clippy's `unused_variables` anyway). A `PUT` outside a
+//! one of its arguments has the type `IfMatch` itself (through `use … as`
+//! and `type … =`), under a name that does not start with `_` (an unused
+//! one fails clippy's `unused_variables` anyway). `Option<IfMatch>` does
+//! not count: the extractor refuses a request without the header (428),
+//! and an optional one would let it through to write blind. A `PUT` outside a
 //! `.route("…", …)` has no path to be listed under, so it must read it.
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
@@ -289,35 +291,6 @@ impl<'ast> Visit<'ast> for Finder<'_> {
     }
 }
 
-/// The type `ty` names, through the file's `use`s and `type`s, last name
-/// first; and every type inside its generics.
-fn type_names(ty: &syn::Type, names: &Names, depth: usize, out: &mut Vec<String>) {
-    if depth > 8 {
-        return;
-    }
-    if let syn::Type::Path(p) = ty {
-        let segs = segments(&p.path);
-        if segs.len() == 1
-            && let Some(aliased) = names.types.get(&segs[0])
-        {
-            type_names(aliased, names, depth + 1, out);
-            return;
-        }
-        if let Some(last) = resolve(&p.path, names).last() {
-            out.push(last.clone());
-        }
-        for seg in &p.path.segments {
-            if let syn::PathArguments::AngleBracketed(a) = &seg.arguments {
-                for arg in &a.args {
-                    if let syn::GenericArgument::Type(t) = arg {
-                        type_names(t, names, depth + 1, out);
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn binds_a_name(pat: &Pat) -> bool {
     match pat {
         Pat::Ident(i) => !i.ident.to_string().starts_with('_'),
@@ -328,12 +301,26 @@ fn binds_a_name(pat: &Pat) -> bool {
     }
 }
 
+/// The name of type `ty` itself (its last path segment, through the
+/// file's `use`s and `type`s), never one inside its generics.
+fn type_name(ty: &syn::Type, names: &Names, depth: usize) -> Option<String> {
+    if depth > 8 {
+        return None;
+    }
+    let syn::Type::Path(p) = ty else { return None };
+    let segs = segments(&p.path);
+    if segs.len() == 1
+        && let Some(aliased) = names.types.get(&segs[0])
+    {
+        return type_name(aliased, names, depth + 1);
+    }
+    resolve(&p.path, names).last().cloned()
+}
+
 fn reads_if_match(f: &FnDef, names: &Names) -> bool {
     f.item.sig.inputs.iter().any(|arg| {
         let FnArg::Typed(t) = arg else { return false };
-        let mut found = Vec::new();
-        type_names(&t.ty, names, 0, &mut found);
-        found.iter().any(|n| n == "IfMatch") && binds_a_name(&t.pat)
+        type_name(&t.ty, names, 0).as_deref() == Some("IfMatch") && binds_a_name(&t.pat)
     })
 }
 
@@ -595,7 +582,7 @@ fn the_rule_reads_the_handler_however_it_names_if_match() {
         "use crate::cas; async fn h(t: cas::IfMatch) {}",
         "use crate::cas::IfMatch; type Tag = IfMatch; async fn h(t: Tag) {}",
         "use crate::cas::IfMatch; async fn h(IfMatch(t): IfMatch) {}",
-        "use crate::cas::IfMatch; async fn h(s: State<S>, t: Option<IfMatch>, b: Json<B>) {}",
+        "use crate::cas::IfMatch; async fn h(s: State<S>, t: IfMatch, b: Json<B>) {}",
     ];
     for handler in ok {
         assert!(check(&format!("{route} {handler}")).is_empty(), "{handler}");
@@ -605,6 +592,10 @@ fn the_rule_reads_the_handler_however_it_names_if_match() {
         "use crate::cas::IfMatch; async fn h(_t: IfMatch) {}",
         "use crate::cas::IfMatch; async fn h(_: IfMatch) {}",
         "use crate::cas::IfMatch; async fn h(IfMatch(_): IfMatch) {}",
+        // Optional: a request without the header would write blind.
+        "use crate::cas::IfMatch; async fn h(t: Option<IfMatch>) {}",
+        "use crate::cas::IfMatch; type Tag = Option<IfMatch>; async fn h(t: Tag) {}",
+        "use crate::cas::IfMatch; async fn h(t: Result<IfMatch, E>) {}",
         // A comment or a string is not an argument.
         "async fn h(b: String) { /* IfMatch */ let _ = \"IfMatch\"; }",
         // Only built for tests.

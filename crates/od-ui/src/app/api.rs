@@ -527,20 +527,28 @@ pub async fn get_tagged<T: DeserializeOwned>(path: &str) -> ApiResult<Tagged<T>>
 }
 
 /// `PUT` of `body`, only over the content tagged `tag` (`If-Match`): one
-/// changed since is refused, [`HttpError::changed_since`]. `None` writes
-/// over whatever is there ("Save anyway").
+/// changed since is refused, [`HttpError::changed_since`]. `"*"` writes
+/// over whatever is there ("Save anyway"). There is no form of this call
+/// without a tag: a form whose read has not landed has nothing to send,
+/// and must not write (the daemon refuses a `PUT` without one, 428).
+/// The answer comes with the `ETag` of what was written, when sent.
 pub async fn put_if_match<B: Serialize, T: DeserializeOwned>(
     path: &str,
     body: &B,
-    tag: Option<&str>,
-) -> ApiResult<T> {
-    let mut req = Request::put(path);
-    if let Some(tag) = tag {
-        req = req.header("if-match", tag);
-    }
-    let req = req.json(body).map_err(network)?;
-    decode(path, req.send().await.map_err(network)?).await
+    tag: &str,
+) -> ApiResult<Tagged<T>> {
+    let req = Request::put(path)
+        .header("if-match", tag)
+        .json(body)
+        .map_err(network)?;
+    let res = req.send().await.map_err(network)?;
+    let tag = res.headers().get("etag");
+    let value = decode(path, res).await?;
+    Ok(Tagged { value, tag })
 }
+
+/// The `If-Match` of "Save anyway": whatever is there.
+pub const ANY: &str = "*";
 
 pub async fn post<B: Serialize, T: DeserializeOwned>(path: &str, body: &B) -> ApiResult<T> {
     let req = Request::post(path).json(body).map_err(network)?;

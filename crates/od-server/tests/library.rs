@@ -30,7 +30,8 @@ async fn call(d: &Daemon, method: &str, path: &str, body: Option<Value>) -> (u16
     let url = format!("{}{path}", d.base);
     let req = match method {
         "GET" => d.http.get(url),
-        "PUT" => d.http.put(url),
+        // Over whatever is there: these are not a form opened on a read.
+        "PUT" => d.http.put(url).header("if-match", "*"),
         "DELETE" => d.http.delete(url),
         _ => d.http.post(url),
     };

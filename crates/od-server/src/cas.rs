@@ -6,9 +6,12 @@
 //! check runs under the lock the other writers of that file take, so
 //! nothing lands between the compare and the write.
 //!
-//! A `PUT` with no `If-Match` writes as before: agents and `od` write
-//! what they mean to write. `tests/put_reads_if_match.rs` holds every
-//! `PUT` route to reading it, or to a reason it does not.
+//! A `PUT` with no `If-Match` is refused with 428 and writes nothing: a
+//! form that has no tag yet (its read is late or failed) must not write
+//! blind. A write over whatever is there says so: `If-Match: *` ("Save
+//! anyway", an agent that means it). `tests/put_reads_if_match.rs` holds
+//! every `PUT` route to taking [`IfMatch`] (never `Option<IfMatch>`), or
+//! to a listed reason it does not.
 
 use crate::error::ApiErr;
 use axum::extract::FromRequestParts;
@@ -16,7 +19,6 @@ use axum::http::header::{ETAG, IF_MATCH};
 use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode};
 use od_contracts::ErrorCode;
-use std::convert::Infallible;
 
 /// The tag of content `bytes`: sha256, hex.
 #[must_use]
@@ -33,13 +35,14 @@ pub fn etag(tag: &str) -> [(axum::http::HeaderName, HeaderValue); 1] {
 }
 
 /// The `If-Match` a request sent: the tag inside its quotes (a weak `W/`
-/// tag is read as its tag), `None` when there is none or it is `*`.
+/// tag is read as its tag), `None` for `*` (whatever is there). A request
+/// without one is refused before the handler runs ([`required`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IfMatch(pub Option<String>);
 
 impl IfMatch {
-    /// Ok when nothing was sent or the content is still `current` (its
-    /// tag); else the 412 that tells the form it changed.
+    /// Ok for `*` or when the content is still `current` (its tag); else
+    /// the 412 that tells the form it changed.
     ///
     /// # Errors
     /// [`changed`] when the tags differ.
@@ -67,26 +70,35 @@ pub fn changed() -> ApiErr {
     )
 }
 
-fn parse(value: &str) -> Option<String> {
-    let v = value.trim();
-    let v = v.strip_prefix("W/").unwrap_or(v);
-    if v.is_empty() || v == "*" {
-        return None;
+/// 428: no `If-Match`; nothing written. A form sends the tag it opened
+/// on, a write over whatever is there sends `*`.
+#[must_use]
+pub fn required() -> ApiErr {
+    ApiErr::new(
+        StatusCode::PRECONDITION_REQUIRED,
+        ErrorCode::BadRequest,
+        "If-Match is required: the ETag the form opened on, or * to write over whatever is there",
+    )
+}
+
+/// `Some(None)` for `*`, `Some(Some(tag))` for a tag, `None` when there is
+/// no usable value (empty, not text).
+fn parse(value: Option<&str>) -> Option<Option<String>> {
+    let v = value?.trim();
+    let v = v.strip_prefix("W/").unwrap_or(v).trim_matches('"');
+    match v {
+        "" => None,
+        "*" => Some(None),
+        tag => Some(Some(tag.to_owned())),
     }
-    Some(v.trim_matches('"').to_owned())
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for IfMatch {
-    type Rejection = Infallible;
+    type Rejection = ApiErr;
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
-        Ok(Self(
-            parts
-                .headers
-                .get(IF_MATCH)
-                .and_then(|v| v.to_str().ok())
-                .and_then(parse),
-        ))
+        let sent = parts.headers.get(IF_MATCH).and_then(|v| v.to_str().ok());
+        parse(sent).map(Self).ok_or_else(required)
     }
 }
 
@@ -96,11 +108,15 @@ mod tests {
 
     #[test]
     fn if_match_reads_the_tag_inside_its_quotes() {
-        assert_eq!(parse("\"abc\""), Some("abc".to_owned()));
-        assert_eq!(parse("W/\"abc\""), Some("abc".to_owned()));
-        assert_eq!(parse(" abc "), Some("abc".to_owned()));
-        assert_eq!(parse("*"), None);
-        assert_eq!(parse(""), None);
+        let tag = |t: &str| Some(Some(t.to_owned()));
+        assert_eq!(parse(Some("\"abc\"")), tag("abc"));
+        assert_eq!(parse(Some("W/\"abc\"")), tag("abc"));
+        assert_eq!(parse(Some(" abc ")), tag("abc"));
+        assert_eq!(parse(Some("*")), Some(None));
+        assert_eq!(parse(Some("\"*\"")), Some(None));
+        assert_eq!(parse(Some("")), None);
+        assert_eq!(parse(Some("\"\"")), None);
+        assert_eq!(parse(None), None);
     }
 
     #[test]

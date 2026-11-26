@@ -1868,3 +1868,4 @@ TurnSkillPluginNotFound = لم يُعثر على مهارة الإضافة {0}؛
 UsageSkillTurnsSince = محسوبة منذ {0}
 ChangedElsewhere = تغيّر هذا في مكان آخر منذ فتحته. إعادة التحميل تعرض النسخة الجديدة وتتجاهل ما كتبته؛ الحفظ على أي حال يكتب فوقها.
 ReloadNewCopy = إعادة التحميل
+MemoryIndexLoadFailed = تعذّر تحميل الفهرس: {0}

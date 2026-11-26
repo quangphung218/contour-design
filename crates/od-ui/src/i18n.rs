@@ -252,6 +252,7 @@ messages! {
     TranscriptFailed => "Could not download the conversation: {0}", "Không tải được cuộc trò chuyện: {0}";
     SessionModeFailed => "Could not change the mode: {0}", "Không đổi được chế độ: {0}";
     MemoryFailed => "Could not update the memory: {0}", "Không cập nhật được bộ nhớ: {0}";
+    MemoryIndexLoadFailed => "Could not load the index: {0}", "Không tải được mục lục: {0}";
     FileCreateFailed => "Could not create the file: {0}", "Không tạo được file: {0}";
     FolderCreateFailed => "Could not create the folder: {0}", "Không tạo được thư mục: {0}";
     RenameFailed => "Could not rename: {0}", "Không đổi tên được: {0}";

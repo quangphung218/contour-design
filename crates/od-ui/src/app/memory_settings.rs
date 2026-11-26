@@ -300,13 +300,32 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
     // based on.
     let draft_tag = StoredValue::new(None::<String>);
     let changed = RwSignal::new(false);
+    // The index read once, with its tag: until then the editor takes no
+    // typing (a draft with no tag to send could only write blind), and a
+    // failed read says so, with Try again.
+    let ready = RwSignal::new(false);
+    let load_error = RwSignal::new(None::<String>);
+    // Reload asked: the focus goes back to the text once it is read.
+    let refocus = StoredValue::new(false);
+    let text = NodeRef::<leptos::html::Textarea>::new();
     let tasks = Tasks::here();
     let load = move || {
         tasks.spawn(async move {
-            if let Ok(v) = api::get_tagged::<Value>("/api/memory/index").await {
-                tag.set_value(v.tag);
-                saved.set(v.value["index"].as_str().unwrap_or_default().to_owned());
-                root.set(v.value["rootDir"].as_str().unwrap_or_default().to_owned());
+            match api::get_tagged::<Value>("/api/memory/index").await {
+                Ok(v) => {
+                    ready.set(v.tag.is_some());
+                    tag.set_value(v.tag);
+                    load_error.set(None);
+                    saved.set(v.value["index"].as_str().unwrap_or_default().to_owned());
+                    root.set(v.value["rootDir"].as_str().unwrap_or_default().to_owned());
+                    if refocus.get_value() {
+                        refocus.set_value(false);
+                        if let Some(el) = text.get_untracked() {
+                            let _ = el.focus();
+                        }
+                    }
+                }
+                Err(e) => load_error.set(Some(api::failure(T::MemoryIndexLoadFailed, &e))),
             }
         });
     };
@@ -324,17 +343,31 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
         let Some(index) = draft.get_untracked() else {
             return;
         };
-        let sent = if force { None } else { draft_tag.get_value() };
+        let sent = if force {
+            Some(api::ANY.to_owned())
+        } else {
+            draft_tag.get_value()
+        };
+        // No tag the draft started from: nothing is sent; the editor asks
+        // as for a changed index (Reload shows it, Save anyway writes).
+        let Some(sent) = sent else {
+            changed.set(true);
+            return;
+        };
         tasks.spawn(async move {
             let body = json!({ "index": index });
-            match api::put_if_match::<_, Value>("/api/memory/index", &body, sent.as_deref()).await {
+            match api::put_if_match::<_, Value>("/api/memory/index", &body, &sent).await {
                 Ok(v) => {
-                    saved.set(v["index"].as_str().unwrap_or_default().to_owned());
+                    saved.set(v.value["index"].as_str().unwrap_or_default().to_owned());
                     changed.set(false);
                     draft.set(None);
                     status.set(Some(Ok(())));
-                    // Read back for the tag of what is saved now.
-                    load();
+                    // The tag of what is saved now, from the answer: a key
+                    // typed before a read back would start from an old one.
+                    match v.tag {
+                        Some(t) => tag.set_value(Some(t)),
+                        None => load(),
+                    }
                 }
                 Err(e) if e.changed_since() => changed.set(true),
                 Err(e) => status.set(Some(Err(api::failure(T::MemoryFailed, &e)))),
@@ -345,6 +378,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
     let reload = move || {
         changed.set(false);
         draft.set(None);
+        refocus.set_value(true);
         load();
     };
     view! {
@@ -354,8 +388,15 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                 <span class="muted small mono" title=move || root.get()>{move || root.get()}</span>
             </div>
             <p class="muted small">{t(T::MemoryIndexHint)}</p>
+            {move || load_error.get().map(|e| view! {
+                <p class="error-text small row" role="alert" data-testid="memory-index-load-failed">
+                    <span class="grow">{e}</span>
+                    <button class="btn small" data-testid="memory-index-retry" on:click=move |_| load()>{t(T::TryAgain)}</button>
+                </p>
+            })}
             <textarea class="input mono" rows="10" data-testid="memory-index-text" spellcheck="false"
-                aria-label=t(T::MemoryIndexTitle)
+                aria-label=t(T::MemoryIndexTitle) node_ref=text
+                prop:readOnly=move || !ready.get() aria-busy=move || (!ready.get()).to_string()
                 prop:value=move || draft.get().unwrap_or_else(|| saved.get())
                 on:input=live(move |ev| {
                     status.set(None);
@@ -381,7 +422,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                 <button class="btn ghost small" disabled=move || draft.with(Option::is_none)
                     on:click=move |_| { changed.set(false); draft.set(None); }>{t(T::MemoryIndexReset)}</button>
                 <button class="btn primary small" data-testid="memory-index-save"
-                    disabled=move || draft.with(Option::is_none)
+                    disabled=move || !ready.get() || draft.with(Option::is_none)
                     on:click=move |_| save(false)>{t(T::MemoryIndexSave)}</button>
             </div>
         </div>

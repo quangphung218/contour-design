@@ -338,8 +338,35 @@ try {
   await page.getByTestId('memory-import-save').click();
   await page.getByTestId('memory-import-status').getByText('Saved 1 memories.').waitFor();
   await until(async () => (await page.getByTestId('global-memory-item').count()) === 1, 'imported entry listed');
+  // The index read first fails, then comes late: until it lands the
+  // editor takes no typing and Save is off, so no draft exists without
+  // the tag of the index it started from (it could only write blind).
+  const indexUrl = `${BASE}/api/memory/index`;
+  await page.route(indexUrl, (route) => (route.request().method() === 'GET'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' })
+    : route.fallback()), { times: 1 });
   await page.getByTestId('memory-index-open').click();
   const index = page.getByTestId('memory-index-text');
+  await page.getByTestId('memory-index-load-failed').waitFor();
+  assert.equal(await index.evaluate((el) => el.readOnly), true, 'no typing while the index is not read');
+  assert.equal(await page.getByTestId('memory-index-save').isDisabled(), true, 'no Save while the index is not read');
+  let releaseFirst;
+  const firstHeld = new Promise((r) => (releaseFirst = r));
+  let firstAsked = false;
+  await page.route(indexUrl, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    firstAsked = true;
+    await firstHeld;
+    return route.continue();
+  }, { times: 1 });
+  await page.getByTestId('memory-index-retry').click();
+  await until(async () => firstAsked, 'Try again reads the index');
+  await index.press('x');
+  assert.equal(await page.getByTestId('memory-index-dirty').count(), 0, 'a key typed before the read lands makes no draft');
+  assert.equal(await index.evaluate((el) => el.readOnly), true);
+  releaseFirst();
+  await until(async () => !(await index.evaluate((el) => el.readOnly)), 'the editor takes typing once the index is read');
+  assert.equal(await page.getByTestId('memory-index-load-failed').count(), 0, 'the error goes');
   await until(async () => (await index.inputValue()).includes('No emoji icons'), 'index lists the entry');
   await index.fill((await index.inputValue()).split('\n').filter((l) => !l.includes('No emoji icons')).join('\n'));
   await page.getByTestId('memory-index-dirty').waitFor();
@@ -357,6 +384,7 @@ try {
   assert.ok((await api('/api/memory/index')).index.includes('Learnt under the draft'), 'nothing written over it');
   await page.getByTestId('memory-index-save-reload').click();
   await until(async () => (await index.inputValue()).includes('Learnt under the draft'), 'Reload shows the index now');
+  await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'memory-index-text', 'Reload gives the focus to the text');
   assert.equal(await page.getByTestId('memory-index-save-changed').count(), 0);
   const kept = await index.inputValue();
   await index.fill(`${kept}\n`);

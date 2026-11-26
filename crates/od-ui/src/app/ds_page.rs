@@ -627,12 +627,20 @@ fn DsDetail(
             };
             let id = id.clone();
             let load = load.clone();
-            let tag = if force { None } else { edit_tag.get_value() };
+            let tag = if force {
+                Some(api::ANY.to_owned())
+            } else {
+                edit_tag.get_value()
+            };
+            // No tag (the kit came without one): nothing is sent; the
+            // editor asks as for a changed file.
+            let Some(tag) = tag else {
+                md_changed.set(true);
+                return;
+            };
             detail.spawn(async move {
                 let url = ds_url(&id, "design-md");
-                match api::put_if_match::<_, Value>(&url, &json!({ "body": body }), tag.as_deref())
-                    .await
-                {
+                match api::put_if_match::<_, Value>(&url, &json!({ "body": body }), &tag).await {
                     Ok(_) => {
                         md_changed.set(false);
                         editing.set(None);
@@ -659,6 +667,7 @@ fn DsDetail(
                         md_changed.set(false);
                         editing.set(Some(k.value.body.clone()));
                         kit.set(Some(Ok(k.value)));
+                        super::focus::focus_testid_next_frame("ds-md-editor");
                     }
                     Err(e) => say(Err(api::failure(T::MdSaveFailed, &e))),
                 }

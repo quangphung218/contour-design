@@ -51,6 +51,8 @@ async fn send(d: &Daemon, method: reqwest::Method, path: &str, body: &Value) -> 
     let res = d
         .http
         .request(method, format!("{}{path}", d.base))
+        // A PUT over whatever is there: not a form opened on a read.
+        .header("if-match", "*")
         .json(body)
         .send()
         .await

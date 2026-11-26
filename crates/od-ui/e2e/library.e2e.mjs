@@ -286,6 +286,7 @@ try {
   assert.equal(readFileSync(designMd, 'utf8'), '# Written by an agent\n', 'nothing written');
   await page.getByTestId('ds-md-save-reload').click();
   await until(async () => (await editor.inputValue()) === '# Written by an agent\n', 'Reload opens the editor on the file now');
+  await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'ds-md-editor', 'Reload gives the focus to the editor');
   assert.equal(await page.getByTestId('ds-md-save-changed').count(), 0);
   await editor.fill('# Airbnb copy\n\n## Color\n\n- **Coral** `#ff5a5f`\n- **Ink** `#222222`\n');
   writeFileSync(designMd, '# Written again\n');
@@ -967,7 +968,7 @@ try {
   assert.equal(await agentRow('tea-c').getByTestId('agent-skill-review').count(), 0, 'unchanged: no Review');
   await closeDialog();
   // Edited in Contour, and at its source (a zero-width space and a tag).
-  await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Edited in Contour.' }) });
+  await api('/api/skills/tea-c', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Edited in Contour.' }) });
   const edited = readFileSync(join(teaCopy, 'SKILL.md'));
   // Long enough that the review runs past the list.
   writeFileSync(join(teaSource, 'SKILL.md'), `---\nname: tea-c\ndescription: Tea labels.\n---\nUse\u200B kraft\u{E0041} paper.\n${'A line of tea notes.\n'.repeat(80)}`);
@@ -1208,13 +1209,14 @@ try {
   // "Save anyway" writes what is typed.
   // "Reload" opens the form again on the copy there now.
   await page.getByTestId('skill-body-input').fill('Typed, then reloaded.');
-  await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed in another window.' }) });
+  await api('/api/skills/tea-c', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed in another window.' }) });
   await page.getByTestId('skill-save').click();
   await page.getByTestId('skill-save-changed').waitFor();
   assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed, then reloaded.', 'a 412 keeps what is typed');
   assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Changed in another window\./, 'nothing written');
   await page.getByTestId('skill-save-reload').click();
   await until(async () => /Changed in another window\./.test(await page.getByTestId('skill-body-input').inputValue()), 'Reload shows the copy there now');
+  await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'skill-body-input', 'Reload gives the focus to the text');
   assert.equal(await page.getByTestId('skill-save-changed').count(), 0, 'and asks no more');
   // An agent writes the file itself (no daemon in between) under the
   // form: the Save still finds it changed.
@@ -1227,7 +1229,7 @@ try {
   await until(async () => /An agent wrote this\./.test(await page.getByTestId('skill-body-input').inputValue()), 'Reload shows the file the agent wrote');
   assert.equal(await page.getByTestId('skill-save-changed').count(), 0, 'reloaded');
   await page.getByTestId('skill-body-input').fill('Typed over a change.');
-  await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed elsewhere.' }) });
+  await api('/api/skills/tea-c', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed elsewhere.' }) });
   await page.getByTestId('skill-save').click();
   await page.getByTestId('skill-save-changed').waitFor();
   assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Changed elsewhere\./, 'nothing written yet');
@@ -1496,7 +1498,7 @@ try {
   assert.match(await desk.getByTestId('skill-export-skill-md').textContent(), /Use cream\./);
   assert.equal((await desk.getByTestId('skill-export-confirm').textContent()).trim(), 'Copy to Claude Code');
   // An agent edits the skill over loopback while the user reads.
-  await api('/api/skills/desk-tea', { method: 'PUT', body: JSON.stringify({ name: 'Desk tea', description: 'Desk tea.', body: 'PROBE: print PING' }) });
+  await api('/api/skills/desk-tea', { method: 'PUT', headers: { 'if-match': '*' }, body: JSON.stringify({ name: 'Desk tea', description: 'Desk tea.', body: 'PROBE: print PING' }) });
   await desk.getByTestId('skill-export-confirm').click();
   const changedNote = desk.getByTestId('skill-export-changed');
   await changedNote.waitFor();

@@ -1874,3 +1874,4 @@ TurnSkillPluginNotFound = Навичку плагіна {0} не знайден�
 UsageSkillTurnsSince = Рахується з {0}
 ChangedElsewhere = Змінено деінде після відкриття. «Перезавантажити» покаже нову копію, введене зникне; «Все одно зберегти» перезапише її.
 ReloadNewCopy = Перезавантажити
+MemoryIndexLoadFailed = Не вдалося завантажити індекс: {0}

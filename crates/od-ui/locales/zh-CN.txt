@@ -1873,3 +1873,4 @@ TurnSkillPluginNotFound = 未找到插件技能 {0}，智能体没有收到它
 UsageSkillTurnsSince = 自 {0} 起统计
 ChangedElsewhere = 打开后已在别处被修改。重新加载会显示新版本并丢弃已输入的内容；仍然保存会覆盖它。
 ReloadNewCopy = 重新加载
+MemoryIndexLoadFailed = 无法加载索引：{0}

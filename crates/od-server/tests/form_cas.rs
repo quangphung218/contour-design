@@ -1,8 +1,9 @@
 //! The forms that edit a user's file save only over what they opened on
 //! (`src/cas.rs`): the `GET` answers an `ETag`, a `PUT` with that tag as
 //! `If-Match` writes, a `PUT` with an older tag is a 412 and writes
-//! nothing, and a `PUT` with no `If-Match` (an agent, `od`) writes as
-//! before.
+//! nothing, a `PUT` with no `If-Match` is a 428 and writes nothing (a form
+//! with no tag yet never writes blind), and `If-Match: *` writes over
+//! whatever is there ("Save anyway", an agent that means it).
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
@@ -77,7 +78,7 @@ async fn a_skill_saved_from_an_old_copy_writes_nothing() {
     let (_, opened) = tagged(&d, "/api/skills/tea").await;
     // Changed under the form (an agent, another window).
     let elsewhere = json!({ "name": "tea", "description": "Mine.", "body": "Elsewhere." });
-    assert_eq!(put(&d, "/api/skills/tea", &elsewhere, None).await, 200);
+    assert_eq!(put(&d, "/api/skills/tea", &elsewhere, Some("*")).await, 200);
     let before = std::fs::read(&file).unwrap();
     let typed = json!({ "name": "tea", "description": "Mine.", "body": "Typed." });
     assert_eq!(put(&d, "/api/skills/tea", &typed, Some(&opened)).await, 412);
@@ -215,7 +216,7 @@ async fn a_design_md_saved_from_an_old_copy_writes_nothing() {
     let (shown, opened) = tagged(&d, &kit).await;
     assert!(!shown["body"].as_str().unwrap().is_empty());
     assert_eq!(
-        put(&d, &path, &json!({ "body": "# Elsewhere\n" }), None).await,
+        put(&d, &path, &json!({ "body": "# Elsewhere\n" }), Some("*")).await,
         200
     );
     let typed = json!({ "body": "# Typed\n" });
@@ -274,8 +275,8 @@ async fn a_memory_index_saved_from_an_old_copy_writes_nothing() {
             .unwrap()
             .contains("Short copy")
     );
-    // No If-Match: written as before.
-    assert_eq!(put(&d, "/api/memory/index", &late, None).await, 200);
+    // `*`: written over whatever is there.
+    assert_eq!(put(&d, "/api/memory/index", &late, Some("*")).await, 200);
 }
 
 /// 24 Saves from the same opened copy at once, 40 times: exactly one
@@ -367,4 +368,108 @@ async fn memory_index_saves_at_once_from_one_copy_land_once() {
         |r, i| json!({ "index": format!("# Round {r}, writer {i}\n") }),
     )
     .await;
+}
+
+/// No `If-Match` at all (a form whose read is late or failed, a client
+/// that forgot it): 428 on every route that writes a user's file, nothing
+/// written; `*` writes.
+#[tokio::test]
+async fn a_put_without_if_match_writes_nothing() {
+    let d = daemon().await;
+    post(
+        &d,
+        "/api/skills",
+        &json!({ "name": "tea", "description": "Mine.", "body": "First." }),
+    )
+    .await;
+    let v = post(
+        &d,
+        "/api/design-systems/airbnb/copy",
+        &json!({ "name": "Mine" }),
+    )
+    .await;
+    let ds = v["id"].as_str().unwrap().to_owned();
+    let skill = d.data.join("skills/tea/SKILL.md");
+    let design = d.data.join("design-systems/mine/DESIGN.md");
+    let index = d.data.join("memory/MEMORY.md");
+    let cases = [
+        (
+            "/api/skills/tea".to_owned(),
+            json!({ "name": "tea", "body": "Blind." }),
+            skill,
+        ),
+        (
+            format!("/api/design-systems/{ds}/design-md"),
+            json!({ "body": "# Blind\n" }),
+            design,
+        ),
+        (
+            "/api/memory/index".to_owned(),
+            json!({ "index": "# Blind\n" }),
+            index,
+        ),
+    ];
+    for (path, body, file) in &cases {
+        let before = std::fs::read(file).ok();
+        assert_eq!(put(&d, path, body, None).await, 428, "{path}");
+        assert_eq!(
+            std::fs::read(file).ok(),
+            before,
+            "{path}: a 428 writes nothing"
+        );
+        assert_eq!(put(&d, path, body, Some("*")).await, 200, "{path}");
+        assert!(
+            std::fs::read_to_string(file).unwrap().contains("Blind"),
+            "{path}"
+        );
+    }
+}
+
+/// An agent writes `SKILL.md` again and again (a new file renamed over
+/// it) while the form opens the skill: the `ETag` is always of the bytes
+/// the body shown came from, never of a later version, so a Save with it
+/// cannot pass over a version the user never saw.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_skill_read_while_it_is_written_is_tagged_with_what_it_shows() {
+    let d = daemon().await;
+    post(
+        &d,
+        "/api/skills",
+        &json!({ "name": "tea", "description": "Mine.", "body": "Body-0" }),
+    )
+    .await;
+    let dir = d.data.join("skills/tea");
+    let version = |n: u64| format!("---\nname: tea\ndescription: Mine.\n---\nBody-{n}\n");
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let writer = {
+        let (dir, stop) = (dir.clone(), std::sync::Arc::clone(&stop));
+        std::thread::spawn(move || {
+            let mut n = 1u64;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let tmp = dir.join(".SKILL.md.tmp");
+                std::fs::write(&tmp, version(n)).unwrap();
+                std::fs::rename(&tmp, dir.join("SKILL.md")).unwrap();
+                n += 1;
+            }
+        })
+    };
+    let mut checked = 0;
+    for _ in 0..30 {
+        let (shown, tag) = tagged(&d, "/api/skills/tea").await;
+        let body = shown["body"].as_str().unwrap();
+        let n: u64 = body
+            .trim()
+            .rsplit("Body-")
+            .next()
+            .and_then(|n| n.trim().parse().ok())
+            .unwrap_or_else(|| panic!("no version in {body:?}"));
+        let expected = format!("\"{}\"", od_server::cas::tag_of(version(n).as_bytes()));
+        if n > 0 {
+            assert_eq!(tag, expected, "the tag of Body-{n}, the version shown");
+            checked += 1;
+        }
+    }
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    writer.join().unwrap();
+    assert!(checked > 0, "no read saw the writer's versions");
 }

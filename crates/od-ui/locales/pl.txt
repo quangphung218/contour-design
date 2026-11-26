@@ -1874,3 +1874,4 @@ TurnSkillPluginNotFound = Nie znaleziono skilla wtyczki {0}; agent go nie dosta�
 UsageSkillTurnsSince = Liczone od {0}
 ChangedElsewhere = Zmieniono w innym miejscu od otwarcia. Odśwież pokaże nową kopię i odrzuci wpisany tekst; Zapisz mimo to ją nadpisze.
 ReloadNewCopy = Odśwież
+MemoryIndexLoadFailed = Nie udało się wczytać indeksu: {0}

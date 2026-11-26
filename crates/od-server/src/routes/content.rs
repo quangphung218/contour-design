@@ -64,13 +64,14 @@ pub async fn list_skills(State(state): State<AppState>) -> ApiJson<SkillsRespons
     })
 }
 
-/// `GET /api/skills/:id`, with the `ETag` of the `SKILL.md` a save would
-/// write over (`user_content::skill_write_dir`: an override on disk before
-/// the bundled skill): the skill editor saves with it as `If-Match`
-/// (`crate::cas`), and the save compares that same file. A file changed on
-/// disk since the index read it (an agent's shell, an override it wrote)
-/// is read again first, so the body shown and its tag are of the same
-/// bytes.
+/// `GET /api/skills/:id`, with the `ETag` a Save of the skill editor sends
+/// back as `If-Match` (`crate::cas`). The tag is of the bytes the body
+/// shown was parsed from (`SkillEntry.tag`), never of a second read: a file
+/// written again meanwhile then fails the Save's compare (412) instead of
+/// passing it unseen. A `SKILL.md` changed on disk since the index read it
+/// (an agent's shell), or an override written beside a bundled skill
+/// (`user_content::skill_write_dir`, the file a Save compares), is read
+/// again first.
 pub async fn get_skill(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -78,22 +79,28 @@ pub async fn get_skill(
     let content = std::sync::Arc::clone(&state.content);
     let user_root = state.store.data_dir().user_skills_dir();
     let found = crate::spawn::spawn_blocking_in_span(move || {
-        let disk_tag = |e: &SkillEntry| {
-            let dir = user_content::skill_write_dir(
+        let write_dir = |e: &SkillEntry| {
+            user_content::skill_write_dir(
                 &user_root,
                 &e.info.id,
                 &e.dir,
                 e.info.source == ContentSource::User,
-            );
-            user_content::skill_tag(&dir)
+            )
         };
         let mut entry = content.snapshot().find_skill(&id).cloned()?;
-        let mut tag = disk_tag(&entry);
-        if tag != entry.tag {
+        let dir = write_dir(&entry);
+        if dir != entry.dir || user_content::skill_tag(&dir) != entry.tag {
             content.reload();
             entry = content.snapshot().find_skill(&id).cloned()?;
-            tag = disk_tag(&entry);
         }
+        let dir = write_dir(&entry);
+        // An override the index still leaves out (unreadable, broken): the
+        // Save compares that file, so the form gets its tag.
+        let tag = if dir == entry.dir {
+            entry.tag.clone()
+        } else {
+            user_content::skill_tag(&dir)
+        };
         Some((entry, tag))
     })
     .await

@@ -183,13 +183,14 @@ pub async fn get_index(State(state): State<AppState>) -> ApiResult<impl IntoResp
     Ok((crate::cas::etag(&tag), ApiJson(res)))
 }
 
-/// `PUT /api/memory/index`; with `If-Match` only over the index it tags
-/// (a memory learnt since links itself in), else 412.
+/// `PUT /api/memory/index`, only over the index its `If-Match` tags (a
+/// memory learnt since links itself in), else 412; answers the `ETag` of
+/// the index written, the tag of the editor's next Save.
 pub async fn put_index(
     State(state): State<AppState>,
     if_match: IfMatch,
     ApiJson(body): ApiJson<IndexBody>,
-) -> ApiResult<ApiJson<IndexResponse>> {
+) -> ApiResult<impl IntoResponse> {
     if body.index.len() > MAX_INDEX_BYTES {
         return Err(ApiErr::bad_request(format!(
             "the index is limited to {} KiB",
@@ -211,7 +212,8 @@ pub async fn put_index(
         .await?
         .ok_or_else(crate::cas::changed)?;
     announce(&state.store, change("index", json!({})));
-    Ok(ApiJson(res))
+    let tag = crate::cas::tag_of(res.index.as_bytes());
+    Ok((crate::cas::etag(&tag), ApiJson(res)))
 }
 
 #[derive(Debug, Deserialize)]

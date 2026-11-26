@@ -1874,3 +1874,4 @@ TurnSkillPluginNotFound = Skill do plugin {0} não encontrada; o agente não a r
 UsageSkillTurnsSince = Contado desde {0}
 ChangedElsewhere = Alterado em outro lugar desde que você abriu. Recarregar mostra a cópia nova e descarta o que você digitou; Salvar mesmo assim a substitui.
 ReloadNewCopy = Recarregar
+MemoryIndexLoadFailed = Não foi possível carregar o índice: {0}

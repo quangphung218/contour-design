@@ -1868,3 +1868,4 @@ TurnSkillPluginNotFound = ไม่พบสกิล {0} ของปลั๊�
 UsageSkillTurnsSince = นับตั้งแต่ {0}
 ChangedElsewhere = มีการแก้ไขจากที่อื่นหลังจากเปิด โหลดใหม่จะแสดงฉบับใหม่และทิ้งสิ่งที่พิมพ์ไว้ บันทึกต่อจะเขียนทับ
 ReloadNewCopy = โหลดใหม่
+MemoryIndexLoadFailed = โหลดดัชนีไม่ได้: {0}
