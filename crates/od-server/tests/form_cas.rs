@@ -157,6 +157,30 @@ async fn a_bundled_skill_saved_from_an_old_copy_keeps_the_override_made_since() 
 }
 
 #[tokio::test]
+async fn a_bundled_skill_saved_over_an_override_written_on_disk_writes_nothing() {
+    let d = daemon().await;
+    let list = d.get_json("/api/skills").await;
+    let id = list["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["source"] != "user" && !s["id"].as_str().unwrap().contains(':'))
+        .map(|s| s["id"].as_str().unwrap().to_owned())
+        .unwrap();
+    let path = format!("/api/skills/{id}");
+    let (_, opened) = tagged(&d, &path).await;
+    // An agent's shell writes an override of it, the daemon not told: the
+    // write would go over that file, so that file is what is compared.
+    let dir = d.data.join(format!("skills/{id}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let theirs = format!("---\nname: {id}\n---\nThe agent's override.\n");
+    std::fs::write(dir.join("SKILL.md"), &theirs).unwrap();
+    let typed = json!({ "name": id, "body": "Typed." });
+    assert_eq!(put(&d, &path, &typed, Some(&opened)).await, 412);
+    assert_eq!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap(), theirs);
+}
+
+#[tokio::test]
 async fn a_design_md_saved_from_an_old_copy_writes_nothing() {
     let d = daemon().await;
     let v = post(
