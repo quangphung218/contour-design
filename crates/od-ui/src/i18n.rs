@@ -1271,6 +1271,8 @@ messages! {
     RestoreUndone => "Restore undone.", "Đã hoàn tác khôi phục.";
     ChangedElsewhere => "Changed elsewhere since you opened it. Reload shows the new copy and drops what you typed; Save anyway writes over it.", "Đã bị sửa ở nơi khác từ lúc mở. Tải lại để xem bản mới, phần đang gõ sẽ mất; Vẫn lưu sẽ ghi đè bản đó.";
     ReloadNewCopy => "Reload", "Tải lại";
+    // Reload failed: what is typed stays, and so do Reload and Save anyway.
+    ReloadFailed => "Could not load the new copy: {0}", "Không tải được bản mới: {0}";
     SaveAnyway => "Save anyway", "Vẫn lưu";
     FilesToCopy => "Files to copy", "Các file sẽ chép";
     ShowCommand => "Show the command", "Hiện lệnh";

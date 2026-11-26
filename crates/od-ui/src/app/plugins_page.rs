@@ -1117,21 +1117,28 @@ fn SkillDetailView(
     };
     load.run(());
     // "Reload" in a form that found the skill changed: the form opens
-    // again on the copy there now (what was typed goes, as asked).
+    // again on the copy there now (what was typed goes, as asked). A read
+    // that fails keeps the form, what is typed and the choice (Reload,
+    // Save anyway), and says so; the focus stays on Reload.
     let reopen = {
         let id = id.clone();
         Callback::new(move |()| {
             let id = id.clone();
             reading.set(true);
+            notice.set(None);
             tasks.spawn(async move {
-                let res = read_skill_detail(&id).await;
-                let tag = res.as_ref().ok().and_then(|r| r.tag.clone());
-                shown_tag.set_value(tag.clone());
-                opened_tag.set_value(tag);
-                changed.set(false);
-                detail.set(Some(res.map(|r| r.value)));
+                let url = format!("/api/skills/{}", api::seg(&id));
+                match api::get_tagged::<SkillDetail>(&url).await {
+                    Ok(r) => {
+                        shown_tag.set_value(r.tag.clone());
+                        opened_tag.set_value(r.tag);
+                        changed.set(false);
+                        detail.set(Some(Ok(r.value)));
+                        super::focus::focus_testid_next_frame("skill-body-input");
+                    }
+                    Err(e) => notice.set(Some(api::failure(T::ReloadFailed, &e))),
+                }
                 reading.set(false);
-                super::focus::focus_testid_next_frame("skill-body-input");
             });
         })
     };

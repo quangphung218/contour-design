@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A failed Reload keeps your typing; a skill save never lands in a skill named alike in another case.
+
 ## [0.2.0-beta.71] - 2026-11-27
 
 ### Fixed
