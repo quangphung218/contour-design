@@ -10,7 +10,10 @@
 // buttons working; the mode tabs fit at 375 px; From agent CLI: the skills
 // of a temp HOME, an empty list, a load error and Try again, a filter with
 // no match, a bundled id not picked, a 409 by its row, an import landing
-// late never closes what is being typed; Use in Claude Code (a review of
+// late never closes what is being typed; an imported skill whose source
+// changed: Differs, Review and replace (both SKILL.md, hidden characters,
+// a source changed again comes back for review), Restore previous
+// version; Use in Claude Code (a review of
 // the SKILL.md and the files first; the web app shows the rsync command,
 // which run twice skips links and hidden files; warns for a skill that
 // calls `od` or has no description; the desktop app's copy through a
@@ -910,6 +913,84 @@ try {
   const userSkills = (await api('/api/skills')).skills.filter((sk) => sk.source === 'user').map((sk) => sk.id);
   assert.ok(['tea-a', 'tea-b', 'tea-c', 'tea-d', 'tea-e'].every((id) => userSkills.includes(id)), 'the composer lists them for @');
   results.agentSkills = 'ok';
+
+  // ------------------------------------------------ replace from source
+  // An imported skill whose agent CLI folder changed: "Differs from
+  // Contour", a review of both SKILL.md (hidden characters marked) and
+  // the files that differ, a source changed again while the review is
+  // open comes back for review (409), Replace keeps the copy in Contour,
+  // and "Restore previous version" brings it back byte for byte.
+  const teaSource = join(home, '.gemini/skills/tea-c');
+  const teaCopy = join(data, 'skills', 'tea-c');
+  await openAgentCli();
+  await agentRow('tea-c').getByTestId('agent-skill-imported').waitFor();
+  assert.equal(await agentRow('tea-c').getByTestId('agent-skill-differs').count(), 0, 'unchanged: no Differs');
+  assert.equal(await agentRow('tea-c').getByTestId('agent-skill-review').count(), 0, 'unchanged: no Review');
+  await closeDialog();
+  // Edited in Contour, and at its source (a zero-width space and a tag).
+  await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Edited in Contour.' }) });
+  const edited = readFileSync(join(teaCopy, 'SKILL.md'));
+  writeFileSync(join(teaSource, 'SKILL.md'), '---\nname: tea-c\ndescription: Tea labels.\n---\nUse​ kraft\u{E0041} paper.\n');
+  await openAgentCli();
+  await agentRow('tea-c').getByTestId('agent-skill-differs').waitFor();
+  assert.equal((await agentRow('tea-c').getByTestId('agent-skill-differs').textContent()).trim(), 'Differs from Contour');
+  assert.equal(await agentRow('tea-b').getByTestId('agent-skill-differs').count(), 0, 'only the row that differs');
+  await agentRow('tea-c').getByTestId('agent-skill-review').click();
+  const sourceReview = agentRow('tea-c').getByTestId('source-review');
+  await sourceReview.waitFor();
+  const changedFiles = async () => sourceReview.getByTestId('source-review-file').evaluateAll((els) => els.map((el) => `${el.querySelector('code').textContent} ${el.dataset.change}`));
+  assert.deepEqual(await changedFiles(), ['SKILL.md FileChanged']);
+  assert.match(await sourceReview.getByTestId('source-review-source-md').textContent(), /Use⟨U\+200B⟩ kraft⟨U\+E0041⟩ paper\./);
+  assert.match(await sourceReview.getByTestId('source-review-current-md').textContent(), /Edited in Contour\./);
+  await sourceReview.getByTestId('source-review-hidden').waitFor();
+  assert.ok((await sourceReview.textContent()).includes("Contour's current copy is kept; you can restore it once."));
+  await shots('skills-replace-review');
+  // Cancel closes it; nothing written.
+  await sourceReview.getByTestId('source-review-cancel').click();
+  await sourceReview.waitFor({ state: 'detached' });
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited);
+  // Opened again, then the source changes before Replace: the new content
+  // comes back for review, nothing written.
+  await agentRow('tea-c').getByTestId('agent-skill-review').click();
+  await sourceReview.waitFor();
+  mkdirSync(join(teaSource, 'scripts'), { recursive: true });
+  writeFileSync(join(teaSource, 'scripts', 'run.sh'), 'echo tea\n');
+  await sourceReview.getByTestId('source-review-replace').click();
+  await sourceReview.getByTestId('source-review-changed').waitFor();
+  assert.equal((await sourceReview.getByTestId('source-review-changed').textContent()).trim(), 'Source changed since you opened this. Review it again.');
+  const newFiles = JSON.stringify(['SKILL.md FileChanged', 'scripts/run.sh FileAdded']);
+  await until(async () => JSON.stringify(await changedFiles()) === newFiles, 'the new content is shown');
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'a changed source writes nothing');
+  assert.ok(!existsSync(join(data, 'skills', '.previous')), 'nothing kept yet');
+  // Replace: the source copied, the edited copy kept, the row the same now.
+  await sourceReview.getByTestId('source-review-replace').click();
+  await agentRow('tea-c').getByTestId('agent-skill-replaced').waitFor();
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')));
+  assert.equal(readFileSync(join(teaCopy, 'scripts', 'run.sh'), 'utf8'), 'echo tea\n');
+  assert.deepEqual(readFileSync(join(data, 'skills', '.previous', 'tea-c', 'SKILL.md')), edited);
+  await until(async () => (await agentRow('tea-c').getByTestId('agent-skill-differs').count()) === 0 && (await agentRow('tea-c').getByTestId('agent-skill-imported').count()) === 1, 'the row no longer differs');
+  assert.ok(existsSync(join(teaSource, 'SKILL.md')) && !existsSync(join(teaSource, '.previous')), 'nothing written at the source');
+  await closeDialog();
+  // Restore from the skill: back byte for byte. A skill never replaced
+  // has no Restore, and the route answers 404.
+  await page.goto(`${BASE}/skills?scope=personal`);
+  await page.locator('[data-testid="skill-row"][data-id="tea-a"] .plugin-row-main').click();
+  await page.getByTestId('skill-body').waitFor();
+  const restoreBtn = page.getByTestId('skill-restore-previous');
+  assert.equal(await restoreBtn.count(), 0, 'nothing kept: no Restore');
+  assert.equal((await fetch(`${BASE}/api/skills/tea-a/restore-previous`, { method: 'POST' })).status, 404);
+  await page.goto(`${BASE}/skills?scope=personal`);
+  await page.locator('[data-testid="skill-row"][data-id="tea-c"] .plugin-row-main').click();
+  await page.getByTestId('skill-body').waitFor();
+  assert.match(await page.getByTestId('skill-body').textContent(), /kraft/);
+  await restoreBtn.waitFor();
+  assert.equal((await restoreBtn.textContent()).trim(), 'Restore previous version');
+  await restoreBtn.click();
+  await page.getByTestId('skill-restored').waitFor();
+  await until(async () => /Edited in Contour\./.test(await page.getByTestId('skill-body').textContent()), 'the detail shows the restored copy');
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'restored byte for byte');
+  assert.ok(!existsSync(join(teaCopy, 'scripts')), 'the source-only file went with it');
+  results.replaceFromSource = 'ok';
 
   // Skills of their own now: the Skills open on Personal, the Plugins
   // still on Official; once the user picks a scope, it stays.
