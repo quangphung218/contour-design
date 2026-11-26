@@ -290,12 +290,70 @@ impl<'ast> Visit<'ast> for Reads<'_> {
             for e in &exprs {
                 self.visit_expr(e);
             }
-        } else if let Ok(stmts) = syn::Block::parse_within.parse2(tokens) {
+        } else if let Ok(stmts) = syn::Block::parse_within.parse2(tokens.clone()) {
             for s in &stmts {
                 self.visit_stmt(s);
             }
+        } else {
+            // Tokens that are no expression (`json!({"k": v})`, `m!(=> …)`):
+            // read them as tokens, every path and method call in them.
+            self.scan_tokens(tokens);
         }
         visit::visit_macro(self, mac);
+    }
+}
+
+impl Reads<'_> {
+    /// Every `a::b::c` path and `.method(` call in `tokens`, at any depth.
+    fn scan_tokens(&mut self, tokens: proc_macro2::TokenStream) {
+        use proc_macro2::{Delimiter, TokenTree};
+        let trees: Vec<TokenTree> = tokens.into_iter().collect();
+        let colons = |i: usize| {
+            matches!((trees.get(i), trees.get(i + 1)),
+                (Some(TokenTree::Punct(a)), Some(TokenTree::Punct(b)))
+                    if a.as_char() == ':' && b.as_char() == ':')
+        };
+        let mut i = 0;
+        while i < trees.len() {
+            match &trees[i] {
+                TokenTree::Group(g) => self.scan_tokens(g.stream()),
+                TokenTree::Punct(p) if p.as_char() == '.' => {
+                    if let (Some(TokenTree::Ident(m)), Some(TokenTree::Group(g))) =
+                        (trees.get(i + 1), trees.get(i + 2))
+                    {
+                        let rule = match name(m).as_str() {
+                            "read_to_string" | "read_to_end" => Some("read_to_string"),
+                            "read_file" => Some("read_file"),
+                            _ => None,
+                        };
+                        if let (Some(rule), Delimiter::Parenthesis) = (rule, g.delimiter()) {
+                            let line = m.span().start().line;
+                            self.found.push((rule, line, format!(".{m}(…)")));
+                        }
+                        // The method name is no path: on to its arguments.
+                        i += 2;
+                        continue;
+                    }
+                }
+                TokenTree::Ident(first) => {
+                    let line = first.span().start().line;
+                    let mut segs = vec![name(first)];
+                    let mut j = i + 1;
+                    while colons(j) {
+                        let Some(TokenTree::Ident(next)) = trees.get(j + 2) else {
+                            break;
+                        };
+                        segs.push(name(next));
+                        j += 3;
+                    }
+                    self.check(segs, line);
+                    i = j;
+                    continue;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
     }
 }
 
@@ -419,6 +477,24 @@ fn every_spelling_of_a_read_is_caught() {
         ),
         ("fn f() { file.read_to_end(&mut v); }", "read_to_string"),
         ("fn f() { file.read_to_string(&mut s); }", "read_to_string"),
+        // Inside a macro whose tokens are not expressions (`json!` objects).
+        (
+            "fn f() { let v = json!({\"k\": std::fs::read_to_string(p)}); }",
+            "fs::read_to_string",
+        ),
+        (
+            "fn f() { let v = json!({\"k\": {\"n\": tokio::fs::read(p).await}}); }",
+            "fs::read",
+        ),
+        ("fn f() { m!(=> std::fs::copy(a, b)); }", "fs::copy"),
+        (
+            "fn f() { m!(=> file.read_to_string(&mut s)); }",
+            "read_to_string",
+        ),
+        (
+            "use std::fs::read as slurp;\nfn f() { m!(=> slurp(p)); }",
+            "fs::read",
+        ),
         // Imports, renamed, in braces, of the module.
         ("use std::fs::read;\nfn f() { read(p); }", "fs::read"),
         (
