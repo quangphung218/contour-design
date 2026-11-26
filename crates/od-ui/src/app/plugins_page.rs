@@ -1268,7 +1268,8 @@ fn SkillDetailView(
 
 /// A character Claude Code reads but the review would show as nothing:
 /// Unicode tags (U+E0000–E007F), zero-width (U+200B–U+200D, U+2060,
-/// U+FEFF), bidi controls (U+202A–U+202E, U+2066–U+2069), variation
+/// U+FEFF), bidi controls and marks (U+202A–U+202E, U+2066–U+2069,
+/// U+200E, U+200F, U+061C), variation
 /// selectors (U+FE00–FE0F, U+E0100–E01EF), the soft hyphen (U+00AD),
 /// invisible operators (U+2061–U+2064) and the Mongolian vowel separator
 /// (U+180E). Text in them can tell the model what the user never saw.
@@ -1282,6 +1283,9 @@ fn is_hidden_char(c: char) -> bool {
             | 0x2060..=0x2064
             | 0xFEFF
             | 0xFE00..=0xFE0F
+            | 0x200E
+            | 0x200F
+            | 0x061C
             | 0x202A..=0x202E
             | 0x2066..=0x2069
             | 0x00AD
@@ -2100,6 +2104,9 @@ mod tests {
             ('\u{E01EF}', "\u{27e8}U+E01EF\u{27e9}"),
             ('\u{00AD}', "\u{27e8}U+00AD\u{27e9}"),
             ('\u{180E}', "\u{27e8}U+180E\u{27e9}"),
+            ('\u{200E}', "\u{27e8}U+200E\u{27e9}"),
+            ('\u{200F}', "\u{27e8}U+200F\u{27e9}"),
+            ('\u{061C}', "\u{27e8}U+061C\u{27e9}"),
         ] {
             let text = format!("Brew{c} tea.");
             assert_eq!(
@@ -2117,7 +2124,9 @@ mod tests {
         // a joiner's neighbours, RTL letters): shown as is.
         for c in [
             '\u{200A}',
-            '\u{200E}',
+            '\u{2010}',
+            '\u{061B}',
+            '\u{061D}',
             '\u{2065}',
             '\u{206A}',
             '\u{202F}',
