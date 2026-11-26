@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.71] - 2026-11-27
+
 ### Fixed
 
 - Saving a skill, DESIGN.md or the memory index never overwrites a newer change; Reload or Save anyway, and your typing stays.
@@ -1505,7 +1507,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.70...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.71...HEAD
+[0.2.0-beta.71]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.70...v0.2.0-beta.71
 [0.2.0-beta.70]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.69...v0.2.0-beta.70
 [0.2.0-beta.69]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.68...v0.2.0-beta.69
 [0.2.0-beta.68]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.67...v0.2.0-beta.68
