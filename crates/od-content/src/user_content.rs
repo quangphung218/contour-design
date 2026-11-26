@@ -421,6 +421,14 @@ fn keep_entry(top_too: bool) -> impl Fn(bool, &std::ffi::OsStr) -> bool {
     }
 }
 
+/// `p` with `/` between its parts, on every platform.
+fn slash_path(p: &Path) -> String {
+    p.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn tree_error(e: nofollow::TreeError) -> WriteError {
     match e {
         nofollow::TreeError::TooLarge => {
@@ -438,16 +446,35 @@ impl ExportFiles {
     /// [`WriteError::NotFound`] without a `SKILL.md` file,
     /// [`WriteError::BadRequest`] when too large, [`WriteError::Io`].
     pub fn read(source: &Path) -> Result<Self, WriteError> {
-        let tree =
-            nofollow::read_tree(source, keep_entry(false), MAX_PLUGIN_BYTES).map_err(tree_error)?;
-        let out = Self {
+        Self::read_any(source, false)?.with_skill_md()
+    }
+
+    /// Reads the skill folder `source` as an install copies it
+    /// ([`copy_dir`]: `.claude-plugin` kept at the top too), at most
+    /// [`MAX_PLUGIN_BYTES`]: an imported skill and its source compare
+    /// equal by [`Self::hash`] until one of them changes.
+    ///
+    /// # Errors
+    /// As [`Self::read`].
+    pub fn read_copy(source: &Path) -> Result<Self, WriteError> {
+        Self::read_any(source, true)?.with_skill_md()
+    }
+
+    /// The folder `source` read link-free, `SKILL.md` or not.
+    fn read_any(source: &Path, top_too: bool) -> Result<Self, WriteError> {
+        let tree = nofollow::read_tree(source, keep_entry(top_too), MAX_PLUGIN_BYTES)
+            .map_err(tree_error)?;
+        Ok(Self {
             dirs: tree.dirs,
             files: tree.files,
-        };
-        if out.file(Path::new("SKILL.md")).is_none() {
+        })
+    }
+
+    fn with_skill_md(self) -> Result<Self, WriteError> {
+        if self.file(Path::new("SKILL.md")).is_none() {
             return Err(WriteError::NotFound("the skill has no SKILL.md".to_owned()));
         }
-        Ok(out)
+        Ok(self)
     }
 
     /// Names this content: every folder and file path, every file's
@@ -476,15 +503,29 @@ impl ExportFiles {
     /// folders).
     #[must_use]
     pub fn paths(&self) -> Vec<String> {
-        self.files
+        self.files.iter().map(|(p, _)| slash_path(p)).collect()
+    }
+
+    /// The files that differ between `self` and `other`, by path (`/`
+    /// between folders), sorted: in one only, or other bytes or
+    /// permission bits.
+    #[must_use]
+    pub fn changed_files(&self, other: &Self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .files
             .iter()
-            .map(|(p, _)| {
-                p.components()
-                    .map(|c| c.as_os_str().to_string_lossy())
-                    .collect::<Vec<_>>()
-                    .join("/")
-            })
-            .collect()
+            .filter(|(p, f)| other.files.iter().find(|(q, _)| q == p).map(|(_, g)| g) != Some(f))
+            .chain(
+                other
+                    .files
+                    .iter()
+                    .filter(|(p, _)| !self.files.iter().any(|(q, _)| q == p)),
+            )
+            .map(|(p, _)| slash_path(p))
+            .collect();
+        out.sort();
+        out.dedup();
+        out
     }
 
     /// The `SKILL.md` as text.
@@ -720,13 +761,23 @@ fn read_skill(
             )));
         }
     };
-    let front = skill_front_matter(&raw)?;
+    let folder = source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    skill_id(&raw, &folder)
+}
+
+/// The id and front matter of the `SKILL.md` text `raw` in the folder
+/// named `folder` ([`read_skill`]).
+fn skill_id(
+    raw: &str,
+    folder: &str,
+) -> Result<(String, serde_json::Map<String, serde_json::Value>), WriteError> {
+    let front = skill_front_matter(raw)?;
     let id = match front.get("name") {
         Some(serde_json::Value::String(s)) if !s.is_empty() => s.clone(),
-        _ => source
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default(),
+        _ => folder.to_owned(),
     };
     if !crate::design_systems::is_valid_id(&id) || id.starts_with(['.', '_']) {
         return Err(WriteError::BadRequest(format!(
@@ -774,6 +825,10 @@ pub struct LocalSkill {
     pub description: String,
     /// A user skill with this id exists (any case or Unicode form).
     pub imported: bool,
+    /// Imported, and the user skill is no longer what this folder would
+    /// install ([`ExportFiles::read_copy`] hashes differ): either side
+    /// changed. False when either cannot be read.
+    pub differs: bool,
     /// Why it cannot be imported (front matter, id).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -793,43 +848,374 @@ pub fn scan_agent_skills(roots: &[(String, PathBuf)], user_root: &Path) -> Vec<L
         };
         let mut found: Vec<LocalSkill> = entries
             .flatten()
-            .filter_map(|entry| {
-                let folder = entry.file_name().to_string_lossy().into_owned();
-                let kind = entry.file_type().ok()?;
-                if folder.starts_with('.') || !kind.is_dir() {
-                    return None;
-                }
-                let path = entry.path();
-                std::fs::symlink_metadata(path.join("SKILL.md")).ok()?;
-                Some(match read_skill(&path) {
-                    Ok((id, front)) => LocalSkill {
-                        imported: user_skill_exists(user_root, &id),
-                        description: front
-                            .get("description")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default()
-                            .trim()
-                            .to_owned(),
-                        path,
-                        agent: agent.clone(),
-                        id,
-                        error: None,
-                    },
-                    Err(e) => LocalSkill {
-                        path,
-                        agent: agent.clone(),
-                        id: folder,
-                        description: String::new(),
-                        imported: false,
-                        error: Some(e.to_string()),
-                    },
-                })
-            })
+            .filter_map(|entry| local_skill(agent, &entry.path(), user_root))
             .collect();
         found.sort_by(|a, b| a.id.cmp(&b.id));
         out.extend(found);
     }
     out
+}
+
+/// The agent CLI skill folder `path` as [`scan_agent_skills`] lists it:
+/// `path` itself is a folder, not a link, its name not hidden, with a
+/// `SKILL.md` entry; else `None`.
+fn local_skill(agent: &str, path: &Path, user_root: &Path) -> Option<LocalSkill> {
+    let folder = path.file_name()?.to_string_lossy().into_owned();
+    if folder.starts_with('.') || !std::fs::symlink_metadata(path).ok()?.is_dir() {
+        return None;
+    }
+    std::fs::symlink_metadata(path.join("SKILL.md")).ok()?;
+    Some(match read_skill(path) {
+        Ok((id, front)) => {
+            let imported = user_skill_exists(user_root, &id);
+            LocalSkill {
+                imported,
+                differs: imported
+                    && user_skill_dir(user_root, &id).is_some_and(|c| differs(path, &c)),
+                description: front
+                    .get("description")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned(),
+                path: path.to_path_buf(),
+                agent: agent.to_owned(),
+                id,
+                error: None,
+            }
+        }
+        Err(e) => LocalSkill {
+            path: path.to_path_buf(),
+            agent: agent.to_owned(),
+            id: folder,
+            description: String::new(),
+            imported: false,
+            differs: false,
+            error: Some(e.to_string()),
+        },
+    })
+}
+
+/// Whether the user skill in `current` is no longer what `source` would
+/// install; false when either cannot be read.
+fn differs(source: &Path, current: &Path) -> bool {
+    match (
+        ExportFiles::read_copy(source),
+        ExportFiles::read_copy(current),
+    ) {
+        (Ok(a), Ok(b)) => a.hash() != b.hash(),
+        _ => false,
+    }
+}
+
+/// The agent CLI skill at `path` when it is one [`scan_agent_skills`]
+/// lists under `roots` (right under a root, by the same path), else
+/// `None`: a route takes only a folder the listing showed.
+#[must_use]
+pub fn agent_skill_at(
+    roots: &[(String, PathBuf)],
+    path: &Path,
+    user_root: &Path,
+) -> Option<LocalSkill> {
+    let parent = path.parent()?;
+    let (agent, _) = roots.iter().find(|(_, root)| root == parent)?;
+    local_skill(agent, path, user_root)
+}
+
+/// The user skill folder of `id` in `user_root` (its name on disk may
+/// differ in case or Unicode form): a folder, not a link. Hidden entries
+/// do not count.
+fn user_skill_dir(user_root: &Path, id: &str) -> Option<PathBuf> {
+    let name = entry_like(user_root, id).ok().flatten()?;
+    let dir = user_root.join(name);
+    std::fs::symlink_metadata(&dir)
+        .is_ok_and(|m| m.is_dir())
+        .then_some(dir)
+}
+
+/// The hidden folder of `<data>/skills` that keeps, per id, the copy a
+/// "Replace from source" took out ([`replace_skill_from_source`]). The
+/// index lists no hidden folder, and this one has no `SKILL.md` at its
+/// top either.
+pub const PREVIOUS_DIR: &str = ".previous";
+
+/// One replace or restore at a time in this process.
+static REPLACE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// What "Review and replace" shows: the agent CLI folder as an install
+/// would copy it, the user skill as it is, and the files that differ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourcePreview {
+    pub source: ExportFiles,
+    pub current: ExportFiles,
+    pub changed_files: Vec<String>,
+}
+
+/// Reads the agent CLI skill folder `source` and the user skill `id`
+/// ([`ExportFiles::read_copy`], link-free, bounded). Writes nothing.
+///
+/// # Errors
+/// [`WriteError::NotFound`] without a user skill `id` or a `SKILL.md` on
+/// either side, [`WriteError::BadRequest`] when too large,
+/// [`WriteError::Io`].
+pub fn source_preview(
+    source: &Path,
+    user_root: &Path,
+    id: &str,
+) -> Result<SourcePreview, WriteError> {
+    let current = user_skill_dir(user_root, id)
+        .ok_or_else(|| WriteError::NotFound(format!("no user skill {id:?}")))?;
+    let source = ExportFiles::read_copy(source)?;
+    let current = ExportFiles::read_copy(&current)?;
+    let changed_files = source.changed_files(&current);
+    Ok(SourcePreview {
+        source,
+        current,
+        changed_files,
+    })
+}
+
+/// Replaces the user skill `id` with the agent CLI skill folder `source`,
+/// if the folder is still what the user reviewed: `expected_hash` is the
+/// [`ExportFiles::hash`] of the preview ([`source_preview`]). `source` is
+/// read once; the bytes compared are the bytes written.
+///
+/// The copy in Contour is kept, not deleted: it moves to
+/// `<user_root>/.previous/<id>` (an older one kept there goes), and
+/// [`restore_previous_skill`] brings it back. The new copy is built in a
+/// hidden folder inside `.previous` (never listed) and renamed into place;
+/// on a failure the copy in Contour stays as it was.
+///
+/// # Errors
+/// [`WriteError::Changed`] when `source` changed (nothing written),
+/// [`WriteError::BadRequest`] for an invalid id, a `SKILL.md` that names
+/// another id now, or a folder too large, [`WriteError::NotFound`]
+/// without a user skill `id`, [`WriteError::Io`].
+pub fn replace_skill_from_source(
+    source: &Path,
+    user_root: &Path,
+    id: &str,
+    expected_hash: &str,
+) -> Result<ExportFiles, WriteError> {
+    if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
+        return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
+    }
+    let files = ExportFiles::read_any(source, true)?;
+    if files.hash() != expected_hash {
+        return Err(WriteError::Changed(format!(
+            "the source of skill {id:?} changed since it was shown: review it again"
+        )));
+    }
+    let files = files.with_skill_md()?;
+    let raw = String::from_utf8(
+        files
+            .file(Path::new("SKILL.md"))
+            .unwrap_or_default()
+            .to_vec(),
+    )
+    .map_err(|e| WriteError::BadRequest(format!("SKILL.md cannot be read: {e}")))?;
+    let folder = source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let (named, _) = skill_id(&raw, &folder)?;
+    if named != id {
+        return Err(WriteError::BadRequest(format!(
+            "the source is the skill {named:?} now, not {id:?}"
+        )));
+    }
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let current = user_skill_dir(user_root, id)
+        .ok_or_else(|| WriteError::NotFound(format!("no user skill {id:?}")))?;
+    let held = previous_root(user_root)?;
+    let incoming = held.join(format!(".incoming-{id}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&incoming);
+    let built = std::fs::create_dir(&incoming)
+        .map_err(io)
+        .and_then(|()| files.write_into(&incoming));
+    let undo_incoming = || {
+        let _ = std::fs::remove_dir_all(&incoming);
+    };
+    if let Err(e) = built {
+        undo_incoming();
+        return Err(e);
+    }
+    let previous = held.join(id);
+    if let Err(e) = remove_any(&previous) {
+        undo_incoming();
+        return Err(io(e));
+    }
+    if let Err(e) = std::fs::rename(&current, &previous) {
+        undo_incoming();
+        return Err(io(e));
+    }
+    if let Err(e) = std::fs::rename(&incoming, &current) {
+        let _ = std::fs::rename(&previous, &current);
+        undo_incoming();
+        return Err(io(e));
+    }
+    Ok(files)
+}
+
+/// Whether a copy taken out by [`replace_skill_from_source`] is kept for
+/// the user skill `id`.
+#[must_use]
+pub fn has_previous_skill(user_root: &Path, id: &str) -> bool {
+    // An id is a folder name: never a path (`/etc`, `..`) asked about.
+    valid_skill_id(id)
+        && std::fs::symlink_metadata(user_root.join(PREVIOUS_DIR)).is_ok_and(|m| m.is_dir())
+        && std::fs::symlink_metadata(user_root.join(PREVIOUS_DIR).join(id))
+            .is_ok_and(|m| m.is_dir())
+}
+
+/// Swaps the user skill `id` and the copy kept in `.previous/<id>`: one
+/// level, so a second restore undoes the first. Both are moved whole
+/// (renamed), byte for byte. Without a user skill `id` (deleted since) the
+/// kept copy comes back as it.
+///
+/// # Errors
+/// [`WriteError::NotFound`] when no copy is kept, [`WriteError::BadRequest`]
+/// for an invalid id, [`WriteError::Io`].
+pub fn restore_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteError> {
+    if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
+        return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
+    }
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A restore cut short may have left the copy to restore in a swap.
+    if std::fs::symlink_metadata(user_root.join(PREVIOUS_DIR)).is_ok_and(|m| m.is_dir()) {
+        previous_root(user_root)?;
+    }
+    if !has_previous_skill(user_root, id) {
+        return Err(WriteError::NotFound(format!(
+            "no previous version of skill {id:?}"
+        )));
+    }
+    let held = previous_root(user_root)?;
+    let previous = held.join(id);
+    let Some(current) = user_skill_dir(user_root, id) else {
+        refuse_case_twin(user_root, id, "skill")?;
+        return std::fs::rename(&previous, user_root.join(id)).map_err(io);
+    };
+    // Never removed: a swap left there is someone's only copy, and
+    // `previous_root` has just put every one back.
+    let swap = held.join(format!(".swap-{id}-{}", std::process::id()));
+    if std::fs::symlink_metadata(&swap).is_ok() {
+        return Err(WriteError::Io(format!("{} is in the way", swap.display())));
+    }
+    std::fs::rename(&current, &swap).map_err(io)?;
+    if let Err(e) = std::fs::rename(&previous, &current) {
+        let _ = std::fs::rename(&swap, &current);
+        return Err(io(e));
+    }
+    // The user's copy is only in the swap until this lands: tried twice,
+    // and left for the next replace or restore to put back if both fail.
+    if let Err(e) = std::fs::rename(&swap, &previous) {
+        std::fs::rename(&swap, &previous).map_err(|_| io(e))?;
+    }
+    Ok(())
+}
+
+/// `<user_root>/.previous`, made if missing; a link or file there is
+/// refused, never followed.
+/// What a replace or restore cut short (the app quit between its steps)
+/// left there is dealt with first ([`recover_cut_short`]).
+fn previous_root(user_root: &Path) -> Result<PathBuf, WriteError> {
+    let held = user_root.join(PREVIOUS_DIR);
+    match std::fs::symlink_metadata(&held) {
+        Ok(m) if m.is_dir() => {
+            recover_cut_short(user_root, &held)?;
+        }
+        Ok(_) => {
+            return Err(WriteError::Io(format!(
+                "{} is not a folder",
+                held.display()
+            )));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(&held).map_err(io)?;
+        }
+        Err(e) => return Err(io(e)),
+    }
+    Ok(held)
+}
+
+/// Deals with what a replace or restore cut short left in `held`
+/// (`.previous`), never deleting a copy that may be the user's only one:
+///
+/// - `.incoming-<id>-<pid>`: a copy of an agent CLI folder being put in
+///   place. The folder is still there: removed.
+/// - `.swap-<id>-<pid>`: the user skill a restore took out, between its
+///   steps the only copy of it. Moved back to the user skill `<id>` when
+///   there is none (the restore stopped after its first step), else to
+///   `.previous/<id>` when that is free (it stopped after its second);
+///   with both there it is kept, renamed `….-kept`, never removed.
+fn recover_cut_short(user_root: &Path, held: &Path) -> Result<(), WriteError> {
+    for entry in std::fs::read_dir(held).map_err(io)?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = entry.path();
+        if name.starts_with(".incoming-") {
+            remove_any(&path).map_err(io)?;
+            continue;
+        }
+        let Some((id, pid)) = name
+            .strip_prefix(".swap-")
+            .and_then(|rest| rest.rsplit_once('-'))
+        else {
+            continue;
+        };
+        if !valid_skill_id(id) || pid.is_empty() || !pid.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let to = if entry_like(user_root, id).ok().flatten().is_none() {
+            user_root.join(id)
+        } else if std::fs::symlink_metadata(held.join(id)).is_err() {
+            held.join(id)
+        } else {
+            held.join(format!("{name}-kept"))
+        };
+        std::fs::rename(&path, &to).map_err(io)?;
+    }
+    Ok(())
+}
+
+/// Drops the copy kept for the user skill `id` (the skill is deleted: a
+/// new skill of that id must not offer to restore it). Nothing kept is
+/// fine; a `.previous` that is a link is left alone.
+///
+/// # Errors
+/// [`WriteError::Io`].
+pub fn forget_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteError> {
+    if !valid_skill_id(id) {
+        return Ok(());
+    }
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let held = user_root.join(PREVIOUS_DIR);
+    if !std::fs::symlink_metadata(&held).is_ok_and(|m| m.is_dir()) {
+        return Ok(());
+    }
+    remove_any(&held.join(id)).map_err(io)
+}
+
+/// An id a skill folder can have: letters, digits and `-`, not hidden.
+fn valid_skill_id(id: &str) -> bool {
+    crate::design_systems::is_valid_id(id) && !id.starts_with(['.', '_'])
+}
+
+/// Removes whatever is at `path` (a folder and all in it, a file, a link
+/// itself); nothing there is fine.
+fn remove_any(path: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_dir() => std::fs::remove_dir_all(path),
+        Ok(_) => std::fs::remove_file(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 /// The front matter of a `SKILL.md`; text without one, or with one that
@@ -1846,5 +2232,484 @@ mod tests {
 
         let user = tmp.path().join("user");
         assert_eq!(install_skill(&link, &user, |_| false).unwrap(), "tea");
+    }
+
+    /// An agent CLI folder `tea` (with `scripts/run.sh`) imported as the
+    /// user skill `tea`: `(agent roots, source, user root)`.
+    fn imported_tea(tmp: &Path) -> (Vec<(String, PathBuf)>, PathBuf, PathBuf) {
+        let home = tmp.join("home");
+        let user = tmp.join("data/skills");
+        let roots = agent_skill_roots(&home);
+        let source = skill_dir(
+            &home.join(".claude/skills"),
+            "tea",
+            "---\nname: tea\ndescription: Calm.\n---\nUse cream.\n",
+        );
+        std::fs::create_dir_all(source.join("scripts")).unwrap();
+        std::fs::write(source.join("scripts/run.sh"), "echo tea\n").unwrap();
+        assert_eq!(install_skill(&source, &user, |_| false).unwrap(), "tea");
+        (roots, source, user)
+    }
+
+    fn tea_row(roots: &[(String, PathBuf)], user: &Path) -> LocalSkill {
+        scan_agent_skills(roots, user)
+            .into_iter()
+            .find(|s| s.id == "tea")
+            .unwrap()
+    }
+
+    /// Every file under `dir` with its bytes and permission bits, hidden
+    /// ones too: what a restore must bring back exactly.
+    fn snapshot(dir: &Path) -> Vec<(PathBuf, nofollow::ReadFile)> {
+        nofollow::read_tree(dir, |_, _| true, u64::MAX)
+            .unwrap()
+            .files
+    }
+
+    #[test]
+    fn an_imported_skill_differs_once_either_side_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (roots, source, user) = imported_tea(tmp.path());
+        let row = tea_row(&roots, &user);
+        assert!(row.imported);
+        assert!(!row.differs, "just imported: the same");
+        // The source's SKILL.md edited, then put back.
+        let md = std::fs::read(source.join("SKILL.md")).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nUse milk.\n").unwrap();
+        assert!(tea_row(&roots, &user).differs, "SKILL.md edited");
+        std::fs::write(source.join("SKILL.md"), &md).unwrap();
+        assert!(!tea_row(&roots, &user).differs);
+        // A side file only.
+        std::fs::write(source.join("scripts/run.sh"), "echo green tea\n").unwrap();
+        assert!(tea_row(&roots, &user).differs, "a side file edited");
+        std::fs::write(source.join("scripts/run.sh"), "echo tea\n").unwrap();
+        assert!(!tea_row(&roots, &user).differs);
+        // Its permission bits only.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let run = source.join("scripts/run.sh");
+            std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(tea_row(&roots, &user).differs, "chmod +x");
+            std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(!tea_row(&roots, &user).differs);
+        }
+        // What an install leaves out (a hidden file) is no difference.
+        std::fs::write(source.join(".DS_Store"), "x").unwrap();
+        assert!(
+            !tea_row(&roots, &user).differs,
+            "a hidden file is not copied"
+        );
+        // The copy in Contour edited.
+        std::fs::write(user.join("tea/notes.md"), "mine").unwrap();
+        assert!(tea_row(&roots, &user).differs, "edited in Contour");
+        // Not imported: never differs.
+        std::fs::remove_dir_all(user.join("tea")).unwrap();
+        let row = tea_row(&roots, &user);
+        assert!(!row.imported && !row.differs);
+    }
+
+    #[test]
+    fn a_replace_keeps_the_copy_in_contour_for_one_restore() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (roots, source, user) = imported_tea(tmp.path());
+        // Edited in Contour: SKILL.md, a new file, a mode.
+        std::fs::write(user.join("tea/SKILL.md"), "---\nname: tea\n---\nMine.\n").unwrap();
+        std::fs::write(user.join("tea/notes.md"), "mine").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let run = user.join("tea/scripts/run.sh");
+            std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let edited = snapshot(&user.join("tea"));
+        // And the source edited too.
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nUse milk.\n").unwrap();
+
+        let preview = source_preview(&source, &user, "tea").unwrap();
+        assert_eq!(
+            preview.source.skill_md(),
+            "---\nname: tea\n---\nUse milk.\n"
+        );
+        assert_eq!(preview.current.skill_md(), "---\nname: tea\n---\nMine.\n");
+        let mut want = vec!["SKILL.md", "notes.md"];
+        if cfg!(unix) {
+            want.push("scripts/run.sh");
+        }
+        assert_eq!(preview.changed_files, want);
+        assert_eq!(preview.source.hash(), hash_of_copy(&source));
+        // Nothing written by the preview.
+        assert!(!user.join(PREVIOUS_DIR).exists());
+
+        let copied =
+            replace_skill_from_source(&source, &user, "tea", &preview.source.hash()).unwrap();
+        assert_eq!(copied.hash(), preview.source.hash());
+        assert_eq!(snapshot(&user.join("tea")), snapshot(&source));
+        assert_eq!(
+            snapshot(&user.join(".previous/tea")),
+            edited,
+            "the edited copy is kept, byte for byte"
+        );
+        assert!(has_previous_skill(&user, "tea"));
+        assert!(
+            !tea_row(&roots, &user).differs,
+            "the same as its source now"
+        );
+        assert_eq!(names(&user), [".previous", "tea"]);
+        assert_eq!(
+            names(&user.join(".previous")),
+            ["tea"],
+            "nothing left behind"
+        );
+        // Not listed as a skill, and no user skill named `.previous`.
+        assert_eq!(
+            crate::skills::list_skills(std::slice::from_ref(&user), true)
+                .iter()
+                .map(|e| e.dir.clone())
+                .collect::<Vec<_>>(),
+            [user.join("tea")]
+        );
+
+        // Restore: the edited copy back, exactly; the source's kept.
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), edited);
+        assert_eq!(snapshot(&user.join(".previous/tea")), snapshot(&source));
+        // One level: a second restore swaps them again.
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), snapshot(&source));
+        assert_eq!(snapshot(&user.join(".previous/tea")), edited);
+        assert_eq!(names(&user.join(".previous")), ["tea"]);
+
+        // A second replace keeps only the copy it took out.
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nUse honey.\n").unwrap();
+        let before = snapshot(&user.join("tea"));
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        assert_eq!(snapshot(&user.join(".previous/tea")), before);
+    }
+
+    /// [`ExportFiles::read_copy`]'s hash, as the preview shows it.
+    fn hash_of_copy(source: &Path) -> String {
+        ExportFiles::read_copy(source).unwrap().hash()
+    }
+
+    #[test]
+    fn a_replace_writes_nothing_for_a_source_changed_or_renamed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        std::fs::write(user.join("tea/notes.md"), "mine").unwrap();
+        let mine = snapshot(&user.join("tea"));
+        let shown = hash_of_copy(&source);
+        // Changed after the preview.
+        std::fs::write(source.join("scripts/run.sh"), "rm -rf ~\n").unwrap();
+        assert!(matches!(
+            replace_skill_from_source(&source, &user, "tea", &shown),
+            Err(WriteError::Changed(_))
+        ));
+        assert_eq!(snapshot(&user.join("tea")), mine);
+        assert!(!user.join(PREVIOUS_DIR).exists(), "nothing written");
+        // Its name changed: another skill now, even as reviewed.
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea2\n---\nOther.\n").unwrap();
+        assert!(matches!(
+            replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)),
+            Err(WriteError::BadRequest(_))
+        ));
+        assert_eq!(snapshot(&user.join("tea")), mine);
+        assert!(!user.join(PREVIOUS_DIR).exists(), "nothing written");
+        // No user skill of that id.
+        std::fs::write(source.join("SKILL.md"), "---\nname: mint\n---\nOther.\n").unwrap();
+        assert!(matches!(
+            replace_skill_from_source(&source, &user, "mint", &hash_of_copy(&source)),
+            Err(WriteError::NotFound(_))
+        ));
+        // Nothing to restore.
+        assert!(!has_previous_skill(&user, "tea"));
+        assert!(matches!(
+            restore_previous_skill(&user, "tea"),
+            Err(WriteError::NotFound(_))
+        ));
+        assert_eq!(snapshot(&user.join("tea")), mine);
+    }
+
+    /// The source's `SKILL.md` a link, a side file swapped for a link or a
+    /// FIFO: no link is followed, no FIFO waited on, nothing of them
+    /// written.
+    #[cfg(unix)]
+    #[test]
+    fn a_replace_follows_no_link_and_waits_on_no_fifo() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let (roots, source, user) = imported_tea(tmp.path());
+        let secret = tmp.path().join("secret.md");
+        std::fs::write(&secret, "---\nname: tea\n---\ns3cret\n").unwrap();
+        let mine = snapshot(&user.join("tea"));
+        // SKILL.md a link: no preview, no replace whatever the hash.
+        std::fs::remove_file(source.join("SKILL.md")).unwrap();
+        symlink(&secret, source.join("SKILL.md")).unwrap();
+        assert!(!tea_row(&roots, &user).differs);
+        assert!(source_preview(&source, &user, "tea").is_err());
+        let no_md = ExportFiles::read_any(&source, true).unwrap().hash();
+        for hash in [no_md.as_str(), "x"] {
+            assert!(replace_skill_from_source(&source, &user, "tea", hash).is_err());
+        }
+        assert_eq!(snapshot(&user.join("tea")), mine);
+        assert!(!user.join(PREVIOUS_DIR).exists());
+        // A side file a link, another a FIFO: read and left out, at once.
+        std::fs::remove_file(source.join("SKILL.md")).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        std::fs::remove_file(source.join("scripts/run.sh")).unwrap();
+        symlink(&secret, source.join("scripts/run.sh")).unwrap();
+        nix::unistd::mkfifo(&source.join("assets/pipe"), nix::sys::stat::Mode::S_IRWXU).unwrap();
+        let (src, usr) = (source.clone(), user.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let preview = source_preview(&src, &usr, "tea").unwrap();
+            let done = replace_skill_from_source(&src, &usr, "tea", &preview.source.hash());
+            tx.send((preview.changed_files, done.is_ok())).unwrap();
+        });
+        let (changed, done) = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("a FIFO never blocks the replace");
+        assert_eq!(
+            changed,
+            ["SKILL.md", "scripts/run.sh"],
+            "run.sh is gone from the copy"
+        );
+        assert!(done);
+        let now = snapshot(&user.join("tea"));
+        let paths: Vec<_> = now.iter().map(|(p, _)| p.clone()).collect();
+        assert_eq!(
+            paths,
+            [
+                PathBuf::from("SKILL.md"),
+                PathBuf::from("assets/tokens.css")
+            ]
+        );
+        assert!(
+            !now.iter()
+                .any(|(_, f)| f.bytes.windows(6).any(|w| w == b"s3cret"))
+        );
+    }
+
+    #[test]
+    fn only_a_listed_agent_folder_is_taken() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (roots, source, user) = imported_tea(tmp.path());
+        let row = agent_skill_at(&roots, &source, &user).unwrap();
+        assert_eq!(row, tea_row(&roots, &user));
+        // Not right under an agent root: refused.
+        let elsewhere = skill_dir(tmp.path(), "tea", "---\nname: tea\n---\n");
+        assert!(agent_skill_at(&roots, &elsewhere, &user).is_none());
+        let deeper = skill_dir(&source, "tea", "---\nname: tea\n---\n");
+        assert!(agent_skill_at(&roots, &deeper, &user).is_none());
+        let dotted = source.join("..").join("tea");
+        assert!(agent_skill_at(&roots, &dotted, &user).is_none());
+        let hidden = skill_dir(&home_skills(tmp.path()), ".tea", "---\nname: tea\n---\n");
+        assert!(agent_skill_at(&roots, &hidden, &user).is_none());
+        #[cfg(unix)]
+        {
+            let link = home_skills(tmp.path()).join("linked");
+            std::os::unix::fs::symlink(&elsewhere, &link).unwrap();
+            assert!(agent_skill_at(&roots, &link, &user).is_none());
+        }
+    }
+
+    fn home_skills(tmp: &Path) -> PathBuf {
+        tmp.join("home/.claude/skills")
+    }
+
+    /// The user skill deleted after a replace: Restore brings the kept
+    /// copy back as the skill. An entry of that name in another case that
+    /// is no skill folder (a file) is in the way: refused, both kept.
+    #[test]
+    fn a_restore_brings_back_a_deleted_skill_unless_a_twin_is_in_the_way() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        std::fs::write(user.join("tea/notes.md"), "mine").unwrap();
+        let edited = snapshot(&user.join("tea"));
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        delete_user_dir(&user, &user.join("tea")).unwrap();
+        // A file named `Tea`: in the way of `tea` on every file system.
+        std::fs::write(user.join("Tea"), "not a skill").unwrap();
+        assert!(matches!(
+            restore_previous_skill(&user, "tea"),
+            Err(WriteError::Exists(_))
+        ));
+        assert_eq!(snapshot(&user.join(".previous/tea")), edited, "kept");
+        assert_eq!(std::fs::read(user.join("Tea")).unwrap(), b"not a skill");
+        std::fs::remove_file(user.join("Tea")).unwrap();
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), edited, "back as the skill");
+        assert!(!has_previous_skill(&user, "tea"), "nothing kept any more");
+        assert_eq!(names(&user.join(".previous")), Vec::<String>::new());
+    }
+
+    /// `.previous` a link to a folder elsewhere: a replace writes nothing
+    /// there and keeps the skill; restore and forget never follow it.
+    #[cfg(unix)]
+    #[test]
+    fn a_previous_folder_that_is_a_link_is_never_followed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(outside.join("tea")).unwrap();
+        std::fs::write(outside.join("tea/keep.txt"), "theirs").unwrap();
+        std::os::unix::fs::symlink(&outside, user.join(PREVIOUS_DIR)).unwrap();
+        let mine = snapshot(&user.join("tea"));
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        assert!(matches!(
+            replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)),
+            Err(WriteError::Io(_))
+        ));
+        assert_eq!(snapshot(&user.join("tea")), mine);
+        assert_eq!(names(&outside), ["tea"]);
+        assert_eq!(names(&outside.join("tea")), ["keep.txt"]);
+        assert!(!has_previous_skill(&user, "tea"));
+        assert!(matches!(
+            restore_previous_skill(&user, "tea"),
+            Err(WriteError::NotFound(_))
+        ));
+        forget_previous_skill(&user, "tea").unwrap();
+        assert_eq!(names(&outside.join("tea")), ["keep.txt"]);
+        assert_eq!(snapshot(&user.join("tea")), mine);
+    }
+
+    /// Only an id is asked about: a path (`/…`, `..`) is no skill.
+    #[test]
+    fn a_kept_copy_is_looked_up_by_id_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        assert!(has_previous_skill(&user, "tea"));
+        let outside = tmp.path().to_string_lossy().into_owned();
+        for id in [outside.as_str(), "..", "../skills", ".", ""] {
+            assert!(!has_previous_skill(&user, id), "{id:?}");
+            assert!(restore_previous_skill(&user, id).is_err(), "{id:?}");
+            forget_previous_skill(&user, id).unwrap();
+        }
+        assert!(user.join("tea").is_dir() && has_previous_skill(&user, "tea"));
+        // Forgotten (the skill deleted): nothing to restore.
+        forget_previous_skill(&user, "tea").unwrap();
+        assert!(!has_previous_skill(&user, "tea"));
+    }
+
+    /// A replace cut short leaves `.incoming-…`, a copy of a source still
+    /// there: the next replace removes it.
+    #[test]
+    fn what_a_replace_cut_short_left_is_removed_next_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, source, user) = imported_tea(tmp.path());
+        std::fs::create_dir_all(user.join(PREVIOUS_DIR).join(".incoming-tea-1")).unwrap();
+        std::fs::write(user.join(".previous/.incoming-tea-1/SKILL.md"), "x").unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
+    }
+
+    /// Files under a folder, as [`snapshot`] reads them.
+    type Snapshot = Vec<(PathBuf, nofollow::ReadFile)>;
+
+    /// A restore swaps in three renames: `tea` → `.swap-tea-<pid>`,
+    /// `.previous/tea` → `tea`, the swap → `.previous/tea`. Cut short after
+    /// either of the first two, the swap is the only copy of the skill the
+    /// user had: the next replace (of any skill) or restore puts it back,
+    /// never removes it. `(A, B)`: the copy restored and the user's.
+    fn cut_short_restore(tmp: &Path) -> (PathBuf, PathBuf, Snapshot, Snapshot) {
+        let (_, source, user) = imported_tea(tmp);
+        let a = snapshot(&user.join("tea"));
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNew.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        // The user's own edit of the copy replaced: only here, not at the source.
+        std::fs::write(user.join("tea/notes.md"), "the user's only copy").unwrap();
+        let b = snapshot(&user.join("tea"));
+        (source, user, a, b)
+    }
+
+    #[test]
+    fn a_restore_cut_short_after_its_second_step_loses_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, user, a, b) = cut_short_restore(tmp.path());
+        let swap = user.join(".previous/.swap-tea-424242");
+        std::fs::rename(user.join("tea"), &swap).unwrap();
+        std::fs::rename(user.join(".previous/tea"), user.join("tea")).unwrap();
+        // Another skill replaced next: the swap goes where the restore
+        // would have put it.
+        let mint_src = skill_dir(
+            &tmp.path().join("home/.claude/skills"),
+            "mint",
+            "---\nname: mint\n---\nMint.\n",
+        );
+        install_skill(&mint_src, &user, |_| false).unwrap();
+        std::fs::write(mint_src.join("SKILL.md"), "---\nname: mint\n---\nMint 2.\n").unwrap();
+        replace_skill_from_source(&mint_src, &user, "mint", &hash_of_copy(&mint_src)).unwrap();
+        assert_eq!(snapshot(&user.join("tea")), a);
+        assert_eq!(
+            snapshot(&user.join(".previous/tea")),
+            b,
+            "the user's copy is kept"
+        );
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["mint", "tea"]);
+        // And a restore brings it back.
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), b);
+    }
+
+    /// Cut short after its second step, then Restore pressed again (no
+    /// replace in between): it finds the user's copy first, then swaps.
+    #[test]
+    fn a_restore_asked_again_after_its_second_step_finds_the_users_copy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, user, a, b) = cut_short_restore(tmp.path());
+        std::fs::rename(user.join("tea"), user.join(".previous/.swap-tea-424242")).unwrap();
+        std::fs::rename(user.join(".previous/tea"), user.join("tea")).unwrap();
+        assert!(!has_previous_skill(&user, "tea"));
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), b, "the user's copy is back");
+        assert_eq!(snapshot(&user.join(".previous/tea")), a);
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
+    }
+
+    #[test]
+    fn a_restore_cut_short_after_its_first_step_loses_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_, user, a, b) = cut_short_restore(tmp.path());
+        std::fs::rename(user.join("tea"), user.join(".previous/.swap-tea-424242")).unwrap();
+        // No user skill `tea` now; the restore asked again finds the swap
+        // back as the skill first, then swaps as asked.
+        restore_previous_skill(&user, "tea").unwrap();
+        assert_eq!(snapshot(&user.join("tea")), a);
+        assert_eq!(
+            snapshot(&user.join(".previous/tea")),
+            b,
+            "the user's copy is kept"
+        );
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), ["tea"]);
+    }
+
+    /// A swap with both the skill and its kept copy there is kept too,
+    /// under a name no later run takes for a swap of its own.
+    #[test]
+    fn a_swap_with_nowhere_to_go_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (source, user, _, b) = cut_short_restore(tmp.path());
+        let swap = user.join(".previous/.swap-tea-7");
+        std::fs::create_dir_all(&swap).unwrap();
+        for (p, f) in &b {
+            std::fs::create_dir_all(swap.join(p).parent().unwrap()).unwrap();
+            std::fs::write(swap.join(p), &f.bytes).unwrap();
+        }
+        std::fs::write(source.join("SKILL.md"), "---\nname: tea\n---\nNewer.\n").unwrap();
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        let kept = user.join(".previous/.swap-tea-7-kept");
+        assert_eq!(
+            std::fs::read(kept.join("notes.md")).unwrap(),
+            b"the user's only copy"
+        );
+        // Not a swap any more: the next run leaves it where it is.
+        replace_skill_from_source(&source, &user, "tea", &hash_of_copy(&source)).unwrap();
+        restore_previous_skill(&user, "tea").unwrap();
+        assert!(kept.join("notes.md").is_file());
+        assert_eq!(names(&user.join(PREVIOUS_DIR)), [".swap-tea-7-kept", "tea"]);
     }
 }

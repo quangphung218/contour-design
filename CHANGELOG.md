@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- From agent CLI flags imported skills that differ from their source; review both SKILL.md files, replace, and restore the previous copy once.
+
 ### Fixed
 
 - Copy to Claude Code marks every invisible Unicode character; template previews and craft sections no longer wait on a FIFO.
