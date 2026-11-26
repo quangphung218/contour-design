@@ -294,6 +294,11 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
     // another window), nothing is written and the editor asks
     // (`changed`), keeping the draft.
     let tag = StoredValue::new(None::<String>);
+    // The tag of the index the draft started from, taken as the first key
+    // is typed: a read landing after that (one in flight at mount, or
+    // after a memory was learnt) moves `tag` on, not what the draft is
+    // based on.
+    let draft_tag = StoredValue::new(None::<String>);
     let changed = RwSignal::new(false);
     let tasks = Tasks::here();
     let load = move || {
@@ -319,7 +324,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
         let Some(index) = draft.get_untracked() else {
             return;
         };
-        let sent = if force { None } else { tag.get_value() };
+        let sent = if force { None } else { draft_tag.get_value() };
         tasks.spawn(async move {
             let body = json!({ "index": index });
             match api::put_if_match::<_, Value>("/api/memory/index", &body, sent.as_deref()).await {
@@ -352,7 +357,13 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
             <textarea class="input mono" rows="10" data-testid="memory-index-text" spellcheck="false"
                 aria-label=t(T::MemoryIndexTitle)
                 prop:value=move || draft.get().unwrap_or_else(|| saved.get())
-                on:input=live(move |ev| { status.set(None); draft.set(Some(event_target_value(&ev))); })></textarea>
+                on:input=live(move |ev| {
+                    status.set(None);
+                    if draft.with_untracked(Option::is_none) {
+                        draft_tag.set_value(tag.get_value());
+                    }
+                    draft.set(Some(event_target_value(&ev)));
+                })></textarea>
             {move || changed.get().then(|| view! {
                 <ChangedElsewhere testid="memory-index-save"
                     on_reload=Callback::new(move |()| reload())

@@ -544,9 +544,25 @@ try {
   await page.getByTestId('skill-body').waitFor();
   await page.getByTestId('skill-edit').click();
   await page.getByTestId('override-notice').waitFor();
+  // An agent's shell writes an override of it while the form is open (the
+  // daemon not told): Save writes nothing and asks; Reload opens the form
+  // on the agent's override; a Save from there writes.
+  const overrideMd = join(data, 'skills', skillId, 'SKILL.md');
+  await page.getByTestId('skill-description').fill('Typed over a bundled skill.');
+  mkdirSync(join(data, 'skills', skillId), { recursive: true });
+  writeFileSync(overrideMd, `---\nname: ${skillId}\ndescription: The agent's.\n---\nWritten by an agent.\n`);
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.equal(await page.getByTestId('skill-description').inputValue(), 'Typed over a bundled skill.', 'a 412 keeps what is typed');
+  assert.match(readFileSync(overrideMd, 'utf8'), /Written by an agent\./, "the agent's override stays");
+  await page.getByTestId('skill-save-reload').click();
+  await until(async () => /Written by an agent\./.test(await page.getByTestId('skill-body-input').inputValue()), "Reload shows the agent's override");
+  assert.equal(await page.getByTestId('skill-save-changed').count(), 0, 'and asks no more');
   await page.getByTestId('skill-description').fill('My override.');
   await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-form').waitFor({ state: 'detached' });
   await page.getByTestId('skill-delete').waitFor();
+  assert.match(readFileSync(overrideMd, 'utf8'), /My override\./, 'the Save after Reload writes');
   assert.ok(existsSync(join(data, 'skills', skillId, 'SKILL.md')), 'override saved');
   // The delete's reply is held until the next skill is saved and open, as
   // on a busy machine (CI): the late reply must not close that skill.

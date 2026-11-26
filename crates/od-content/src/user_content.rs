@@ -192,6 +192,21 @@ pub fn skill_tag(dir: &Path) -> String {
     }
 }
 
+/// The folder a save of skill `id` writes over: the user's override in
+/// `<user_root>/<id>` once its `SKILL.md` is on disk (an agent may write
+/// one the index has not read yet), else `entry_dir`, the folder the
+/// index has for it. A form's `GET` tags this folder and its `PUT`
+/// compares this folder ([`save_skill`]), so both see the same file.
+#[must_use]
+pub fn skill_write_dir(user_root: &Path, id: &str, entry_dir: &Path, is_user: bool) -> PathBuf {
+    let over = user_root.join(id);
+    if !is_user && crate::design_systems::is_valid_id(id) && over.join("SKILL.md").exists() {
+        over
+    } else {
+        entry_dir.to_path_buf()
+    }
+}
+
 /// The tag of content `bytes`: sha256, hex.
 #[must_use]
 pub fn tag_of(bytes: &[u8]) -> String {
@@ -224,18 +239,10 @@ pub fn save_skill(
     let _one = REPLACE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(expected) = expected {
-        // What the write goes over: an override made since stands in
-        // for the bundled skill.
-        let over = user_root.join(id);
-        let shown = if !is_user && over.join("SKILL.md").exists() {
-            over.as_path()
-        } else {
-            current_dir
-        };
-        if skill_tag(shown) != expected {
-            return Err(WriteError::Stale);
-        }
+    if let Some(expected) = expected
+        && skill_tag(&skill_write_dir(user_root, id, current_dir, is_user)) != expected
+    {
+        return Err(WriteError::Stale);
     }
     // Not through a link or from a FIFO an agent put there.
     let previous = nofollow::read_file(&current_dir.join("SKILL.md"), MAX_PLUGIN_BYTES)

@@ -181,6 +181,23 @@ async fn a_bundled_skill_saved_over_an_override_written_on_disk_writes_nothing()
         std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
         theirs
     );
+    // "Reload": the form opens on the agent's override, with the tag the
+    // next Save compares, and that Save writes.
+    let (now, tag) = tagged(&d, &path).await;
+    assert!(
+        now["body"]
+            .as_str()
+            .unwrap()
+            .contains("The agent's override."),
+        "Reload shows the override: {now}"
+    );
+    assert_ne!(tag, opened);
+    assert_eq!(put(&d, &path, &typed, Some(&tag)).await, 200);
+    assert!(
+        std::fs::read_to_string(dir.join("SKILL.md"))
+            .unwrap()
+            .contains("Typed.")
+    );
 }
 
 #[tokio::test]
@@ -259,4 +276,95 @@ async fn a_memory_index_saved_from_an_old_copy_writes_nothing() {
     );
     // No If-Match: written as before.
     assert_eq!(put(&d, "/api/memory/index", &late, None).await, 200);
+}
+
+/// 24 Saves from the same opened copy at once, 40 times: exactly one
+/// lands each time (each body is new: a save of the same bytes keeps the
+/// tag, so a second one would rightly land too) (the compare and the write are one step under the
+/// file's lock; without it two or three land within a few rounds).
+async fn one_of_many_lands(
+    d: &Daemon,
+    get: &str,
+    put_path: &str,
+    body: impl Fn(usize, usize) -> Value,
+) {
+    for round in 0..40 {
+        let (_, tag) = tagged(d, get).await;
+        let mut set = tokio::task::JoinSet::new();
+        for i in 0..24 {
+            let req = d
+                .http
+                .put(format!("{}{put_path}", d.base))
+                .header("if-match", tag.clone())
+                .json(&body(round, i));
+            set.spawn(async move { req.send().await.unwrap().status().as_u16() });
+        }
+        let mut landed = 0;
+        while let Some(status) = set.join_next().await {
+            if status.unwrap() == 200 {
+                landed += 1;
+            }
+        }
+        assert_eq!(
+            landed, 1,
+            "{put_path}, round {round}: {landed} saves landed"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn skill_saves_at_once_from_one_copy_land_once() {
+    let d = daemon().await;
+    post(
+        &d,
+        "/api/skills",
+        &json!({ "name": "tea", "description": "Mine.", "body": "First." }),
+    )
+    .await;
+    one_of_many_lands(
+        &d,
+        "/api/skills/tea",
+        "/api/skills/tea",
+        |r, i| json!({ "name": "tea", "body": format!("Round {r}, writer {i}.") }),
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn design_md_saves_at_once_from_one_copy_land_once() {
+    let d = daemon().await;
+    let v = post(
+        &d,
+        "/api/design-systems/airbnb/copy",
+        &json!({ "name": "Mine" }),
+    )
+    .await;
+    let id = v["id"].as_str().unwrap().to_owned();
+    let kit = format!("/api/design-systems/{id}/kit");
+    let path = format!("/api/design-systems/{id}/design-md");
+    one_of_many_lands(
+        &d,
+        &kit,
+        &path,
+        |r, i| json!({ "body": format!("# Round {r}, writer {i}\n") }),
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn memory_index_saves_at_once_from_one_copy_land_once() {
+    let d = daemon().await;
+    post(
+        &d,
+        "/api/memory",
+        &json!({ "kind": "user", "text": "Brand colour is teal" }),
+    )
+    .await;
+    one_of_many_lands(
+        &d,
+        "/api/memory/index",
+        "/api/memory/index",
+        |r, i| json!({ "index": format!("# Round {r}, writer {i}\n") }),
+    )
+    .await;
 }

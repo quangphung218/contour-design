@@ -368,6 +368,32 @@ try {
   // The two learnt here go, so the list counts as before.
   for (const m of [learnt, again]) await api(`/api/memory/${m.memory.id}`, { method: 'DELETE' });
   await until(async () => (await page.getByTestId('global-memory-item').count()) === 1, 'the two learnt here are gone');
+  // A read of the index on its way as the first key is typed (a memory
+  // added here reads the index again): the draft keeps the tag of the
+  // index it started from, so its Save still finds the index changed.
+  let releaseRead;
+  const readHeld = new Promise((r) => (releaseRead = r));
+  let readAsked = false;
+  const indexRoute = `${BASE}/api/memory/index`;
+  await page.route(indexRoute, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    readAsked = true;
+    await readHeld;
+    await route.continue();
+  }, { times: 1 });
+  await page.getByTestId('global-memory-text').fill('Added while the index is read');
+  await page.getByTestId('global-memory-add').click();
+  await until(async () => readAsked, 'the index is being read again');
+  await index.fill('# Typed while a read was on its way\n');
+  const readLanded = page.waitForResponse((r) => r.url() === indexRoute && r.request().method() === 'GET');
+  releaseRead();
+  await readLanded;
+  await page.getByTestId('memory-index-save').click();
+  await page.getByTestId('memory-index-save-changed').waitFor();
+  assert.ok((await api('/api/memory/index')).index.includes('Added while the index is read'), 'the late read does not let the draft write over it');
+  await page.getByTestId('memory-index-save-reload').click();
+  await page.getByTestId('global-memory-item').filter({ hasText: 'Added while the index is read' }).getByRole('button', { name: 'Delete' }).click();
+  await until(async () => (await page.getByTestId('global-memory-item').count()) === 1, 'the one added here is gone');
   await shot('settings-memory', async () => page.getByTestId('memory-controls').scrollIntoViewIfNeeded());
   await page.getByTestId('memory-enabled').uncheck();
   await page.getByTestId('memory-off').waitFor();

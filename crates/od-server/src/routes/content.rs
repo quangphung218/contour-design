@@ -3,10 +3,10 @@ use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
-use od_content::{SkillEntry, nofollow};
+use od_content::{SkillEntry, nofollow, user_content};
 use od_contracts::{
-    CraftDetail, CraftResponse, DesignSystemDetail, DesignSystemsResponse, DesignTemplatesResponse,
-    FilmFormat, SkillDetail, SkillMode, SkillSummary, SkillsResponse,
+    ContentSource, CraftDetail, CraftResponse, DesignSystemDetail, DesignSystemsResponse,
+    DesignTemplatesResponse, FilmFormat, SkillDetail, SkillMode, SkillSummary, SkillsResponse,
 };
 use regex::Regex;
 use serde_json::Value;
@@ -64,27 +64,42 @@ pub async fn list_skills(State(state): State<AppState>) -> ApiJson<SkillsRespons
     })
 }
 
-/// `GET /api/skills/:id`, with the `ETag` of its `SKILL.md`: the skill
-/// editor saves with it as `If-Match` (`crate::cas`). A file changed on
-/// disk since the index read it (an agent's shell) is read again first,
-/// so the body shown and its tag are of the same bytes.
+/// `GET /api/skills/:id`, with the `ETag` of the `SKILL.md` a save would
+/// write over (`user_content::skill_write_dir`: an override on disk before
+/// the bundled skill): the skill editor saves with it as `If-Match`
+/// (`crate::cas`), and the save compares that same file. A file changed on
+/// disk since the index read it (an agent's shell, an override it wrote)
+/// is read again first, so the body shown and its tag are of the same
+/// bytes.
 pub async fn get_skill(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
     let content = std::sync::Arc::clone(&state.content);
-    let entry = crate::spawn::spawn_blocking_in_span(move || {
-        let entry = content.snapshot().find_skill(&id).cloned()?;
-        if od_content::user_content::skill_tag(&entry.dir) == entry.tag {
-            return Some(entry);
+    let user_root = state.store.data_dir().user_skills_dir();
+    let found = crate::spawn::spawn_blocking_in_span(move || {
+        let disk_tag = |e: &SkillEntry| {
+            let dir = user_content::skill_write_dir(
+                &user_root,
+                &e.info.id,
+                &e.dir,
+                e.info.source == ContentSource::User,
+            );
+            user_content::skill_tag(&dir)
+        };
+        let mut entry = content.snapshot().find_skill(&id).cloned()?;
+        let mut tag = disk_tag(&entry);
+        if tag != entry.tag {
+            content.reload();
+            entry = content.snapshot().find_skill(&id).cloned()?;
+            tag = disk_tag(&entry);
         }
-        content.reload();
-        content.snapshot().find_skill(&id).cloned()
+        Some((entry, tag))
     })
     .await
-    .map_err(|e| ApiErr::internal(e.to_string()))?
-    .ok_or_else(|| ApiErr::not_found("skill not found"))?;
-    Ok((crate::cas::etag(&entry.tag), ApiJson(detail(&entry))))
+    .map_err(|e| ApiErr::internal(e.to_string()))?;
+    let (entry, tag) = found.ok_or_else(|| ApiErr::not_found("skill not found"))?;
+    Ok((crate::cas::etag(&tag), ApiJson(detail(&entry))))
 }
 
 pub async fn list_design_templates(
