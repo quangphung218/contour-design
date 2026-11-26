@@ -622,6 +622,42 @@ async fn an_imported_skill_is_replaced_from_its_source_and_restored() {
     assert_eq!(s, 404, "{v}");
 }
 
+/// A delete whose kept copy cannot be removed (`.previous` read only):
+/// the skill is still deleted, the answer is 200 and the list drops it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_delete_lists_the_skill_gone_when_its_kept_copy_stays() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = daemon().await;
+    let (s, v) = call(
+        &d,
+        "POST",
+        "/api/skills",
+        Some(json!({ "name": "tea", "body": "Tea." })),
+    )
+    .await;
+    assert_eq!(s, 200, "{v}");
+    let held = d.data.join("skills/.previous");
+    std::fs::create_dir_all(held.join("tea")).unwrap();
+    std::fs::write(held.join("tea/SKILL.md"), "---\nname: tea\n---\nOld.\n").unwrap();
+    std::fs::set_permissions(&held, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let (s, v) = call(&d, "DELETE", "/api/skills/tea", None).await;
+    std::fs::set_permissions(&held, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(s, 200, "{v}");
+    assert!(!d.data.join("skills/tea").exists());
+    let list = d.get_json("/api/skills").await;
+    assert!(
+        !list["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["id"] == "tea"),
+        "{list}"
+    );
+    let (s, _) = call(&d, "GET", "/api/skills/tea", None).await;
+    assert_eq!(s, 404);
+}
+
 /// "Copy to Claude Code" as the desktop app runs it: the preview first
 /// (its `hash` names the content the user reviews), then the app's Tauri
 /// command, which calls `skill_export::copy_to_claude` in process with

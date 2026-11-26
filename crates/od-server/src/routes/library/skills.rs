@@ -214,8 +214,13 @@ pub async fn delete(
     let skill_id = entry.info.id.clone();
     write_and_reload(&state, move || {
         user_content::delete_user_dir(&root, &entry.dir)?;
-        // A new skill of that id must not offer to restore this one.
-        Ok(user_content::forget_previous_skill(&root, &skill_id)?)
+        // A new skill of that id must not offer to restore this one. The
+        // skill is gone already: a failure here is logged, and the index
+        // still reloads.
+        if let Err(e) = user_content::forget_previous_skill(&root, &skill_id) {
+            tracing::warn!(skill = %skill_id, error = %e, "kept copy not removed");
+        }
+        Ok(())
     })
     .await?;
     Ok(Json(json!({ "ok": true })))
