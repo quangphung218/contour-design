@@ -1038,12 +1038,31 @@ try {
   assert.ok(!existsSync(join(teaCopy, 'scripts')), 'the source-only file went with it');
   // A second Enter while it ran was dropped: restored once, not swapped back.
   assert.deepEqual(readFileSync(join(data, 'skills', '.previous', 'tea-c', 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')));
-  // Edit opens on the copy restored, and what is typed stays.
+  // Edit opens on the copy restored. Saved, the skill is read again: Edit
+  // waits for that read (held here), so the form never opens on the copy
+  // before the save; then it opens on what was saved.
   await page.getByTestId('skill-edit').click();
   assert.match(await page.getByTestId('skill-body-input').inputValue(), /Edited in Contour\./);
-  await page.getByTestId('skill-body-input').fill('Typed after the restore.');
-  for (let i = 0; i < 5; i++) await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 50))));
-  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed after the restore.');
+  await page.getByTestId('skill-body-input').fill('Saved after the restore.');
+  let releaseRead;
+  const readHeld = new Promise((r) => (releaseRead = r));
+  let readAsked = false;
+  const skillRoute = `${BASE}/api/skills/tea-c`;
+  await page.route(skillRoute, async (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    readAsked = true;
+    await readHeld;
+    await route.fallback();
+  });
+  await page.getByTestId('skill-save').click();
+  await until(async () => readAsked, 'the read after the save is held');
+  await page.getByTestId('skill-edit').waitFor();
+  assert.equal(await page.getByTestId('skill-edit').isDisabled(), true, 'no Edit before the saved skill is read');
+  releaseRead();
+  await until(async () => page.getByTestId('skill-edit').isEnabled(), 'Edit once the read lands');
+  await page.unroute(skillRoute);
+  await page.getByTestId('skill-edit').click();
+  assert.match(await page.getByTestId('skill-body-input').inputValue(), /Saved after the restore\./, 'the form opens on what was saved');
   await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
   results.replaceFromSource = 'ok';
 

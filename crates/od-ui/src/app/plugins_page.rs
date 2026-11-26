@@ -1075,28 +1075,27 @@ fn SkillDetailView(
     let editing = RwSignal::new(false);
     let notice = RwSignal::new(None::<String>);
     hold_while(held, move || editing.get());
-    // A read that lands while the form is open waits for it to close:
-    // setting `detail` builds the form again from the skill on disk, and
-    // what is being typed would go (a Restore, a reload after another
-    // task). Applied by `close_form`.
-    let landed = StoredValue::new(None::<Result<SkillDetail, String>>);
+    // A read of the skill on its way: Edit waits for it. Setting `detail`
+    // builds the form again from what was read, so a form opened before
+    // the read lands (Save, then Edit at once) would lose what is typed,
+    // or open on the copy before the save and write over it.
+    let reading = RwSignal::new(false);
     let load = {
         let id = id.clone();
         Callback::new(move |()| {
             let id = id.clone();
+            reading.set(true);
             tasks.spawn(async move {
                 let res = read_skill_detail(&id).await;
-                show_detail(detail, editing, landed, res);
+                detail.set(Some(res));
+                reading.set(false);
             });
         })
     };
-    // Closed without a save: what landed meanwhile shows, and the skill is
-    // read again (a replace from its source may have run under the form).
+    // Closed without a save: the skill is read again (a replace from its
+    // source may have run under the form).
     let close_form = move || {
         editing.set(false);
-        if let Some(res) = landed.try_update_value(Option::take).flatten() {
-            detail.set(Some(res));
-        }
         load.run(());
     };
     load.run(());
@@ -1166,7 +1165,7 @@ fn SkillDetailView(
                         Ok(res) => {
                             clear_export();
                             restored.set(true);
-                            show_detail(detail, editing, landed, res);
+                            detail.set(Some(res));
                         }
                         Err(e) => notice.set(Some(api::failure(T::RestoreFailed, &e))),
                     }
@@ -1244,7 +1243,7 @@ fn SkillDetailView(
                             </div>
                             <div class="row wrap">
                                 <button class="btn small primary" data-testid="skill-use" on:click=use_skill>{icon(Glyph::ArrowRight)}{t(T::Use)}</button>
-                                <button class="btn small" data-testid="skill-edit" prop:disabled=move || restoring.get() on:click=move |_| { clear_export(); restored.set(false); editing.set(true); }>{icon(Glyph::Rename)}{t(T::Edit)}</button>
+                                <button class="btn small" data-testid="skill-edit" prop:disabled=move || restoring.get() || reading.get() on:click=move |_| { clear_export(); restored.set(false); editing.set(true); }>{icon(Glyph::Rename)}{t(T::Edit)}</button>
                                 {user.then(|| view! { <button class="btn small skill-export-btn" data-testid="skill-export" prop:disabled=move || exporting.get() on:click=on_copy>{icon(Glyph::Export)}{if super::desktop::is_desktop() { t(T::CopyToClaudeCode) } else { t(T::UseInClaudeCode) }}</button> })}
                                 {user.then(|| view! { <button class="btn small ghost danger" data-testid="skill-delete" on:click=remove>{icon(Glyph::Delete)}{t(T::DeleteOrReset)}</button> })}
                                 {move || (user && previous.get() && !editing.get()).then(|| {
@@ -1329,7 +1328,7 @@ fn SkillDetailView(
                                         let id = id.clone();
                                         tasks.spawn(async move {
                                             match api::put::<_, Value>(&format!("/api/skills/{}", api::seg(&id)), &body).await {
-                                                Ok(_) => { clear_export(); landed.set_value(None); editing.set(false); load.run(()); }
+                                                Ok(_) => { clear_export(); editing.set(false); load.run(()); }
                                                 Err(e) => notice.set(Some(api::failure(T::MdSaveFailed, &e))),
                                             }
                                         });
@@ -1373,22 +1372,6 @@ fn reveal_once(node: NodeRef<leptos::html::Div>, reveal: StoredValue<bool>) {
 async fn read_skill_detail(id: &str) -> Result<SkillDetail, String> {
     let res = api::get::<SkillDetail>(&format!("/api/skills/{}", api::seg(id))).await;
     res.map_err(|e| e.to_string())
-}
-
-/// Shows the skill read, unless its form is open: then it waits in
-/// `landed` for the form to close (building the form again would drop
-/// what is being typed).
-fn show_detail(
-    detail: RwSignal<Option<Result<SkillDetail, String>>>,
-    editing: RwSignal<bool>,
-    landed: StoredValue<Option<Result<SkillDetail, String>>>,
-    res: Result<SkillDetail, String>,
-) {
-    if editing.get_untracked() {
-        landed.set_value(Some(res));
-    } else {
-        detail.set(Some(res));
-    }
 }
 
 /// The characters Unicode says a renderer may show as nothing
