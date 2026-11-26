@@ -111,8 +111,13 @@ pub fn localized(v: Option<&Value>, locale: Option<&str>) -> Option<String> {
 
 fn read_manifest(dir: &Path) -> Option<Map<String, Value>> {
     [MANIFEST, CLAUDE_PLUGIN_MANIFEST].iter().find_map(|name| {
-        let text =
-            crate::nofollow::read_text(&dir.join(name), crate::nofollow::MAX_INDEX_FILE_BYTES)?;
+        // No link below the entry: neither `plugin.json` nor the
+        // `.claude-plugin` folder it is in (`nofollow::read_text_under`).
+        let text = crate::nofollow::read_text_under(
+            dir,
+            Path::new(name),
+            crate::nofollow::MAX_INDEX_FILE_BYTES,
+        )?;
         serde_json::from_str::<Value>(&text)
             .ok()?
             .as_object()

@@ -103,6 +103,34 @@ fn the_plugin_index_skips_a_fifo_a_large_file_and_a_link() {
     }
 }
 
+/// A plugin whose `.claude-plugin` folder is a link (to a folder outside
+/// holding a manifest) is read without it: no other manifest, no
+/// `SKILL.md`, so not listed; with a `SKILL.md`, listed under its own name.
+#[test]
+fn the_plugin_index_follows_no_link_to_claude_plugin() {
+    let tmp = tempfile::tempdir().unwrap();
+    let bundled = tmp.path().join("bundled");
+    let user = tmp.path().join("user");
+    let meta = tmp.path().join("outside");
+    std::fs::create_dir_all(&bundled).unwrap();
+    std::fs::create_dir_all(&meta).unwrap();
+    std::fs::write(
+        meta.join("plugin.json"),
+        r#"{"name": "from-outside", "version": "1.0.0"}"#,
+    )
+    .unwrap();
+    for name in ["bare", "with-skill"] {
+        std::fs::create_dir_all(user.join(name)).unwrap();
+        std::os::unix::fs::symlink(&meta, user.join(name).join(".claude-plugin")).unwrap();
+    }
+    std::fs::write(user.join("with-skill/SKILL.md"), skill_md("with-skill")).unwrap();
+    let ids: Vec<String> = list_plugins(&bundled, Some(&user))
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    assert_eq!(ids, ["with-skill"]);
+}
+
 #[test]
 fn craft_skips_a_fifo_a_large_file_and_a_link() {
     let tmp = tempfile::tempdir().unwrap();

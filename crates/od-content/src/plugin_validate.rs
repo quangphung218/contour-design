@@ -77,11 +77,24 @@ pub fn validate_plugin_dir(dir: &Path) -> Validation {
     // manifest there that the index skips is not "no manifest".
     let mut has_manifest = false;
     for name in [MANIFEST, CLAUDE_PLUGIN_MANIFEST] {
-        let path = dir.join(name);
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+        // The link, if any, on the way to it (`.claude-plugin` or the file).
+        let mut link = None;
+        let mut at = dir.to_path_buf();
+        for part in Path::new(name).components() {
+            at.push(part);
+            if std::fs::symlink_metadata(&at).is_ok_and(|m| m.file_type().is_symlink()) {
+                link = Some(at.strip_prefix(dir).unwrap_or(&at).display().to_string());
+                break;
+            }
+        }
+        if link.is_none() && std::fs::symlink_metadata(dir.join(name)).is_err() {
             continue;
-        };
-        let read = crate::nofollow::read_file(&path, crate::nofollow::MAX_INDEX_FILE_BYTES);
+        }
+        let read = crate::nofollow::read_file_under(
+            dir,
+            Path::new(name),
+            crate::nofollow::MAX_INDEX_FILE_BYTES,
+        );
         let text = match read {
             Ok(Some(file)) => match String::from_utf8(file.bytes) {
                 Ok(text) => text,
@@ -90,9 +103,10 @@ pub fn validate_plugin_dir(dir: &Path) -> Validation {
                     continue;
                 }
             },
-            Ok(None) if meta.file_type().is_symlink() => {
+            Ok(None) if link.is_some() => {
+                let link = link.unwrap_or_default();
                 errors.push(format!(
-                    "{name} is a link: plugins are read without following one, put the file itself here"
+                    "{link} is a link: plugins are read without following one, put the file itself here"
                 ));
                 continue;
             }
@@ -249,6 +263,25 @@ mod tests {
                 .iter()
                 .any(|e| e == "open-design.json is not a regular file"),
             "{folder:?}"
+        );
+        // `.claude-plugin` a link to a folder outside: not followed, named.
+        let dir = tmp.path().join("linked-meta");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), skill).unwrap();
+        let meta = tmp.path().join("meta");
+        std::fs::create_dir_all(&meta).unwrap();
+        std::fs::write(
+            meta.join("plugin.json"),
+            r#"{"name": "s", "version": "1.0.0"}"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&meta, dir.join(".claude-plugin")).unwrap();
+        let linked = validate_plugin_dir(&dir).errors;
+        assert!(
+            linked
+                .iter()
+                .any(|e| e.starts_with(".claude-plugin is a link")),
+            "{linked:?}"
         );
         let fifo = make("fifo", &|at| {
             nix::unistd::mkfifo(at, nix::sys::stat::Mode::from_bits_truncate(0o644)).unwrap();
