@@ -409,6 +409,8 @@ fn library_code_reads_files_only_through_nofollow() {
             rust_files(&at, &mut files);
             assert!(files.len() > 3, "no sources under {dir}");
         }
+        // A file named alone is scanned too, or the guard checks nothing there.
+        assert!(!files.is_empty(), "nothing scanned at {dir}");
         for file in files {
             let under = file.strip_prefix(&at).unwrap().to_string_lossy();
             let rel = if under.is_empty() {
