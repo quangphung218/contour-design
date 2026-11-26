@@ -440,21 +440,42 @@ async fn a_skill_read_while_it_is_written_is_tagged_with_what_it_shows() {
     .await;
     let dir = d.data.join("skills/tea");
     let version = |n: u64| format!("---\nname: tea\ndescription: Mine.\n---\nBody-{n}\n");
-    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let written = std::sync::Arc::new(AtomicU64::new(0));
     let writer = {
-        let (dir, stop) = (dir.clone(), std::sync::Arc::clone(&stop));
+        let (dir, stop, written) = (
+            dir.clone(),
+            std::sync::Arc::clone(&stop),
+            std::sync::Arc::clone(&written),
+        );
         std::thread::spawn(move || {
             let mut n = 1u64;
-            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+            while !stop.load(Ordering::Relaxed) {
                 let tmp = dir.join(".SKILL.md.tmp");
                 std::fs::write(&tmp, version(n)).unwrap();
-                std::fs::rename(&tmp, dir.join("SKILL.md")).unwrap();
-                n += 1;
+                // Windows refuses a rename over a file being read: the
+                // writer tries again, as an agent's editor would.
+                if std::fs::rename(&tmp, dir.join("SKILL.md")).is_ok() {
+                    written.store(n, Ordering::Relaxed);
+                    n += 1;
+                }
             }
         })
     };
+    // Writes are slow on some runners (Windows): reads start once the
+    // writer is under way, and go on until enough saw its versions.
+    let started = std::time::Instant::now();
+    while written.load(Ordering::Relaxed) < 3
+        && started.elapsed() < std::time::Duration::from_secs(20)
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
     let mut checked = 0;
-    for _ in 0..30 {
+    for _ in 0..300 {
+        if checked >= 15 {
+            break;
+        }
         let (shown, tag) = tagged(&d, "/api/skills/tea").await;
         let body = shown["body"].as_str().unwrap();
         let n: u64 = body
@@ -469,7 +490,11 @@ async fn a_skill_read_while_it_is_written_is_tagged_with_what_it_shows() {
             checked += 1;
         }
     }
-    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    stop.store(true, Ordering::Relaxed);
     writer.join().unwrap();
-    assert!(checked > 0, "no read saw the writer's versions");
+    assert!(
+        checked > 0,
+        "no read saw the writer's versions ({} written)",
+        written.load(Ordering::Relaxed)
+    );
 }
