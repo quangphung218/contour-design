@@ -1,6 +1,6 @@
 //! Code that reads the folders an agent can write (the content index in
 //! `od-content`, the Library routes: skills, plugins, design systems,
-//! templates) reads a file only through `od_content::nofollow`: opened
+//! templates; the content routes: design template examples, craft) reads a file only through `od_content::nofollow`: opened
 //! with `O_NONBLOCK` (a FIFO never blocks the read), checked as a regular
 //! file on the opened descriptor, and read up to a limit. A plain
 //! `std::fs::read`/`read_to_string`/`copy`, an open of its own, or
@@ -27,8 +27,14 @@ use syn::punctuated::Punctuated;
 use syn::visit::{self, Visit};
 use syn::{Expr, Meta, Token, UseTree};
 
-/// The folders scanned, relative to this crate.
-const SCANNED: &[&str] = &["../od-content/src", "src/routes/library"];
+/// The folders and files scanned, relative to this crate: the content
+/// routes read the design templates' examples (a user template is the
+/// agent's to write) and the craft sections.
+const SCANNED: &[&str] = &[
+    "../od-content/src",
+    "src/routes/library",
+    "src/routes/content.rs",
+];
 
 /// The helper itself (relative to this crate).
 const HELPER: &str = "../od-content/src/nofollow.rs";
@@ -396,16 +402,22 @@ fn library_code_reads_files_only_through_nofollow() {
     let mut found: BTreeMap<(String, &str), Vec<String>> = BTreeMap::new();
     for dir in SCANNED {
         let mut files = Vec::new();
-        rust_files(&here.join(dir), &mut files);
-        assert!(files.len() > 3, "no sources under {dir}");
+        let at = here.join(dir);
+        if at.is_file() {
+            files.push(at.clone());
+        } else {
+            rust_files(&at, &mut files);
+            assert!(files.len() > 3, "no sources under {dir}");
+        }
+        // A file named alone is scanned too, or the guard checks nothing there.
+        assert!(!files.is_empty(), "nothing scanned at {dir}");
         for file in files {
-            let rel = format!(
-                "{dir}/{}",
-                file.strip_prefix(here.join(dir))
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/")
-            );
+            let under = file.strip_prefix(&at).unwrap().to_string_lossy();
+            let rel = if under.is_empty() {
+                (*dir).to_owned()
+            } else {
+                format!("{dir}/{}", under.replace('\\', "/"))
+            };
             if rel == HELPER {
                 continue;
             }

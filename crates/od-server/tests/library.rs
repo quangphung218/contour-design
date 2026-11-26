@@ -2069,6 +2069,127 @@ async fn design_system_routes_never_wait_on_a_fifo() {
     assert_eq!(s, 202, "{v}");
 }
 
+/// Opens each FIFO in `fifos` for writing and closes it, over and over for
+/// 5 s: a reader blocked on one reads its end and lets its thread go, so a
+/// test that found a request waiting ends red instead of waiting for good.
+#[cfg(unix)]
+fn let_fifo_readers_go(fifos: &[PathBuf]) {
+    use std::os::unix::fs::OpenOptionsExt;
+    for _ in 0..50 {
+        for fifo in fifos {
+            let _ = std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(nix::libc::O_NONBLOCK)
+                .open(fifo);
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// The content routes that read a design template's example (the gallery
+/// thumbnail, a film's size and length in the listing) or a craft section
+/// never wait on a FIFO. An agent can write a user design template; its
+/// `example.html` is checked as a file before it is read, so a FIFO is
+/// swapped in for it over and over (the same FIFO, hard-linked into place)
+/// to land between the check and the read.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn content_routes_never_wait_on_a_fifo() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let fifo_mode = nix::sys::stat::Mode::from_bits_truncate(0o644);
+    let content = tempfile::tempdir().unwrap();
+    let craft = content.path().join("craft");
+    std::fs::create_dir_all(&craft).unwrap();
+    std::fs::write(craft.join("typography.md"), "# Type").unwrap();
+    let d = daemon_with(Options {
+        content_root: Some(content.path().to_path_buf()),
+        ..Options::default()
+    })
+    .await;
+    let dir = d.data.join("design-templates/fifo-film");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("SKILL.md"),
+        "---\nname: fifo-film\ndescription: A film.\nod:\n  mode: video\n---\nA film.\n",
+    )
+    .unwrap();
+    let film = std::fs::read(content_root().join("design-templates/motion-bar-chart/example.html"))
+        .unwrap();
+    std::fs::write(dir.join("example.html"), &film).unwrap();
+    d.state.content.reload();
+
+    let craft_fifo = craft.join("fifo.md");
+    nix::unistd::mkfifo(&craft_fifo, fifo_mode).unwrap();
+    let swapped = dir.join(".fifo");
+    nix::unistd::mkfifo(&swapped, fifo_mode).unwrap();
+    let fifos = [craft_fifo, swapped.clone()];
+    let get = |path: String| {
+        let (d, fifos) = (&d, &fifos);
+        async move {
+            let answer = tokio::time::timeout(Duration::from_secs(5), call(d, "GET", &path, None));
+            match answer.await {
+                Ok(answer) => answer,
+                Err(_) => {
+                    let fifos = fifos.to_vec();
+                    tokio::task::spawn_blocking(move || let_fifo_readers_go(&fifos))
+                        .await
+                        .unwrap();
+                    panic!("GET {path} never answered (blocked on a FIFO?)")
+                }
+            }
+        }
+    };
+
+    // As they are: a film listed with its format, its example, a section.
+    let (s, v) = get("/api/design-templates".to_owned()).await;
+    assert_eq!(s, 200);
+    let listed = v["designTemplates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == "fifo-film")
+        .cloned()
+        .unwrap_or_else(|| panic!("fifo-film is not listed: {v}"));
+    assert!(listed["film"]["width"].is_number(), "{listed}");
+    let (s, _) = get("/api/design-templates/fifo-film/example".to_owned()).await;
+    assert_eq!(s, 200);
+    let (s, v) = get("/api/craft/typography".to_owned()).await;
+    assert_eq!((s, v["body"].as_str()), (200, Some("# Type")));
+
+    // A craft section that is a FIFO.
+    let (s, _) = get("/api/craft/fifo".to_owned()).await;
+    assert_eq!(s, 404);
+
+    // The example swapped for a FIFO and back, while both routes read it.
+    let stop = Arc::new(AtomicBool::new(false));
+    let swapper = {
+        let (dir, stop, swapped) = (dir.clone(), Arc::clone(&stop), swapped.clone());
+        std::thread::spawn(move || {
+            let (file, link) = (dir.join(".file"), dir.join(".link"));
+            while !stop.load(Ordering::SeqCst) {
+                std::fs::write(&file, &film).unwrap();
+                std::fs::rename(&file, dir.join("example.html")).unwrap();
+                let _ = std::fs::remove_file(&link);
+                std::fs::hard_link(&swapped, &link).unwrap();
+                std::fs::rename(&link, dir.join("example.html")).unwrap();
+            }
+        })
+    };
+    let until = std::time::Instant::now() + Duration::from_secs(3);
+    let mut reads = 0;
+    while std::time::Instant::now() < until {
+        let (s, _) = get("/api/design-templates/fifo-film/example".to_owned()).await;
+        assert!(s == 200 || s == 404, "{s}");
+        let (s, _) = get("/api/design-templates".to_owned()).await;
+        assert_eq!(s, 200);
+        reads += 1;
+    }
+    stop.store(true, Ordering::SeqCst);
+    swapper.join().unwrap();
+    assert!(reads > 50, "{reads} reads");
+}
+
 /// A symlink planted in a package (an agent editing it in place can make
 /// one) never takes a route's read or write outside the package.
 // Escapes are planted as symlinks, so Unix only.

@@ -1266,31 +1266,44 @@ fn SkillDetailView(
     }
 }
 
-/// A character Claude Code reads but the review would show as nothing:
-/// Unicode tags (U+E0000–E007F), zero-width (U+200B–U+200D, U+2060,
-/// U+FEFF), bidi controls and marks (U+202A–U+202E, U+2066–U+2069,
-/// U+200E, U+200F, U+061C), variation
-/// selectors (U+FE00–FE0F, U+E0100–E01EF), the soft hyphen (U+00AD),
-/// invisible operators (U+2061–U+2064) and the Mongolian vowel separator
-/// (U+180E). Text in them can tell the model what the user never saw.
-/// An emoji's U+FE0F is marked too: one mark costs less than a hidden line.
+/// The characters Unicode says a renderer may show as nothing
+/// (`Default_Ignorable_Code_Point`) and the bidi controls and marks
+/// (`Bidi_Control`, all inside it today), merged into ranges: Unicode tags
+/// (U+E0000–E007F), zero-width (U+200B–U+200D, U+2060, U+FEFF), bidi
+/// controls (U+202A–U+202E, U+2066–U+2069, U+200E, U+200F, U+061C),
+/// variation selectors (U+FE00–FE0F, U+180B–U+180D, U+180F, U+E0100–E01EF),
+/// the soft hyphen, Hangul fillers (U+115F, U+1160, U+3164, U+FFA0), the
+/// combining grapheme joiner (U+034F), musical formatting (U+1D173–1D17A),
+/// and the code points kept for more of them (U+2065, U+FFF0–FFF8,
+/// U+E0080–E0FFF). Made from Unicode's data and checked against it
+/// (`hidden_ranges_are_unicodes`), so the WASM carries no Unicode tables.
+const HIDDEN: [(u32, u32); 17] = [
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
+];
+
+/// A character Claude Code reads but the review would show as nothing
+/// ([`HIDDEN`]). Text in them can tell the model what the user never saw.
+/// An emoji's U+FE0F and the joiner (U+200D) inside an emoji sequence are
+/// marked too: one mark costs less than a hidden line.
 fn is_hidden_char(c: char) -> bool {
-    matches!(
-        u32::from(c),
-        0xE0000..=0xE007F
-            | 0xE0100..=0xE01EF
-            | 0x200B..=0x200D
-            | 0x2060..=0x2064
-            | 0xFEFF
-            | 0xFE00..=0xFE0F
-            | 0x200E
-            | 0x200F
-            | 0x061C
-            | 0x202A..=0x202E
-            | 0x2066..=0x2069
-            | 0x00AD
-            | 0x180E
-    )
+    let c = u32::from(c);
+    HIDDEN.iter().any(|&(from, to)| (from..=to).contains(&c))
 }
 
 /// A part of the `SKILL.md` shown for review.
@@ -2084,30 +2097,55 @@ mod tests {
     /// ranges, shows as its code; text around it is kept as it is.
     #[test]
     fn the_review_marks_every_hidden_character() {
-        for (c, label) in [
-            ('\u{E0000}', "\u{27e8}U+E0000\u{27e9}"),
-            ('\u{E0041}', "\u{27e8}U+E0041\u{27e9}"),
-            ('\u{E007F}', "\u{27e8}U+E007F\u{27e9}"),
-            ('\u{200B}', "\u{27e8}U+200B\u{27e9}"),
-            ('\u{200D}', "\u{27e8}U+200D\u{27e9}"),
-            ('\u{2060}', "\u{27e8}U+2060\u{27e9}"),
-            ('\u{FEFF}', "\u{27e8}U+FEFF\u{27e9}"),
-            ('\u{202A}', "\u{27e8}U+202A\u{27e9}"),
-            ('\u{202E}', "\u{27e8}U+202E\u{27e9}"),
-            ('\u{2066}', "\u{27e8}U+2066\u{27e9}"),
-            ('\u{2069}', "\u{27e8}U+2069\u{27e9}"),
-            ('\u{2061}', "\u{27e8}U+2061\u{27e9}"),
-            ('\u{2064}', "\u{27e8}U+2064\u{27e9}"),
-            ('\u{FE00}', "\u{27e8}U+FE00\u{27e9}"),
-            ('\u{FE0F}', "\u{27e8}U+FE0F\u{27e9}"),
-            ('\u{E0100}', "\u{27e8}U+E0100\u{27e9}"),
-            ('\u{E01EF}', "\u{27e8}U+E01EF\u{27e9}"),
-            ('\u{00AD}', "\u{27e8}U+00AD\u{27e9}"),
-            ('\u{180E}', "\u{27e8}U+180E\u{27e9}"),
-            ('\u{200E}', "\u{27e8}U+200E\u{27e9}"),
-            ('\u{200F}', "\u{27e8}U+200F\u{27e9}"),
-            ('\u{061C}', "\u{27e8}U+061C\u{27e9}"),
+        for c in [
+            '\u{E0000}',
+            '\u{E0041}',
+            '\u{E007F}',
+            '\u{E0080}',
+            '\u{E00FF}',
+            '\u{E01F0}',
+            '\u{E0FFF}',
+            '\u{200B}',
+            '\u{200D}',
+            '\u{2060}',
+            '\u{FEFF}',
+            '\u{202A}',
+            '\u{202E}',
+            '\u{2066}',
+            '\u{2069}',
+            '\u{2061}',
+            '\u{2064}',
+            '\u{2065}',
+            '\u{206A}',
+            '\u{206F}',
+            '\u{FE00}',
+            '\u{FE0F}',
+            '\u{E0100}',
+            '\u{E01EF}',
+            '\u{00AD}',
+            '\u{180B}',
+            '\u{180D}',
+            '\u{180E}',
+            '\u{180F}',
+            '\u{200E}',
+            '\u{200F}',
+            '\u{061C}',
+            // Default ignorable beyond the list kept by hand before.
+            '\u{034F}',
+            '\u{115F}',
+            '\u{1160}',
+            '\u{3164}',
+            '\u{FFA0}',
+            '\u{17B4}',
+            '\u{17B5}',
+            '\u{FFF0}',
+            '\u{FFF8}',
+            '\u{1BCA0}',
+            '\u{1BCA3}',
+            '\u{1D173}',
+            '\u{1D17A}',
         ] {
+            let label = format!("\u{27e8}U+{:04X}\u{27e9}", u32::from(c));
             let text = format!("Brew{c} tea.");
             assert_eq!(
                 mark_hidden(&text),
@@ -2120,25 +2158,37 @@ mod tests {
             );
             assert_eq!(hidden_label(c), label);
         }
-        // Next to the ranges, and text people read (Vietnamese, emoji with
-        // a joiner's neighbours, RTL letters): shown as is.
+        assert_eq!(hidden_label('\u{200B}'), "\u{27e8}U+200B\u{27e9}");
+        // Next to the ranges, and text people read (Vietnamese, composed
+        // and decomposed, emoji, RTL letters): shown as is.
         for c in [
             '\u{200A}',
             '\u{2010}',
             '\u{061B}',
             '\u{061D}',
-            '\u{2065}',
-            '\u{206A}',
+            '\u{2070}',
             '\u{202F}',
-            '\u{E0080}',
-            '\u{E00FF}',
-            '\u{E01F0}',
             '\u{FDFF}',
             '\u{FE10}',
             '\u{00AC}',
             '\u{00AE}',
-            '\u{180D}',
-            '\u{180F}',
+            '\u{034E}',
+            '\u{0350}',
+            '\u{115E}',
+            '\u{1161}',
+            '\u{17B3}',
+            '\u{17B6}',
+            '\u{180A}',
+            '\u{1810}',
+            '\u{3163}',
+            '\u{3165}',
+            '\u{FF9F}',
+            '\u{FFA1}',
+            '\u{FFF9}',
+            '\u{FFFC}',
+            '\u{1BC9F}',
+            '\u{1D172}',
+            '\u{1D17B}',
             'ư',
             '🎨',
             'ب',
@@ -2149,11 +2199,64 @@ mod tests {
                 "{c:?}"
             );
         }
+        for text in [
+            "Tiếng Việt: trường, nghiêng, ỷ lại",
+            "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t",
+            "🎨🇻🇳👍🏽",
+            "مرحبا",
+        ] {
+            assert_eq!(mark_hidden(text), [Shown::Text(text.to_owned())], "{text}");
+        }
+        // An emoji ZWJ sequence: each joiner marked, the emoji kept.
+        assert_eq!(
+            mark_hidden("👩\u{200D}💻 ok"),
+            [
+                Shown::Text("👩".to_owned()),
+                Shown::Hidden('\u{200D}'),
+                Shown::Text("💻 ok".to_owned())
+            ]
+        );
         assert_eq!(
             mark_hidden("\u{200B}\u{200B}"),
             [Shown::Hidden('\u{200B}'), Shown::Hidden('\u{200B}')]
         );
         assert!(mark_hidden("").is_empty());
+    }
+
+    /// [`HIDDEN`] is Unicode's `Default_Ignorable_Code_Point` with
+    /// `Bidi_Control`, range for range (ICU's data, a native test only:
+    /// the WASM keeps the table). A Unicode update that moves them turns
+    /// this red; take the ranges it prints.
+    #[test]
+    fn hidden_ranges_are_unicodes() {
+        use icu_properties::CodePointSetData;
+        use icu_properties::props::{BidiControl, DefaultIgnorableCodePoint};
+        let ignorable = CodePointSetData::new::<DefaultIgnorableCodePoint>();
+        let bidi = CodePointSetData::new::<BidiControl>();
+        let mut unicode: Vec<(u32, u32)> = Vec::new();
+        for c in 0..=0x10_FFFF_u32 {
+            if !(ignorable.contains32(c) || bidi.contains32(c)) {
+                continue;
+            }
+            match unicode.last_mut() {
+                Some(last) if last.1 + 1 == c => last.1 = c,
+                _ => unicode.push((c, c)),
+            }
+        }
+        let shown: Vec<String> = unicode
+            .iter()
+            .map(|(a, b)| format!("(0x{a:04X}, 0x{b:04X}),"))
+            .collect();
+        assert_eq!(
+            HIDDEN.as_slice(),
+            unicode.as_slice(),
+            "\n{}",
+            shown.join("\n")
+        );
+        // Every hidden character is a `char` the label can show.
+        for (from, to) in HIDDEN {
+            assert!(char::from_u32(from).is_some() && char::from_u32(to).is_some());
+        }
     }
 
     #[test]

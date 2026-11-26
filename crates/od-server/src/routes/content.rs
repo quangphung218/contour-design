@@ -3,7 +3,7 @@ use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
-use od_content::SkillEntry;
+use od_content::{SkillEntry, nofollow};
 use od_contracts::{
     CraftDetail, CraftResponse, DesignSystemDetail, DesignSystemsResponse, DesignTemplatesResponse,
     FilmFormat, SkillDetail, SkillMode, SkillSummary, SkillsResponse,
@@ -31,10 +31,18 @@ fn summaries(entries: &[SkillEntry], films: bool) -> Vec<SkillSummary> {
         .collect()
 }
 
+/// A design template's example page (an agent can write a user template):
+/// no link at its name, no FIFO wait, as much as Remix copies. `None` when
+/// it is not a regular file, unreadable or too large.
+fn read_example(path: &std::path::Path) -> Option<Vec<u8>> {
+    use crate::routes::library::templates::MAX_TEMPLATE_BYTES;
+    Some(nofollow::read_file(path, MAX_TEMPLATE_BYTES).ok()??.bytes)
+}
+
 /// What a film's example declares on its composition root (QA-055).
 #[allow(clippy::cast_precision_loss)] // milliseconds of a short film
 fn film_format(example: &std::path::Path) -> Option<FilmFormat> {
-    let html = std::fs::read_to_string(example).ok()?;
+    let html = String::from_utf8(read_example(example)?).ok()?;
     let c = od_export::hyperframes::composition(&html).ok()?;
     Some(FilmFormat {
         width: c.width,
@@ -163,9 +171,10 @@ pub async fn get_design_template_example(
         .find_design_template(&id)
         .and_then(SkillEntry::example_html)
         .ok_or_else(|| ApiErr::not_found("design template example not found"))?;
-    let html = tokio::fs::read(&path)
+    let html = crate::spawn::spawn_blocking_in_span(move || read_example(&path))
         .await
-        .map_err(|_| ApiErr::not_found("design template example not found"))?;
+        .map_err(|e| ApiErr::internal(e.to_string()))?
+        .ok_or_else(|| ApiErr::not_found("design template example not found"))?;
     let mut html = without_google_fonts(rebrand_example(html));
     if matches!(query.still.as_deref(), Some("1" | "true")) {
         html = od_preview::still::without_scripts(&String::from_utf8_lossy(&html)).into_bytes();
@@ -230,12 +239,20 @@ pub async fn get_craft(
         return Err(ApiErr::bad_request("invalid craft id"));
     }
     let path = state.content.snapshot().craft_dir.join(format!("{id}.md"));
-    match tokio::fs::read_to_string(&path).await {
-        Ok(body) => Ok(ApiJson(CraftDetail { id, body })),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            Err(ApiErr::not_found("craft section not found"))
-        }
-        Err(e) => Err(ApiErr::internal(e.to_string())),
+    // As a run reads it (`od_content::craft::load_craft_sections`): no
+    // link, no FIFO wait, bounded.
+    let read = crate::spawn::spawn_blocking_in_span(move || {
+        nofollow::read_file(&path, nofollow::MAX_INDEX_FILE_BYTES)
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))?;
+    match read {
+        Ok(Some(file)) => String::from_utf8(file.bytes)
+            .map(|body| ApiJson(CraftDetail { id, body }))
+            .map_err(|_| ApiErr::internal("craft section is not UTF-8")),
+        Ok(None) => Err(ApiErr::not_found("craft section not found")),
+        Err(nofollow::TreeError::TooLarge) => Err(ApiErr::internal("craft section is too large")),
+        Err(nofollow::TreeError::Io(e)) => Err(ApiErr::internal(e.to_string())),
     }
 }
 
