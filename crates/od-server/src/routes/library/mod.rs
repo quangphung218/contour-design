@@ -44,6 +44,7 @@ impl From<WriteError> for ApiErr {
             ),
             WriteError::NotFound(m) => ApiErr::not_found(m),
             WriteError::Changed(m) => ApiErr::new(StatusCode::CONFLICT, ErrorCode::Conflict, m),
+            WriteError::Stale => crate::cas::changed(),
             WriteError::Io(m) => ApiErr::internal(m),
         }
     }

@@ -16,7 +16,8 @@
 //!   page built from the tokens.
 //! - `GET    /api/design-systems/:id/file/*path`: a package file (assets,
 //!   preview pages), sandboxed.
-//! - `PUT    /api/design-systems/:id/design-md` `{body}`.
+//! - `PUT    /api/design-systems/:id/design-md` `{body}`; with `If-Match`
+//!   (the `ETag` of `GET …/kit`) only over that same DESIGN.md, else 412.
 //! - `POST   /api/design-systems/:id/status` `{status: draft|published}`.
 //! - `POST   /api/design-systems/:id/delete`.
 //! - `POST   /api/design-systems/:id/copy` `{name?}`: an editable copy.
@@ -34,6 +35,7 @@
 //!   the package, for "Edit with agent".
 
 use super::write_and_reload;
+use crate::cas::IfMatch;
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::routes::content::rebrand_example;
 use crate::state::AppState;
@@ -483,13 +485,33 @@ pub struct Kit {
     pub brand: Option<String>,
 }
 
-pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Kit>> {
+/// The DESIGN.md of package `e` as the kit shows it: the file, or the
+/// body indexed when it cannot be read. Its tag is the kit's `ETag`, the
+/// one a Save of the editor sends back (`crate::cas`).
+fn shown_design_md(e: &DesignSystemEntry) -> String {
+    inside_io(&e.dir, "DESIGN.md")
+        .and_then(read_text)
+        .unwrap_or_else(|_| e.body.clone())
+}
+
+/// Held by every write of an editable package's DESIGN.md (Save, an
+/// accepted revision): a Save compares and writes in one step.
+static DESIGN_MD_WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn design_md_lock() -> std::sync::MutexGuard<'static, ()> {
+    DESIGN_MD_WRITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+pub async fn kit(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> ApiResult<impl IntoResponse> {
     let e = entry(&state, &id)?;
     let a2 = a2(&state);
     let kit = crate::spawn::spawn_blocking_in_span(move || {
-        let body = inside_io(&e.dir, "DESIGN.md")
-            .and_then(read_text)
-            .unwrap_or(e.body.clone());
+        let body = shown_design_md(&e);
         let tokens = design_kit::parse_tokens(&read(&e.dir, "tokens.css"));
         let mut previews: Vec<String> = inside_io(&e.dir, "preview")
             .and_then(std::fs::read_dir)
@@ -516,7 +538,8 @@ pub async fn kit(State(state): State<AppState>, Path(id): Path<String>) -> ApiRe
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?;
-    Ok(Json(kit))
+    let tag = crate::cas::tag_of(kit.body.as_bytes());
+    Ok((crate::cas::etag(&tag), Json(kit)))
 }
 
 pub async fn showcase(
@@ -566,6 +589,7 @@ pub struct DesignMdBody {
 pub async fn save_design_md(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    if_match: IfMatch,
     ApiJson(body): ApiJson<DesignMdBody>,
 ) -> ApiResult<Json<Value>> {
     let e = editable(&state, &id)?;
@@ -573,6 +597,8 @@ pub async fn save_design_md(
         return Err(ApiErr::bad_request("DESIGN.md cannot be empty"));
     }
     write_and_reload(&state, move || {
+        let _one = design_md_lock();
+        if_match.check(&crate::cas::tag_of(shown_design_md(&e).as_bytes()))?;
         std::fs::write(inside(&e.dir, "DESIGN.md")?, body.body).map_err(ApiErr::io)
     })
     .await?;
@@ -1291,6 +1317,7 @@ pub async fn decide(
     let dir = e.dir.clone();
     let out = r.clone();
     write_and_reload(&state, move || {
+        let _one = design_md_lock();
         let prior = if accept {
             accept_files(&dir, &r.files)?
         } else {

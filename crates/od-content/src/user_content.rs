@@ -27,6 +27,10 @@ pub enum WriteError {
     /// Code", [`export_skill`]).
     #[error("{0}")]
     Changed(String),
+    /// The file is no longer the one the form opened on (its tag, sent
+    /// as `If-Match`): nothing written.
+    #[error("changed since it was opened")]
+    Stale,
     #[error("{0}")]
     Io(String),
 }
@@ -176,22 +180,56 @@ pub fn create_skill(
     Ok(slug)
 }
 
+/// The tag of the `SKILL.md` in skill folder `dir`: sha256 of its bytes,
+/// hex; `"missing"` when it cannot be read (no file, a link, a FIFO).
+/// The skill editor opens on it and saves only over the same tag
+/// ([`save_skill`]).
+#[must_use]
+pub fn skill_tag(dir: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    match nofollow::read_file(&dir.join("SKILL.md"), MAX_PLUGIN_BYTES) {
+        Ok(Some(file)) => hex::encode(Sha256::digest(&file.bytes)),
+        _ => "missing".to_owned(),
+    }
+}
+
 /// Rewrites skill `id`. A user skill is edited in place; a bundled one
 /// gets a user override in `<user_root>/<id>` that first copies the
 /// bundled folder's side files (assets, references…).
 ///
+/// With `expected` (the [`skill_tag`] the form opened on), the skill is
+/// written only if its `SKILL.md` still has that tag, compared under the
+/// lock a replace, restore or install over it takes.
+///
 /// # Errors
-/// [`WriteError::BadRequest`], [`WriteError::Io`].
+/// [`WriteError::BadRequest`], [`WriteError::Stale`], [`WriteError::Io`].
 pub fn save_skill(
     user_root: &Path,
     id: &str,
     current_dir: &Path,
     is_user: bool,
     draft: &SkillDraft,
+    expected: Option<&str>,
 ) -> Result<PathBuf, WriteError> {
     draft.check()?;
     if !crate::design_systems::is_valid_id(id) {
         return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
+    }
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(expected) = expected {
+        // What the write goes over: an override made since stands in
+        // for the bundled skill.
+        let over = user_root.join(id);
+        let shown = if !is_user && over.join("SKILL.md").exists() {
+            over.as_path()
+        } else {
+            current_dir
+        };
+        if skill_tag(shown) != expected {
+            return Err(WriteError::Stale);
+        }
     }
     // Not through a link or from a FIFO an agent put there.
     let previous = nofollow::read_file(&current_dir.join("SKILL.md"), MAX_PLUGIN_BYTES)
@@ -1485,7 +1523,15 @@ mod tests {
         .unwrap();
         std::fs::write(bundled.join("assets/a.css"), "x").unwrap();
         let user = tmp.path().join("user");
-        let dir = save_skill(&user, "deck", &bundled, false, &draft("deck", "New body.")).unwrap();
+        let dir = save_skill(
+            &user,
+            "deck",
+            &bundled,
+            false,
+            &draft("deck", "New body."),
+            None,
+        )
+        .unwrap();
         assert_eq!(dir, user.join("deck"));
         assert!(user.join("deck/assets/a.css").is_file());
         let text = std::fs::read_to_string(dir.join("SKILL.md")).unwrap();
@@ -3106,6 +3152,32 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A first install cut short left the skill in `.previous` with its
+    /// `.incoming` mark; bringing it back fails (no write permission, a
+    /// file held open on Windows): the mark stays, so the next run tries
+    /// again and the skill comes back, never left hidden in `.previous`.
+    #[cfg(unix)]
+    #[test]
+    fn a_bring_back_that_fails_keeps_its_mark() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("skills");
+        let held = user.join(PREVIOUS_DIR);
+        std::fs::create_dir_all(held.join("tea")).unwrap();
+        std::fs::write(held.join("tea/SKILL.md"), "---\nname: tea\n---\nMine.\n").unwrap();
+        std::fs::create_dir(held.join(".incoming-tea-7")).unwrap();
+        let mode = |m: u32| {
+            std::fs::set_permissions(&user, std::fs::Permissions::from_mode(m)).unwrap();
+        };
+        mode(0o555);
+        let _ = previous_root(&user);
+        mode(0o755);
+        assert_eq!(names(&held), [".incoming-tea-7", "tea"], "the mark stays");
+        previous_root(&user).unwrap();
+        assert_eq!(names(&user), [".previous", "tea"]);
+        assert_eq!(names(&held), Vec::<String>::new());
     }
 
     /// The app quits before any step of a restore: the next run finds the

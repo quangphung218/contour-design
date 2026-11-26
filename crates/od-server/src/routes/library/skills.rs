@@ -4,7 +4,9 @@
 //! - `POST   /api/skills` `{name, description?, triggers?, body}`: a new
 //!   user skill in `<data>/skills/<slug>/SKILL.md`; 409 when the id exists.
 //! - `PUT    /api/skills/:id` (same body): edits a user skill, or writes a
-//!   user override of a bundled one (side files copied once).
+//!   user override of a bundled one (side files copied once). With
+//!   `If-Match` (the `ETag` of `GET /api/skills/:id`) only over that same
+//!   `SKILL.md`, else 412 with nothing written (`crate::cas`).
 //! - `DELETE /api/skills/:id`: removes a user skill or override (and the
 //!   copy a replace kept for it); the bundled skill shows again.
 //! - `POST   /api/skills/install` `{path, replace?}`: copies a local skill
@@ -35,6 +37,7 @@
 //!   the desktop app's (`crate::skill_export`); no request writes there.
 
 use super::write_and_reload;
+use crate::cas::IfMatch;
 use crate::error::{ApiErr, ApiJson, ApiResult};
 use crate::state::AppState;
 use axum::extract::{Path, State};
@@ -167,6 +170,7 @@ pub async fn local_sources(State(state): State<AppState>) -> ApiResult<Json<Valu
 pub async fn save(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    if_match: IfMatch,
     ApiJson(mut body): ApiJson<SkillBody>,
 ) -> ApiResult<Json<Value>> {
     let entry = state
@@ -191,6 +195,7 @@ pub async fn save(
             &entry.dir,
             is_user,
             &body.into(),
+            if_match.0.as_deref(),
         )?)
     })
     .await?;

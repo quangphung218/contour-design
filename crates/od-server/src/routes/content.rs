@@ -64,15 +64,23 @@ pub async fn list_skills(State(state): State<AppState>) -> ApiJson<SkillsRespons
     })
 }
 
+/// `GET /api/skills/:id`, with the `ETag` of its `SKILL.md` on disk: the
+/// skill editor saves with it as `If-Match` (`crate::cas`).
 pub async fn get_skill(
     State(state): State<AppState>,
     Path(id): Path<String>,
-) -> ApiResult<ApiJson<SkillDetail>> {
+) -> ApiResult<impl IntoResponse> {
     let index = state.content.snapshot();
-    index
+    let entry = index
         .find_skill(&id)
-        .map(|e| ApiJson(detail(e)))
-        .ok_or_else(|| ApiErr::not_found("skill not found"))
+        .cloned()
+        .ok_or_else(|| ApiErr::not_found("skill not found"))?;
+    let dir = entry.dir.clone();
+    let tag =
+        crate::spawn::spawn_blocking_in_span(move || od_content::user_content::skill_tag(&dir))
+            .await
+            .map_err(|e| ApiErr::internal(e.to_string()))?;
+    Ok((crate::cas::etag(&tag), ApiJson(detail(&entry))))
 }
 
 pub async fn list_design_templates(
