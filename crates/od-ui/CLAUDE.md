@@ -69,6 +69,7 @@ Paths below are relative to this folder.
 - Reading a disposed signal after an `await` panics; `Tasks::spawn` drops all work after its first await,
   so a save behind the config turn never went out (#247).
 - A save or install that comes back late (`spawn_then` ui part) may only close a dialog or open its result if the user is still where they started it: check a token taken at the start (e.g. `visit` in `plugins_page.rs` CreateDialog), not the current mode, or a late result closes what is typed since (#320).
+- A read that lands while a form is open and sets the signal the form is built from rebuilds it from disk: what is typed goes. Hold it until the form closes (`plugins_page.rs:show_detail`), and keep Edit off while a write to that skill runs (#344).
 - Sending the whole config copy put back another window's theme, agent and locations (#227, #241).
 - Two saves in a row from one window: the second diffed against an old copy and sent `{}` (#241).
 - Removing a key needs an explicit `null`; leaving it out of a merge patch keeps it (#241, #244).

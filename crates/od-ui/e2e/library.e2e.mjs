@@ -919,7 +919,10 @@ try {
   // Contour", a review of both SKILL.md (hidden characters marked) and
   // the files that differ, a source changed again while the review is
   // open comes back for review (409), Replace keeps the copy in Contour,
-  // and "Restore previous version" brings it back byte for byte.
+  // and "Restore previous version" brings it back byte for byte. The
+  // review is scrolled to and focused; Cancel gives the focus back to its
+  // button. Nothing that lands (a replace under the dialog, a restore)
+  // writes over the skill form being typed in.
   const teaSource = join(home, '.gemini/skills/tea-c');
   const teaCopy = join(data, 'skills', 'tea-c');
   await openAgentCli();
@@ -930,7 +933,13 @@ try {
   // Edited in Contour, and at its source (a zero-width space and a tag).
   await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Edited in Contour.' }) });
   const edited = readFileSync(join(teaCopy, 'SKILL.md'));
-  writeFileSync(join(teaSource, 'SKILL.md'), '---\nname: tea-c\ndescription: Tea labels.\n---\nUse​ kraft\u{E0041} paper.\n');
+  writeFileSync(join(teaSource, 'SKILL.md'), '---\nname: tea-c\ndescription: Tea labels.\n---\nUse\u200B kraft\u{E0041} paper.\n');
+  // Editing tea-c when the dialog opens over it.
+  await page.goto(`${BASE}/skills?scope=personal`);
+  await page.locator('[data-testid="skill-row"][data-id="tea-c"] .plugin-row-main').click();
+  await page.getByTestId('skill-body').waitFor();
+  await page.getByTestId('skill-edit').click();
+  await page.getByTestId('skill-body-input').fill('Typed while it was replaced.');
   await openAgentCli();
   await agentRow('tea-c').getByTestId('agent-skill-differs').waitFor();
   assert.equal((await agentRow('tea-c').getByTestId('agent-skill-differs').textContent()).trim(), 'Differs from Contour');
@@ -938,6 +947,16 @@ try {
   await agentRow('tea-c').getByTestId('agent-skill-review').click();
   const sourceReview = agentRow('tea-c').getByTestId('source-review');
   await sourceReview.waitFor();
+  const activeId = () => page.evaluate(() => document.activeElement?.dataset?.testid);
+  // Scrolled into the list and focused, not left below its fold.
+  await until(async () => (await activeId()) === 'source-review', 'the review takes the focus');
+  const inView = await sourceReview.evaluate((el) => {
+    const list = el.closest('ul').getBoundingClientRect();
+    const top = el.getBoundingClientRect().top;
+    return top >= list.top - 1 && top < list.bottom;
+  });
+  assert.ok(inView, 'the review is scrolled into the list');
+  assert.equal(await sourceReview.getAttribute('aria-labelledby'), await sourceReview.locator('h4').first().getAttribute('id'));
   const changedFiles = async () => sourceReview.getByTestId('source-review-file').evaluateAll((els) => els.map((el) => `${el.querySelector('code').textContent} ${el.dataset.change}`));
   assert.deepEqual(await changedFiles(), ['SKILL.md FileChanged']);
   assert.match(await sourceReview.getByTestId('source-review-source-md').textContent(), /Use⟨U\+200B⟩ kraft⟨U\+E0041⟩ paper\./);
@@ -949,6 +968,7 @@ try {
   await sourceReview.getByTestId('source-review-cancel').click();
   await sourceReview.waitFor({ state: 'detached' });
   assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited);
+  await until(async () => (await activeId()) === 'agent-skill-review', 'Cancel gives the focus back to its button');
   // Opened again, then the source changes before Replace: the new content
   // comes back for review, nothing written.
   await agentRow('tea-c').getByTestId('agent-skill-review').click();
@@ -965,12 +985,18 @@ try {
   // Replace: the source copied, the edited copy kept, the row the same now.
   await sourceReview.getByTestId('source-review-replace').click();
   await agentRow('tea-c').getByTestId('agent-skill-replaced').waitFor();
+  await until(async () => (await activeId()) === 'agent-skills-filter', 'after the replace the focus is in the filter');
   assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')));
   assert.equal(readFileSync(join(teaCopy, 'scripts', 'run.sh'), 'utf8'), 'echo tea\n');
   assert.deepEqual(readFileSync(join(data, 'skills', '.previous', 'tea-c', 'SKILL.md')), edited);
   await until(async () => (await agentRow('tea-c').getByTestId('agent-skill-differs').count()) === 0 && (await agentRow('tea-c').getByTestId('agent-skill-imported').count()) === 1, 'the row no longer differs');
   assert.ok(existsSync(join(teaSource, 'SKILL.md')) && !existsSync(join(teaSource, '.previous')), 'nothing written at the source');
   await closeDialog();
+  // The form under the dialog kept what was typed; closed, it shows the
+  // skill replaced.
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed while it was replaced.', 'a replace does not write over the form');
+  await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
+  await until(async () => /kraft/.test(await page.getByTestId('skill-body').textContent()), 'closed, the form shows the replaced skill');
   // Restore from the skill: back byte for byte. A skill never replaced
   // has no Restore, and the route answers 404.
   await page.goto(`${BASE}/skills?scope=personal`);
@@ -985,11 +1011,40 @@ try {
   assert.match(await page.getByTestId('skill-body').textContent(), /kraft/);
   await restoreBtn.waitFor();
   assert.equal((await restoreBtn.textContent()).trim(), 'Restore previous version');
-  await restoreBtn.click();
+  // Held while it runs: Edit waits (no draft of the copy being swapped
+  // out), Restore keeps the focus; then the focus goes to what it did.
+  let releaseRestore;
+  const restoreHeld = new Promise((r) => (releaseRestore = r));
+  let restoreAsked = false;
+  const restoreRoute = `${BASE}/api/skills/tea-c/restore-previous`;
+  await page.route(restoreRoute, async (route) => {
+    restoreAsked = true;
+    await restoreHeld;
+    await route.continue();
+  });
+  await restoreBtn.focus();
+  await page.keyboard.press('Enter');
+  await until(async () => restoreAsked, 'the restore is held');
+  assert.equal(await page.getByTestId('skill-edit').isDisabled(), true, 'no Edit while it restores');
+  assert.equal(await activeId(), 'skill-restore-previous', 'the focus stays on Restore');
+  assert.equal(await restoreBtn.getAttribute('aria-busy'), 'true');
+  await page.keyboard.press('Enter');
+  releaseRestore();
   await page.getByTestId('skill-restored').waitFor();
+  await page.unroute(restoreRoute);
+  await until(async () => (await activeId()) === 'skill-restored', 'the focus goes to the restored note');
   await until(async () => /Edited in Contour\./.test(await page.getByTestId('skill-body').textContent()), 'the detail shows the restored copy');
   assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'restored byte for byte');
   assert.ok(!existsSync(join(teaCopy, 'scripts')), 'the source-only file went with it');
+  // A second Enter while it ran was dropped: restored once, not swapped back.
+  assert.deepEqual(readFileSync(join(data, 'skills', '.previous', 'tea-c', 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')));
+  // Edit opens on the copy restored, and what is typed stays.
+  await page.getByTestId('skill-edit').click();
+  assert.match(await page.getByTestId('skill-body-input').inputValue(), /Edited in Contour\./);
+  await page.getByTestId('skill-body-input').fill('Typed after the restore.');
+  for (let i = 0; i < 5; i++) await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 50))));
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed after the restore.');
+  await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
   results.replaceFromSource = 'ok';
 
   // Skills of their own now: the Skills open on Personal, the Plugins

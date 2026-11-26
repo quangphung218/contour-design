@@ -63,9 +63,9 @@ const KEPT: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "plugins_page.rs",
-        "detail.set(Some(res.map_err(|e| e.to_string())));",
+        "res.map_err(|e| e.to_string())",
         1,
-        "a skill's detail pane, read only",
+        "a skill's detail pane, read only (`read_skill_detail`)",
     ),
     (
         "settings_page.rs",

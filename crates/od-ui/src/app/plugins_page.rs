@@ -1075,15 +1075,29 @@ fn SkillDetailView(
     let editing = RwSignal::new(false);
     let notice = RwSignal::new(None::<String>);
     hold_while(held, move || editing.get());
+    // A read that lands while the form is open waits for it to close:
+    // setting `detail` builds the form again from the skill on disk, and
+    // what is being typed would go (a Restore, a reload after another
+    // task). Applied by `close_form`.
+    let landed = StoredValue::new(None::<Result<SkillDetail, String>>);
     let load = {
         let id = id.clone();
         Callback::new(move |()| {
             let id = id.clone();
             tasks.spawn(async move {
-                let res = api::get::<SkillDetail>(&format!("/api/skills/{}", api::seg(&id))).await;
-                detail.set(Some(res.map_err(|e| e.to_string())));
+                let res = read_skill_detail(&id).await;
+                show_detail(detail, editing, landed, res);
             });
         })
+    };
+    // Closed without a save: what landed meanwhile shows, and the skill is
+    // read again (a replace from its source may have run under the form).
+    let close_form = move || {
+        editing.set(false);
+        if let Some(res) = landed.try_update_value(Option::take).flatten() {
+            detail.set(Some(res));
+        }
+        load.run(());
     };
     load.run(());
     let use_skill = {
@@ -1107,6 +1121,10 @@ fn SkillDetailView(
     // A copy a "Replace from source" kept, to restore once.
     let previous = RwSignal::new(false);
     let restored = RwSignal::new(false);
+    // A restore running: Edit waits (a draft of the copy being swapped out
+    // would be saved over the one coming back), Restore takes no second
+    // click but keeps the focus.
+    let restoring = RwSignal::new(false);
     let load_previous = {
         let id = id.clone();
         move || {
@@ -1125,21 +1143,30 @@ fn SkillDetailView(
         let id = id.clone();
         let load_previous = load_previous.clone();
         move |_| {
+            if restoring.get_untracked() {
+                return;
+            }
             let id = id.clone();
             let load_previous = load_previous.clone();
             notice.set(None);
             restored.set(false);
-            previous.set(false);
+            restoring.set(true);
             let url = format!("/api/skills/{}/restore-previous", api::seg(&id));
-            // The restore runs to its end; the page shows it if still here.
+            // The restore runs to its end; the page shows it if still here,
+            // with the skill read back in the same task (Edit opens again
+            // on the copy restored, never on the one swapped out).
             tasks.spawn_then(
-                async move { api::post::<_, Value>(&url, &json!({})).await.map(|_| ()) },
-                move |done| {
+                async move {
+                    api::post::<_, Value>(&url, &json!({})).await?;
+                    Ok(read_skill_detail(&id).await)
+                },
+                move |done: Result<Result<SkillDetail, String>, api::HttpError>| {
+                    restoring.set(false);
                     match done {
-                        Ok(()) => {
+                        Ok(res) => {
                             clear_export();
                             restored.set(true);
-                            load.run(());
+                            show_detail(detail, editing, landed, res);
                         }
                         Err(e) => notice.set(Some(api::failure(T::RestoreFailed, &e))),
                     }
@@ -1217,16 +1244,22 @@ fn SkillDetailView(
                             </div>
                             <div class="row wrap">
                                 <button class="btn small primary" data-testid="skill-use" on:click=use_skill>{icon(Glyph::ArrowRight)}{t(T::Use)}</button>
-                                <button class="btn small" data-testid="skill-edit" on:click=move |_| { clear_export(); editing.set(true); }>{icon(Glyph::Rename)}{t(T::Edit)}</button>
+                                <button class="btn small" data-testid="skill-edit" prop:disabled=move || restoring.get() on:click=move |_| { clear_export(); restored.set(false); editing.set(true); }>{icon(Glyph::Rename)}{t(T::Edit)}</button>
                                 {user.then(|| view! { <button class="btn small skill-export-btn" data-testid="skill-export" prop:disabled=move || exporting.get() on:click=on_copy>{icon(Glyph::Export)}{if super::desktop::is_desktop() { t(T::CopyToClaudeCode) } else { t(T::UseInClaudeCode) }}</button> })}
                                 {user.then(|| view! { <button class="btn small ghost danger" data-testid="skill-delete" on:click=remove>{icon(Glyph::Delete)}{t(T::DeleteOrReset)}</button> })}
                                 {move || (user && previous.get() && !editing.get()).then(|| {
                                     let restore = restore.clone();
-                                    view! { <button class="btn small ghost" data-testid="skill-restore-previous" on:click=restore>{icon(Glyph::Restore)}{t(T::RestorePreviousVersion)}</button> }
+                                    view! { <button class="btn small ghost" data-testid="skill-restore-previous" aria-busy=move || restoring.get().to_string() on:click=restore>{icon(Glyph::Restore)}{t(T::RestorePreviousVersion)}</button> }
                                 })}
                             </div>
                         </header>
-                        {move || restored.get().then(|| view! { <p class="subtle small" role="status" data-testid="skill-restored">{t(T::RestoredPreviousVersion)}</p> })}
+                        {move || restored.get().then(|| {
+                            // The Restore button is built again with the
+                            // skill: the focus goes to what it did.
+                            let status = NodeRef::<leptos::html::P>::new();
+                            super::focus::focus_on_mount(status);
+                            view! { <p class="subtle small" role="status" tabindex="-1" node_ref=status data-testid="skill-restored">{t(T::RestoredPreviousVersion)}</p> }
+                        })}
                         {move || review.get().map(|r| {
                             let desktop = super::desktop::is_desktop();
                             let label = match (desktop, r.contour_tools) {
@@ -1291,12 +1324,12 @@ fn SkillDetailView(
                             view! {
                                 {(!user).then(|| view! { <p class="callout" data-testid="override-notice">{icon(Glyph::Info)}{t(T::OverrideNotice)}</p> })}
                                 <SkillForm draft=draft.clone() name_locked=true
-                                    on_cancel=Callback::new(move |()| editing.set(false))
+                                    on_cancel=Callback::new(move |()| close_form())
                                     on_save=Callback::new(move |body: Value| {
                                         let id = id.clone();
                                         tasks.spawn(async move {
                                             match api::put::<_, Value>(&format!("/api/skills/{}", api::seg(&id)), &body).await {
-                                                Ok(_) => { clear_export(); editing.set(false); load.run(()); }
+                                                Ok(_) => { clear_export(); landed.set_value(None); editing.set(false); load.run(()); }
                                                 Err(e) => notice.set(Some(api::failure(T::MdSaveFailed, &e))),
                                             }
                                         });
@@ -1313,6 +1346,48 @@ fn SkillDetailView(
                 }
             }}
         </div>
+    }
+}
+
+/// Once `node` mounts after a review came in (`reveal` set), scrolls it
+/// to the top of its list and focuses it; a mount later (rows built again
+/// as the filter changes) leaves the focus where it is.
+fn reveal_once(node: NodeRef<leptos::html::Div>, reveal: StoredValue<bool>) {
+    Effect::new(move |_| {
+        let Some(el) = node.get() else {
+            return;
+        };
+        if !reveal.try_get_value().unwrap_or(false) {
+            return;
+        }
+        reveal.set_value(false);
+        request_animation_frame(move || {
+            el.scroll_into_view_with_bool(true);
+            let _ = el.focus();
+        });
+    });
+}
+
+/// The skill `id` read for its detail pane: a failure is what the pane
+/// shows. Touches no signal.
+async fn read_skill_detail(id: &str) -> Result<SkillDetail, String> {
+    let res = api::get::<SkillDetail>(&format!("/api/skills/{}", api::seg(id))).await;
+    res.map_err(|e| e.to_string())
+}
+
+/// Shows the skill read, unless its form is open: then it waits in
+/// `landed` for the form to close (building the form again would drop
+/// what is being typed).
+fn show_detail(
+    detail: RwSignal<Option<Result<SkillDetail, String>>>,
+    editing: RwSignal<bool>,
+    landed: StoredValue<Option<Result<SkillDetail, String>>>,
+    res: Result<SkillDetail, String>,
+) {
+    if editing.get_untracked() {
+        landed.set_value(Some(res));
+    } else {
+        detail.set(Some(res));
     }
 }
 
@@ -2052,6 +2127,10 @@ fn AgentSkillImport(
     // (by path).
     let review = RwSignal::new(None::<SourceReview>);
     let replacing = RwSignal::new(false);
+    // Set when a review comes in: the box it opens is scrolled to and
+    // focused once (rows are built again as the filter changes; that
+    // must not take the focus from the filter).
+    let reveal = StoredValue::new(false);
     let replace_note = RwSignal::new(None::<(String, Result<(), String>)>);
     // Clear search, Refresh and Try again go away once pressed: the focus
     // goes back to the filter, not to the page's body.
@@ -2146,12 +2225,16 @@ fn AgentSkillImport(
         match step {
             ReplaceStep::Review(r) => {
                 replace_note.set(None);
+                reveal.set_value(true);
                 review.set(Some(r));
             }
             ReplaceStep::Replaced => {
                 review.set(None);
                 replace_note.set(Some((path, Ok(()))));
                 load();
+                // The rows are read again: the focus goes back to the
+                // filter, as after Refresh.
+                to_filter();
             }
             ReplaceStep::Failed(e) => {
                 review.set(None);
@@ -2159,7 +2242,12 @@ fn AgentSkillImport(
             }
         }
     };
+    // A click while a review loads or a replace runs is dropped; the
+    // button stays enabled so it keeps the focus.
     let open_review = move |sk: &AgentSkill| {
+        if replacing.get_untracked() || busy.get_untracked() {
+            return;
+        }
         let (id, path) = (sk.id.clone(), sk.path.clone());
         review.set(None);
         replace_note.set(None);
@@ -2172,6 +2260,9 @@ fn AgentSkillImport(
     // The replace runs on the page's tasks to its end; the page's lists
     // reload once it lands, the dialog or not.
     let confirm_replace = move |reviewed: SourceReview| {
+        if replacing.get_untracked() {
+            return;
+        }
         replacing.set(true);
         let at = reviewed.path.clone();
         page.spawn_then(replace_from_source(reviewed), move |step| {
@@ -2238,6 +2329,7 @@ fn AgentSkillImport(
                             view! { <li class="eyebrow">{agent_heading(&sk.agent)}</li> }
                         });
                         let path = sk.path.clone();
+                        let review_btn = NodeRef::<leptos::html::Button>::new();
                         let p2 = path.clone();
                         let p3 = path.clone();
                         let p4 = path.clone();
@@ -2282,17 +2374,20 @@ fn AgentSkillImport(
                                     let row = sk.clone();
                                     view! {
                                         <div class="row end">
-                                            <button class="btn small" data-testid="agent-skill-review"
-                                                disabled=move || replacing.get() || busy.get()
+                                            <button class="btn small" data-testid="agent-skill-review" node_ref=review_btn
+                                                aria-busy=move || replacing.get().to_string()
                                                 on:click=move |_| open_review(&row)>{t(T::ReviewAndReplace)}</button>
                                         </div>
                                     }
                                 })}
-                                {let at = sk.path.clone(); move || review.get().filter(|r| r.path == at).map(|r| {
+                                {let at = sk.path.clone(); let title_id = format!("source-review-title-{i}"); move || review.get().filter(|r| r.path == at).map(|r| {
                                     let hidden = has_hidden(&r.source_md) || has_hidden(&r.current_md);
                                     let reviewed = r.clone();
+                                    let panel = NodeRef::<leptos::html::Div>::new();
+                                    reveal_once(panel, reveal);
                                     view! {
-                                        <div class="callout skill-export-review" data-testid="source-review">
+                                        <div class="callout skill-export-review" data-testid="source-review" node_ref=panel tabindex="-1" role="region" aria-labelledby=title_id.clone()>
+                                            <h4 id=title_id.clone()>{t(T::ReviewAndReplace)}" · "{r.id.clone()}</h4>
                                             {r.changed.then(|| view! { <p class="error-text" role="alert" data-testid="source-review-changed">{t(T::SourceChangedReview)}</p> })}
                                             {hidden.then(|| view! { <p class="row" data-testid="source-review-hidden">{icon(Glyph::Info)}<span>{t(T::SourceHasHiddenCharacters)}</span></p> })}
                                             <h4>{t(T::SourceFilesDiffer)}</h4>
@@ -2309,10 +2404,16 @@ fn AgentSkillImport(
                                             <p class="row">{icon(Glyph::Info)}<span>{t(T::ContourCopyKept)}</span></p>
                                             <div class="row wrap">
                                                 <button class="btn small primary" data-testid="source-review-replace"
-                                                    disabled=move || replacing.get()
+                                                    aria-busy=move || replacing.get().to_string()
                                                     on:click=move |_| confirm_replace(reviewed.clone())>{t(T::ReplaceWithSource)}</button>
                                                 <button class="btn small ghost" data-testid="source-review-cancel"
-                                                    on:click=move |_| review.set(None)>{t(T::Cancel)}</button>
+                                                    on:click=move |_| {
+                                                        review.set(None);
+                                                        // Back to the button that opened it.
+                                                        if let Some(b) = review_btn.get_untracked() {
+                                                            let _ = b.focus();
+                                                        }
+                                                    }>{t(T::Cancel)}</button>
                                             </div>
                                         </div>
                                     }
