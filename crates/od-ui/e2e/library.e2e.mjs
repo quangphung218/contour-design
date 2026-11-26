@@ -933,7 +933,8 @@ try {
   // Edited in Contour, and at its source (a zero-width space and a tag).
   await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Edited in Contour.' }) });
   const edited = readFileSync(join(teaCopy, 'SKILL.md'));
-  writeFileSync(join(teaSource, 'SKILL.md'), '---\nname: tea-c\ndescription: Tea labels.\n---\nUse\u200B kraft\u{E0041} paper.\n');
+  // Long enough that the review runs past the list.
+  writeFileSync(join(teaSource, 'SKILL.md'), `---\nname: tea-c\ndescription: Tea labels.\n---\nUse\u200B kraft\u{E0041} paper.\n${'A line of tea notes.\n'.repeat(80)}`);
   // Editing tea-c when the dialog opens over it.
   await page.goto(`${BASE}/skills?scope=personal`);
   await page.locator('[data-testid="skill-row"][data-id="tea-c"] .plugin-row-main').click();
@@ -944,10 +945,31 @@ try {
   await agentRow('tea-c').getByTestId('agent-skill-differs').waitFor();
   assert.equal((await agentRow('tea-c').getByTestId('agent-skill-differs').textContent()).trim(), 'Differs from Contour');
   assert.equal(await agentRow('tea-b').getByTestId('agent-skill-differs').count(), 0, 'only the row that differs');
+  const activeId = () => page.evaluate(() => document.activeElement?.dataset?.testid);
+  // On a phone (375 px) the badges go under the name: the name and its
+  // description keep the row's width.
+  await page.setViewportSize({ width: 375, height: 812 });
+  const narrowRow = await agentRow('tea-c').evaluate((li) => {
+    const name = li.querySelector('.grow').getBoundingClientRect();
+    const badge = li.querySelector('[data-testid="agent-skill-differs"]').getBoundingClientRect();
+    const row = li.querySelector('label').getBoundingClientRect();
+    return { below: badge.top >= name.bottom - 0.5, wide: name.width >= row.width - 60 };
+  });
+  assert.deepEqual(narrowRow, { below: true, wide: true }, 'the badges go under the name at 375 px');
+  await page.setViewportSize({ width: 1360, height: 900 });
+  // The preview fails to load once: its own words, not a replace's, and
+  // the focus stays on the button.
+  const previewRoute = `${BASE}/api/skills/tea-c/source-preview**`;
+  await page.route(previewRoute, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' }), { times: 1 });
+  await agentRow('tea-c').getByTestId('agent-skill-review').click();
+  await agentRow('tea-c').getByTestId('agent-skill-replace-error').waitFor();
+  assert.equal((await agentRow('tea-c').getByTestId('agent-skill-replace-error').textContent()).trim(), 'Could not load the source. Try again.');
+  assert.equal(await activeId(), 'agent-skill-review', 'the focus stays on Review and replace');
+  await page.unroute(previewRoute);
   await agentRow('tea-c').getByTestId('agent-skill-review').click();
   const sourceReview = agentRow('tea-c').getByTestId('source-review');
   await sourceReview.waitFor();
-  const activeId = () => page.evaluate(() => document.activeElement?.dataset?.testid);
+  assert.equal(await agentRow('tea-c').getByTestId('agent-skill-replace-error').count(), 0, 'the old error goes');
   // Scrolled into the list and focused, not left below its fold.
   await until(async () => (await activeId()) === 'source-review', 'the review takes the focus');
   const inView = await sourceReview.evaluate((el) => {
@@ -956,6 +978,20 @@ try {
     return top >= list.top - 1 && top < list.bottom;
   });
   assert.ok(inView, 'the review is scrolled into the list');
+  // One scroll, the list's: Replace and Cancel are in view as it opens,
+  // and stay there as the list scrolls through the review.
+  const actionsInView = () => sourceReview.evaluate((el) => {
+    const list = el.closest('ul').getBoundingClientRect();
+    return ['source-review-replace', 'source-review-cancel'].every((id) => {
+      const r = el.querySelector(`[data-testid="${id}"]`).getBoundingClientRect();
+      return r.top >= list.top - 1 && r.bottom <= list.bottom + 1;
+    });
+  });
+  assert.ok(await actionsInView(), 'Replace and Cancel in view as the review opens');
+  await sourceReview.evaluate((el) => { el.closest('ul').scrollTop += 120; });
+  assert.ok(await actionsInView(), 'Replace and Cancel still in view once scrolled');
+  const ownScroll = await sourceReview.evaluate((el) => [...el.querySelectorAll('pre, ul')].filter((n) => n.scrollHeight > n.clientHeight + 1).length);
+  assert.equal(ownScroll, 0, 'nothing in the review scrolls on its own');
   assert.equal(await sourceReview.getAttribute('aria-labelledby'), await sourceReview.locator('h4').first().getAttribute('id'));
   const changedFiles = async () => sourceReview.getByTestId('source-review-file').evaluateAll((els) => els.map((el) => `${el.querySelector('code').textContent} ${el.dataset.change}`));
   assert.deepEqual(await changedFiles(), ['SKILL.md FileChanged']);
@@ -982,6 +1018,23 @@ try {
   await until(async () => JSON.stringify(await changedFiles()) === newFiles, 'the new content is shown');
   assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'a changed source writes nothing');
   assert.ok(!existsSync(join(data, 'skills', '.previous')), 'nothing kept yet');
+  // The replace fails once: the review stays with the error in it, and
+  // the focus stays on Replace (not the page's body), to try again.
+  const replaceRoute = `${BASE}/api/skills/tea-c/replace-from-source`;
+  let replaceHit = 0;
+  await page.route(replaceRoute, (route) => (replaceHit++, route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom","code":"internal_error"}' })), { times: 1 });
+  // The review shown again takes the focus first (on the next frame).
+  await until(async () => (await activeId()) === 'source-review', 'the review shown again takes the focus');
+  await sourceReview.getByTestId('source-review-replace').focus();
+  await page.keyboard.press('Enter');
+  await until(async () => replaceHit === 1, 'the replace is asked');
+  await sourceReview.getByTestId('agent-skill-replace-error').waitFor();
+  assert.equal((await sourceReview.getByTestId('agent-skill-replace-error').textContent()).trim(), 'Could not replace. Try again.');
+  await until(async () => (await sourceReview.getByTestId('source-review-replace').getAttribute('aria-busy')) === 'false', 'the replace is over');
+  assert.equal(await activeId(), 'source-review-replace', 'the focus stays on Replace, not the body');
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'BUTTON');
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'a failed replace writes nothing');
+  await page.unroute(replaceRoute);
   // Replace: the source copied, the edited copy kept, the row the same now.
   await sourceReview.getByTestId('source-review-replace').click();
   await agentRow('tea-c').getByTestId('agent-skill-replaced').waitFor();
@@ -995,6 +1048,13 @@ try {
   // The form under the dialog kept what was typed; closed, it shows the
   // skill replaced.
   assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed while it was replaced.', 'a replace does not write over the form');
+  // Saved, the form finds the skill replaced under it: nothing written,
+  // the form says so and stays as typed.
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')), 'a Save does not write over the replace');
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed while it was replaced.');
+  await page.getByTestId('skill-save-anyway').waitFor();
   await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
   await until(async () => /kraft/.test(await page.getByTestId('skill-body').textContent()), 'closed, the form shows the replaced skill');
   // Restore from the skill: back byte for byte. A skill never replaced
@@ -1036,6 +1096,8 @@ try {
   await until(async () => /Edited in Contour\./.test(await page.getByTestId('skill-body').textContent()), 'the detail shows the restored copy');
   assert.deepEqual(readFileSync(join(teaCopy, 'SKILL.md')), edited, 'restored byte for byte');
   assert.ok(!existsSync(join(teaCopy, 'scripts')), 'the source-only file went with it');
+  // Pressed again it would swap them back: it says so.
+  await until(async () => (await restoreBtn.textContent()).trim() === 'Undo restore', 'Restore reads Undo restore');
   // A second Enter while it ran was dropped: restored once, not swapped back.
   assert.deepEqual(readFileSync(join(data, 'skills', '.previous', 'tea-c', 'SKILL.md')), readFileSync(join(teaSource, 'SKILL.md')));
   // Edit opens on the copy restored. Saved, the skill is read again: Edit
@@ -1048,8 +1110,12 @@ try {
   const readHeld = new Promise((r) => (releaseRead = r));
   let readAsked = false;
   const skillRoute = `${BASE}/api/skills/tea-c`;
+  // Save reads the skill first (changed under the form?): the read held
+  // is the one after the write.
+  let written = false;
   await page.route(skillRoute, async (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
+    if (route.request().method() === 'PUT') written = true;
+    if (route.request().method() !== 'GET' || !written) return route.fallback();
     readAsked = true;
     await readHeld;
     await route.fallback();
@@ -1063,7 +1129,17 @@ try {
   await page.unroute(skillRoute);
   await page.getByTestId('skill-edit').click();
   assert.match(await page.getByTestId('skill-body-input').inputValue(), /Saved after the restore\./, 'the form opens on what was saved');
-  await page.getByTestId('skill-form').getByRole('button', { name: 'Cancel' }).click();
+  // Changed under the open form (another window): Save asks, and
+  // "Save anyway" writes what is typed.
+  await page.getByTestId('skill-body-input').fill('Typed over a change.');
+  await api('/api/skills/tea-c', { method: 'PUT', body: JSON.stringify({ name: 'tea-c', description: 'Mine.', body: 'Changed elsewhere.' }) });
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Changed elsewhere\./, 'nothing written yet');
+  await page.getByTestId('skill-save-anyway').click();
+  await page.getByTestId('skill-body').waitFor();
+  assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Typed over a change\./, 'Save anyway writes what is typed');
+  await until(async () => /Typed over a change\./.test(await page.getByTestId('skill-body').textContent()), 'the detail shows what was saved');
   results.replaceFromSource = 'ok';
 
   // Skills of their own now: the Skills open on Personal, the Plugins
