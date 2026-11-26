@@ -72,20 +72,53 @@ pub fn validate_plugin_dir(dir: &Path) -> Validation {
         .and_then(|n| n.to_str())
         .unwrap_or("plugin")
         .to_owned();
-    let has_manifest = dir.join(MANIFEST).is_file() || dir.join(CLAUDE_PLUGIN_MANIFEST).is_file();
-    if has_manifest {
-        for name in [MANIFEST, CLAUDE_PLUGIN_MANIFEST] {
-            if let Some(text) =
-                crate::nofollow::read_text(&dir.join(name), crate::nofollow::MAX_INDEX_FILE_BYTES)
-            {
-                match serde_json::from_str::<Value>(&text) {
-                    Ok(Value::Object(_)) => {}
-                    Ok(_) => errors.push(format!("{name} must be a JSON object")),
-                    Err(e) => errors.push(format!("{name} is not valid JSON: {e}")),
+    // Read as the index reads it (`nofollow::read_file`: no link at its
+    // name, no FIFO wait, bounded), and said so when it cannot be: a
+    // manifest there that the index skips is not "no manifest".
+    let mut has_manifest = false;
+    for name in [MANIFEST, CLAUDE_PLUGIN_MANIFEST] {
+        let path = dir.join(name);
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        let read = crate::nofollow::read_file(&path, crate::nofollow::MAX_INDEX_FILE_BYTES);
+        let text = match read {
+            Ok(Some(file)) => match String::from_utf8(file.bytes) {
+                Ok(text) => text,
+                Err(_) => {
+                    errors.push(format!("{name} is not UTF-8 text"));
+                    continue;
                 }
-                break;
+            },
+            Ok(None) if meta.file_type().is_symlink() => {
+                errors.push(format!(
+                    "{name} is a link: plugins are read without following one, put the file itself here"
+                ));
+                continue;
             }
+            Ok(None) => {
+                errors.push(format!("{name} is not a regular file"));
+                continue;
+            }
+            Err(crate::nofollow::TreeError::TooLarge) => {
+                errors.push(format!(
+                    "{name} is larger than {} MB",
+                    crate::nofollow::MAX_INDEX_FILE_BYTES / (1024 * 1024)
+                ));
+                continue;
+            }
+            Err(crate::nofollow::TreeError::Io(e)) => {
+                errors.push(format!("{name} cannot be read: {e}"));
+                continue;
+            }
+        };
+        has_manifest = true;
+        match serde_json::from_str::<Value>(&text) {
+            Ok(Value::Object(_)) => {}
+            Ok(_) => errors.push(format!("{name} must be a JSON object")),
+            Err(e) => errors.push(format!("{name} is not valid JSON: {e}")),
         }
+        break;
     }
     let Some(plugin) = load_plugin(dir, &folder, "user") else {
         if errors.is_empty() {
@@ -172,6 +205,59 @@ mod tests {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(dir.join(MANIFEST), manifest.to_string()).unwrap();
         std::fs::write(dir.join("SKILL.md"), skill).unwrap();
+    }
+
+    /// A manifest the index cannot read (a link, too large, not a file) is
+    /// reported as such, not as "no manifest".
+    #[cfg(unix)]
+    #[test]
+    fn a_manifest_the_index_skips_is_named() {
+        let tmp = tempfile::tempdir().unwrap();
+        let secret = tmp.path().join("secret.json");
+        std::fs::write(&secret, r#"{"name": "s", "version": "1.0.0"}"#).unwrap();
+        let skill = "---\nname: p\n---\nDo it.\n";
+        let make = |name: &str, manifest: &dyn Fn(&Path)| {
+            let dir = tmp.path().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("SKILL.md"), skill).unwrap();
+            manifest(&dir.join(MANIFEST));
+            validate_plugin_dir(&dir).errors
+        };
+        let link = make("link", &|at| {
+            std::os::unix::fs::symlink(&secret, at).unwrap()
+        });
+        assert!(
+            link.iter()
+                .any(|e| e.starts_with("open-design.json is a link")),
+            "{link:?}"
+        );
+        let big = make("big", &|at| {
+            let mut text = r#"{"name": "big"}"#.to_owned();
+            text.push_str(
+                &" ".repeat(usize::try_from(crate::nofollow::MAX_INDEX_FILE_BYTES).unwrap()),
+            );
+            std::fs::write(at, text).unwrap();
+        });
+        assert!(
+            big.iter()
+                .any(|e| e == "open-design.json is larger than 4 MB"),
+            "{big:?}"
+        );
+        let folder = make("folder", &|at| std::fs::create_dir(at).unwrap());
+        assert!(
+            folder
+                .iter()
+                .any(|e| e == "open-design.json is not a regular file"),
+            "{folder:?}"
+        );
+        let fifo = make("fifo", &|at| {
+            nix::unistd::mkfifo(at, nix::sys::stat::Mode::from_bits_truncate(0o644)).unwrap();
+        });
+        assert!(
+            fifo.iter()
+                .any(|e| e == "open-design.json is not a regular file"),
+            "{fifo:?}"
+        );
     }
 
     #[test]

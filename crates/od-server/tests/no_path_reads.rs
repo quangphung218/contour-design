@@ -21,12 +21,26 @@ const SCANNED: &[&str] = &["../od-content/src", "src/routes/library"];
 const HELPER: &str = "../od-content/src/nofollow.rs";
 
 /// Reads that stay: file (relative to this crate), rule, how many, why.
-const ALLOWED: &[(&str, &str, usize, &str)] = &[(
-    "src/routes/library/design_systems.rs",
-    "OpenOptions",
-    2,
-    "writes only (`create_new` of the sent names' temp file and of an uploaded asset), never a read",
-)];
+const ALLOWED: &[(&str, &str, usize, &str)] = &[
+    (
+        "src/routes/library/design_systems.rs",
+        "OpenOptions",
+        2,
+        "writes only (`create_new` of the sent names' temp file and of an uploaded asset), never a read",
+    ),
+    (
+        "src/routes/library/templates.rs",
+        "read_file",
+        1,
+        "`Store::read_file` of a project's own files (Save as template): the project-file reads in `od-store` are a class of their own, not the Library's folders",
+    ),
+    (
+        "src/routes/library/assets.rs",
+        "read_file",
+        1,
+        "`Store::read_file` of a project's media (assets chat): project files, as above",
+    ),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Tok {
@@ -222,36 +236,64 @@ fn without_tests(toks: &[Tok]) -> Vec<Tok> {
 /// The reads in `toks`, by rule, with their lines.
 fn reads(toks: &[Tok]) -> Vec<(&'static str, usize)> {
     let at = |i: usize, s: &str| toks.get(i).is_some_and(|t| t.text == s);
+    // Whether the `{ … }` group starting at `i` names one of `names`.
+    let group_names = |i: usize, names: &[&str]| {
+        let mut depth = 0;
+        for u in &toks[i..] {
+            match u.text.as_str() {
+                "{" => depth += 1,
+                "}" => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                w if names.contains(&w) => return true,
+                _ => {}
+            }
+        }
+        false
+    };
     let mut found = Vec::new();
     for (i, t) in toks.iter().enumerate() {
         let rule = match t.text.as_str() {
             // `std::fs::read(…)`, `tokio::fs::read`, `.and_then(fs::read)`,
             // `use std::fs::read [as r]`, and a glob of `fs`.
             "fs" if at(i + 1, "::") && (at(i + 2, "read") || at(i + 2, "*")) => "fs::read",
+            // `std::fs::copy`, `tokio::fs::copy`, `use std::fs::copy [as c]`:
+            // it opens the source by path, waits on a FIFO, has no limit.
+            "fs" if at(i + 1, "::") && at(i + 2, "copy") => "fs::copy",
             // `use std::fs as f` / `use std::{fs as f}`: then `f::read`.
             "fs" if at(i + 1, "as") => "fs as",
-            // `use std::fs::{read, …}` / `{self as f}`.
+            // `use std::fs::{read, copy, …}` / `{self as f}`.
             "fs" if at(i + 1, "::") && at(i + 2, "{") => {
-                let mut depth = 0;
-                let mut hit = false;
-                for u in &toks[i + 2..] {
-                    match u.text.as_str() {
-                        "{" => depth += 1,
-                        "}" => {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                        }
-                        "read" | "as" => hit = true,
-                        _ => {}
-                    }
-                }
-                if !hit {
+                if !group_names(i + 2, &["read", "copy", "as"]) {
                     continue;
                 }
                 "fs::{read}"
             }
+            // `od_store::files::read_file` (a `fs::read` behind it), by its
+            // path, imported (`files::read_file [as r]`, `files::{read_file}`,
+            // `files::*`, `files as f`), or the `Store` method
+            // (`s.read_file(…)`, `Store::read_file`). `nofollow::read_file`
+            // is the helper.
+            "read_file"
+                if i > 0
+                    && (toks[i - 1].text == "."
+                        || (toks[i - 1].text == "::"
+                            && i > 1
+                            && toks[i - 2].text != "nofollow")) =>
+            {
+                "read_file"
+            }
+            "files" if at(i + 1, "::") && at(i + 2, "*") => "read_file",
+            "files" if at(i + 1, "::") && at(i + 2, "{") => {
+                if !group_names(i + 2, &["read_file", "as"]) {
+                    continue;
+                }
+                "read_file"
+            }
+            "files" if at(i + 1, "as") => "read_file",
             // `fs::read_to_string`, `io::read_to_string`, `file.read_to_string`.
             "read_to_string" | "read_to_end" => "read_to_string",
             // An open of its own (no `O_NONBLOCK`, no check on the handle).
@@ -363,6 +405,29 @@ fn every_spelling_of_a_read_is_caught() {
         ("use std::fs::File as F;", "File as"),
         ("let o = std::fs::OpenOptions::new();", "OpenOptions"),
         ("use std::fs::OpenOptions as O;", "OpenOptions"),
+        ("let _ = std::fs::copy(from, to);", "fs::copy"),
+        ("let _ = std::fs\n    ::copy(from, to);", "fs::copy"),
+        ("tokio::fs::copy(&a, &b).await?;", "fs::copy"),
+        ("use std::fs::copy;", "fs::copy"),
+        ("use std::fs::copy as dup;", "fs::copy"),
+        ("use std::fs::{copy, write};", "fs::{read}"),
+        (
+            "let (_, b) = od_store::files::read_file(&root, p)?;",
+            "read_file",
+        ),
+        ("od_store::files\n    ::read_file(&root, p)", "read_file"),
+        ("use od_store::files::read_file;", "read_file"),
+        ("use od_store::files::read_file as rf;", "read_file"),
+        (
+            "use od_store::files::{ProjectRoot, read_file};",
+            "read_file",
+        ),
+        ("use od_store::files::*;", "read_file"),
+        ("use od_store::files as f;", "read_file"),
+        ("use od_store::{files::{self as f}};", "read_file"),
+        ("let (_, b) = s.read_file(id, name)?;", "read_file"),
+        ("let (_, b) = s\n    .read_file(id, name)?;", "read_file"),
+        ("Store::read_file(&s, id, name)", "read_file"),
         // After a lifetime and a char, still read.
         (
             "fn f<'a>(c: char) { if c == 'x' { std::fs::read(p); } }",
@@ -382,6 +447,13 @@ fn every_spelling_of_a_read_is_caught() {
         "let c = '\"'; let s = \"fs::read(\";",
         "std::fs::read_dir(p)",
         "nofollow::read_file(p, 10)",
+        "od_content::nofollow::read_file(p, 10)",
+        "use od_content::nofollow::{read_file, read_text};",
+        "crate::routes::export::read_page_file(&root, p)",
+        "od_store::files::stat_file(&root, p)",
+        "use od_store::files::{ProjectRoot, stat_file};",
+        "copy_dir(&from, &to, 10)",
+        "// std::fs::copy(a, b) and s.read_file(id, n)",
         "#[cfg(test)]\nmod tests {\n    fn t() { std::fs::read(p); }\n}",
         "#[cfg(all(test, unix))]\nfn t() { std::fs::read_to_string(p); }",
         "#[cfg(test)]\nuse std::fs::read;",

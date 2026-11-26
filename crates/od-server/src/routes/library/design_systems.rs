@@ -1346,6 +1346,16 @@ pub fn revision_prompt(title: &str, feedback: &str, section: Option<&str>) -> St
     )
 }
 
+/// Copies the package's [`REVISABLE`] files from `dir` into the working
+/// folder `work`; one missing, not a regular file or too large is left out.
+fn copy_revisable(dir: &std::path::Path, work: &std::path::Path) {
+    for f in REVISABLE {
+        if let Ok(bytes) = inside_io(dir, f).and_then(read_bytes) {
+            let _ = std::fs::write(work.join(f), bytes);
+        }
+    }
+}
+
 pub async fn revise(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -1362,11 +1372,12 @@ pub async fn revise(
         .filter(|s| !s.is_empty());
     let mut r = new_revision("agent", Some(feedback.clone()), section.clone());
     let work = io(tempfile::Builder::new().prefix("od-ds-revision-").tempdir())?;
-    for f in REVISABLE {
-        if let Ok(from) = inside(&e.dir, f) {
-            let _ = std::fs::copy(from, work.path().join(f));
-        }
-    }
+    // Read as every package file is (`read_bytes`: no FIFO wait, no
+    // link at its name, bounded), then written into the working folder.
+    let (from, to) = (e.dir.clone(), work.path().to_path_buf());
+    crate::spawn::spawn_blocking_in_span(move || copy_revisable(&from, &to))
+        .await
+        .map_err(|e| ApiErr::internal(e.to_string()))?;
     let prompt = revision_prompt(&e.summary.title, &feedback, section.as_deref());
     let launched = launch(
         &state,

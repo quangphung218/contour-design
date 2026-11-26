@@ -95,13 +95,16 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `::an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy`,
       `::export_copies_a_user_skill_and_never_writes_over`, `::an_export_never_shows_a_hidden_folder_in_the_agents_skills`,
       `::a_folder_made_right_before_the_copy_is_kept`, `::the_skill_md_lands_after_everything_else`
-    - The review marks hidden characters in `SKILL.md` (Unicode tags, zero-width, bidi) as `⟨U+…⟩` with a warning
+    - The review marks hidden characters in `SKILL.md` (Unicode tags, zero-width, bidi, variation selectors, soft hyphen,
+      invisible operators, U+180E) as `⟨U+…⟩` with a warning
       (`../od-ui/src/app/plugins_page.rs::the_review_marks_every_hidden_character`).
     - The Library routes (`src/routes/library`) and the content index (`../od-content/src`) read a file only through
       `od_content::nofollow` (`O_NONBLOCK`, regular file checked on the descriptor, bounded); the index still takes an
-      entry that is itself a link. `tests/no_path_reads.rs` (source scan; writes that stay in `ALLOWED` with why),
+      entry that is itself a link. No `fs::copy` and no `od_store::files::read_file` there either (a Remix copies the bytes
+      its walk read: `src/routes/export/mod.rs:read_page_file`). `tests/no_path_reads.rs` (source scan; what stays is in `ALLOWED` with why),
       `../od-content/tests/index_reads.rs`, `src/routes/library/design_systems.rs::package_reads_never_wait_on_a_fifo`,
-      `src/routes/library/templates.rs::a_remix_reads_no_fifo_and_no_link`
+      `src/routes/library/templates.rs::a_remix_reads_no_fifo_and_no_link`, `::a_remix_never_waits_on_a_side_file_swapped_for_a_fifo`,
+      `tests/library.rs::design_system_routes_never_wait_on_a_fifo`, `../od-content/src/plugin_validate.rs::a_manifest_the_index_skips_is_named`
     - `../od-cli/tests/cli.rs::od_cannot_copy_a_skill_to_claude_code`,
       `../../apps/desktop/src/main.rs::the_daemon_ui_may_call_the_app_commands`
 
