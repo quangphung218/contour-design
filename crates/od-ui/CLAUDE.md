@@ -70,6 +70,9 @@ Paths below are relative to this folder.
   so a save behind the config turn never went out (#247).
 - A save or install that comes back late (`spawn_then` ui part) may only close a dialog or open its result if the user is still where they started it: check a token taken at the start (e.g. `visit` in `plugins_page.rs` CreateDialog), not the current mode, or a late result closes what is typed since (#320).
 - A read that lands while a form is open and sets the signal the form is built from rebuilds it from disk: what is typed goes. Keep the button that opens the form off while a read or a write of that skill runs (`plugins_page.rs` SkillDetailView `reading`, `restoring`), so the form never opens on a copy about to change (#344).
+- A form that edits a user's file opens on `api::get_tagged` and saves with `api::put_if_match` (the tag it opened on);
+  a 412 (`HttpError::changed_since`) keeps what is typed and shows `lib_ui::ChangedElsewhere` (Reload / Save anyway).
+  A GET-then-PUT from the page left a window between the two and wrote anyway when the read failed (#347 review).
 - Sending the whole config copy put back another window's theme, agent and locations (#227, #241).
 - Two saves in a row from one window: the second diffed against an old copy and sent `{}` (#241).
 - Removing a key needs an explicit `null`; leaving it out of a merge patch keeps it (#241, #244).

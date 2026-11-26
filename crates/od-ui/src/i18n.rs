@@ -1268,7 +1268,8 @@ messages! {
     SourceReviewFailed => "Could not load the source: {0}", "Không tải được bản nguồn: {0}";
     UndoRestore => "Undo restore", "Hoàn tác khôi phục";
     RestoreUndone => "Restore undone.", "Đã hoàn tác khôi phục.";
-    SkillChangedSinceEdit => "This skill changed since you opened Edit. Save anyway writes over it; Cancel shows the new copy.", "Skill đã đổi từ lúc mở Edit. Vẫn lưu sẽ ghi đè bản đó; Huỷ để xem bản mới.";
+    ChangedElsewhere => "Changed elsewhere since you opened it. Reload shows the new copy and drops what you typed; Save anyway writes over it.", "Đã bị sửa ở nơi khác từ lúc mở. Tải lại để xem bản mới, phần đang gõ sẽ mất; Vẫn lưu sẽ ghi đè bản đó.";
+    ReloadNewCopy => "Reload", "Tải lại";
     SaveAnyway => "Save anyway", "Vẫn lưu";
     FilesToCopy => "Files to copy", "Các file sẽ chép";
     ShowCommand => "Show the command", "Hiện lệnh";

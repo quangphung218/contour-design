@@ -21,8 +21,7 @@ use std::convert::Infallible;
 /// The tag of content `bytes`: sha256, hex.
 #[must_use]
 pub fn tag_of(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    hex::encode(Sha256::digest(bytes))
+    od_content::user_content::tag_of(bytes)
 }
 
 /// The `ETag` header for `tag` (a strong one: quoted).

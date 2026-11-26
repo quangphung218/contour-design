@@ -23,6 +23,13 @@ pub struct HttpError {
 }
 
 impl HttpError {
+    /// The file changed since the form opened on it (412 to an
+    /// `If-Match`): nothing was written.
+    #[must_use]
+    pub fn changed_since(&self) -> bool {
+        self.status == 412
+    }
+
     /// The daemon said the project the call was made on does not exist
     /// (deleted in another tab, QA-079); a missing file or version in it
     /// has its own code.
@@ -501,6 +508,38 @@ pub async fn post_form<T: DeserializeOwned>(path: &str, form: web_sys::FormData)
 
 pub async fn get<T: DeserializeOwned>(path: &str) -> ApiResult<T> {
     decode(path, Request::get(path).send().await.map_err(network)?).await
+}
+
+/// A body read with the `ETag` it came with: what a form opens on, and the
+/// tag its Save sends back ([`put_if_match`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tagged<T> {
+    pub value: T,
+    pub tag: Option<String>,
+}
+
+/// `GET` of `path` with its `ETag`.
+pub async fn get_tagged<T: DeserializeOwned>(path: &str) -> ApiResult<Tagged<T>> {
+    let res = Request::get(path).send().await.map_err(network)?;
+    let tag = res.headers().get("etag");
+    let value = decode(path, res).await?;
+    Ok(Tagged { value, tag })
+}
+
+/// `PUT` of `body`, only over the content tagged `tag` (`If-Match`): one
+/// changed since is refused, [`HttpError::changed_since`]. `None` writes
+/// over whatever is there ("Save anyway").
+pub async fn put_if_match<B: Serialize, T: DeserializeOwned>(
+    path: &str,
+    body: &B,
+    tag: Option<&str>,
+) -> ApiResult<T> {
+    let mut req = Request::put(path);
+    if let Some(tag) = tag {
+        req = req.header("if-match", tag);
+    }
+    let req = req.json(body).map_err(network)?;
+    decode(path, req.send().await.map_err(network)?).await
 }
 
 pub async fn post<B: Serialize, T: DeserializeOwned>(path: &str, body: &B) -> ApiResult<T> {

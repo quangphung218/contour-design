@@ -64,23 +64,27 @@ pub async fn list_skills(State(state): State<AppState>) -> ApiJson<SkillsRespons
     })
 }
 
-/// `GET /api/skills/:id`, with the `ETag` of its `SKILL.md` on disk: the
-/// skill editor saves with it as `If-Match` (`crate::cas`).
+/// `GET /api/skills/:id`, with the `ETag` of its `SKILL.md`: the skill
+/// editor saves with it as `If-Match` (`crate::cas`). A file changed on
+/// disk since the index read it (an agent's shell) is read again first,
+/// so the body shown and its tag are of the same bytes.
 pub async fn get_skill(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    let index = state.content.snapshot();
-    let entry = index
-        .find_skill(&id)
-        .cloned()
-        .ok_or_else(|| ApiErr::not_found("skill not found"))?;
-    let dir = entry.dir.clone();
-    let tag =
-        crate::spawn::spawn_blocking_in_span(move || od_content::user_content::skill_tag(&dir))
-            .await
-            .map_err(|e| ApiErr::internal(e.to_string()))?;
-    Ok((crate::cas::etag(&tag), ApiJson(detail(&entry))))
+    let content = std::sync::Arc::clone(&state.content);
+    let entry = crate::spawn::spawn_blocking_in_span(move || {
+        let entry = content.snapshot().find_skill(&id).cloned()?;
+        if od_content::user_content::skill_tag(&entry.dir) == entry.tag {
+            return Some(entry);
+        }
+        content.reload();
+        content.snapshot().find_skill(&id).cloned()
+    })
+    .await
+    .map_err(|e| ApiErr::internal(e.to_string()))?
+    .ok_or_else(|| ApiErr::not_found("skill not found"))?;
+    Ok((crate::cas::etag(&entry.tag), ApiJson(detail(&entry))))
 }
 
 pub async fn list_design_templates(

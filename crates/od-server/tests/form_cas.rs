@@ -122,6 +122,11 @@ async fn a_skill_replaced_on_disk_refuses_the_form_opened_before() {
     let typed = json!({ "name": "tea", "body": "Typed." });
     assert_eq!(put(&d, "/api/skills/tea", &typed, Some(&opened)).await, 412);
     assert!(std::fs::read_to_string(&file).unwrap().contains("On disk."));
+    // Opened again, the form shows the file as it is, with its tag.
+    let (now, tag) = tagged(&d, "/api/skills/tea").await;
+    assert!(now["body"].as_str().unwrap().contains("On disk."), "{now}");
+    assert_eq!(put(&d, "/api/skills/tea", &typed, Some(&tag)).await, 200);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("Typed."));
 }
 
 #[tokio::test]

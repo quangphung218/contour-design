@@ -186,11 +186,17 @@ pub fn create_skill(
 /// ([`save_skill`]).
 #[must_use]
 pub fn skill_tag(dir: &Path) -> String {
-    use sha2::{Digest, Sha256};
     match nofollow::read_file(&dir.join("SKILL.md"), MAX_PLUGIN_BYTES) {
-        Ok(Some(file)) => hex::encode(Sha256::digest(&file.bytes)),
+        Ok(Some(file)) => tag_of(&file.bytes),
         _ => "missing".to_owned(),
     }
+}
+
+/// The tag of content `bytes`: sha256, hex.
+#[must_use]
+pub fn tag_of(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
 }
 
 /// Rewrites skill `id`. A user skill is edited in place; a bundled one

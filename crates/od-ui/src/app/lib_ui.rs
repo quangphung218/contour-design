@@ -238,6 +238,31 @@ pub fn ConfirmBar(
     }
 }
 
+/// What a form shows when its Save found the file changed since it opened
+/// (412 to its `If-Match`): what is typed stays in the form. "Reload"
+/// opens the form again on the new copy, dropping what is typed; "Save
+/// anyway" writes what is typed over it. Test ids: `{testid}-changed`,
+/// `{testid}-reload`, `{testid}-anyway`.
+#[component]
+pub fn ChangedElsewhere(
+    on_reload: Callback<()>,
+    on_save_anyway: Callback<()>,
+    #[prop(into)] testid: &'static str,
+    /// Save anyway is off (a required field is empty).
+    #[prop(optional, into)]
+    blocked: Signal<bool>,
+) -> impl IntoView {
+    view! {
+        <div class="changed-elsewhere">
+            <p class="error-text" role="alert" data-testid=format!("{testid}-changed")>{t(T::ChangedElsewhere)}</p>
+            <div class="row wrap">
+                <button class="btn small" data-testid=format!("{testid}-reload") on:click=move |_| on_reload.run(())>{t(T::ReloadNewCopy)}</button>
+                <button class="btn small" data-testid=format!("{testid}-anyway") disabled=move || blocked.get() on:click=move |_| on_save_anyway.run(())>{t(T::SaveAnyway)}</button>
+            </div>
+        </div>
+    }
+}
+
 /// Up to two initials of `name`, for a tile standing in for a logo.
 #[must_use]
 pub fn initials(name: &str) -> String {

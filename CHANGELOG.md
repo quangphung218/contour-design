@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Saving a skill, DESIGN.md or the memory index never overwrites a newer change; Reload or Save anyway, and your typing stays.
+
 ## [0.2.0-beta.70] - 2026-11-26
 
 ### Fixed

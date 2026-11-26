@@ -5,6 +5,7 @@
 
 use super::api;
 use super::icons::{Glyph, icon};
+use super::lib_ui::ChangedElsewhere;
 use super::sse::Sse;
 use super::tasks::{Tasks, live};
 use crate::i18n::{T, t, tf};
@@ -288,12 +289,19 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
     let draft = RwSignal::new(None::<String>);
     let root = RwSignal::new(String::new());
     let status = RwSignal::new(None::<Result<(), String>>);
+    // The tag (`ETag`) of the index `saved` holds: a Save goes only over
+    // it (`If-Match`). Changed since (a memory learnt links itself in,
+    // another window), nothing is written and the editor asks
+    // (`changed`), keeping the draft.
+    let tag = StoredValue::new(None::<String>);
+    let changed = RwSignal::new(false);
     let tasks = Tasks::here();
     let load = move || {
         tasks.spawn(async move {
-            if let Ok(v) = api::get::<Value>("/api/memory/index").await {
-                saved.set(v["index"].as_str().unwrap_or_default().to_owned());
-                root.set(v["rootDir"].as_str().unwrap_or_default().to_owned());
+            if let Ok(v) = api::get_tagged::<Value>("/api/memory/index").await {
+                tag.set_value(v.tag);
+                saved.set(v.value["index"].as_str().unwrap_or_default().to_owned());
+                root.set(v.value["rootDir"].as_str().unwrap_or_default().to_owned());
             }
         });
     };
@@ -306,20 +314,33 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
         }
         n
     });
-    let save = move || {
+    // `force` ("Save anyway") writes over an index changed since.
+    let save = move |force: bool| {
         let Some(index) = draft.get_untracked() else {
             return;
         };
+        let sent = if force { None } else { tag.get_value() };
         tasks.spawn(async move {
-            match api::put::<_, Value>("/api/memory/index", &json!({ "index": index })).await {
+            let body = json!({ "index": index });
+            match api::put_if_match::<_, Value>("/api/memory/index", &body, sent.as_deref()).await {
                 Ok(v) => {
                     saved.set(v["index"].as_str().unwrap_or_default().to_owned());
+                    changed.set(false);
                     draft.set(None);
                     status.set(Some(Ok(())));
+                    // Read back for the tag of what is saved now.
+                    load();
                 }
+                Err(e) if e.changed_since() => changed.set(true),
                 Err(e) => status.set(Some(Err(api::failure(T::MemoryFailed, &e)))),
             }
         });
+    };
+    // "Reload": the draft goes, the index as it is now shows.
+    let reload = move || {
+        changed.set(false);
+        draft.set(None);
+        load();
     };
     view! {
         <div class="memory-tool card padded" data-testid="memory-index">
@@ -332,6 +353,11 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                 aria-label=t(T::MemoryIndexTitle)
                 prop:value=move || draft.get().unwrap_or_else(|| saved.get())
                 on:input=live(move |ev| { status.set(None); draft.set(Some(event_target_value(&ev))); })></textarea>
+            {move || changed.get().then(|| view! {
+                <ChangedElsewhere testid="memory-index-save"
+                    on_reload=Callback::new(move |()| reload())
+                    on_save_anyway=Callback::new(move |()| save(true))/>
+            })}
             <div class="row">
                 {move || draft.with(Option::is_some).then(|| view! {
                     <span class="badge warning" data-testid="memory-index-dirty">{t(T::MemoryUnsaved)}</span>
@@ -342,10 +368,10 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                 })}
                 <span class="spacer"></span>
                 <button class="btn ghost small" disabled=move || draft.with(Option::is_none)
-                    on:click=move |_| draft.set(None)>{t(T::MemoryIndexReset)}</button>
+                    on:click=move |_| { changed.set(false); draft.set(None); }>{t(T::MemoryIndexReset)}</button>
                 <button class="btn primary small" data-testid="memory-index-save"
                     disabled=move || draft.with(Option::is_none)
-                    on:click=move |_| save()>{t(T::MemoryIndexSave)}</button>
+                    on:click=move |_| save(false)>{t(T::MemoryIndexSave)}</button>
             </div>
         </div>
     }

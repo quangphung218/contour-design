@@ -110,7 +110,7 @@ kbd, .kbd {
 .btn:hover:not(:disabled) { background: var(--btn-bg-hover); }
 .btn:active:not(:disabled) { transform: translateY(0.5px) scale(0.985); }
 .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring); }
-.btn:disabled { cursor: not-allowed; opacity: 0.5; box-shadow: none; }
+.btn:disabled, .btn[aria-disabled="true"] { cursor: not-allowed; opacity: 0.5; box-shadow: none; }
 .btn .ico { width: var(--icon-md); height: var(--icon-md); margin-left: -2px; }
 
 .btn.primary {

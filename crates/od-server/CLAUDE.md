@@ -117,6 +117,15 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `../od-content/src/user_content.rs::a_replace_keeps_the_copy_in_contour_for_one_restore`,
       `::a_replace_writes_nothing_for_a_source_changed_or_renamed`, `::a_replace_follows_no_link_and_waits_on_no_fifo`,
       `::only_a_listed_agent_folder_is_taken`; `::a_replace_cut_short_at_any_step_loses_nothing`, `::a_first_replace_or_install_cut_short_at_any_step_loses_nothing`, `::a_restore_cut_short_at_any_step_loses_nothing`, `::a_replace_that_fails_keeps_the_copy_kept_before`, `::a_deleted_skill_never_comes_back_from_what_a_restore_left`, `::one_leftover_that_cannot_move_stops_nothing_else`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`
+16. A form that saves a user's file saves only over the copy it opened on (`src/cas.rs`): the `GET` it opens on
+    answers an `ETag` (sha256 of the content shown: `GET /api/skills/{id}`, `GET /api/design-systems/{id}/kit`,
+    `GET /api/memory/index`), its `PUT` sends it as `If-Match`, and a file changed since is a 412 with nothing written.
+    The compare runs under the lock the file's other writers take (`REPLACE_LOCK` for `SKILL.md`, `DESIGN_MD_WRITES`
+    with accepted revisions, `MemoryFiles::guard` with `link`/`unlink`). No `If-Match` writes as before (agents, `od`).
+    A skill changed on disk since the index read it is read again by its `GET` (`SkillEntry.tag`).
+    Every `PUT` route takes `IfMatch` or is listed in `KEPT` with why.
+    - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs`, `src/cas.rs::tests`
+    - e2e `../od-ui/e2e/library.e2e.mjs` (skill form, DESIGN.md editor), `../od-ui/e2e/c2.e2e.mjs` (memory index)
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).
