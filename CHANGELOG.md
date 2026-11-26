@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.69] - 2026-11-26
+
 ### Added
 
 - From agent CLI flags imported skills that differ from their source; review both SKILL.md files, replace, and restore the previous copy once.
@@ -1492,7 +1494,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.68...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.69...HEAD
+[0.2.0-beta.69]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.68...v0.2.0-beta.69
 [0.2.0-beta.68]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.67...v0.2.0-beta.68
 [0.2.0-beta.67]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.66...v0.2.0-beta.67
 [0.2.0-beta.66]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.65...v0.2.0-beta.66
