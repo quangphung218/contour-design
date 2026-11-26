@@ -71,7 +71,11 @@ pub fn list_skills(roots: &[PathBuf], first_is_user: bool) -> Vec<SkillEntry> {
             } else {
                 ContentSource::BuiltIn
             };
-            let dirs = sorted_dir_entries(root);
+            // A hidden folder is no skill: an install or a replace in
+            // progress (`.installing-…`), the copies kept for a restore
+            // (`user_content::PREVIOUS_DIR`).
+            let mut dirs = sorted_dir_entries(root);
+            dirs.retain(|(name, _)| !name.starts_with('.'));
             let parsed = dirs
                 .par_iter()
                 .map(|(name, path)| load_skill_dir(name, path, source).unwrap_or_default())
@@ -691,6 +695,30 @@ mod tests {
         assert_eq!(infer_mode("landing page", ""), SkillMode::Prototype);
         // ASCII word boundary: CJK before `image` still counts as a boundary.
         assert_eq!(infer_mode("做image", ""), SkillMode::Image);
+    }
+
+    /// A hidden folder in the skills is never listed: the copies a
+    /// replace keeps (`.previous/<id>`), and an install or replace in
+    /// progress, whose `SKILL.md` names the same id and sorts first.
+    #[test]
+    fn hidden_folders_are_no_skills() {
+        let root = tempfile::tempdir().unwrap();
+        let skill = |dir: &Path, body: &str| {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(
+                dir.join("SKILL.md"),
+                format!("---\nname: tea\ndescription: d\n---\n{body}\n"),
+            )
+            .unwrap();
+        };
+        skill(&root.path().join("tea"), "Shown.");
+        skill(&root.path().join(".installing-tea-1"), "Half copied.");
+        skill(&root.path().join(".previous").join("tea"), "Kept.");
+        skill(&root.path().join(".hidden"), "Hidden.");
+        let listed = list_skills(&[root.path().to_path_buf()], true);
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        assert_eq!(listed[0].dir, root.path().join("tea"));
+        assert!(listed[0].body.contains("Shown."));
     }
 
     #[test]
