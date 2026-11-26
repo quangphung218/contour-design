@@ -1873,4 +1873,5 @@ TurnSkillPluginNotFound = Eklenti skill'i {0} bulunamadı; agent bunu almadı
 UsageSkillTurnsSince = {0} sürümünden beri sayılır
 ChangedElsewhere = Açtığınızdan beri başka bir yerde değişti. Yeniden yükle yeni kopyayı gösterir ve yazdıklarınızı atar; Yine de kaydet üzerine yazar.
 ReloadNewCopy = Yeniden yükle
+ReloadFailed = Yeni kopya yüklenemedi: {0}
 MemoryIndexLoadFailed = Dizin yüklenemedi: {0}

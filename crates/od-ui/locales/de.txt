@@ -1869,4 +1869,5 @@ TurnSkillPluginNotFound = Plugin-Skill {0} nicht gefunden; der Agent hat ihn nic
 UsageSkillTurnsSince = Gezählt seit {0}
 ChangedElsewhere = Seit dem Öffnen woanders geändert. Neu laden zeigt die neue Fassung und verwirft deine Eingabe; Trotzdem speichern überschreibt sie.
 ReloadNewCopy = Neu laden
+ReloadFailed = Die neue Fassung konnte nicht geladen werden: {0}
 MemoryIndexLoadFailed = Index konnte nicht geladen werden: {0}

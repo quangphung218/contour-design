@@ -1868,4 +1868,5 @@ TurnSkillPluginNotFound = 找不到外掛技能 {0}，代理程式沒有收到�
 UsageSkillTurnsSince = 自 {0} 起統計
 ChangedElsewhere = 開啟後已在別處變更。重新載入會顯示新版本並捨棄已輸入的內容；仍要儲存會覆寫它。
 ReloadNewCopy = 重新載入
+ReloadFailed = 無法載入新版本：{0}
 MemoryIndexLoadFailed = 無法載入索引：{0}

@@ -1868,4 +1868,5 @@ TurnSkillPluginNotFound = A plugin {0} skillje nem található; az agent nem kap
 UsageSkillTurnsSince = Számolva ettől: {0}
 ChangedElsewhere = Megnyitás óta máshol módosult. Az Újratöltés az új változatot mutatja, és elveti a beírtakat; a Mentés mégis felülírja.
 ReloadNewCopy = Újratöltés
+ReloadFailed = Nem sikerült betölteni az új változatot: {0}
 MemoryIndexLoadFailed = Nem sikerült betölteni az indexet: {0}

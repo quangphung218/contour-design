@@ -1875,4 +1875,5 @@ TurnSkillPluginNotFound = Skill du plugin {0} introuvable ; l’agent ne l’a p
 UsageSkillTurnsSince = Compté depuis {0}
 ChangedElsewhere = Modifié ailleurs depuis l’ouverture. Recharger affiche la nouvelle version et abandonne votre saisie ; Enregistrer quand même l’écrase.
 ReloadNewCopy = Recharger
+ReloadFailed = Impossible de charger la nouvelle version : {0}
 MemoryIndexLoadFailed = Impossible de charger l’index : {0}

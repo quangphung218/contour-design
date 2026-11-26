@@ -1875,4 +1875,5 @@ TurnSkillPluginNotFound = Skill del plugin {0} non trovata; l’agente non l’h
 UsageSkillTurnsSince = Contati da {0}
 ChangedElsewhere = Modificato altrove da quando l’hai aperto. Ricarica mostra la nuova copia e scarta ciò che hai scritto; Salva comunque la sovrascrive.
 ReloadNewCopy = Ricarica
+ReloadFailed = Impossibile caricare la nuova copia: {0}
 MemoryIndexLoadFailed = Impossibile caricare l’indice: {0}

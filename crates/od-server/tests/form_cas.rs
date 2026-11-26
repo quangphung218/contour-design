@@ -585,5 +585,8 @@ async fn a_bundled_skill_saved_beside_one_named_alike_writes_nothing() {
     )
     .await;
     assert_eq!(status, 409);
-    assert_eq!(std::fs::read_to_string(twin.join("SKILL.md")).unwrap(), mine);
+    assert_eq!(
+        std::fs::read_to_string(twin.join("SKILL.md")).unwrap(),
+        mine
+    );
 }

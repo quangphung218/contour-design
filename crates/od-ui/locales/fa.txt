@@ -1874,4 +1874,5 @@ TurnSkillPluginNotFound = مهارت افزونه {0} پیدا نشد؛ عامل
 UsageSkillTurnsSince = شمارش از {0}
 ChangedElsewhere = از زمان باز کردن، جای دیگری تغییر کرده است. بارگذاری مجدد نسخهٔ جدید را نشان می‌دهد و نوشته‌های شما را کنار می‌گذارد؛ ذخیره در هر حال روی آن می‌نویسد.
 ReloadNewCopy = بارگذاری مجدد
+ReloadFailed = نسخهٔ جدید بارگذاری نشد: {0}
 MemoryIndexLoadFailed = بارگذاری فهرست ممکن نشد: {0}

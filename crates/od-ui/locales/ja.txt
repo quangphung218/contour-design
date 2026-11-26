@@ -1874,4 +1874,5 @@ TurnSkillPluginNotFound = プラグインのスキル {0} が見つかりませ�
 UsageSkillTurnsSince = {0} から集計
 ChangedElsewhere = 開いた後に別の場所で変更されました。再読み込みすると新しい版を表示し、入力内容は破棄されます。それでも保存すると上書きします。
 ReloadNewCopy = 再読み込み
+ReloadFailed = 新しい版を読み込めませんでした: {0}
 MemoryIndexLoadFailed = インデックスを読み込めませんでした: {0}

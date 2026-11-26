@@ -217,8 +217,7 @@ pub fn skill_write_dir(user_root: &Path, id: &str, entry_dir: &Path, is_user: bo
 /// Whether `dir` lists an entry named `name`, byte for byte (not one that
 /// differs in case or Unicode form, which macOS and Windows open as it).
 fn named_exactly(dir: &Path, name: &str) -> bool {
-    std::fs::read_dir(dir)
-        .is_ok_and(|entries| entries.flatten().any(|e| e.file_name() == name))
+    std::fs::read_dir(dir).is_ok_and(|entries| entries.flatten().any(|e| e.file_name() == name))
 }
 
 /// The tag of content `bytes`: sha256, hex.
@@ -294,7 +293,9 @@ pub fn save_skill(
 fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let name = path.file_name().map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
+    let name = path
+        .file_name()
+        .map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
     let tmp = path.with_file_name(format!(".{name}.{}.{n}.tmp", std::process::id()));
     let written = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, path));
     if written.is_err() {
@@ -1635,7 +1636,10 @@ mod tests {
             Some(&tag),
         );
         assert!(matches!(saved, Err(WriteError::Exists(_))), "{saved:?}");
-        assert_eq!(std::fs::read_to_string(twin.join("SKILL.md")).unwrap(), mine);
+        assert_eq!(
+            std::fs::read_to_string(twin.join("SKILL.md")).unwrap(),
+            mine
+        );
         let names: Vec<String> = std::fs::read_dir(&user)
             .unwrap()
             .flatten()
@@ -1647,7 +1651,11 @@ mod tests {
         std::fs::remove_dir_all(&twin).unwrap();
         let over = user.join("ad-creative");
         std::fs::create_dir_all(&over).unwrap();
-        std::fs::write(over.join("SKILL.md"), "---\nname: ad-creative\n---\nOver.\n").unwrap();
+        std::fs::write(
+            over.join("SKILL.md"),
+            "---\nname: ad-creative\n---\nOver.\n",
+        )
+        .unwrap();
         assert_eq!(skill_write_dir(&user, "ad-creative", &bundled, false), over);
         let tag = skill_tag(&over);
         save_skill(
@@ -1659,7 +1667,11 @@ mod tests {
             Some(&tag),
         )
         .unwrap();
-        assert!(std::fs::read_to_string(over.join("SKILL.md")).unwrap().contains("Typed."));
+        assert!(
+            std::fs::read_to_string(over.join("SKILL.md"))
+                .unwrap()
+                .contains("Typed.")
+        );
     }
 
     /// A save writes a new `SKILL.md` and renames it into place (PR #349
@@ -1683,8 +1695,16 @@ mod tests {
         );
         let meta = std::fs::symlink_metadata(dir.join("SKILL.md")).unwrap();
         assert!(meta.is_file(), "the link is still there");
-        assert!(std::fs::read_to_string(dir.join("SKILL.md")).unwrap().contains("Typed."));
-        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert!(
+            std::fs::read_to_string(dir.join("SKILL.md"))
+                .unwrap()
+                .contains("Typed.")
+        );
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
         assert_eq!(left.len(), 1, "a temp file left: {left:?}");
     }
 
