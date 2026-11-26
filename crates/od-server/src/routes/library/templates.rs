@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Upper bound of a template's files, all together.
-const MAX_TEMPLATE_BYTES: u64 = 20 * 1024 * 1024;
+pub(crate) const MAX_TEMPLATE_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_NAME_CHARS: usize = 100;
 
 pub fn routes() -> Router<AppState> {
