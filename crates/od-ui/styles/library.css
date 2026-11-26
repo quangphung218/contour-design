@@ -236,3 +236,19 @@
    with the row's name (past its checkbox), so it reads as the row's note
    and not as the next agent's heading. */
 .agent-skill-note { margin: var(--space-1) 0 0; padding-inline-start: calc(var(--space-2-5) + 16px + var(--space-1-5)); }
+
+/* "Review and replace": one scroll, the list's. Both SKILL.md and the
+   files run their full length, and Replace / Cancel stay in view at the
+   foot of the list while the review is on screen. */
+.source-review .skill-export-skill-md, .source-review .skill-export-files { max-height: none; overflow: visible; }
+.source-review-actions { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: var(--space-1-5); margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-2-5)); padding: var(--space-2) var(--space-3) var(--space-2-5); background: var(--color-accent-soft); border-top: 1px solid var(--color-border-subtle); border-radius: 0 0 var(--radius-md) var(--radius-md); }
+.source-review-actions > p { margin: 0; }
+/* An agent CLI row: its badges keep together. On a phone they go under
+   the name, which keeps the row's width (an id on one line). */
+.agent-skill-badges { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
+.agent-skill-badges:empty { display: none; }
+@media (max-width: 480px) {
+  .agent-skill-item { flex-wrap: wrap; }
+  .agent-skill-item > .grow { flex: 1 1 0; min-width: 0; }
+  .agent-skill-item > .agent-skill-badges { flex-basis: 100%; padding-inline-start: calc(13px + var(--space-1-5)); }
+}

@@ -1265,6 +1265,11 @@ messages! {
     ReplacedFromSource => "Replaced with the source.", "Đã thay bằng bản nguồn.";
     RestorePreviousVersion => "Restore previous version", "Khôi phục bản trước";
     RestoredPreviousVersion => "Previous version restored.", "Đã khôi phục bản trước.";
+    SourceReviewFailed => "Could not load the source: {0}", "Không tải được bản nguồn: {0}";
+    UndoRestore => "Undo restore", "Hoàn tác khôi phục";
+    RestoreUndone => "Restore undone.", "Đã hoàn tác khôi phục.";
+    SkillChangedSinceEdit => "This skill changed since you opened Edit. Save anyway writes over it; Cancel shows the new copy.", "Skill đã đổi từ lúc mở Edit. Vẫn lưu sẽ ghi đè bản đó; Huỷ để xem bản mới.";
+    SaveAnyway => "Save anyway", "Vẫn lưu";
     FilesToCopy => "Files to copy", "Các file sẽ chép";
     ShowCommand => "Show the command", "Hiện lệnh";
     SkillCallsContour => "This skill calls Contour tools; it may not work outside Contour.", "Skill này gọi công cụ của Contour; ngoài Contour có thể không chạy.";
