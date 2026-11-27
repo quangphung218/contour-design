@@ -1874,4 +1874,7 @@ TurnSkillPluginNotFound = プラグインのスキル {0} が見つかりませ�
 UsageSkillTurnsSince = {0} から集計
 ChangedElsewhere = 開いた後に別の場所で変更されました。再読み込みすると新しい版を表示し、入力内容は破棄されます。それでも保存すると上書きします。
 ReloadNewCopy = 再読み込み
+ReloadFailed = 新しい版を読み込めませんでした: {0}
+SkillDeletedElsewhere = このスキルは別の場所で削除されました。「それでも保存」で入力中の内容で作り直します。
+SkillNamedAlike = 保存していません: スキル {0} の名前がほぼ同じ (大文字と小文字だけが違う) ため上書きされます。名前を変えるか削除してから保存してください。
 MemoryIndexLoadFailed = インデックスを読み込めませんでした: {0}

@@ -125,10 +125,27 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     (the extractor refuses it); a write over whatever is there sends `If-Match: *`. The `ETag` is of the bytes the body
     shown came from, never of a second read.
     GET and PUT tag the same file: for a skill, the one a save writes over (`user_content::skill_write_dir`:
-    an override on disk before the bundled folder); a skill changed on disk since the index read it is read
-    again by its `GET` (`SkillEntry.tag`). Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
+    an override on disk, named `id` byte for byte, before the bundled folder; a user skill named like it in
+    another case or Unicode form is a 409, never written over); a skill changed on disk since the index read it is read
+    again by its `GET` for its own answer (`routes/content.rs:skill_for_form`), never stored in the shared index (a read
+    may find it half written in place; a run's prompt reads the index): held still over `SETTLE`, that file (empty, or
+    under another `name:`, too); written all along, the index's copy with its own tag (the Save is a 412); not a skill
+    (too large, unparsable, a link: tag `unreadable`), the index's copy tagged with that file, so a Save puts a skill there
+    again; gone (no `SKILL.md`), the index is read again: the bundled copy of a deleted override, a 404 for a deleted
+    skill. No form is ever given the tag of nothing (`GONE_TAG`), and a Save that sends it is a 412; a `PUT` of a skill gone
+    from the index is a 412 with a tag, and `*` ("Save anyway") puts it back as a user skill.
+    A `SKILL.md` or `DESIGN.md` is written only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
+    a new file of a random name made `O_EXCL|O_NOFOLLOW`, bits set on its descriptor, renamed over it: no half-written read,
+    no write through a link at the file or at the temp name), every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
+    names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content` and `od-server`, `KEPT` with why).
+    Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and
-      24 saves at once from one copy land once, per lock), `src/cas.rs::tests`
+      24 saves at once from one copy land once, per lock; `a_skill_read_while_written_in_place_leaves_the_index_whole`,
+      `a_bundled_skill_saved_beside_one_named_alike_writes_nothing`), `src/cas.rs::tests`
+    - `src/routes/library/design_systems.rs::an_accept_waits_for_a_save_of_design_md` (the lock in `decide`),
+      `src/routes/content.rs::tests` (`skill_for_form`, `steady_read`), `tests/form_cas.rs::a_skill_md_left_empty_opens_the_form_on_it`,
+      `::an_override_named_otherwise_is_shown_and_kept`, `tests/user_file_writes.rs`,
+      `../od-content/src/user_content.rs::a_save_never_lands_in_a_skill_named_alike`, `::a_save_replaces_a_link_and_writes_nothing_through_it`
     - e2e `../od-ui/e2e/library.e2e.mjs` (skill form, DESIGN.md editor), `../od-ui/e2e/c2.e2e.mjs` (memory index)
 
 ## Traps

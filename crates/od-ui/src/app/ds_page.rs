@@ -669,7 +669,9 @@ fn DsDetail(
                         kit.set(Some(Ok(k.value)));
                         super::focus::focus_testid_next_frame("ds-md-editor");
                     }
-                    Err(e) => say(Err(api::failure(T::MdSaveFailed, &e))),
+                    // What is typed and the choice stay; the focus stays
+                    // on Reload.
+                    Err(e) => say(Err(api::failure(T::ReloadFailed, &e))),
                 }
             });
         }

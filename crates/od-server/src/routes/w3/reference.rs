@@ -628,14 +628,15 @@ fn claim(dir: &FsPath, mark: &str, source: Option<&str>) -> Result<bool, RunErr>
 /// file and a rename, so a link the agent put at the mark is replaced,
 /// never written through (it may point at any file of the user's).
 fn rewrite_mark(dir: &FsPath, mark: &str, body: &str) -> std::io::Result<()> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let tmp = dir.join(format!(
-        "{MARK_TMP}w{}-{}",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    let written = std::fs::write(&tmp, body).and_then(|()| std::fs::rename(&tmp, dir.join(mark)));
+    use std::io::Write as _;
+    // A random name made new (`O_EXCL`): a link planted at a name worked
+    // out beforehand is never written through.
+    let tmp = dir.join(format!("{MARK_TMP}w{}", od_content::nofollow::random_tag()));
+    // Not made: what is at that name is not ours to remove.
+    let mut file = od_content::nofollow::new_file(&tmp)?;
+    let written = file
+        .write_all(body.as_bytes())
+        .and_then(|()| std::fs::rename(&tmp, dir.join(mark)));
     if written.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
@@ -646,14 +647,14 @@ fn rewrite_mark(dir: &FsPath, mark: &str, body: &str) -> std::io::Result<()> {
 /// reads it half written. `AlreadyExists` when another run's mark is there.
 fn place_mark(dir: &FsPath, mark: &str, body: &str) -> std::io::Result<()> {
     use std::io::Write as _;
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let tmp = dir.join(format!(
-        "{MARK_TMP}{}-{}",
-        std::process::id(),
-        SEQ.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::write(&tmp, body)?;
+    let tmp = dir.join(format!("{MARK_TMP}{}", od_content::nofollow::random_tag()));
+    // Not made: what is at that name is not ours to remove.
+    let mut file = od_content::nofollow::new_file(&tmp)?;
+    if let Err(e) = file.write_all(body.as_bytes()) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    drop(file);
     let placed = std::fs::hard_link(&tmp, dir.join(mark));
     let _ = std::fs::remove_file(&tmp);
     match placed {

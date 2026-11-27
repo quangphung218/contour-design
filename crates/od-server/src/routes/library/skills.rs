@@ -173,15 +173,30 @@ pub async fn save(
     if_match: IfMatch,
     ApiJson(mut body): ApiJson<SkillBody>,
 ) -> ApiResult<Json<Value>> {
-    let entry = state
-        .content
-        .snapshot()
-        .find_skill(&id)
-        .cloned()
-        .ok_or_else(|| ApiErr::not_found("skill not found"))?;
     if id.contains(':') {
         return Err(ApiErr::bad_request("an example entry cannot be edited"));
     }
+    let Some(entry) = state.content.snapshot().find_skill(&id).cloned() else {
+        // Gone (deleted on disk while a form was open on it): a Save from
+        // the copy it showed is refused; "Save anyway" puts it back.
+        if if_match.0.is_some() {
+            return Err(crate::cas::changed());
+        }
+        if body.name.trim().is_empty() {
+            body.name.clone_from(&id);
+        }
+        let root = user_root(&state);
+        let skill_id = id.clone();
+        write_and_reload(&state, move || {
+            Ok(user_content::save_skill_again(
+                &root,
+                &skill_id,
+                &body.into(),
+            )?)
+        })
+        .await?;
+        return Ok(Json(json!({ "id": id, "override": false })));
+    };
     if body.name.trim().is_empty() {
         body.name.clone_from(&entry.info.id);
     }

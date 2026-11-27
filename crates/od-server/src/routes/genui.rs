@@ -505,12 +505,7 @@ fn write_in_project(cwd: &FsPath, rel: &str, text: &str) -> Result<(), String> {
     let dir = od_store::paths::resolve_safe_real(cwd, parent).map_err(|e| e.to_string())?;
     let target = dir.join(name);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let tmp = dir.join(format!(".od-write.{}.tmp", uuid::Uuid::new_v4().simple()));
-    let written = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, &target));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    written.map_err(|e| e.to_string())
+    od_content::nofollow::replace_file(&target, text.as_bytes(), None).map_err(|e| e.to_string())
 }
 
 async fn for_project(

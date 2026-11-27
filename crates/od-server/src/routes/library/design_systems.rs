@@ -47,7 +47,7 @@ use axum::{Json, Router};
 use od_content::DesignSystemEntry;
 use od_content::design_kit::{self, Swatch, Token, TokenScore};
 use od_content::design_system_gen::{self, GenerateRequest};
-use od_content::user_content::copy_dir;
+use od_content::user_content::{self, copy_dir};
 use od_contracts::{ContentSource, CreateProjectRequest, ProjectMetadata, RunStatus};
 use od_runs::RunMeta;
 use od_runtime::env::{RunEnv, agent_env};
@@ -599,7 +599,8 @@ pub async fn save_design_md(
     write_and_reload(&state, move || {
         let _one = design_md_lock();
         if_match.check(&crate::cas::tag_of(shown_design_md(&e).as_bytes()))?;
-        std::fs::write(inside(&e.dir, "DESIGN.md")?, body.body).map_err(ApiErr::io)
+        user_content::write_replacing(&inside(&e.dir, "DESIGN.md")?, body.body.as_bytes())
+            .map_err(ApiErr::io)
     })
     .await?;
     Ok(Json(json!({ "ok": true })))
@@ -1200,7 +1201,7 @@ struct Prior {
 /// content back. Returns that old content, for [`put_back`] should the
 /// decision itself not be saved.
 fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<Prior>> {
-    accept_files_with(dir, files, |path, bytes| std::fs::write(path, bytes))
+    accept_files_with(dir, files, user_content::write_replacing)
 }
 
 /// [`accept_files`], each file written by `write`, so a test can fail a
@@ -1270,7 +1271,7 @@ fn put_back(prior: &[Prior]) {
             }
         }
         let undone = match &p.old {
-            Some(bytes) => std::fs::write(&p.path, bytes),
+            Some(bytes) => user_content::write_replacing(&p.path, bytes),
             None => std::fs::remove_file(&p.path).or_else(|err| {
                 if err.kind() == std::io::ErrorKind::NotFound {
                     Ok(())
@@ -1316,31 +1317,35 @@ pub async fn decide(
     r.updated_at = od_store::now_ms();
     let dir = e.dir.clone();
     let out = r.clone();
-    write_and_reload(&state, move || {
-        let _one = design_md_lock();
-        let prior = if accept {
-            accept_files(&dir, &r.files)?
-        } else {
-            Vec::new()
-        };
-        let decided = write_revision(
-            &dir,
-            &Revision {
-                files: Vec::new(),
-                ..r
-            },
-        );
-        // Still pending: the package goes back to what it was, so a
-        // Reject after this leaves none of the revision in it.
-        if decided.is_err() {
-            put_back(&prior);
-        }
-        io(decided)
-    })
-    .await?;
+    write_and_reload(&state, move || decide_on_disk(&dir, r, accept)).await?;
     Ok(Json(
         json!({ "revision": Revision { files: Vec::new(), ..out } }),
     ))
+}
+
+/// Writes decision `r` into package `dir`, and the revision's files when
+/// `accept`, under the lock a Save of DESIGN.md compares and writes under:
+/// an accept never lands between a Save's compare and its write.
+fn decide_on_disk(dir: &std::path::Path, r: Revision, accept: bool) -> ApiResult<()> {
+    let _one = design_md_lock();
+    let prior = if accept {
+        accept_files(dir, &r.files)?
+    } else {
+        Vec::new()
+    };
+    let decided = write_revision(
+        dir,
+        &Revision {
+            files: Vec::new(),
+            ..r
+        },
+    );
+    // Still pending: the package goes back to what it was, so a
+    // Reject after this leaves none of the revision in it.
+    if decided.is_err() {
+        put_back(&prior);
+    }
+    io(decided)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1750,6 +1755,49 @@ mod tests {
         assert!(
             !d.join("tokens.css").exists(),
             "a file deleted since put back"
+        );
+    }
+
+    /// An accept waits for the lock a Save of DESIGN.md compares and writes
+    /// under (PR #349 review): one that wrote while a Save held it would
+    /// land between the Save's compare and its write, and the Save would
+    /// write over the revision just accepted, no 412.
+    #[test]
+    fn an_accept_waits_for_a_save_of_design_md() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().to_path_buf();
+        std::fs::write(d.join("DESIGN.md"), "old").unwrap();
+        let r = Revision {
+            id: "r1".to_owned(),
+            kind: "agent".to_owned(),
+            status: "accepted".to_owned(),
+            feedback: None,
+            section: None,
+            run_id: None,
+            error: None,
+            files: revision(&[("DESIGN.md", "accepted")]),
+            created_at: 0,
+            updated_at: 0,
+        };
+        let save = design_md_lock();
+        let accept = {
+            let d = d.clone();
+            std::thread::spawn(move || decide_on_disk(&d, r, true).is_ok())
+        };
+        // Nothing to wait on but time: what is checked is that nothing
+        // happens while the Save holds the lock.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(
+            std::fs::read_to_string(d.join("DESIGN.md")).unwrap(),
+            "old",
+            "the accept wrote while a Save held the lock"
+        );
+        assert!(!accept.is_finished(), "the accept did not wait");
+        drop(save);
+        assert!(accept.join().unwrap());
+        assert_eq!(
+            std::fs::read_to_string(d.join("DESIGN.md")).unwrap(),
+            "accepted"
         );
     }
 

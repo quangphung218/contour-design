@@ -65,13 +65,15 @@ pub async fn list_skills(State(state): State<AppState>) -> ApiJson<SkillsRespons
 }
 
 /// `GET /api/skills/:id`, with the `ETag` a Save of the skill editor sends
-/// back as `If-Match` (`crate::cas`). The tag is of the bytes the body
-/// shown was parsed from (`SkillEntry.tag`), never of a second read: a file
-/// written again meanwhile then fails the Save's compare (412) instead of
-/// passing it unseen. A `SKILL.md` changed on disk since the index read it
-/// (an agent's shell), or an override written beside a bundled skill
-/// (`user_content::skill_write_dir`, the file a Save compares), is read
-/// again first.
+/// back as `If-Match` (`crate::cas`). The tag is always of the bytes the
+/// body shown was parsed from (`SkillEntry.tag`), never of another read: a
+/// file written again meanwhile then fails the Save's compare (412)
+/// instead of passing it unseen. A `SKILL.md` changed on disk since the
+/// index read it (an agent's shell), or an override written beside a
+/// bundled skill (`user_content::skill_write_dir`, the file a Save
+/// compares), is read again first, for this answer alone
+/// ([`steady_read`]): the index others read (a run's prompt) is never set
+/// from a read that may have found the file half written in place.
 pub async fn get_skill(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -79,34 +81,155 @@ pub async fn get_skill(
     let content = std::sync::Arc::clone(&state.content);
     let user_root = state.store.data_dir().user_skills_dir();
     let found = crate::spawn::spawn_blocking_in_span(move || {
-        let write_dir = |e: &SkillEntry| {
-            user_content::skill_write_dir(
-                &user_root,
-                &e.info.id,
-                &e.dir,
-                e.info.source == ContentSource::User,
-            )
-        };
-        let mut entry = content.snapshot().find_skill(&id).cloned()?;
-        let dir = write_dir(&entry);
-        if dir != entry.dir || user_content::skill_tag(&dir) != entry.tag {
-            content.reload();
-            entry = content.snapshot().find_skill(&id).cloned()?;
-        }
-        let dir = write_dir(&entry);
-        // An override the index still leaves out (unreadable, broken): the
-        // Save compares that file, so the form gets its tag.
-        let tag = if dir == entry.dir {
-            entry.tag.clone()
-        } else {
-            user_content::skill_tag(&dir)
-        };
-        Some((entry, tag))
+        let entry = content.snapshot().find_skill(&id).cloned()?;
+        skill_for_form(
+            &user_root,
+            entry,
+            || std::thread::sleep(SETTLE),
+            || {
+                content.reload();
+                content.snapshot().find_skill(&id).cloned()
+            },
+        )
     })
     .await
     .map_err(|e| ApiErr::internal(e.to_string()))?;
     let (entry, tag) = found.ok_or_else(|| ApiErr::not_found("skill not found"))?;
     Ok((crate::cas::etag(&tag), ApiJson(detail(&entry))))
+}
+
+/// What the skill form opens on, from `entry` (the index's): the skill and
+/// the tag of the bytes it shows. The file a Save compares
+/// (`user_content::skill_write_dir`) changed since the index read it is
+/// read again ([`steady_read`], `settle` the wait between its reads):
+/// - held still: that file, empty or with another `name:` too, so a
+///   Reload shows what is on disk;
+/// - cannot be parsed, held still: the index's copy, tagged with that
+///   file, so a Save puts a skill there again (the only answer whose tag
+///   is not of the body shown: the body shown cannot be the file's);
+/// - written all along: the index's copy and its own tag, so a Save is a
+///   412 and the form asks;
+/// - gone (no `SKILL.md`: deleted, never half written): what `reread`
+///   finds once the index is read again, as main did; `None` (a 404) when
+///   the skill is gone from it, never the old copy under a tag of nothing.
+fn skill_for_form(
+    user_root: &std::path::Path,
+    entry: SkillEntry,
+    mut settle: impl FnMut(),
+    reread: impl FnOnce() -> Option<SkillEntry>,
+) -> Option<(SkillEntry, String)> {
+    let mut entry = entry;
+    let mut reread = Some(reread);
+    loop {
+        match skill_on_disk(user_root, entry, &mut settle) {
+            Ok(found) => return Some(found),
+            // Once: the index read again is what is on disk now.
+            Err(()) => entry = reread.take()?()?,
+        }
+    }
+}
+
+/// [`skill_for_form`] without reading the index again: `Err` when the
+/// `SKILL.md` it looks at is gone.
+fn skill_on_disk(
+    user_root: &std::path::Path,
+    entry: SkillEntry,
+    settle: impl FnMut(),
+) -> Result<(SkillEntry, String), ()> {
+    let dir = user_content::skill_write_dir(
+        user_root,
+        &entry.info.id,
+        &entry.dir,
+        entry.info.source == ContentSource::User,
+    );
+    if dir == entry.dir && user_content::skill_tag(&dir) == entry.tag {
+        let tag = entry.tag.clone();
+        return Ok((entry, tag));
+    }
+    // An override is listed from the user root.
+    let source = if dir == entry.dir {
+        entry.info.source
+    } else {
+        ContentSource::User
+    };
+    Ok(match steady_read(&dir, source, &entry.info.id, settle) {
+        Reread::Steady(now) => {
+            let tag = now.tag.clone();
+            (*now, tag)
+        }
+        Reread::Broken(tag) => (entry, tag),
+        Reread::Unsteady => {
+            let tag = entry.tag.clone();
+            (entry, tag)
+        }
+        Reread::Gone => return Err(()),
+    })
+}
+
+/// How many times [`steady_read`] reads a file being written.
+const STEADY_TRIES: usize = 5;
+
+/// How long a file read again must hold still: a writer in place (`>`)
+/// cuts it to nothing, then fills it, and either state can hold for a few
+/// reads in a row.
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// A skill folder read again ([`steady_read`]).
+#[derive(Debug)]
+enum Reread {
+    /// The skill as its `SKILL.md` is, the file unchanged over `settle`.
+    Steady(Box<SkillEntry>),
+    /// A `SKILL.md` that is there but no skill (cannot be parsed or read:
+    /// too large, a link, a FIFO), unchanged over `settle`: its tag.
+    Broken(String),
+    /// Changed in every read.
+    Unsteady,
+    /// No `SKILL.md` (deleted): nothing that could be half written.
+    Gone,
+}
+
+/// Skill `id` read from folder `dir` alone, at most [`STEADY_TRIES`]
+/// times, until its `SKILL.md` is the same after `settle` as the bytes
+/// read. A `name:` other than `id` (an agent renamed it) is still this
+/// skill: the file the form saves over.
+fn steady_read(
+    dir: &std::path::Path,
+    source: ContentSource,
+    id: &str,
+    mut settle: impl FnMut(),
+) -> Reread {
+    for _ in 0..STEADY_TRIES {
+        let before = user_content::skill_tag(dir);
+        if before == user_content::GONE_TAG {
+            return Reread::Gone;
+        }
+        let read = od_content::skills::read_skill_dir(dir, source);
+        settle();
+        let after = user_content::skill_tag(dir);
+        match read.map(|entries| this_skill(entries, id)) {
+            Some(Some(entry)) if entry.tag == after => return Reread::Steady(Box::new(entry)),
+            // An example `<parent>:<key>` the folder no longer has.
+            Some(None) => return Reread::Unsteady,
+            None if before == after => return Reread::Broken(after),
+            _ => {}
+        }
+    }
+    Reread::Unsteady
+}
+
+/// The entry for skill `id` among a folder's `entries` (its parent, then
+/// its examples): by id, else the parent under the name `id`.
+fn this_skill(entries: Vec<SkillEntry>, id: &str) -> Option<SkillEntry> {
+    if let Some(found) = entries.iter().position(|e| e.info.id == id) {
+        return entries.into_iter().nth(found);
+    }
+    if id.contains(':') {
+        return None;
+    }
+    let mut parent = entries.into_iter().next()?;
+    parent.info.id = id.to_owned();
+    parent.info.name = id.to_owned();
+    Some(parent)
 }
 
 pub async fn list_design_templates(
@@ -292,7 +415,152 @@ pub async fn get_craft(
 
 #[cfg(test)]
 mod tests {
-    use super::{rebrand_example, without_google_fonts};
+    use super::{
+        ContentSource, Reread, rebrand_example, skill_for_form, steady_read, without_google_fonts,
+    };
+    use od_content::user_content::{self, SkillDraft, WriteError};
+
+    fn skill_dir(root: &std::path::Path, name: &str, text: &[u8]) -> std::path::PathBuf {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), text).unwrap();
+        dir
+    }
+
+    /// Writes a new version of `dir`'s `SKILL.md` each time it is called,
+    /// as a writer that never stops.
+    fn writer(dir: &std::path::Path, big: bool) -> impl FnMut() + '_ {
+        let mut n = 0;
+        move || {
+            n += 1;
+            let text = if big {
+                // Past what the index reads: no skill, whatever it says.
+                format!("{n}{}", "x".repeat(5 * 1024 * 1024))
+            } else {
+                format!("---\nname: tea\n---\nVersion {n}.\n")
+            };
+            std::fs::write(dir.join("SKILL.md"), text).unwrap();
+        }
+    }
+
+    /// A file that changes between the read and the check after `settle`
+    /// is never taken (PR #351 review: nothing held this step).
+    #[test]
+    fn a_skill_md_written_during_the_read_is_not_taken() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = skill_dir(tmp.path(), "tea", b"---\nname: tea\n---\nBody.\n");
+        let read = steady_read(&dir, ContentSource::User, "tea", writer(&dir, false));
+        assert!(matches!(read, Reread::Unsteady), "{read:?}");
+        // Held still: taken.
+        let read = steady_read(&dir, ContentSource::User, "tea", || {});
+        assert!(matches!(read, Reread::Steady(e) if e.body.contains("Version 5.")));
+        // No skill (too large) that changes: neither.
+        let read = steady_read(&dir, ContentSource::User, "tea", writer(&dir, true));
+        assert!(matches!(read, Reread::Unsteady), "{read:?}");
+        let held = user_content::skill_tag(&dir);
+        let read = steady_read(&dir, ContentSource::User, "tea", || {});
+        assert!(matches!(read, Reread::Broken(t) if t == held));
+    }
+
+    /// An agent left `SKILL.md` empty (PR #351 review): held still, the
+    /// form opens on it, so Reload shows the file on disk and a Save with
+    /// its tag lands.
+    #[test]
+    fn an_empty_skill_md_held_still_is_the_skill() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = skill_dir(tmp.path(), "tea", b"");
+        let Reread::Steady(read) = steady_read(&dir, ContentSource::User, "tea", || {}) else {
+            panic!("an empty SKILL.md held still is not read");
+        };
+        assert_eq!(read.body, "");
+        assert_eq!(read.tag, user_content::tag_of(b""));
+    }
+
+    /// An override whose `name:` is not its folder's (an agent renamed it)
+    /// is still the file a Save of that id writes over: the form shows it.
+    #[test]
+    fn an_override_named_otherwise_is_shown() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = skill_dir(
+            tmp.path(),
+            "ad-creative",
+            b"---\nname: other\n---\nAGENT WORK\n",
+        );
+        let Reread::Steady(read) = steady_read(&dir, ContentSource::User, "ad-creative", || {})
+        else {
+            panic!("not read");
+        };
+        assert_eq!(read.info.id, "ad-creative");
+        assert!(read.body.contains("AGENT WORK"));
+        // An example id the folder does not have is not the folder's parent.
+        let read = steady_read(&dir, ContentSource::User, "ad-creative:hero", || {});
+        assert!(matches!(read, Reread::Unsteady));
+    }
+
+    /// A skill whose `SKILL.md` is deleted on disk (PR #351 review: the
+    /// old copy was shown under the tag of nothing, and a Save put back
+    /// what the agent deleted). The index is read again: an override gone
+    /// shows the bundled copy and its tag; a user skill gone is not found.
+    #[test]
+    fn a_skill_deleted_on_disk_is_read_from_the_index_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = skill_dir(
+            &tmp.path().join("bundled"),
+            "tea",
+            b"---\nname: tea\n---\nBundled.\n",
+        );
+        let bundled_entry = od_content::skills::read_skill_dir(&bundled, ContentSource::BuiltIn)
+            .unwrap()
+            .remove(0);
+        let user = tmp.path().join("user");
+        let over = skill_dir(&user, "tea", b"---\nname: tea\n---\nOverride.\n");
+        let over_entry = od_content::skills::read_skill_dir(&over, ContentSource::User)
+            .unwrap()
+            .remove(0);
+        std::fs::remove_file(over.join("SKILL.md")).unwrap();
+        let (shown, tag) = skill_for_form(
+            &user,
+            over_entry.clone(),
+            || {},
+            || Some(bundled_entry.clone()),
+        )
+        .unwrap();
+        assert_eq!(shown.body, bundled_entry.body);
+        assert_eq!(tag, bundled_entry.tag);
+        // A user skill gone, from the index too: not found.
+        assert!(skill_for_form(&user, over_entry, || {}, || None).is_none());
+    }
+
+    /// An override being written all the time the form opens (PR #351
+    /// review): the form gets the bundled copy it shows and that copy's
+    /// tag, never the override's, so its Save is refused, not landed over
+    /// the agent's file.
+    #[test]
+    fn an_override_being_written_is_never_tagged_under_the_bundled_copy() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = skill_dir(
+            &tmp.path().join("bundled"),
+            "tea",
+            b"---\nname: tea\n---\nBundled.\n",
+        );
+        let user = tmp.path().join("user");
+        let over = skill_dir(&user, "tea", b"---\nname: tea\n---\nAgent.\n");
+        let entry = od_content::skills::read_skill_dir(&bundled, ContentSource::BuiltIn)
+            .unwrap()
+            .remove(0);
+        let (shown, tag) =
+            skill_for_form(&user, entry.clone(), writer(&over, false), || None).unwrap();
+        assert_eq!(shown.body, entry.body);
+        assert_eq!(tag, entry.tag, "the tag of the bundled copy shown");
+        let draft = SkillDraft {
+            name: "tea".to_owned(),
+            description: String::new(),
+            triggers: Vec::new(),
+            body: "Typed.".to_owned(),
+        };
+        let saved = user_content::save_skill(&user, "tea", &bundled, false, &draft, Some(&tag));
+        assert!(matches!(saved, Err(WriteError::Stale)), "{saved:?}");
+    }
 
     #[test]
     fn gallery_examples_load_no_google_fonts() {

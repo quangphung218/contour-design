@@ -1875,4 +1875,7 @@ TurnSkillPluginNotFound = Skill del plugin {0} non trovata; l’agente non l’h
 UsageSkillTurnsSince = Contati da {0}
 ChangedElsewhere = Modificato altrove da quando l’hai aperto. Ricarica mostra la nuova copia e scarta ciò che hai scritto; Salva comunque la sovrascrive.
 ReloadNewCopy = Ricarica
+ReloadFailed = Impossibile caricare la nuova copia: {0}
+SkillDeletedElsewhere = Questa skill è stata eliminata altrove. «Salva comunque» la ricrea con ciò che hai scritto.
+SkillNamedAlike = Non salvato: la tua skill {0} ha quasi lo stesso nome (cambiano solo maiuscole o minuscole) e verrebbe sovrascritta. Rinominala o rimuovila, poi salva.
 MemoryIndexLoadFailed = Impossibile caricare l’indice: {0}

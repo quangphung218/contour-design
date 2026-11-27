@@ -176,35 +176,60 @@ pub fn create_skill(
         std::io::ErrorKind::AlreadyExists => WriteError::Exists(format!("skill {slug:?}")),
         _ => io(e),
     })?;
-    std::fs::write(dir.join("SKILL.md"), render_skill_md(draft, &slug, None)).map_err(io)?;
+    write_replacing(
+        &dir.join("SKILL.md"),
+        render_skill_md(draft, &slug, None).as_bytes(),
+    )
+    .map_err(io)?;
     Ok(slug)
 }
 
 /// The tag of the `SKILL.md` in skill folder `dir`: sha256 of its bytes,
-/// hex; `"missing"` when it cannot be read (no file, a link, a FIFO).
-/// The skill editor opens on it and saves only over the same tag
-/// ([`save_skill`]).
+/// hex; [`GONE_TAG`] when there is none, `"unreadable"` when it is there
+/// but cannot be read (a link, a FIFO, too large). The skill editor opens
+/// on it and saves only over the same tag ([`save_skill`]).
 #[must_use]
 pub fn skill_tag(dir: &Path) -> String {
-    match nofollow::read_file(&dir.join("SKILL.md"), MAX_PLUGIN_BYTES) {
+    let path = dir.join("SKILL.md");
+    match nofollow::read_file(&path, MAX_PLUGIN_BYTES) {
         Ok(Some(file)) => tag_of(&file.bytes),
-        _ => "missing".to_owned(),
+        _ if std::fs::symlink_metadata(&path).is_err() => GONE_TAG.to_owned(),
+        _ => "unreadable".to_owned(),
     }
 }
+
+/// The [`skill_tag`] of a skill with no `SKILL.md`. No form opens on it
+/// (`GET /api/skills/{id}` reads the index again: gone, it is a 404), so a
+/// Save that sends it saw a copy since deleted: it is refused, never a
+/// write where the agent deleted the skill.
+pub const GONE_TAG: &str = "missing";
 
 /// The folder a save of skill `id` writes over: the user's override in
 /// `<user_root>/<id>` once its `SKILL.md` is on disk (an agent may write
 /// one the index has not read yet), else `entry_dir`, the folder the
 /// index has for it. A form's `GET` tags this folder and its `PUT`
 /// compares this folder ([`save_skill`]), so both see the same file.
+/// The override is a folder named `id` byte for byte: on macOS and
+/// Windows `<user_root>/<id>` also opens `Ad-Creative` for `ad-creative`,
+/// another skill.
 #[must_use]
 pub fn skill_write_dir(user_root: &Path, id: &str, entry_dir: &Path, is_user: bool) -> PathBuf {
     let over = user_root.join(id);
-    if !is_user && crate::design_systems::is_valid_id(id) && over.join("SKILL.md").exists() {
+    if !is_user
+        && crate::design_systems::is_valid_id(id)
+        && named_exactly(user_root, id)
+        && over.join("SKILL.md").exists()
+    {
         over
     } else {
         entry_dir.to_path_buf()
     }
+}
+
+/// Whether `dir` lists an entry named `name`, byte for byte (not one that
+/// differs in case or Unicode form, which macOS and Windows open as it).
+fn named_exactly(dir: &Path, name: &str) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| entries.flatten().any(|e| e.file_name() == name))
 }
 
 /// The tag of content `bytes`: sha256, hex.
@@ -239,8 +264,18 @@ pub fn save_skill(
     let _one = REPLACE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A user skill named like it in another case or Unicode form is the
+    // folder `<user_root>/<id>` opens on macOS and Windows: an override
+    // there would write over that skill.
+    if !is_user
+        && !named_exactly(user_root, id)
+        && let Some(twin) = entry_like(user_root, id)?
+    {
+        return Err(WriteError::Exists(format!("skill {twin:?}")));
+    }
     if let Some(expected) = expected
-        && skill_tag(&skill_write_dir(user_root, id, current_dir, is_user)) != expected
+        && (expected == GONE_TAG
+            || skill_tag(&skill_write_dir(user_root, id, current_dir, is_user)) != expected)
     {
         return Err(WriteError::Stale);
     }
@@ -250,6 +285,9 @@ pub fn save_skill(
         .flatten()
         .and_then(|f| String::from_utf8(f.bytes).ok());
     let dir = if is_user {
+        // Deleted since ("Save anyway" over a skill removed on disk): it is
+        // put back where it was.
+        std::fs::create_dir_all(current_dir).map_err(io)?;
         current_dir.to_path_buf()
     } else {
         let dir = user_root.join(id);
@@ -261,8 +299,75 @@ pub fn save_skill(
     let text = render_skill_md(draft, id, previous.as_deref());
     // Validate before writing: a broken file would drop the skill.
     frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
-    std::fs::write(dir.join("SKILL.md"), text).map_err(io)?;
+    write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)?;
     Ok(dir)
+}
+
+/// "Save anyway" of skill `id` that is gone from the index (deleted on
+/// disk while its form was open): a user skill `id` again, with `draft`.
+/// A user skill named like it in another case or Unicode form is refused,
+/// as [`save_skill`] refuses it.
+///
+/// # Errors
+/// [`WriteError::BadRequest`], [`WriteError::Exists`], [`WriteError::Io`].
+pub fn save_skill_again(user_root: &Path, id: &str, draft: &SkillDraft) -> Result<(), WriteError> {
+    draft.check()?;
+    if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
+        return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
+    }
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(twin) = entry_like(user_root, id)?.filter(|name| name != id) {
+        return Err(WriteError::Exists(format!("skill {twin:?}")));
+    }
+    let dir = user_root.join(id);
+    // Only an empty place is taken: a link there (to a folder outside the
+    // root) or a folder that still holds a `SKILL.md` (a skill renamed on
+    // disk, which the index lists under its new name) is refused, never
+    // written through or over.
+    match std::fs::symlink_metadata(&dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir(&dir).map_err(io)?;
+        }
+        Err(e) => return Err(io(e)),
+        Ok(m) if !m.file_type().is_dir() => {
+            return Err(WriteError::Exists(format!("skill {id:?}")));
+        }
+        Ok(_) => match std::fs::symlink_metadata(dir.join("SKILL.md")) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(io(e)),
+            Ok(_) => return Err(WriteError::Exists(format!("skill {id:?}"))),
+        },
+    }
+    let text = render_skill_md(draft, id, None);
+    frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
+    write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)
+}
+
+/// Writes `bytes` as `path` through a hidden file of its own beside it,
+/// renamed over `path`: a read never finds it half written (the index, a
+/// form's `GET`), and a link put there is replaced, never written through.
+/// A file there keeps its permission bits; a read-only one is refused
+/// (`PermissionDenied`), as a write in place is. Every write of a `SKILL.md` or `DESIGN.md` goes through it
+/// (`od-server/tests/user_file_writes.rs`).
+///
+/// # Errors
+/// The write's or the rename's; the hidden file is removed.
+pub fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    // A file there keeps its permission bits, and one made read-only is
+    // refused as a write in place would be (a rename would replace it).
+    let kept = match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_file() && m.permissions().readonly() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("{} is read-only", path.display()),
+            ));
+        }
+        Ok(m) if m.is_file() => Some(m.permissions()),
+        _ => None,
+    };
+    nofollow::replace_file(path, bytes, kept)
 }
 
 /// Removes a user skill or override folder (never a bundled one).
@@ -1495,6 +1600,52 @@ mod tests {
     }
 
     #[test]
+    fn save_again_takes_an_empty_place_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // Gone for good: made again.
+        save_skill_again(root, "tea", &draft("Tea", "Again.")).unwrap();
+        assert!(
+            std::fs::read_to_string(root.join("tea/SKILL.md"))
+                .unwrap()
+                .contains("Again.")
+        );
+        // A folder left without its SKILL.md: filled.
+        std::fs::create_dir(root.join("mint")).unwrap();
+        save_skill_again(root, "mint", &draft("Mint", "Back.")).unwrap();
+        assert!(root.join("mint/SKILL.md").is_file());
+    }
+
+    #[test]
+    fn save_again_refuses_a_skill_renamed_on_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir(root.join("foo")).unwrap();
+        let theirs = "---\nname: baz\ndescription: Renamed.\n---\nTheir work.\n";
+        std::fs::write(root.join("foo/SKILL.md"), theirs).unwrap();
+        let err = save_skill_again(root, "foo", &draft("Foo", "Mine.")).unwrap_err();
+        assert!(matches!(err, WriteError::Exists(_)), "{err:?}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("foo/SKILL.md")).unwrap(),
+            theirs
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_again_never_writes_through_a_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("skills");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("zed")).unwrap();
+        let err = save_skill_again(&root, "zed", &draft("Zed", "Mine.")).unwrap_err();
+        assert!(matches!(err, WriteError::Exists(_)), "{err:?}");
+        assert!(!outside.join("SKILL.md").exists());
+    }
+
+    #[test]
     fn slug_follows_the_original_rule() {
         assert_eq!(skill_slug("My Brand Voice!"), "my-brand-voice");
         assert_eq!(skill_slug("  a_b-c "), "a_b-c");
@@ -1559,6 +1710,169 @@ mod tests {
         assert!(delete_user_dir(&user, &bundled).is_err());
         delete_user_dir(&user, &dir).unwrap();
         assert!(!dir.exists());
+    }
+
+    /// A user skill `Ad-Creative` beside the bundled `ad-creative` (PR #349
+    /// review): on macOS and Windows `<user>/ad-creative` is that folder.
+    /// The form opens on the bundled copy, so its tag is the bundled one,
+    /// and a Save of `ad-creative` is refused, never written into the
+    /// other skill.
+    #[test]
+    fn a_save_never_lands_in_a_skill_named_alike() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundled = tmp.path().join("bundled/ad-creative");
+        std::fs::create_dir_all(&bundled).unwrap();
+        std::fs::write(
+            bundled.join("SKILL.md"),
+            "---\nname: ad-creative\n---\nBundled.\n",
+        )
+        .unwrap();
+        let user = tmp.path().join("user");
+        let twin = user.join("Ad-Creative");
+        std::fs::create_dir_all(&twin).unwrap();
+        let mine = "---\nname: Ad-Creative\n---\nMy own skill.\n";
+        std::fs::write(twin.join("SKILL.md"), mine).unwrap();
+
+        assert_eq!(
+            skill_write_dir(&user, "ad-creative", &bundled, false),
+            bundled,
+            "the form tags the copy it shows"
+        );
+        let tag = skill_tag(&bundled);
+        let saved = save_skill(
+            &user,
+            "ad-creative",
+            &bundled,
+            false,
+            &draft("ad-creative", "Typed."),
+            Some(&tag),
+        );
+        assert!(matches!(saved, Err(WriteError::Exists(_))), "{saved:?}");
+        assert_eq!(
+            std::fs::read_to_string(twin.join("SKILL.md")).unwrap(),
+            mine
+        );
+        let names: Vec<String> = std::fs::read_dir(&user)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["Ad-Creative"], "no second folder made");
+
+        // An override of that very name is written as before.
+        std::fs::remove_dir_all(&twin).unwrap();
+        let over = user.join("ad-creative");
+        std::fs::create_dir_all(&over).unwrap();
+        std::fs::write(
+            over.join("SKILL.md"),
+            "---\nname: ad-creative\n---\nOver.\n",
+        )
+        .unwrap();
+        assert_eq!(skill_write_dir(&user, "ad-creative", &bundled, false), over);
+        let tag = skill_tag(&over);
+        save_skill(
+            &user,
+            "ad-creative",
+            &bundled,
+            false,
+            &draft("ad-creative", "Typed."),
+            Some(&tag),
+        )
+        .unwrap();
+        assert!(
+            std::fs::read_to_string(over.join("SKILL.md"))
+                .unwrap()
+                .contains("Typed.")
+        );
+    }
+
+    /// A save writes a new `SKILL.md` and renames it into place (PR #349
+    /// review): a link an agent put there is replaced, the file it points
+    /// at is never written, and no read finds the file half written.
+    #[cfg(unix)]
+    #[test]
+    fn a_save_replaces_a_link_and_writes_nothing_through_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user");
+        let dir = user.join("tea");
+        std::fs::create_dir_all(&dir).unwrap();
+        let outside = tmp.path().join("outside.md");
+        std::fs::write(&outside, "---\nname: tea\n---\nNot yours.\n").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("SKILL.md")).unwrap();
+        save_skill(&user, "tea", &dir, true, &draft("tea", "Typed."), None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&outside).unwrap(),
+            "---\nname: tea\n---\nNot yours.\n",
+            "written through the link"
+        );
+        let meta = std::fs::symlink_metadata(dir.join("SKILL.md")).unwrap();
+        assert!(meta.is_file(), "the link is still there");
+        assert!(
+            std::fs::read_to_string(dir.join("SKILL.md"))
+                .unwrap()
+                .contains("Typed.")
+        );
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(left.len(), 1, "a temp file left: {left:?}");
+    }
+
+    /// A file replaced keeps its permission bits, and a read-only one is
+    /// refused, as a write in place would be (PR #351 review: a rename
+    /// replaces a file the user locked, and drops its `chmod`).
+    #[cfg(unix)]
+    #[test]
+    fn a_file_replaced_keeps_its_bits_and_a_locked_one_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("SKILL.md");
+        std::fs::write(&file, "old").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        write_replacing(&file, b"new").unwrap();
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640);
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
+        let locked = write_replacing(&file, b"newer");
+        assert_eq!(
+            locked.map_err(|e| e.kind()),
+            Err(std::io::ErrorKind::PermissionDenied)
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+        let left = std::fs::read_dir(tmp.path()).unwrap().count();
+        assert_eq!(left, 1, "a temp file left");
+    }
+
+    /// No `SKILL.md` and one that cannot be read are two tags: a form
+    /// opened on a link (its index copy, tagged "unreadable") whose link is
+    /// then deleted saves nothing (412), and no Save ever sends the tag of
+    /// nothing as one it saw.
+    #[cfg(unix)]
+    #[test]
+    fn a_skill_md_gone_and_one_unreadable_are_tagged_apart() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user");
+        let dir = user.join("tea");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(skill_tag(&dir), GONE_TAG);
+        std::os::unix::fs::symlink(tmp.path().join("elsewhere.md"), dir.join("SKILL.md")).unwrap();
+        let unreadable = skill_tag(&dir);
+        assert_eq!(unreadable, "unreadable");
+        std::fs::remove_file(dir.join("SKILL.md")).unwrap();
+        let saved = save_skill(
+            &user,
+            "tea",
+            &dir,
+            true,
+            &draft("tea", "x"),
+            Some(&unreadable),
+        );
+        assert!(matches!(saved, Err(WriteError::Stale)), "{saved:?}");
+        let saved = save_skill(&user, "tea", &dir, true, &draft("tea", "x"), Some(GONE_TAG));
+        assert!(matches!(saved, Err(WriteError::Stale)), "{saved:?}");
+        assert!(!dir.join("SKILL.md").exists());
     }
 
     #[test]

@@ -1117,21 +1117,28 @@ fn SkillDetailView(
     };
     load.run(());
     // "Reload" in a form that found the skill changed: the form opens
-    // again on the copy there now (what was typed goes, as asked).
+    // again on the copy there now (what was typed goes, as asked). A read
+    // that fails keeps the form, what is typed and the choice (Reload,
+    // Save anyway), and says so; the focus stays on Reload.
     let reopen = {
         let id = id.clone();
         Callback::new(move |()| {
             let id = id.clone();
             reading.set(true);
+            notice.set(None);
             tasks.spawn(async move {
-                let res = read_skill_detail(&id).await;
-                let tag = res.as_ref().ok().and_then(|r| r.tag.clone());
-                shown_tag.set_value(tag.clone());
-                opened_tag.set_value(tag);
-                changed.set(false);
-                detail.set(Some(res.map(|r| r.value)));
+                let url = format!("/api/skills/{}", api::seg(&id));
+                match api::get_tagged::<SkillDetail>(&url).await {
+                    Ok(r) => {
+                        shown_tag.set_value(r.tag.clone());
+                        opened_tag.set_value(r.tag);
+                        changed.set(false);
+                        detail.set(Some(Ok(r.value)));
+                        super::focus::focus_testid_next_frame("skill-body-input");
+                    }
+                    Err(e) => notice.set(Some(reload_failure(&e))),
+                }
                 reading.set(false);
-                super::focus::focus_testid_next_frame("skill-body-input");
             });
         })
     };
@@ -1495,7 +1502,29 @@ async fn save_skill_edit(id: String, body: Value, tag: Option<String>) -> EditSa
     match api::put_if_match::<_, Value>(&url, &body, &tag).await {
         Ok(_) => EditSave::Saved,
         Err(e) if e.changed_since() => EditSave::Changed,
-        Err(e) => EditSave::Failed(api::failure(T::MdSaveFailed, &e)),
+        Err(e) => EditSave::Failed(save_failure(&e)),
+    }
+}
+
+/// What the skill form says of a Reload whose read failed: a 404 is the
+/// skill deleted on disk (an agent's `rm -r`), where "Save anyway" puts it
+/// back.
+fn reload_failure(e: &api::HttpError) -> String {
+    if e.status == 404 {
+        t(T::SkillDeletedElsewhere).to_owned()
+    } else {
+        api::failure(T::ReloadFailed, e)
+    }
+}
+
+/// What the skill form says of a Save refused. A 409 names a user skill
+/// whose folder differs from this one's only in case (`"Ad-Creative"` for
+/// `ad-creative`: one folder on macOS and Windows), which the Save would
+/// write over.
+fn save_failure(e: &api::HttpError) -> String {
+    match (e.status, e.message.split('"').nth(1)) {
+        (409, Some(twin)) if !twin.is_empty() => tf(T::SkillNamedAlike, &[twin]),
+        _ => api::failure(T::MdSaveFailed, e),
     }
 }
 
@@ -2581,6 +2610,51 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Reload that finds the skill deleted says so (PR #351 review),
+    /// not "could not load".
+    #[test]
+    fn a_reload_of_a_skill_deleted_says_so() {
+        let gone = api::HttpError {
+            status: 404,
+            code: Some(od_contracts::ErrorCode::NotFound),
+            message: "skill not found".to_owned(),
+            request_id: None,
+        };
+        assert_eq!(reload_failure(&gone), t(T::SkillDeletedElsewhere));
+        let other = api::HttpError {
+            status: 500,
+            code: None,
+            message: "boom".to_owned(),
+            request_id: None,
+        };
+        assert_eq!(
+            reload_failure(&other),
+            api::failure(T::ReloadFailed, &other)
+        );
+    }
+
+    /// A Save refused for a skill named alike says which skill is in the
+    /// way and what to do (PR #351 review), not "Save failed".
+    #[test]
+    fn a_save_refused_for_a_skill_named_alike_says_so() {
+        let e = api::HttpError {
+            status: 409,
+            code: Some(od_contracts::ErrorCode::Conflict),
+            message: "skill \"Ad-Creative\" already exists".to_owned(),
+            request_id: None,
+        };
+        let said = save_failure(&e);
+        assert!(said.contains("Ad-Creative"), "{said}");
+        assert_eq!(said, tf(T::SkillNamedAlike, &["Ad-Creative"]));
+        let other = api::HttpError {
+            status: 500,
+            code: None,
+            message: "boom".to_owned(),
+            request_id: None,
+        };
+        assert_eq!(save_failure(&other), api::failure(T::MdSaveFailed, &other));
+    }
 
     /// Every hidden character the review marks, at each end of its
     /// ranges, shows as its code; text around it is kept as it is.

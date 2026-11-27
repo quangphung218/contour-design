@@ -284,6 +284,18 @@ try {
   await page.getByTestId('ds-md-save-changed').waitFor();
   assert.equal(await editor.inputValue(), '# Typed in the editor\n', 'a 412 keeps what is typed');
   assert.equal(readFileSync(designMd, 'utf8'), '# Written by an agent\n', 'nothing written');
+  // Reload whose read fails: it says the copy could not be loaded (not
+  // that the Save failed), keeps what is typed, the choice and the focus.
+  const isKit = (url) => /\/api\/design-systems\/[^/]+\/kit$/.test(url.pathname);
+  const failKit = (route) => (route.request().method() === 'GET' ? route.fulfill({ status: 500, body: 'boom' }) : route.fallback());
+  await page.route(isKit, failKit, { times: 1 });
+  await page.getByTestId('ds-md-save-reload').click();
+  await page.getByText(/Could not load the new copy/).waitFor();
+  assert.equal(await page.getByText(/Save failed/).count(), 0, 'not called a failed Save');
+  assert.equal(await editor.inputValue(), '# Typed in the editor\n', 'a failed Reload keeps what is typed');
+  assert.equal(await page.getByTestId('ds-md-save-changed').count(), 1, 'and still offers Reload and Save anyway');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'ds-md-save-reload', 'the focus stays on Reload');
+  await page.unroute(isKit, failKit);
   await page.getByTestId('ds-md-save-reload').click();
   await until(async () => (await editor.inputValue()) === '# Written by an agent\n', 'Reload opens the editor on the file now');
   await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'ds-md-editor', 'Reload gives the focus to the editor');
@@ -1214,6 +1226,16 @@ try {
   await page.getByTestId('skill-save-changed').waitFor();
   assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed, then reloaded.', 'a 412 keeps what is typed');
   assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Changed in another window\./, 'nothing written');
+  // Reload whose read fails: the form, what is typed and the choice stay,
+  // the page says the copy could not be loaded, the focus stays on Reload.
+  const failRead = (route) => (route.request().method() === 'GET' ? route.fulfill({ status: 500, body: 'boom' }) : route.fallback());
+  await page.route(`${BASE}/api/skills/tea-c`, failRead, { times: 1 });
+  await page.getByTestId('skill-save-reload').click();
+  await page.getByRole('alert').filter({ hasText: 'Could not load the new copy' }).waitFor();
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed, then reloaded.', 'a failed Reload keeps what is typed');
+  assert.equal(await page.getByTestId('skill-save-changed').count(), 1, 'and still offers Reload and Save anyway');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'skill-save-reload', 'the focus stays on Reload');
+  await page.unroute(`${BASE}/api/skills/tea-c`, failRead);
   await page.getByTestId('skill-save-reload').click();
   await until(async () => /Changed in another window\./.test(await page.getByTestId('skill-body-input').inputValue()), 'Reload shows the copy there now');
   await until(async () => (await page.evaluate(() => document.activeElement?.dataset?.testid)) === 'skill-body-input', 'Reload gives the focus to the text');
@@ -1237,6 +1259,25 @@ try {
   await page.getByTestId('skill-body').waitFor();
   assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Typed over a change\./, 'Save anyway writes what is typed');
   await until(async () => /Typed over a change\./.test(await page.getByTestId('skill-body').textContent()), 'the detail shows what was saved');
+  // Deleted on disk under the open form (an agent's `rm -r`): the Save
+  // writes nothing back and asks; Reload says the skill was deleted and
+  // keeps what is typed, Reload and Save anyway; Save anyway puts it back.
+  await until(async () => page.getByTestId('skill-edit').isEnabled(), 'Edit once the saved skill is read');
+  await page.getByTestId('skill-edit').click();
+  await page.getByTestId('skill-body-input').fill('Typed over a deletion.');
+  rmSync(teaCopy, { recursive: true, force: true });
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.equal(existsSync(teaCopy), false, 'nothing written back');
+  await page.getByTestId('skill-save-reload').click();
+  await page.getByRole('alert').filter({ hasText: 'This skill was deleted elsewhere' }).waitFor();
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed over a deletion.', 'what is typed stays');
+  assert.equal(await page.getByTestId('skill-save-changed').count(), 1, 'Reload and Save anyway stay');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'skill-save-reload', 'the focus stays on Reload');
+  assert.equal(existsSync(teaCopy), false, 'still nothing written');
+  await page.getByTestId('skill-save-anyway').click();
+  await page.getByTestId('skill-body').waitFor();
+  assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Typed over a deletion\./, 'Save anyway puts it back');
   results.replaceFromSource = 'ok';
 
   // Skills of their own now: the Skills open on Personal, the Plugins

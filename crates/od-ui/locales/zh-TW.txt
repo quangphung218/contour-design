@@ -1868,4 +1868,7 @@ TurnSkillPluginNotFound = 找不到外掛技能 {0}，代理程式沒有收到�
 UsageSkillTurnsSince = 自 {0} 起統計
 ChangedElsewhere = 開啟後已在別處變更。重新載入會顯示新版本並捨棄已輸入的內容；仍要儲存會覆寫它。
 ReloadNewCopy = 重新載入
+ReloadFailed = 無法載入新版本：{0}
+SkillDeletedElsewhere = 此技能已在別處被刪除。「仍要儲存」會用你輸入的內容重新建立它。
+SkillNamedAlike = 未儲存：你的技能 {0} 名稱幾乎相同（只有大小寫不同），會被覆寫。請重新命名或刪除後再儲存。
 MemoryIndexLoadFailed = 無法載入索引：{0}
