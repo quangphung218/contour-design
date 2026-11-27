@@ -10,7 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
-- The skill form opens on the file on disk, keeps your typing when Reload fails, and never saves over an agent's or a look-alike skill.
+- Skill and DESIGN.md saves never write through a planted link, over an agent's change, a deleted skill or a look-alike one; typing stays.
 
 ## [0.2.0-beta.71] - 2026-11-27
 
