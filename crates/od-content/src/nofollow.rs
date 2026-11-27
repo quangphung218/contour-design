@@ -346,23 +346,240 @@ fn walk_path(
     Ok(())
 }
 
-/// Writes `tree` into the folder `to` (made already): its folders, then
-/// its files with their permission bits (unix), the file `last` (a path
-/// under `to`, if there) after all the others.
+/// A folder this process has just made (`create_dir`: never one already
+/// there, never through a link at its name), held on unix by the
+/// descriptor opened right after (`O_DIRECTORY|O_NOFOLLOW`). What is made
+/// in it goes through that descriptor (`mkdirat`, `openat` with
+/// `O_CREAT|O_EXCL|O_NOFOLLOW`), never by a path an agent could redirect
+/// with a link planted in it meanwhile: a file or link already at a name
+/// is `AlreadyExists`, never opened. Elsewhere (Windows) the folders on the
+/// way are checked for reparse points and files are made `create_new`.
+#[derive(Debug)]
+pub struct NewDir {
+    path: PathBuf,
+    #[cfg(unix)]
+    fd: std::os::fd::OwnedFd,
+}
+
+impl NewDir {
+    /// Makes the folder `path` (its parent must exist) and holds it.
+    ///
+    /// # Errors
+    /// `AlreadyExists` when anything is at `path` (a folder, a link), else
+    /// the `create_dir`'s or the open's.
+    pub fn create(path: &Path) -> std::io::Result<Self> {
+        std::fs::create_dir(path)?;
+        #[cfg(unix)]
+        {
+            use nix::fcntl::{OFlag, open};
+            use nix::sys::stat::Mode;
+            // Swapped for a link since `create_dir`: `ELOOP`, not followed.
+            let fd = open(
+                path,
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(std::io::Error::from)?;
+            Ok(Self {
+                path: path.to_path_buf(),
+                fd,
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            let made = Self {
+                path: path.to_path_buf(),
+            };
+            made.check_no_reparse(Path::new(""))?;
+            Ok(made)
+        }
+    }
+
+    /// The path it was made at (for messages and the moves after).
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Makes the new file `rel` (a plain relative path) for writing.
+    ///
+    /// # Errors
+    /// `AlreadyExists` when anything is there (a link planted, a file);
+    /// `InvalidInput` for a path that is not plain and relative; the
+    /// open's.
+    pub fn new_file(&self, rel: &Path) -> std::io::Result<File> {
+        #[cfg(unix)]
+        {
+            use nix::fcntl::{OFlag, openat};
+            use nix::sys::stat::Mode;
+            let (parent, name) = self.parent_of(rel)?;
+            let flags = OFlag::O_WRONLY
+                | OFlag::O_CREAT
+                | OFlag::O_EXCL
+                | OFlag::O_NOFOLLOW
+                | OFlag::O_CLOEXEC;
+            let fd = openat(&parent, name, flags, Mode::from_bits_truncate(0o666))
+                .map_err(std::io::Error::from)?;
+            Ok(File::from(fd))
+        }
+        #[cfg(not(unix))]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // FILE_FLAG_OPEN_REPARSE_POINT: a reparse point there is the
+            // file opened, never what it points at (and `create_new`
+            // refuses anything already there).
+            const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+            plain(rel)?;
+            self.check_no_reparse(rel.parent().unwrap_or(Path::new("")))?;
+            let file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .custom_flags(OPEN_REPARSE_POINT)
+                .open(self.path.join(rel))?;
+            if is_reparse(&file.metadata()?) {
+                return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+            }
+            Ok(file)
+        }
+    }
+
+    /// Makes the new folder `rel` (a plain relative path) in it.
+    ///
+    /// # Errors
+    /// `AlreadyExists` when anything is there; `InvalidInput`; the
+    /// `mkdir`'s.
+    pub fn create_dir(&self, rel: &Path) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            let (parent, name) = self.parent_of(rel)?;
+            nix::sys::stat::mkdirat(
+                &parent,
+                name,
+                nix::sys::stat::Mode::from_bits_truncate(0o777),
+            )
+            .map_err(std::io::Error::from)
+        }
+        #[cfg(not(unix))]
+        {
+            plain(rel)?;
+            self.check_no_reparse(rel.parent().unwrap_or(Path::new("")))?;
+            std::fs::create_dir(self.path.join(rel))
+        }
+    }
+
+    /// Removes the file `rel` (a plain relative path), never what a link
+    /// there points at.
+    ///
+    /// # Errors
+    /// `InvalidInput`; the `unlink`'s.
+    pub fn remove_file(&self, rel: &Path) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            let (parent, name) = self.parent_of(rel)?;
+            nix::unistd::unlinkat(&parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)
+                .map_err(std::io::Error::from)
+        }
+        #[cfg(not(unix))]
+        {
+            plain(rel)?;
+            self.check_no_reparse(rel.parent().unwrap_or(Path::new("")))?;
+            std::fs::remove_file(self.path.join(rel))
+        }
+    }
+
+    /// The folder holding `rel`, opened from this one a folder at a time
+    /// with `O_NOFOLLOW`, and the last name of `rel`.
+    #[cfg(unix)]
+    fn parent_of<'a>(&self, rel: &'a Path) -> std::io::Result<(std::os::fd::OwnedFd, &'a OsStr)> {
+        use nix::fcntl::{OFlag, openat};
+        use nix::sys::stat::Mode;
+        let (dirs, name) = plain(rel)?;
+        let mut fd = self.fd.try_clone()?;
+        for dir in dirs {
+            fd = openat(
+                &fd,
+                dir,
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(std::io::Error::from)?;
+        }
+        Ok((fd, name))
+    }
+
+    /// Refuses when this folder or a folder of `rel` under it is a
+    /// reparse point (a link, a junction) or no folder.
+    #[cfg(not(unix))]
+    fn check_no_reparse(&self, rel: &Path) -> std::io::Result<()> {
+        let mut at = self.path.clone();
+        let check = |p: &Path| -> std::io::Result<()> {
+            let m = std::fs::symlink_metadata(p)?;
+            if is_reparse(&m) || !m.is_dir() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("{} is a link or no folder", p.display()),
+                ));
+            }
+            Ok(())
+        };
+        check(&at)?;
+        for c in rel.components() {
+            at.push(c);
+            check(&at)?;
+        }
+        Ok(())
+    }
+}
+
+/// Whether `m` is of a reparse point (a link, a junction).
+#[cfg(not(unix))]
+fn is_reparse(m: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    m.file_type().is_symlink() || m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+/// `rel`'s folders and last name, when it is a plain relative path (no
+/// `..`, no root, not empty).
+fn plain(rel: &Path) -> std::io::Result<(Vec<&OsStr>, &OsStr)> {
+    let names: Option<Vec<&OsStr>> = rel
+        .components()
+        .map(|c| match c {
+            std::path::Component::Normal(n) => Some(n),
+            _ => None,
+        })
+        .collect();
+    let mut names = names.unwrap_or_default();
+    let name = names.pop().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{} is no plain relative path", rel.display()),
+        )
+    })?;
+    Ok((names, name))
+}
+
+/// Writes `tree` into the folder `to` (made by this process): its folders,
+/// then its files with their permission bits (unix, set on the opened
+/// descriptor), the file `last` (a path under `to`, if there) after all
+/// the others. Every folder and file is made new through `to`'s descriptor
+/// ([`NewDir`]): a link or file an agent put in `to` meanwhile is never
+/// written through or over, the write fails instead (`AlreadyExists`).
 ///
 /// # Errors
 /// The first write that fails.
-pub fn write_tree(tree: &Tree, to: &Path, last: Option<&Path>) -> std::io::Result<()> {
+pub fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Result<()> {
+    use std::io::Write;
     for d in &tree.dirs {
-        std::fs::create_dir(to.join(d))?;
+        to.create_dir(d)?;
     }
     let write = |p: &Path, f: &ReadFile| -> std::io::Result<()> {
-        let dest = to.join(p);
-        std::fs::write(&dest, &f.bytes)?;
+        let mut file = to.new_file(p)?;
+        file.write_all(&f.bytes)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(f.mode))?;
+            file.set_permissions(std::fs::Permissions::from_mode(f.mode))?;
         }
         Ok(())
     };
@@ -505,6 +722,117 @@ mod tests {
         replace_file(&target, b"FROM THE FORM", None).unwrap();
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "FROM THE FORM");
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "NOT YOURS");
+    }
+
+    /// A folder made new and filled through its descriptor (PR 1 of the
+    /// user store plan, 2026-11-27): whatever an agent puts at a name in
+    /// it (a link to a file or a folder outside, a file) is never written
+    /// through or over; the write fails instead.
+    #[test]
+    fn a_new_dir_writes_through_no_link_planted_in_it() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, "NOT YOURS").unwrap();
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let away = tmp.path().join("away");
+        std::fs::create_dir(&away).unwrap();
+        let made = NewDir::create(&tmp.path().join("made")).unwrap();
+        let rf = |b: &[u8], mode| ReadFile {
+            bytes: b.to_vec(),
+            mode,
+        };
+        // A link at a file's name.
+        std::os::unix::fs::symlink(&outside, made.path().join("SKILL.md")).unwrap();
+        let tree = Tree {
+            dirs: vec![],
+            files: vec![(PathBuf::from("SKILL.md"), rf(b"FROM THE SOURCE", 0o777))],
+        };
+        let wrote = write_tree(&tree, &made, None);
+        assert_eq!(
+            wrote.map_err(|e| e.kind()),
+            Err(std::io::ErrorKind::AlreadyExists)
+        );
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "NOT YOURS");
+        let mode = std::fs::metadata(&outside).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the file the link points at was chmod-ed");
+        // A link at a folder's name: neither made through nor walked.
+        std::os::unix::fs::symlink(&away, made.path().join("assets")).unwrap();
+        let tree = Tree {
+            dirs: vec![PathBuf::from("assets")],
+            files: vec![(PathBuf::from("assets/a.css"), rf(b"x", 0o644))],
+        };
+        assert!(write_tree(&tree, &made, None).is_err());
+        assert!(made.new_file(Path::new("assets/a.css")).is_err());
+        assert_eq!(std::fs::read_dir(&away).unwrap().count(), 0);
+        // A plain file there: not written over.
+        std::fs::write(made.path().join("taken"), "theirs").unwrap();
+        assert!(made.new_file(Path::new("taken")).is_err());
+        assert_eq!(
+            std::fs::read_to_string(made.path().join("taken")).unwrap(),
+            "theirs"
+        );
+        // No way out of it by name.
+        for bad in ["../x", "/tmp/x", ""] {
+            assert_eq!(
+                made.new_file(Path::new(bad))
+                    .map(|_| ())
+                    .map_err(|e| e.kind()),
+                Err(std::io::ErrorKind::InvalidInput),
+                "{bad}"
+            );
+        }
+        // Removing a link removes the link, not what it points at.
+        made.remove_file(Path::new("SKILL.md")).unwrap();
+        assert!(outside.exists());
+    }
+
+    /// A folder already at the name, or a link there, is never taken; a
+    /// tree lands whole with its bits in a folder made new.
+    #[test]
+    fn a_new_dir_is_new() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let there = tmp.path().join("there");
+        std::fs::create_dir(&there).unwrap();
+        let kind = |p: &Path| NewDir::create(p).map(|_| ()).map_err(|e| e.kind());
+        assert_eq!(kind(&there), Err(std::io::ErrorKind::AlreadyExists));
+        std::os::unix::fs::symlink(&there, tmp.path().join("link")).unwrap();
+        assert_eq!(
+            kind(&tmp.path().join("link")),
+            Err(std::io::ErrorKind::AlreadyExists)
+        );
+        assert_eq!(std::fs::read_dir(&there).unwrap().count(), 0);
+        let made = NewDir::create(&tmp.path().join("new")).unwrap();
+        let tree = Tree {
+            dirs: vec![PathBuf::from("a"), PathBuf::from("a/b")],
+            files: vec![
+                (
+                    PathBuf::from("SKILL.md"),
+                    ReadFile {
+                        bytes: b"top".to_vec(),
+                        mode: 0o644,
+                    },
+                ),
+                (
+                    PathBuf::from("a/b/x.sh"),
+                    ReadFile {
+                        bytes: b"run".to_vec(),
+                        mode: 0o755,
+                    },
+                ),
+            ],
+        };
+        write_tree(&tree, &made, Some(Path::new("SKILL.md"))).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(made.path().join("SKILL.md")).unwrap(),
+            "top"
+        );
+        let mode = std::fs::metadata(made.path().join("a/b/x.sh"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o755);
     }
 
     /// The new file's name is not one another process can work out (a pid

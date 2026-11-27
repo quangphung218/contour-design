@@ -385,7 +385,11 @@ pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
     std::fs::remove_dir_all(dir).map_err(io)
 }
 
-/// Copies `from` into a new folder `to` (folders and regular files only,
+/// Copies `from` into a new folder `to`, made here (`create_dir`: a folder
+/// or link already at `to` is [`WriteError::Exists`], never filled or
+/// followed) and written through its descriptor ([`nofollow::write_tree`]:
+/// a link an agent plants in it meanwhile is never written through)
+/// (folders and regular files only,
 /// with their permission bits; no link at any depth, no FIFO, no hidden
 /// entry but `.claude-plugin`: [`nofollow::read_tree`]). Fails past
 /// `budget` bytes, counted as read. `from` itself may be a link the
@@ -397,9 +401,24 @@ pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
 pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> {
     let from = std::fs::canonicalize(from).map_err(io)?;
     let tree = nofollow::read_tree(&from, keep_entry(true), budget).map_err(tree_error)?;
-    std::fs::create_dir_all(to).map_err(io)?;
-    nofollow::write_tree(&tree, to, None).map_err(io)?;
+    // The root above it may not be there yet (a first install, a first
+    // override): made as before; only `to` must be new.
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent).map_err(io)?;
+    }
+    let made = nofollow::NewDir::create(to).map_err(|e| made_error(to, e))?;
+    nofollow::write_tree(&tree, &made, None).map_err(io)?;
     Ok(tree.files.iter().map(|(_, f)| f.bytes.len() as u64).sum())
+}
+
+/// A folder that could not be made new: one there already is
+/// [`WriteError::Exists`].
+fn made_error(at: &Path, e: std::io::Error) -> WriteError {
+    if e.kind() == std::io::ErrorKind::AlreadyExists {
+        WriteError::Exists(at.display().to_string())
+    } else {
+        io(e)
+    }
 }
 
 /// Installs the plugin in `source` (a local folder with `SKILL.md` or
@@ -727,9 +746,9 @@ impl ExportFiles {
         }
     }
 
-    /// Writes this content into the folder `to` (made already), with each
+    /// Writes this content into the folder `to` (made here), with each
     /// file's permission bits, the top `SKILL.md` last.
-    fn write_into(&self, to: &Path) -> Result<(), WriteError> {
+    fn write_into(&self, to: &nofollow::NewDir) -> Result<(), WriteError> {
         let tree = nofollow::Tree {
             dirs: self.dirs.clone(),
             files: self.files.clone(),
@@ -819,19 +838,21 @@ fn export_skill_with(
     }
     let dest = dest_root.join(id);
     before_claim();
-    // The folder is ours only if this makes it.
-    match std::fs::create_dir(&dest) {
-        Ok(()) => {}
+    // The folder is ours only if this makes it; what goes in it goes
+    // through its descriptor (an agent can write `dest_root` too).
+    let made = match nofollow::NewDir::create(&dest) {
+        Ok(made) => made,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             return Err(WriteError::Exists(id.to_owned()));
         }
         Err(e) => return Err(io(e)),
-    }
-    let mark = dest.join(EXPORT_MARK);
-    let copied = std::fs::write(&mark, "")
+    };
+    let mark = Path::new(EXPORT_MARK);
+    let copied = made
+        .new_file(mark)
         .map_err(io)
-        .and_then(|()| files.write_into(&dest))
-        .and_then(|()| std::fs::remove_file(&mark).map_err(io));
+        .and_then(|_| files.write_into(&made))
+        .and_then(|()| made.remove_file(mark).map_err(io));
     if let Err(e) = copied {
         let _ = std::fs::remove_dir_all(&dest);
         return Err(e);
@@ -845,8 +866,9 @@ fn export_skill_with(
 /// in a hidden folder, then renamed into place. Nothing is left behind on
 /// failure.
 fn place_copy(source: &Path, user_root: &Path, id: &str) -> Result<(), WriteError> {
-    let tmp = user_root.join(format!(".installing-{id}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
+    // A name no other process works out beforehand (a pid it could), made
+    // new by `copy_dir` (`nofollow::NewDir`).
+    let tmp = user_root.join(format!(".installing-{id}-{}", nofollow::random_tag()));
     if let Err(e) = copy_dir(source, &tmp, MAX_PLUGIN_BYTES) {
         let _ = std::fs::remove_dir_all(&tmp);
         return Err(e);
@@ -912,8 +934,7 @@ fn install_skill_with(
         return place_copy(source, user_root, id);
     };
     let held = previous_root(user_root)?;
-    let incoming = held.join(format!(".incoming-{id}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&incoming);
+    let incoming = held.join(format!(".incoming-{id}-{}", nofollow::random_tag()));
     if let Err(e) = copy_dir(source, &incoming, MAX_PLUGIN_BYTES) {
         let _ = std::fs::remove_dir_all(&incoming);
         return Err(e);
@@ -1231,11 +1252,10 @@ fn replace_skill_from_source_with(
     let current = user_skill_dir(user_root, id)
         .ok_or_else(|| WriteError::NotFound(format!("no user skill {id:?}")))?;
     let held = previous_root(user_root)?;
-    let incoming = held.join(format!(".incoming-{id}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&incoming);
-    let built = std::fs::create_dir(&incoming)
-        .map_err(io)
-        .and_then(|()| files.write_into(&incoming));
+    let incoming = held.join(format!(".incoming-{id}-{}", nofollow::random_tag()));
+    let built = nofollow::NewDir::create(&incoming)
+        .map_err(|e| made_error(&incoming, e))
+        .and_then(|made| files.write_into(&made));
     if let Err(e) = built {
         let _ = std::fs::remove_dir_all(&incoming);
         return Err(e);
@@ -1246,7 +1266,7 @@ fn replace_skill_from_source_with(
 
 /// Puts `incoming` (a new copy built in `held`) in place of the user skill
 /// folder `current`, which moves to `held/<id>`. An older copy kept there
-/// is set aside (`.old-<id>-<pid>`) first and removed only once both have
+/// is set aside (`.old-<id>-<tag>`) first and removed only once both have
 /// landed; on a failure everything goes back, so a failed replace keeps
 /// the copy a restore offers. Cut short (the app quit), the next replace,
 /// install or restore sorts it out ([`recover_cut_short`]). `incoming` is
@@ -1262,7 +1282,7 @@ fn swap_in(
         let _ = std::fs::remove_dir_all(incoming);
     };
     let previous = held.join(id);
-    let old = held.join(format!(".old-{id}-{}", std::process::id()));
+    let old = held.join(format!(".old-{id}-{}", nofollow::random_tag()));
     if std::fs::symlink_metadata(&old).is_ok() {
         undo_incoming();
         return Err(WriteError::Io(format!("{} is in the way", old.display())));
@@ -1346,7 +1366,7 @@ fn restore_previous_skill_with(
     };
     // Never removed: a swap left there is someone's only copy, and
     // `previous_root` has just put every one back.
-    let swap = held.join(format!(".swap-{id}-{}", std::process::id()));
+    let swap = held.join(format!(".swap-{id}-{}", nofollow::random_tag()));
     if std::fs::symlink_metadata(&swap).is_ok() {
         return Err(WriteError::Io(format!("{} is in the way", swap.display())));
     }
@@ -1391,23 +1411,26 @@ fn previous_root(user_root: &Path) -> Result<PathBuf, WriteError> {
 /// steps, by name, with the skill id it is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Left<'a> {
-    /// `.incoming-<id>-<pid>`: a new copy being put in place (its id
+    /// `.incoming-<id>-<tag>`: a new copy being put in place (its id
     /// `None` when the name does not parse).
     Incoming(Option<&'a str>),
-    /// `.old-<id>-<pid>`: the copy kept before, set aside by [`swap_in`].
+    /// `.old-<id>-<tag>`: the copy kept before, set aside by [`swap_in`].
     Old(&'a str),
-    /// `.swap-<id>-<pid>`: the user skill a restore took out.
+    /// `.swap-<id>-<tag>`: the user skill a restore took out.
     Swap(&'a str),
-    /// `.swap-<id>-<pid>-kept`, `…-kept2`…: a swap with nowhere to go.
+    /// `.swap-<id>-<tag>-kept`, `…-kept2`…: a swap with nowhere to go.
     Kept(&'a str),
 }
 
 fn left_by(name: &str) -> Option<Left<'_>> {
-    // `<id>-<pid>`: an id (`-` allowed) and a pid, digits only.
+    // `<id>-<tag>`: an id (`-` allowed) and a random tag
+    // (`nofollow::random_tag`: 16 lowercase hex digits), or a pid (digits
+    // only: what versions up to 0.2.0-beta.72 left).
     fn id_of(rest: &str) -> Option<&str> {
-        let (id, pid) = rest.rsplit_once('-')?;
-        (valid_skill_id(id) && !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
-            .then_some(id)
+        let (id, tag) = rest.rsplit_once('-')?;
+        let pid = !tag.is_empty() && tag.bytes().all(|b| b.is_ascii_digit());
+        let random = tag.len() == 16 && tag.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        (valid_skill_id(id) && (pid || random)).then_some(id)
     }
     if let Some(rest) = name.strip_prefix(".incoming-") {
         return Some(Left::Incoming(id_of(rest)));
@@ -1428,18 +1451,18 @@ fn left_by(name: &str) -> Option<Left<'_>> {
 /// Deals with what a replace, install or restore cut short left in `held`
 /// (`.previous`), never deleting a copy that may be the user's only one:
 ///
-/// - `.incoming-<id>-<pid>`: a copy of a source being put in place. The
+/// - `.incoming-<id>-<tag>`: a copy of a source being put in place. The
 ///   source is still there: removed. With no skill `<id>` and a
 ///   `.previous/<id>` folder, the replace or install stopped between
 ///   moving the skill aside and putting the copy in: `.previous/<id>`
 ///   goes back as the skill first (an `.old-<id>-…` then goes back to
 ///   `.previous/<id>`, whichever is dealt with first).
-/// - `.old-<id>-<pid>`: the copy kept before a replace ([`swap_in`]). With
+/// - `.old-<id>-<tag>`: the copy kept before a replace ([`swap_in`]). With
 ///   the skill and `.previous/<id>` both there, the replace landed and it
 ///   goes. With no skill, the replace stopped after moving the skill
 ///   aside: `.previous/<id>` goes back as the skill. Then it goes back to
 ///   `.previous/<id>`.
-/// - `.swap-<id>-<pid>`: the user skill a restore took out, between its
+/// - `.swap-<id>-<tag>`: the user skill a restore took out, between its
 ///   steps the only copy of it. Moved back to the user skill `<id>` when
 ///   there is none (the restore stopped after its first step), else to
 ///   `.previous/<id>` when that is free (it stopped after its second);
@@ -3166,6 +3189,54 @@ mod tests {
         assert!(!has_previous_skill(&user, "tea"));
     }
 
+    /// What a replace, install or restore leaves is named with a random
+    /// tag now (a pid could be worked out and planted first), and still
+    /// read back by id: a pid (what 0.2.0-beta.72 left) too.
+    #[test]
+    fn leftovers_are_read_by_id_with_a_random_tag_or_a_pid() {
+        let tag = nofollow::random_tag();
+        let named = |what: &str| format!(".{what}-tea-cup-{tag}");
+        assert_eq!(
+            left_by(&named("incoming")),
+            Some(Left::Incoming(Some("tea-cup")))
+        );
+        assert_eq!(left_by(&named("old")), Some(Left::Old("tea-cup")));
+        assert_eq!(left_by(&named("swap")), Some(Left::Swap("tea-cup")));
+        assert_eq!(
+            left_by(&format!("{}-kept2", named("swap"))),
+            Some(Left::Kept("tea-cup"))
+        );
+        assert_eq!(
+            left_by(".incoming-tea-4711"),
+            Some(Left::Incoming(Some("tea")))
+        );
+        assert_eq!(left_by(".old-tea-4711"), Some(Left::Old("tea")));
+        // Neither: no id taken from it.
+        assert_eq!(left_by(".incoming-tea-cafe"), Some(Left::Incoming(None)));
+        assert_eq!(left_by(".old-tea-ABCDEF0123456789"), None);
+    }
+
+    /// An install over a user skill cut short between moving the skill
+    /// aside and putting the copy in leaves `.incoming-<id>-<random tag>`:
+    /// the next replace puts the skill back.
+    #[test]
+    fn an_install_cut_short_with_a_random_tag_is_put_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("skills");
+        let held = user.join(PREVIOUS_DIR);
+        std::fs::create_dir_all(held.join("tea")).unwrap();
+        std::fs::write(held.join("tea/SKILL.md"), "---\nname: tea\n---\n\nmine\n").unwrap();
+        let incoming = held.join(format!(".incoming-tea-{}", nofollow::random_tag()));
+        std::fs::create_dir(&incoming).unwrap();
+        std::fs::write(incoming.join("SKILL.md"), "new").unwrap();
+        previous_root(&user).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(user.join("tea/SKILL.md")).unwrap(),
+            "---\nname: tea\n---\n\nmine\n"
+        );
+        assert!(!incoming.exists());
+    }
+
     /// A replace cut short leaves `.incoming-…`, a copy of a source still
     /// there: the next replace removes it.
     #[test]
@@ -3182,7 +3253,7 @@ mod tests {
     /// Files under a folder, as [`snapshot`] reads them.
     type Snapshot = Vec<(PathBuf, nofollow::ReadFile)>;
 
-    /// A restore swaps in three renames: `tea` → `.swap-tea-<pid>`,
+    /// A restore swaps in three renames: `tea` → `.swap-tea-<tag>`,
     /// `.previous/tea` → `tea`, the swap → `.previous/tea`. Cut short after
     /// either of the first two, the swap is the only copy of the skill the
     /// user had: the next replace (of any skill) or restore puts it back,

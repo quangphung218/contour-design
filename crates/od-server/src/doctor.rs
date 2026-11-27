@@ -194,9 +194,13 @@ pub fn daemon_checks_check(url: &str, why: &str, root: &Path) -> Check {
 #[must_use]
 pub fn data_dir_check(root: &Path) -> Check {
     const ID: &str = "data-dir";
-    let probe = root.join(format!(".od-doctor-{}", std::process::id()));
+    // A random name made new (`O_EXCL|O_NOFOLLOW`): an agent can write the
+    // data folder, and a link it planted at a name worked out beforehand
+    // (a pid) was written through.
+    let probe = root.join(format!(".od-doctor-{}", od_content::nofollow::random_tag()));
     let written = std::fs::create_dir_all(root)
-        .and_then(|()| std::fs::write(&probe, b"ok"))
+        .and_then(|()| od_content::nofollow::new_file(&probe))
+        .and_then(|mut file| std::io::Write::write_all(&mut file, b"ok"))
         .and_then(|()| std::fs::remove_file(&probe));
     match written {
         Ok(()) => Check::ok(ID, format!("Data folder {} is writable.", root.display())),
@@ -619,6 +623,28 @@ mod tests {
         let bad = data_dir_check(&file.join("data"));
         assert_eq!(bad.status, Status::Fail, "{bad:?}");
         assert!(bad.fix.unwrap().contains("OD_DATA_DIR"));
+    }
+
+    /// An agent that can write the data folder plants a link at the name
+    /// the probe used (`.od-doctor-<pid>`): the check never writes through
+    /// it, and its probe file has a name no one works out beforehand.
+    #[cfg(unix)]
+    #[test]
+    fn the_data_folder_check_never_writes_through_a_planted_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("data");
+        std::fs::create_dir(&dir).unwrap();
+        let victim = tmp.path().join("victim.txt");
+        std::fs::write(&victim, "the user's own file").unwrap();
+        let guessed = dir.join(format!(".od-doctor-{}", std::process::id()));
+        std::os::unix::fs::symlink(&victim, &guessed).unwrap();
+        let check = data_dir_check(&dir);
+        assert_eq!(check.status, Status::Ok, "{check:?}");
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "the user's own file"
+        );
+        assert!(std::fs::symlink_metadata(&guessed).unwrap().is_symlink());
     }
 
     #[cfg(unix)]
