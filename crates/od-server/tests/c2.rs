@@ -197,6 +197,42 @@ async fn memory_switch_hooks_and_index_decide_what_the_prompt_carries() {
     assert_eq!(status, 400);
 }
 
+/// `MEMORY.md` there but not readable (a link an agent planted) is not a
+/// missing index: no global entry reaches the prompt, Settings is told,
+/// and a Save of the index puts a file of its own there.
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn an_unreadable_memory_index_lets_no_entry_into_the_prompt() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let (project, conversation) = d.project().await;
+    add_memory(&d, "user", "Brand colour is teal").await;
+    let outside = d.data.join("outside.md");
+    std::fs::write(&outside, "# Memory\n").unwrap();
+    std::fs::create_dir_all(d.data.join("memory")).unwrap();
+    std::os::unix::fs::symlink(&outside, d.data.join("memory/MEMORY.md")).unwrap();
+
+    let index = d.get_json("/api/memory/index").await;
+    assert_eq!(index["unreadable"], json!(true), "{index}");
+    turn(&d, &project, &conversation, "make a page").await;
+    let p = last_prompt(&d);
+    assert!(!p.contains("Brand colour is teal"), "fail closed: {p}");
+
+    let (status, v) = send(
+        &d,
+        reqwest::Method::PUT,
+        "/api/memory/index",
+        &json!({"index": index["index"]}),
+    )
+    .await;
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(std::fs::read_to_string(&outside).unwrap(), "# Memory\n");
+    let index = d.get_json("/api/memory/index").await;
+    assert_eq!(index["unreadable"], json!(false), "{index}");
+    turn(&d, &project, &conversation, "again").await;
+    assert!(last_prompt(&d).contains("Brand colour is teal"));
+}
+
 #[tokio::test]
 async fn memory_import_proposes_facts_from_markdown() {
     let d = daemon().await;

@@ -17,7 +17,7 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, symlinkSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -441,6 +441,21 @@ try {
   await page.getByTestId('memory-index-save-reload').click();
   await page.getByTestId('global-memory-item').filter({ hasText: 'Added while the index is read' }).getByRole('button', { name: 'Delete' }).click();
   await until(async () => (await page.getByTestId('global-memory-item').count()) === 1, 'the one added here is gone');
+  // MEMORY.md there but not readable (a link an agent planted): the daemon
+  // lets no memory into a chat and the page says so; Save writes it again.
+  const indexFile = join(data, 'memory', 'MEMORY.md');
+  const outside = join(data, 'outside.md');
+  writeFileSync(outside, '# not the index\n');
+  rmSync(indexFile, { force: true });
+  symlinkSync(outside, indexFile);
+  await page.reload();
+  await page.getByTestId('memory-index-open').click();
+  await page.getByTestId('memory-index-unreadable').waitFor();
+  await page.getByTestId('memory-index-save').click();
+  await page.getByTestId('memory-index-saved').waitFor();
+  assert.equal(await page.getByTestId('memory-index-unreadable').count(), 0, 'the notice goes once saved');
+  assert.ok(lstatSync(indexFile).isFile(), 'a file of its own replaces the link');
+  assert.equal(readFileSync(outside, 'utf8'), '# not the index\n', 'nothing written through the link');
   await shot('settings-memory', async () => page.getByTestId('memory-controls').scrollIntoViewIfNeeded());
   await page.getByTestId('memory-enabled').uncheck();
   await page.getByTestId('memory-off').waitFor();

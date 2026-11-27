@@ -1753,6 +1753,7 @@ MemoryImported = تم حفظ {0} ذكريات.
 MemoryImportPartial = تم حفظ {0}، وفشل {1}.
 MemoryIndexTitle = MEMORY.md (الفهرس)
 MemoryIndexHint = الحقائق المرتبطة هنا فقط تصل إلى الموجّه. احذف سطرًا لإيقاف حقيقة؛ يبقى إدخالها في القائمة. لا يُحفظ شيء قبل حفظ الفهرس.
+MemoryIndexUnreadable = تعذّرت قراءة MEMORY.md (رابط أو FIFO أو كبير جدًا)، لذا لا تصل أي ذاكرة إلى المحادثة. حفظ الفهرس يكتبه من جديد.
 MemoryIndexSave = حفظ الفهرس
 MemoryIndexSaved = تم حفظ الفهرس
 MemoryUnsaved = تغييرات غير محفوظة

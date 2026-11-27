@@ -1759,6 +1759,7 @@ MemoryImported = {0} حافظه ذخیره شد.
 MemoryImportPartial = {0} ذخیره شد، {1} ناموفق بود.
 MemoryIndexTitle = MEMORY.md (فهرست)
 MemoryIndexHint = فقط واقعیت‌های پیوندشده در اینجا به prompt می‌رسند. برای خاموش کردن یک واقعیت، خطش را حذف کنید؛ مورد در فهرست می‌ماند. تا ذخیره فهرست، چیزی ذخیره نمی‌شود.
+MemoryIndexUnreadable = خواندن MEMORY.md ممکن نیست (پیوند، FIFO یا خیلی بزرگ)، پس هیچ حافظه‌ای به گفتگو نمی‌رسد. ذخیره فهرست آن را دوباره می‌نویسد.
 MemoryIndexSave = ذخیره فهرست
 MemoryIndexSaved = فهرست ذخیره شد
 MemoryUnsaved = تغییرات ذخیره‌نشده

@@ -1760,6 +1760,7 @@ MemoryImported = Salvati {0} ricordi.
 MemoryImportPartial = Salvati {0}, {1} non riusciti.
 MemoryIndexTitle = MEMORY.md (indice)
 MemoryIndexHint = Solo i fatti collegati qui arrivano al prompt. Elimina una riga per disattivare un fatto; la voce resta nell'elenco. Non salvato finché non premi Salva indice.
+MemoryIndexUnreadable = MEMORY.md non è leggibile (un link, una FIFO o troppo grande), quindi nessuna memoria arriva in chat. Salva indice lo riscrive.
 MemoryIndexSave = Salva indice
 MemoryIndexSaved = Indice salvato
 MemoryUnsaved = Modifiche non salvate

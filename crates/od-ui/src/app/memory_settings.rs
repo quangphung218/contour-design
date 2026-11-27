@@ -288,6 +288,9 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
     let saved = RwSignal::new(String::new());
     let draft = RwSignal::new(None::<String>);
     let root = RwSignal::new(String::new());
+    // `MEMORY.md` is there but cannot be read: no memory reaches a chat
+    // until a Save writes it again (the daemon fails closed).
+    let unreadable = RwSignal::new(false);
     let status = RwSignal::new(None::<Result<(), String>>);
     // The tag (`ETag`) of the index `saved` holds: a Save goes only over
     // it (`If-Match`). Changed since (a memory learnt links itself in,
@@ -318,6 +321,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                     load_error.set(None);
                     saved.set(v.value["index"].as_str().unwrap_or_default().to_owned());
                     root.set(v.value["rootDir"].as_str().unwrap_or_default().to_owned());
+                    unreadable.set(v.value["unreadable"].as_bool().unwrap_or(false));
                     if refocus.get_value() {
                         refocus.set_value(false);
                         if let Some(el) = text.get_untracked() {
@@ -340,13 +344,20 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
     });
     // `force` ("Save anyway") writes over an index changed since.
     let save = move |force: bool| {
-        let Some(index) = draft.get_untracked() else {
+        // An unreadable index is saved as shown, with the tag it was shown with.
+        let typed = draft.get_untracked();
+        let Some(index) = typed
+            .clone()
+            .or_else(|| unreadable.get_untracked().then(|| saved.get_untracked()))
+        else {
             return;
         };
         let sent = if force {
             Some(api::ANY.to_owned())
-        } else {
+        } else if typed.is_some() {
             draft_tag.get_value()
+        } else {
+            tag.get_value()
         };
         // No tag the draft started from: nothing is sent; the editor asks
         // as for a changed index (Reload shows it, Save anyway writes).
@@ -359,6 +370,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
             match api::put_if_match::<_, Value>("/api/memory/index", &body, &sent).await {
                 Ok(v) => {
                     saved.set(v.value["index"].as_str().unwrap_or_default().to_owned());
+                    unreadable.set(false);
                     changed.set(false);
                     draft.set(None);
                     status.set(Some(Ok(())));
@@ -388,6 +400,9 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                 <span class="muted small mono" title=move || root.get()>{move || root.get()}</span>
             </div>
             <p class="muted small">{t(T::MemoryIndexHint)}</p>
+            {move || unreadable.get().then(|| view! {
+                <p class="error-text small" role="alert" data-testid="memory-index-unreadable">{t(T::MemoryIndexUnreadable)}</p>
+            })}
             {move || load_error.get().map(|e| view! {
                 <p class="error-text small row" role="alert" data-testid="memory-index-load-failed">
                     <span class="grow">{e}</span>
@@ -422,7 +437,7 @@ fn IndexPanel(rev: MemoryRev) -> impl IntoView {
                 <button class="btn ghost small" disabled=move || draft.with(Option::is_none)
                     on:click=move |_| { changed.set(false); draft.set(None); }>{t(T::MemoryIndexReset)}</button>
                 <button class="btn primary small" data-testid="memory-index-save"
-                    disabled=move || !ready.get() || draft.with(Option::is_none)
+                    disabled=move || !ready.get() || (draft.with(Option::is_none) && !unreadable.get())
                     on:click=move |_| save(false)>{t(T::MemoryIndexSave)}</button>
             </div>
         </div>

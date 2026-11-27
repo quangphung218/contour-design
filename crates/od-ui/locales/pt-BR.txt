@@ -1759,6 +1759,7 @@ MemoryImported = {0} memórias salvas.
 MemoryImportPartial = {0} salvas, {1} com falha.
 MemoryIndexTitle = MEMORY.md (índice)
 MemoryIndexHint = Só os fatos linkados aqui chegam ao prompt. Apague uma linha para desativar um fato; a entrada continua na lista. Nada é salvo até clicar em Salvar índice.
+MemoryIndexUnreadable = Não foi possível ler o MEMORY.md (um link, um FIFO ou grande demais), então nenhuma memória chega ao chat. Salvar índice o grava de novo.
 MemoryIndexSave = Salvar índice
 MemoryIndexSaved = Índice salvo
 MemoryUnsaved = Alterações não salvas

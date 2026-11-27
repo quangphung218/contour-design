@@ -120,8 +120,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
 16. A form that saves a user's file saves only over the copy it opened on (`src/cas.rs`): the `GET` it opens on
     answers an `ETag` (sha256 of the content shown: `GET /api/skills/{id}`, `GET /api/design-systems/{id}/kit`,
     `GET /api/memory/index`), its `PUT` sends it as `If-Match`, and a file changed since is a 412 with nothing written.
-    The compare runs under the lock the file's other writers take (`REPLACE_LOCK` for `SKILL.md`, `DESIGN_MD_WRITES`
-    with accepted revisions, `MemoryFiles::guard` with `link`/`unlink`). No `If-Match` is a 428 with nothing written
+    The compare runs under the lock of the folder's `od_fs::user_store::UserRoot` (one per root path: `<data>/skills`
+    for a save, replace, restore, install; the folder holding the design system (`<data>/design-systems`) for a Save of `DESIGN.md` and an accepted revision;
+    `<data>/memory` for the index editor, `link`/`unlink`), and `Guard::write` compares again with what that one read
+    found (`Expect`) right before its rename. A `MEMORY.md` there but unreadable (a link, a FIFO, too large) is not a
+    missing one: no entry reaches a prompt and `GET /api/memory/index` says `unreadable` (Settings shows it). No `If-Match` is a 428 with nothing written
     (the extractor refuses it); a write over whatever is there sends `If-Match: *`. The `ETag` is of the bytes the body
     shown came from, never of a second read.
     GET and PUT tag the same file: for a skill, the one a save writes over (`user_content::skill_write_dir`:
@@ -134,10 +137,12 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     again; gone (no `SKILL.md`), the index is read again: the bundled copy of a deleted override, a 404 for a deleted
     skill. No form is ever given the tag of nothing (`GONE_TAG`), and a Save that sends it is a 412; a `PUT` of a skill gone
     from the index is a 412 with a tag, and `*` ("Save anyway") puts it back as a user skill.
-    A `SKILL.md` or `DESIGN.md` is written only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
+    A form's Save of `SKILL.md`, `DESIGN.md` or `MEMORY.md` goes through `Guard::write` (`../od-fs/src/user_store.rs`:
+    every folder below the root opened `O_NOFOLLOW`, temp file `O_EXCL` of a random name, fsync, `renameat`;
+    one test per question of the six in `user_store_tests.rs`). Any other write of one goes only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
     a new file of a random name made `O_EXCL|O_NOFOLLOW`, bits set on its descriptor, renamed over it: no half-written read,
     no write through a link at the file or at the temp name), every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
-    names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content`, `od-server` and `../od-store/src/memory_index.rs`, `KEPT` with why). The memory index and config are written with `nofollow::replace_file` too (`../od-store/tests/memory_files.rs`).
+    names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content`, `od-server` and `../od-store/src/memory_index.rs`, `KEPT` with why). The memory index and config are written with `Guard::write` too (`../od-store/tests/memory_files.rs`).
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     A folder filled from a tree (install, install over a user skill, Replace from source, an override's first copy,
     Copy design system, a generated design system, Copy to Claude Code) is made new (`nofollow::NewDir`: `create_dir`, never

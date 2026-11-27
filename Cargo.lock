@@ -4213,7 +4213,9 @@ dependencies = [
 name = "od-fs"
 version = "0.2.0-beta.74"
 dependencies = [
+ "hex",
  "nix 0.31.3",
+ "sha2 0.11.0",
  "tempfile",
 ]
 

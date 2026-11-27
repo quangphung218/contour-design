@@ -48,6 +48,7 @@ use od_content::DesignSystemEntry;
 use od_content::design_kit::{self, Swatch, Token, TokenScore};
 use od_content::design_system_gen::{self, GenerateRequest};
 use od_content::user_content::{self, copy_dir_into_place};
+use od_content::user_store::{self, Expect, Found, Guard, UserRoot};
 use od_contracts::{ContentSource, CreateProjectRequest, ProjectMetadata, RunStatus};
 use od_runs::RunMeta;
 use od_runtime::env::{RunEnv, agent_env};
@@ -486,22 +487,29 @@ pub struct Kit {
 }
 
 /// The DESIGN.md of package `e` as the kit shows it: the file, or the
-/// body indexed when it cannot be read. Its tag is the kit's `ETag`, the
-/// one a Save of the editor sends back (`crate::cas`).
-fn shown_design_md(e: &DesignSystemEntry) -> String {
-    inside_io(&e.dir, "DESIGN.md")
-        .and_then(read_text)
-        .unwrap_or_else(|_| e.body.clone())
+/// body indexed when it cannot be read, from one read under the root's
+/// lock (`one`), with what that read found (a Save writes only over it).
+/// Its tag is the kit's `ETag`, the one a Save of the editor sends back
+/// (`crate::cas`).
+fn shown_design_md(e: &DesignSystemEntry, one: &Guard<'_>) -> (String, Found) {
+    let found = one.read(&package_rel(&e.dir).join("DESIGN.md"));
+    let shown = match &found {
+        Found::File(read) => String::from_utf8(read.bytes.clone()).ok(),
+        _ => None,
+    };
+    (shown.unwrap_or_else(|| e.body.clone()), found)
 }
 
-/// Held by every write of an editable package's DESIGN.md (Save, an
-/// accepted revision): a Save compares and writes in one step.
-static DESIGN_MD_WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// The folder holding package `dir` and the lock every writer of its
+/// DESIGN.md takes (a Save, an accepted revision): a Save compares and
+/// writes in one step.
+fn design_root(dir: &std::path::Path) -> UserRoot {
+    UserRoot::open(dir.parent().unwrap_or(dir), MAX_READ_BYTES)
+}
 
-fn design_md_lock() -> std::sync::MutexGuard<'static, ()> {
-    DESIGN_MD_WRITES
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+/// Package `dir` by its name under [`design_root`].
+fn package_rel(dir: &std::path::Path) -> PathBuf {
+    PathBuf::from(dir.file_name().unwrap_or_default())
 }
 
 pub async fn kit(
@@ -511,7 +519,7 @@ pub async fn kit(
     let e = entry(&state, &id)?;
     let a2 = a2(&state);
     let kit = crate::spawn::spawn_blocking_in_span(move || {
-        let body = shown_design_md(&e);
+        let (body, _) = shown_design_md(&e, &design_root(&e.dir).lock());
         let tokens = design_kit::parse_tokens(&read(&e.dir, "tokens.css"));
         let mut previews: Vec<String> = inside_io(&e.dir, "preview")
             .and_then(std::fs::read_dir)
@@ -597,10 +605,21 @@ pub async fn save_design_md(
         return Err(ApiErr::bad_request("DESIGN.md cannot be empty"));
     }
     write_and_reload(&state, move || {
-        let _one = design_md_lock();
-        if_match.check(&crate::cas::tag_of(shown_design_md(&e).as_bytes()))?;
-        user_content::write_replacing(&inside(&e.dir, "DESIGN.md")?, body.body.as_bytes())
-            .map_err(ApiErr::io)
+        let root = design_root(&e.dir);
+        let one = root.lock();
+        let (shown, found) = shown_design_md(&e, &one);
+        if_match.check(&crate::cas::tag_of(shown.as_bytes()))?;
+        let expect = if if_match.0.is_some() {
+            found.expect()
+        } else {
+            Expect::Any
+        };
+        let rel = package_rel(&e.dir).join("DESIGN.md");
+        match one.write(&rel, body.body.as_bytes(), expect) {
+            Ok(_) => Ok(()),
+            Err(user_store::WriteError::Stale) => Err(crate::cas::changed()),
+            Err(user_store::WriteError::Io(e)) => Err(ApiErr::io(e)),
+        }
     })
     .await?;
     Ok(Json(json!({ "ok": true })))
@@ -1330,7 +1349,8 @@ pub async fn decide(
 /// `accept`, under the lock a Save of DESIGN.md compares and writes under:
 /// an accept never lands between a Save's compare and its write.
 fn decide_on_disk(dir: &std::path::Path, r: Revision, accept: bool) -> ApiResult<()> {
-    let _one = design_md_lock();
+    let root = design_root(dir);
+    let _one = root.lock();
     let prior = if accept {
         accept_files(dir, &r.files)?
     } else {
@@ -1782,7 +1802,8 @@ mod tests {
             created_at: 0,
             updated_at: 0,
         };
-        let save = design_md_lock();
+        let root = design_root(&d);
+        let save = root.lock();
         let accept = {
             let d = d.clone();
             std::thread::spawn(move || decide_on_disk(&d, r, true).is_ok())

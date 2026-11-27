@@ -1759,6 +1759,7 @@ MemoryImported = Zapisano wspomnień: {0}.
 MemoryImportPartial = Zapisano: {0}, błędy: {1}.
 MemoryIndexTitle = MEMORY.md (indeks)
 MemoryIndexHint = Do promptu trafiają tylko fakty podlinkowane tutaj. Usuń wiersz, by wyłączyć fakt; wpis zostaje na liście. Nic się nie zapisze do kliknięcia Zapisz indeks.
+MemoryIndexUnreadable = Nie można odczytać MEMORY.md (link, FIFO lub za duży), więc żadna pamięć nie trafia do czatu. Zapisz indeks zapisze go od nowa.
 MemoryIndexSave = Zapisz indeks
 MemoryIndexSaved = Indeks zapisany
 MemoryUnsaved = Niezapisane zmiany
