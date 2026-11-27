@@ -690,11 +690,13 @@ fn Sidebar() -> impl IntoView {
                     {link("/integrations", Glyph::Mcp, T::NavIntegrations, false)}
                     {link("/inbox", Glyph::Inbox, T::NavInbox, false)}
                 }.into_any())}
-                <span class="spacer"></span>
-                // Settings and everything around it (theme, language,
-                // shortcuts, Help) behind one button.
-                <quick_menu::QuickMenu rail=Signal::derive(rail)/>
             </nav>
+            // Settings and everything around it (theme, language, shortcuts,
+            // Help) behind one button, out of the pages' scroll: a short
+            // window scrolls the pages, the button stays.
+            <div class="sidebar-foot">
+                <quick_menu::QuickMenu rail=Signal::derive(rail)/>
+            </div>
         </aside>
     }
 }

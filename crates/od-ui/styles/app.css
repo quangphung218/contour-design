@@ -38,7 +38,12 @@
 .brand-mark.large { width: 44px; height: 44px; border-radius: var(--radius-lg); }
 .brand-mark.large svg { width: 30px; height: 30px; }
 
-.sidenav { flex: 1; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+/* The pages scroll in a short window (desktop's smallest is 600 px less
+   the title bar); the Settings button below them stays in view. */
+.sidenav { flex: 1; display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+/* Room for the focus outline (2 px, 2 px out), which a scroller clips. */
+.sidenav { padding: 4px; margin: -4px; }
+.sidebar-foot { flex: none; display: flex; flex-direction: column; padding-top: var(--space-2); }
 .nav-link {
   display: flex; align-items: center; gap: var(--space-2-5);
   height: var(--control-md);

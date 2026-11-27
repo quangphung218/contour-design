@@ -553,6 +553,33 @@ try {
   await page.getByTestId('quick-menu-pop').waitFor({ state: 'detached' });
   assert.equal(await page.evaluate(() => window.__escBelow), 0, 'Esc closes the menu only (no jury stop, no comment mode)');
   await until(async () => (await focused()) === 'quick-menu', 'focus back on the Settings button');
+  // A layer opened over the popup (palette, shortcuts) takes Esc first;
+  // the next Esc closes the popup.
+  const pop = page.getByTestId('quick-menu-pop');
+  for (const [keys, testid] of [['Control+k', 'command-palette'], ['Control+/', 'shortcuts']]) {
+    await trigger.click();
+    await until(async () => (await focused()) === 'quick-open-settings', 'popup open');
+    await page.keyboard.press(keys);
+    await page.getByTestId(testid).waitFor();
+    // The layer takes the focus (next task); until then Esc is the popup's.
+    await until(async () => !(await focused())?.startsWith('quick-'), `focus in ${testid}`);
+    await page.keyboard.press('Escape');
+    await page.getByTestId(testid).waitFor({ state: 'detached' });
+    assert.ok(await pop.isVisible(), `Esc closed ${testid} and left the popup under it`);
+    await until(async () => (await focused())?.startsWith('quick-'), `focus back in the popup after ${testid}`);
+    await page.keyboard.press('Escape');
+    await pop.waitFor({ state: 'detached' });
+  }
+  // Cmd/Ctrl+, with the popup open closes it (a leave question would
+  // otherwise sit over it).
+  await trigger.click();
+  await pop.waitFor();
+  await page.keyboard.press('Control+Comma');
+  await page.waitForURL(BASE + '/settings');
+  await pop.waitFor({ state: 'detached' });
+  await page.goto(BASE + '/');
+  await trigger.waitFor();
+  await until(async () => { await trigger.focus(); return (await focused()) === 'quick-menu'; }, 'focus on the button');
   await page.keyboard.press('Enter');
   await until(async () => (await focused()) === 'quick-open-settings', 'Enter opens the menu');
   await page.keyboard.press('Enter');
@@ -567,6 +594,37 @@ try {
   await trigger.waitFor();
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'settings' })));
   await page.waitForURL(BASE + '/settings');
+  // A short window (desktop's smallest: 600 px less the title bar): the
+  // pages scroll, the Settings button stays whole in the sidebar.
+  for (const height of [520, 600]) {
+    await page.setViewportSize({ width: 1280, height });
+    await page.goto(BASE + '/');
+    await trigger.waitFor();
+    const fit = await page.evaluate(() => {
+      const side = document.querySelector('.sidebar').getBoundingClientRect();
+      const b = document.querySelector('[data-testid=quick-menu]').getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { bottom: b.bottom, side: side.bottom, top: b.top, onTop: !!hit?.closest('[data-testid=quick-menu]') };
+    });
+    assert.ok(fit.bottom <= fit.side && fit.top >= 0 && fit.onTop, `Settings button in view at ${height}: ${JSON.stringify(fit)}`);
+    const inbox = page.locator('.sidenav a[href="/inbox"]');
+    await inbox.scrollIntoViewIfNeeded();
+    // Scrolled to, the last page sits whole above the button, not under it.
+    const last = await page.evaluate(() => {
+      const a = document.querySelector('.sidenav a[href="/inbox"]').getBoundingClientRect();
+      const b = document.querySelector('[data-testid=quick-menu]').getBoundingClientRect();
+      return { bottom: a.bottom, button: b.top };
+    });
+    assert.ok(last.bottom <= last.button, `Inbox above the Settings button at ${height}: ${JSON.stringify(last)}`);
+    await inbox.click();
+    await page.waitForURL(BASE + '/inbox');
+    await trigger.click();
+    await pop.waitFor();
+    const popBox = await pop.boundingBox();
+    assert.ok(popBox.y >= 0, `popup inside the window at ${height}: ${popBox.y}`);
+    await page.keyboard.press('Escape');
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   // The rail: the button keeps its name, its tip says Settings, group names hide.
   await page.goto(BASE + '/');
   await trigger.waitFor();

@@ -7,7 +7,7 @@
 //! which the desktop Help menu reaches too (`od:menu` `docs` /
 //! `report-issue`).
 
-use super::composer::close_outside;
+use super::composer::close_on_press_outside;
 use super::icons::{Glyph, icon};
 use super::leave_guard::use_open_after_click;
 use super::tasks::{Tasks, live};
@@ -85,7 +85,8 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     let open_page = use_open_after_click();
     let open = RwSignal::new(false);
     let wrap = NodeRef::<Div>::new();
-    close_outside(open, wrap);
+    // Esc is the popup's own (`QuickPop`): only while it is on top.
+    close_on_press_outside(open, wrap);
     let notice = RwSignal::new(None::<Result<String, String>>);
     // The summary to copy by hand when the clipboard refused it.
     let manual = RwSignal::new(None::<String>);
@@ -110,9 +111,17 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
         });
     };
     let to_docs = open_page.clone();
-    let go_docs = Callback::new(move |()| to_docs("/docs"));
+    // Shut first: Cmd/Ctrl+, or a desktop menu item may come with the
+    // popup open, and a leave question then sits over nothing else.
+    let go_docs = Callback::new(move |()| {
+        open.set(false);
+        to_docs("/docs");
+    });
     let to_settings = open_page.clone();
-    let go_settings = Callback::new(move |()| to_settings("/settings"));
+    let go_settings = Callback::new(move |()| {
+        open.set(false);
+        to_settings("/settings");
+    });
     // The desktop Help and Settings items.
     let menu = window_event_listener(
         leptos::ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
@@ -179,7 +188,7 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
                 <span class="nav-label">{t(T::NavSettings)}</span>
             </button>
             <Show when=move || open.get()>
-                <QuickPop on_close=Callback::new(move |()| open.set(false))>
+                <QuickPop on_close=Callback::new(move |()| open.set(false)) scope=wrap>
                     <button class="menu-item" data-testid="quick-open-settings"
                         on:click=move |_| { open.set(false); go_settings.run(()); }>
                         {icon(Glyph::Settings)}{t(T::OpenSettings)}
@@ -276,8 +285,10 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
 /// A non-modal dialog, not `role=menu`: it holds a language `<select>` and
 /// theme toggles, which a menu may not (axe `aria-required-children`).
 #[component]
-fn QuickPop(on_close: Callback<()>, children: Children) -> impl IntoView {
-    super::menu_scrim::close_on_escape(on_close);
+fn QuickPop(on_close: Callback<()>, scope: NodeRef<Div>, children: Children) -> impl IntoView {
+    super::menu_scrim::close_on_escape(on_close, move || {
+        scope.get_untracked().map(web_sys::Element::from)
+    });
     let pop = NodeRef::<Div>::new();
     super::focus::focus_while_open(pop, |p| {
         p.query_selector(super::focus::FIRST_ITEM).ok().flatten()
