@@ -146,6 +146,15 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     a new file of a random name made `O_EXCL|O_NOFOLLOW`, bits set on its descriptor, renamed over it: no half-written read,
     no write through a link at the file or at the temp name), every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
     names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content`, `od-server` and `../od-store/src/memory_index.rs`, `KEPT` with why). The memory index and config are written with `Guard::write` too (`../od-store/tests/memory_files.rs`).
+    A module that reads and writes a user root (`ZONE` in `tests/user_file_writes.rs`: `user_content.rs`, `skills.rs`,
+    `plugins.rs`, `index.rs`, `design_system_gen.rs`, `memory_index.rs`, `routes/library/**`, the memory routes,
+    `routes/content.rs`, `skill_export.rs`, `routes/platform/evolution.rs`, `routes/file_ops.rs`: Save as template) changes the disk only through `od_fs::user_store` (`Guard::write`, `remove`,
+    `put_tree`, `put_copy`, `restore`, `make_dir`, `remove_hidden`, `UserRoot::make_root`): rule `fs` refuses there any
+    `std::fs`/`tokio::fs` write, remove, rename, copy, link or bits, `File::create`, open options that write, a `nix` `…at`
+    call, `libc`, a `use …::fs::*`, and a call of a function elsewhere in `od-content`, `od-server`, `od-store` or
+    `od_fs::nofollow` that does (found by name, to a fixed point); `KEPT` with why (`PR 6`: design systems, Copy to
+    Claude Code). `../od-fs/src/hostile.rs` runs every `Guard` call against a linked entry, a link below it, a link or
+    FIFO at the file, a file too large, a `0555` folder and a name alike in another case.
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     A folder filled from a tree (install, install over a user skill, Replace from source, an override's first copy,
     Copy design system, a generated design system, Copy to Claude Code) is made new (`nofollow::NewDir`: `create_dir`, never
