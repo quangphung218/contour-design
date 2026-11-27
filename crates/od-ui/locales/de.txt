@@ -1870,5 +1870,6 @@ UsageSkillTurnsSince = Gezählt seit {0}
 ChangedElsewhere = Seit dem Öffnen woanders geändert. Neu laden zeigt die neue Fassung und verwirft deine Eingabe; Trotzdem speichern überschreibt sie.
 ReloadNewCopy = Neu laden
 ReloadFailed = Die neue Fassung konnte nicht geladen werden: {0}
+SkillDeletedElsewhere = Dieser Skill wurde anderswo gelöscht. „Trotzdem speichern“ legt ihn mit deinem Text wieder an.
 SkillNamedAlike = Nicht gespeichert: Dein Skill {0} heißt fast gleich (nur Groß-/Kleinschreibung unterscheidet sich) und würde überschrieben. Benenne ihn um oder entferne ihn, dann speichere.
 MemoryIndexLoadFailed = Index konnte nicht geladen werden: {0}

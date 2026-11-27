@@ -1869,5 +1869,6 @@ UsageSkillTurnsSince = Dihitung sejak {0}
 ChangedElsewhere = Diubah di tempat lain sejak dibuka. Muat ulang menampilkan salinan baru dan membuang ketikan Anda; Tetap simpan menimpanya.
 ReloadNewCopy = Muat ulang
 ReloadFailed = Tidak dapat memuat salinan baru: {0}
+SkillDeletedElsewhere = Skill ini dihapus di tempat lain. "Tetap simpan" akan membuatnya lagi dengan yang kamu ketik.
 SkillNamedAlike = Tidak disimpan: skill {0} milikmu bernama hampir sama (hanya beda huruf besar atau kecil) dan akan tertimpa. Ganti namanya atau hapus, lalu simpan.
 MemoryIndexLoadFailed = Indeks tidak dapat dimuat: {0}

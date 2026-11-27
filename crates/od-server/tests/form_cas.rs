@@ -652,3 +652,76 @@ async fn an_override_named_otherwise_is_shown_and_kept() {
         again
     );
 }
+
+/// A user skill deleted on disk while its form is open (PR #351 review: a
+/// Save put back what the agent deleted). The Save from the copy shown is
+/// a 412, a tag of nothing too; opened again it is not found; "Save
+/// anyway" (`*`) puts it back with what was typed.
+#[tokio::test]
+async fn a_skill_deleted_on_disk_is_never_saved_back_unasked() {
+    let d = daemon().await;
+    post(
+        &d,
+        "/api/skills",
+        &json!({ "name": "tea", "description": "Mine.", "body": "First." }),
+    )
+    .await;
+    let (_, tag) = tagged(&d, "/api/skills/tea").await;
+    let dir = d.data.join("skills/tea");
+    std::fs::remove_dir_all(&dir).unwrap();
+    let body = json!({ "name": "tea", "description": "Mine.", "body": "Typed." });
+    assert_eq!(put(&d, "/api/skills/tea", &body, Some(&tag)).await, 412);
+    assert_eq!(
+        put(&d, "/api/skills/tea", &body, Some("\"missing\"")).await,
+        412
+    );
+    assert!(!dir.exists(), "nothing written");
+    let res = d
+        .http
+        .get(format!("{}/api/skills/tea", d.base))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status().as_u16(), 404, "gone, as on disk");
+    assert_eq!(put(&d, "/api/skills/tea", &body, Some(&tag)).await, 412);
+    assert!(!dir.exists(), "nothing written");
+    assert_eq!(put(&d, "/api/skills/tea", &body, Some("*")).await, 200);
+    assert!(
+        std::fs::read_to_string(dir.join("SKILL.md"))
+            .unwrap()
+            .contains("Typed.")
+    );
+    let (shown, _) = tagged(&d, "/api/skills/tea").await;
+    assert_eq!(shown["body"].as_str().unwrap().trim(), "Typed.");
+}
+
+/// An agent deletes the override of a bundled skill (PR #351 review: the
+/// form kept showing the override under the tag of nothing, and its Save
+/// wrote it back). Opened again, the form shows the bundled copy with its
+/// tag; a Save from the override's copy is a 412 and writes nothing.
+#[tokio::test]
+async fn an_override_deleted_on_disk_shows_the_bundled_copy_again() {
+    let d = daemon().await;
+    let (_, bundled_tag) = tagged(&d, "/api/skills/ad-creative").await;
+    let body = json!({ "name": "ad-creative", "body": "My override." });
+    assert_eq!(
+        put(&d, "/api/skills/ad-creative", &body, Some(&bundled_tag)).await,
+        200
+    );
+    let (shown, over_tag) = tagged(&d, "/api/skills/ad-creative").await;
+    assert!(shown["body"].as_str().unwrap().contains("My override."));
+    let over = d.data.join("skills/ad-creative/SKILL.md");
+    std::fs::remove_file(&over).unwrap();
+    let (shown, tag) = tagged(&d, "/api/skills/ad-creative").await;
+    assert!(!shown["body"].as_str().unwrap().contains("My override."));
+    assert_eq!(tag, bundled_tag, "the bundled copy, tagged as shown");
+    let typed = json!({ "name": "ad-creative", "body": "Typed." });
+    assert_eq!(
+        put(&d, "/api/skills/ad-creative", &typed, Some(&over_tag)).await,
+        412
+    );
+    assert!(
+        !over.exists(),
+        "the override the agent deleted stays deleted"
+    );
+}

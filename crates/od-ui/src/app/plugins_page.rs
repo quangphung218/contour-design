@@ -1136,7 +1136,7 @@ fn SkillDetailView(
                         detail.set(Some(Ok(r.value)));
                         super::focus::focus_testid_next_frame("skill-body-input");
                     }
-                    Err(e) => notice.set(Some(api::failure(T::ReloadFailed, &e))),
+                    Err(e) => notice.set(Some(reload_failure(&e))),
                 }
                 reading.set(false);
             });
@@ -1503,6 +1503,17 @@ async fn save_skill_edit(id: String, body: Value, tag: Option<String>) -> EditSa
         Ok(_) => EditSave::Saved,
         Err(e) if e.changed_since() => EditSave::Changed,
         Err(e) => EditSave::Failed(save_failure(&e)),
+    }
+}
+
+/// What the skill form says of a Reload whose read failed: a 404 is the
+/// skill deleted on disk (an agent's `rm -r`), where "Save anyway" puts it
+/// back.
+fn reload_failure(e: &api::HttpError) -> String {
+    if e.status == 404 {
+        t(T::SkillDeletedElsewhere).to_owned()
+    } else {
+        api::failure(T::ReloadFailed, e)
     }
 }
 
@@ -2599,6 +2610,29 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Reload that finds the skill deleted says so (PR #351 review),
+    /// not "could not load".
+    #[test]
+    fn a_reload_of_a_skill_deleted_says_so() {
+        let gone = api::HttpError {
+            status: 404,
+            code: Some(od_contracts::ErrorCode::NotFound),
+            message: "skill not found".to_owned(),
+            request_id: None,
+        };
+        assert_eq!(reload_failure(&gone), t(T::SkillDeletedElsewhere));
+        let other = api::HttpError {
+            status: 500,
+            code: None,
+            message: "boom".to_owned(),
+            request_id: None,
+        };
+        assert_eq!(
+            reload_failure(&other),
+            api::failure(T::ReloadFailed, &other)
+        );
+    }
 
     /// A Save refused for a skill named alike says which skill is in the
     /// way and what to do (PR #351 review), not "Save failed".

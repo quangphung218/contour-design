@@ -185,16 +185,24 @@ pub fn create_skill(
 }
 
 /// The tag of the `SKILL.md` in skill folder `dir`: sha256 of its bytes,
-/// hex; `"missing"` when it cannot be read (no file, a link, a FIFO).
-/// The skill editor opens on it and saves only over the same tag
-/// ([`save_skill`]).
+/// hex; [`GONE_TAG`] when there is none, `"unreadable"` when it is there
+/// but cannot be read (a link, a FIFO, too large). The skill editor opens
+/// on it and saves only over the same tag ([`save_skill`]).
 #[must_use]
 pub fn skill_tag(dir: &Path) -> String {
-    match nofollow::read_file(&dir.join("SKILL.md"), MAX_PLUGIN_BYTES) {
+    let path = dir.join("SKILL.md");
+    match nofollow::read_file(&path, MAX_PLUGIN_BYTES) {
         Ok(Some(file)) => tag_of(&file.bytes),
-        _ => "missing".to_owned(),
+        _ if std::fs::symlink_metadata(&path).is_err() => GONE_TAG.to_owned(),
+        _ => "unreadable".to_owned(),
     }
 }
+
+/// The [`skill_tag`] of a skill with no `SKILL.md`. No form opens on it
+/// (`GET /api/skills/{id}` reads the index again: gone, it is a 404), so a
+/// Save that sends it saw a copy since deleted: it is refused, never a
+/// write where the agent deleted the skill.
+pub const GONE_TAG: &str = "missing";
 
 /// The folder a save of skill `id` writes over: the user's override in
 /// `<user_root>/<id>` once its `SKILL.md` is on disk (an agent may write
@@ -266,7 +274,8 @@ pub fn save_skill(
         return Err(WriteError::Exists(format!("skill {twin:?}")));
     }
     if let Some(expected) = expected
-        && skill_tag(&skill_write_dir(user_root, id, current_dir, is_user)) != expected
+        && (expected == GONE_TAG
+            || skill_tag(&skill_write_dir(user_root, id, current_dir, is_user)) != expected)
     {
         return Err(WriteError::Stale);
     }
@@ -276,6 +285,9 @@ pub fn save_skill(
         .flatten()
         .and_then(|f| String::from_utf8(f.bytes).ok());
     let dir = if is_user {
+        // Deleted since ("Save anyway" over a skill removed on disk): it is
+        // put back where it was.
+        std::fs::create_dir_all(current_dir).map_err(io)?;
         current_dir.to_path_buf()
     } else {
         let dir = user_root.join(id);
@@ -289,6 +301,31 @@ pub fn save_skill(
     frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
     write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)?;
     Ok(dir)
+}
+
+/// "Save anyway" of skill `id` that is gone from the index (deleted on
+/// disk while its form was open): a user skill `id` again, with `draft`.
+/// A user skill named like it in another case or Unicode form is refused,
+/// as [`save_skill`] refuses it.
+///
+/// # Errors
+/// [`WriteError::BadRequest`], [`WriteError::Exists`], [`WriteError::Io`].
+pub fn save_skill_again(user_root: &Path, id: &str, draft: &SkillDraft) -> Result<(), WriteError> {
+    draft.check()?;
+    if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
+        return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
+    }
+    let _one = REPLACE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(twin) = entry_like(user_root, id)?.filter(|name| name != id) {
+        return Err(WriteError::Exists(format!("skill {twin:?}")));
+    }
+    let dir = user_root.join(id);
+    std::fs::create_dir_all(&dir).map_err(io)?;
+    let text = render_skill_md(draft, id, None);
+    frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
+    write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)
 }
 
 /// Writes `bytes` as `path` through a hidden file of its own beside it,
@@ -1743,6 +1780,36 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
         let left = std::fs::read_dir(tmp.path()).unwrap().count();
         assert_eq!(left, 1, "a temp file left");
+    }
+
+    /// No `SKILL.md` and one that cannot be read are two tags: a form
+    /// opened on a link (its index copy, tagged "unreadable") whose link is
+    /// then deleted saves nothing (412), and no Save ever sends the tag of
+    /// nothing as one it saw.
+    #[cfg(unix)]
+    #[test]
+    fn a_skill_md_gone_and_one_unreadable_are_tagged_apart() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user");
+        let dir = user.join("tea");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(skill_tag(&dir), GONE_TAG);
+        std::os::unix::fs::symlink(tmp.path().join("elsewhere.md"), dir.join("SKILL.md")).unwrap();
+        let unreadable = skill_tag(&dir);
+        assert_eq!(unreadable, "unreadable");
+        std::fs::remove_file(dir.join("SKILL.md")).unwrap();
+        let saved = save_skill(
+            &user,
+            "tea",
+            &dir,
+            true,
+            &draft("tea", "x"),
+            Some(&unreadable),
+        );
+        assert!(matches!(saved, Err(WriteError::Stale)), "{saved:?}");
+        let saved = save_skill(&user, "tea", &dir, true, &draft("tea", "x"), Some(GONE_TAG));
+        assert!(matches!(saved, Err(WriteError::Stale)), "{saved:?}");
+        assert!(!dir.join("SKILL.md").exists());
     }
 
     #[test]

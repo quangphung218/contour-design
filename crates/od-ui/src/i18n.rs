@@ -1274,6 +1274,8 @@ messages! {
     // Reload failed: what is typed stays, and so do Reload and Save anyway.
     ReloadFailed => "Could not load the new copy: {0}", "Không tải được bản mới: {0}";
     // A Save of a bundled skill refused: a user skill whose folder name differs only in case is in the way (409).
+    // Reload of a skill form found the skill deleted on disk (404).
+    SkillDeletedElsewhere => "This skill was deleted elsewhere. Save anyway puts it back with what you typed.", "Skill này đã bị xoá ở nơi khác. Vẫn lưu sẽ tạo lại skill với nội dung đang gõ.";
     SkillNamedAlike => "Not saved: your skill {0} has nearly the same name (only upper or lower case differs) and would be written over. Rename or remove it, then save.", "Chưa lưu: skill {0} có tên gần trùng (chỉ khác chữ hoa, chữ thường) và sẽ bị ghi đè. Đổi tên hoặc xoá skill đó rồi lưu lại.";
     SaveAnyway => "Save anyway", "Vẫn lưu";
     FilesToCopy => "Files to copy", "Các file sẽ chép";

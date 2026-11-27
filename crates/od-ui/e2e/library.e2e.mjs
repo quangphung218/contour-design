@@ -1259,6 +1259,25 @@ try {
   await page.getByTestId('skill-body').waitFor();
   assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Typed over a change\./, 'Save anyway writes what is typed');
   await until(async () => /Typed over a change\./.test(await page.getByTestId('skill-body').textContent()), 'the detail shows what was saved');
+  // Deleted on disk under the open form (an agent's `rm -r`): the Save
+  // writes nothing back and asks; Reload says the skill was deleted and
+  // keeps what is typed, Reload and Save anyway; Save anyway puts it back.
+  await until(async () => page.getByTestId('skill-edit').isEnabled(), 'Edit once the saved skill is read');
+  await page.getByTestId('skill-edit').click();
+  await page.getByTestId('skill-body-input').fill('Typed over a deletion.');
+  rmSync(teaCopy, { recursive: true, force: true });
+  await page.getByTestId('skill-save').click();
+  await page.getByTestId('skill-save-changed').waitFor();
+  assert.equal(existsSync(teaCopy), false, 'nothing written back');
+  await page.getByTestId('skill-save-reload').click();
+  await page.getByRole('alert').filter({ hasText: 'This skill was deleted elsewhere' }).waitFor();
+  assert.equal(await page.getByTestId('skill-body-input').inputValue(), 'Typed over a deletion.', 'what is typed stays');
+  assert.equal(await page.getByTestId('skill-save-changed').count(), 1, 'Reload and Save anyway stay');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'skill-save-reload', 'the focus stays on Reload');
+  assert.equal(existsSync(teaCopy), false, 'still nothing written');
+  await page.getByTestId('skill-save-anyway').click();
+  await page.getByTestId('skill-body').waitFor();
+  assert.match(readFileSync(join(teaCopy, 'SKILL.md'), 'utf8'), /Typed over a deletion\./, 'Save anyway puts it back');
   results.replaceFromSource = 'ok';
 
   // Skills of their own now: the Skills open on Personal, the Plugins

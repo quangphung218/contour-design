@@ -1869,5 +1869,6 @@ UsageSkillTurnsSince = Számolva ettől: {0}
 ChangedElsewhere = Megnyitás óta máshol módosult. Az Újratöltés az új változatot mutatja, és elveti a beírtakat; a Mentés mégis felülírja.
 ReloadNewCopy = Újratöltés
 ReloadFailed = Nem sikerült betölteni az új változatot: {0}
+SkillDeletedElsewhere = Ezt a skillt máshol törölték. A „Mentés mégis” újra létrehozza azzal, amit beírtál.
 SkillNamedAlike = Nincs mentve: a(z) {0} skilled neve majdnem ugyanaz (csak kis- és nagybetűben tér el), és felülíródna. Nevezd át vagy töröld, majd ments.
 MemoryIndexLoadFailed = Nem sikerült betölteni az indexet: {0}

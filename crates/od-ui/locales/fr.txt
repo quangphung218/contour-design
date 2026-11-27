@@ -1876,5 +1876,6 @@ UsageSkillTurnsSince = Compté depuis {0}
 ChangedElsewhere = Modifié ailleurs depuis l’ouverture. Recharger affiche la nouvelle version et abandonne votre saisie ; Enregistrer quand même l’écrase.
 ReloadNewCopy = Recharger
 ReloadFailed = Impossible de charger la nouvelle version : {0}
+SkillDeletedElsewhere = Cette skill a été supprimée ailleurs. « Enregistrer quand même » la recrée avec ce que vous avez saisi.
 SkillNamedAlike = Non enregistré : votre skill {0} a presque le même nom (seules les majuscules ou minuscules diffèrent) et serait écrasée. Renommez-la ou supprimez-la, puis enregistrez.
 MemoryIndexLoadFailed = Impossible de charger l’index : {0}
