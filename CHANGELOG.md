@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Copying a design system twice at once makes two copies, and setting its status or uploading assets never leaves a file half written.
+
 ## [0.2.0-beta.76] - 2026-11-28
 
 ### Fixed
