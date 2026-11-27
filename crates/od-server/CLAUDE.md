@@ -153,6 +153,20 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     descriptor; Windows `create_new` and no reparse point on the way): a link an agent plants in it is never written
     through. Staging names (`.installing-`, `.incoming-`, `.old-`, `.swap-`) take `nofollow::random_tag()`, never a pid
     (`user_file_writes.rs` rule `pid`); what a run cut short left is still read back by id with a pid or a tag.
+    A Library delete (skill, plugin, design system: `user_content::delete_user_dir`) goes through `Guard::remove` under the
+    root's lock: an entry that is the user's own link goes as a link, never the folder it points at; a folder is journaled
+    (`.journal-<tag>`), renamed to a hidden `.removing-<tag>`, then removed (no link in it followed). `UserRoot::recover`
+    runs once at start-up for each root (`od_content::ContentStore::load`: skills, design systems, plugins;
+    `od_store::Store::open`: memory): it finishes a journaled remove, leaves an entry never renamed whole, keeps a journal
+    of another kind, and removes a `Guard::write` temp file left (`.<file>.<tag>.tmp`), nothing else.
+    - `../od-fs/src/user_store_tests.rs::a_remove_cut_short_at_any_step_loses_nothing_of_another_entry`,
+      `::removing_a_linked_entry_removes_the_link_alone`, `::removing_a_folder_follows_no_link_in_it`,
+      `::recover_removes_only_what_it_made`; `../od-content/src/user_content.rs::deleting_a_linked_skill_removes_the_link_alone`,
+      `../od-content/src/index.rs::loading_finishes_what_a_delete_or_save_cut_short_left`,
+      `../od-store/tests/memory_files.rs::opening_the_store_removes_a_temp_file_a_cut_short_save_left`
+    "Save anyway" (`*`) on an override deleted on disk while the index still lists it as the user's makes it again from
+    the bundled skill (`routes/library/skills.rs:save`), `od:` block and side files kept, never a `SKILL.md` alone.
+    - `tests/form_cas.rs::save_anyway_over_a_deleted_override_makes_it_again_from_the_bundled_skill`
     No half-copied folder is ever left where an index lists it: `copy_dir` removes the folder it made when a write
     fails, and an override's first copy and Copy design system are built in a hidden `.copying-<name>-<tag>`
     (`user_content::copy_dir_into_place`), finished there, then renamed into place; something already at the name is a

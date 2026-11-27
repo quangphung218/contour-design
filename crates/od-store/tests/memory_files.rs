@@ -311,3 +311,24 @@ fn a_missing_index_links_all_and_an_unreadable_one_none() {
     assert_eq!(stored, Stored::Unreadable);
     assert!(memory_index::active(&config, &stored, &entries).is_empty());
 }
+
+/// Question 1: an app stopped in the middle of a save leaves its temp file
+/// beside the index; opening the store removes it, never the index, the
+/// config, a memory file or a hidden file of the user's.
+#[test]
+fn opening_the_store_removes_a_temp_file_a_cut_short_save_left() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join(memory_index::MEMORY_DIR);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(INDEX_FILE), "- [a](a.md)\n").unwrap();
+    std::fs::write(dir.join("a.md"), "a").unwrap();
+    std::fs::write(dir.join(".notes.tmp"), "mine").unwrap();
+    std::fs::write(dir.join(".MEMORY.md.0123456789abcdef.tmp"), "half").unwrap();
+    std::fs::write(dir.join(".config.json.fedcba9876543210.tmp"), "half").unwrap();
+    drop(od_store::Store::open(od_store::DataDir::new(tmp.path())).unwrap());
+    assert_eq!(names_in(&dir), [".notes.tmp", INDEX_FILE, "a.md"]);
+    assert_eq!(
+        std::fs::read_to_string(dir.join(INDEX_FILE)).unwrap(),
+        "- [a](a.md)\n"
+    );
+}

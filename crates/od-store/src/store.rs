@@ -48,6 +48,10 @@ impl Store {
         if let Err(e) = store.sweep_draft_uploads(crate::drafts::DRAFT_MAX_AGE_MS) {
             tracing::warn!(error = %e, "cannot sweep old draft images");
         }
+        // What a write of the memory files cut short left (a temp file).
+        if let Err(e) = crate::memory_index::MemoryFiles::in_data_dir(store.data.root()).recover() {
+            tracing::warn!(error = %e, "memory folder not recovered");
+        }
         Ok(store)
     }
 

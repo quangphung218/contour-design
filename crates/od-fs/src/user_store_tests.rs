@@ -436,3 +436,205 @@ fn two_roots_opened_on_one_path_share_the_lock() {
     let _g = held.lock();
     let _h = UserRoot::open(&tmp.path().join("other"), LIMIT).lock();
 }
+
+// Remove and recover: an entry goes whole, a link goes as a link, and an
+// app stopped at any step loses no byte of another entry.
+
+/// Every file under `dir` (no link followed) with its bytes, and every
+/// link with where it points.
+fn tree_of(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(at) = todo.pop() {
+        for e in std::fs::read_dir(&at).unwrap() {
+            let p = e.unwrap().path();
+            let m = std::fs::symlink_metadata(&p).unwrap();
+            let rel = p.strip_prefix(dir).unwrap().to_path_buf();
+            if m.file_type().is_symlink() {
+                out.push((
+                    rel,
+                    std::fs::read_link(&p).unwrap().into_os_string().into_vec(),
+                ));
+            } else if m.is_dir() {
+                out.push((rel, Vec::new()));
+                todo.push(p);
+            } else {
+                out.push((rel, std::fs::read(&p).unwrap()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+use std::os::unix::ffi::OsStringExt;
+
+/// A root of three skills (`tea` with side files, `kept`, and `linked`, a
+/// link to `kept`) and a file outside it that a link in `tea` points at.
+fn root_of_three(tmp: &tempfile::TempDir) -> UserRoot {
+    let root = root(tmp);
+    let p = root.path();
+    std::fs::write(p.join("tea/SKILL.md"), "tea").unwrap();
+    std::fs::create_dir_all(p.join("tea/assets/deep")).unwrap();
+    std::fs::write(p.join("tea/assets/deep/style.css"), "css").unwrap();
+    std::fs::create_dir_all(p.join("kept")).unwrap();
+    std::fs::write(p.join("kept/SKILL.md"), "kept").unwrap();
+    std::fs::write(tmp.path().join("outside.txt"), "outside").unwrap();
+    std::os::unix::fs::symlink(tmp.path().join("outside.txt"), p.join("tea/out")).unwrap();
+    std::os::unix::fs::symlink(tmp.path(), p.join("tea/assets/up")).unwrap();
+    symlink(p.join("kept"), p.join("linked")).unwrap();
+    root
+}
+
+/// Lỗi 5: a skill that is a link to another skill goes as a link; the
+/// skill it points at stays whole.
+#[test]
+fn removing_a_linked_entry_removes_the_link_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_of_three(&tmp);
+    let kept = tree_of(&root.path().join("kept"));
+    root.lock().remove(Path::new("linked")).unwrap();
+    assert!(std::fs::symlink_metadata(root.path().join("linked")).is_err());
+    assert_eq!(tree_of(&root.path().join("kept")), kept);
+    assert_eq!(names_in(root.path()), ["kept", "tea"]);
+}
+
+/// A folder goes with all it holds; a link in it goes as a link, never
+/// followed (the file outside, the folder above, stay).
+#[test]
+fn removing_a_folder_follows_no_link_in_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_of_three(&tmp);
+    let before = tree_of(tmp.path());
+    root.lock().remove(Path::new("tea")).unwrap();
+    assert_eq!(names_in(root.path()), ["kept", "linked"]);
+    let tea = Path::new("root/tea");
+    let left: Vec<_> = before
+        .into_iter()
+        .filter(|(p, _)| !p.starts_with(tea))
+        .collect();
+    assert_eq!(tree_of(tmp.path()), left);
+}
+
+/// Only one plain visible name under the root is removed: a path, `..`,
+/// a hidden name (a journal, a staging folder) and nothing there are
+/// refused with nothing changed.
+#[test]
+fn remove_takes_one_visible_name_there() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_of_three(&tmp);
+    std::fs::create_dir(root.path().join(".previous")).unwrap();
+    let before = tree_of(tmp.path());
+    for rel in ["tea/assets", "..", "../root", ".previous", "", "gone"] {
+        let res = root.lock().remove(Path::new(rel));
+        assert!(res.is_err(), "{rel:?} removed");
+    }
+    assert_eq!(tree_of(tmp.path()), before);
+}
+
+/// Stopped after each step, then recovered: the other entries keep every
+/// byte, the entry is whole (stopped before the rename) or gone (after),
+/// and nothing hidden is left. A second recover changes nothing.
+#[test]
+fn a_remove_cut_short_at_any_step_loses_nothing_of_another_entry() {
+    for (at, gone) in [
+        (Step::Journaled, false),
+        (Step::Staged, true),
+        (Step::Removed, true),
+    ] {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = root_of_three(&tmp);
+        let before = tree_of(tmp.path());
+        let res = root.lock().remove_steps(Path::new("tea"), |step| {
+            if step == at {
+                Err(std::io::ErrorKind::Interrupted.into())
+            } else {
+                Ok(())
+            }
+        });
+        assert!(res.is_err(), "{at:?}");
+        if at == Step::Staged {
+            // Stopped halfway through the tree, too.
+            let staged = std::fs::read_dir(root.path())
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .find(|p| p.to_string_lossy().contains(REMOVING))
+                .unwrap();
+            std::fs::remove_file(staged.join("SKILL.md")).unwrap();
+        }
+        assert!(root.recover().unwrap() >= 1, "{at:?}");
+        let tea = Path::new("root/tea");
+        let want: Vec<_> = before
+            .iter()
+            .filter(|(p, _)| !gone || !p.starts_with(tea))
+            .cloned()
+            .collect();
+        assert_eq!(tree_of(tmp.path()), want, "{at:?}");
+        assert_eq!(root.recover().unwrap(), 0, "{at:?}");
+    }
+}
+
+/// A rename that fails (the entry went meanwhile) leaves no journal:
+/// nothing is left for a recover to take for a remove under way.
+#[test]
+fn a_remove_whose_rename_fails_leaves_no_journal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_of_three(&tmp);
+    let p = root.path().to_path_buf();
+    let res = root.lock().remove_steps(Path::new("tea"), |step| {
+        if step == Step::Journaled {
+            std::fs::remove_dir_all(p.join("tea")).unwrap();
+        }
+        Ok(())
+    });
+    assert!(res.is_err());
+    assert_eq!(names_in(root.path()), ["kept", "linked"]);
+}
+
+/// Recover removes what a cut-short write left (in the root and in an
+/// entry) and a `.removing-<tag>` with no journal; it keeps a journal of
+/// another kind (an operation 4b adds), a hidden file that is no temp
+/// file, a folder at a temp name, and every entry.
+#[test]
+fn recover_removes_only_what_it_made() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_of_three(&tmp);
+    let p = root.path();
+    let tag = nofollow::random_tag();
+    std::fs::write(p.join(format!(".MEMORY.md.{tag}.tmp")), "half").unwrap();
+    std::fs::write(p.join(format!("tea/.SKILL.md.{tag}.tmp")), "half").unwrap();
+    std::fs::write(p.join(format!("linked/.SKILL.md.{tag}.tmp")), "half").unwrap();
+    std::fs::create_dir_all(p.join(format!("{REMOVING}{tag}/x"))).unwrap();
+    let before = tree_of(tmp.path());
+    let other = nofollow::random_tag();
+    std::fs::write(p.join(format!("{JOURNAL}{other}")), "install\ntea").unwrap();
+    std::fs::write(p.join(".notes.tmp"), "mine").unwrap();
+    std::fs::write(p.join("tea/.style.v2.tmp"), "mine").unwrap();
+    std::fs::create_dir(p.join(format!(".dir.{tag}.tmp"))).unwrap();
+    // A folder in an entry with a temp-like name is the user's, not a temp.
+    std::fs::create_dir(p.join(format!("tea/.dir.{tag}.tmp"))).unwrap();
+    std::fs::create_dir(p.join(format!("{REMOVING}not-a-tag"))).unwrap();
+    let kept = tree_of(tmp.path())
+        .into_iter()
+        .filter(|e| !before.contains(e))
+        .collect::<Vec<_>>();
+    assert_eq!(root.recover().unwrap(), 4);
+    let now = tree_of(tmp.path());
+    for e in &kept {
+        assert!(now.contains(e), "{e:?} removed");
+    }
+    for name in ["kept", "linked", "tea"] {
+        assert!(p.join(name).exists());
+    }
+    assert!(!p.join(format!("{REMOVING}{tag}")).exists());
+    assert!(!p.join(format!("tea/.SKILL.md.{tag}.tmp")).exists());
+    assert!(!p.join(format!("kept/.SKILL.md.{tag}.tmp")).exists());
+}
+
+/// A root not made yet has nothing to recover.
+#[test]
+fn recover_of_a_root_not_there_is_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = UserRoot::open(&tmp.path().join("none"), LIMIT);
+    assert_eq!(root.recover().unwrap(), 0);
+}

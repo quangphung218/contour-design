@@ -55,6 +55,31 @@ impl ContentRoots {
         self
     }
 
+    /// Finishes, in each user root a Library delete writes (skills, design
+    /// systems, plugins), what an app stopped on the way left
+    /// ([`od_fs::user_store::UserRoot::recover`]). Run once, at start-up,
+    /// before the index reads them; one that fails is logged.
+    fn recover(&self) {
+        let user = [
+            &self.user_skills,
+            &self.user_design_systems,
+            &self.user_plugins,
+        ];
+        for root in user.into_iter().flatten() {
+            let root =
+                od_fs::user_store::UserRoot::open(root, crate::user_content::MAX_PLUGIN_BYTES);
+            match root.recover() {
+                Ok(0) => {}
+                Ok(n) => {
+                    tracing::info!(root = %root.path().display(), removed = n, "user root recovered")
+                }
+                Err(e) => {
+                    tracing::warn!(root = %root.path().display(), error = %e, "user root not recovered")
+                }
+            }
+        }
+    }
+
     fn skill_roots(user: Option<&PathBuf>, bundled: &Path) -> (Vec<PathBuf>, bool) {
         match user {
             Some(u) => (vec![u.clone(), bundled.to_path_buf()], true),
@@ -173,6 +198,7 @@ pub struct ContentStore {
 impl ContentStore {
     #[must_use]
     pub fn load(roots: ContentRoots) -> Self {
+        roots.recover();
         let index = ContentIndex::build(&roots);
         tracing::info!(
             skills = index.skills.len(),
@@ -228,6 +254,40 @@ impl ContentStore {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    /// A Library delete stopped after its entry was set aside (journal,
+    /// `.removing-<tag>`) and a Save stopped before its rename (temp
+    /// file), in each user root a delete writes: loading the content at
+    /// start-up finishes the one and removes the other; every skill, design
+    /// system and plugin there stays.
+    #[test]
+    fn loading_finishes_what_a_delete_or_save_cut_short_left() {
+        let data = tempfile::tempdir().unwrap();
+        let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+        let tag = "0123456789abcdef";
+        for root in ["skills", "design-systems", "plugins"] {
+            let root = data.path().join(root);
+            std::fs::create_dir_all(root.join(format!(".removing-{tag}/assets"))).unwrap();
+            std::fs::write(root.join(format!(".journal-{tag}")), "remove\ntea").unwrap();
+            std::fs::create_dir_all(root.join("kept")).unwrap();
+            std::fs::write(root.join("kept/SKILL.md"), "kept").unwrap();
+            std::fs::write(root.join(format!("kept/.SKILL.md.{tag}.tmp")), "half").unwrap();
+        }
+        let _ = ContentStore::load(ContentRoots::bundled(&content).with_user_root(data.path()));
+        for root in ["skills", "design-systems", "plugins"] {
+            let root = data.path().join(root);
+            let names = |dir: &Path| {
+                let mut n: Vec<_> = std::fs::read_dir(dir)
+                    .unwrap()
+                    .map(|e| e.unwrap().file_name().into_string().unwrap())
+                    .collect();
+                n.sort();
+                n
+            };
+            assert_eq!(names(&root), ["kept"], "{}", root.display());
+            assert_eq!(names(&root.join("kept")), ["SKILL.md"]);
+        }
+    }
 
     /// Deterministic order: reload A starts (before a write), reload B
     /// starts after the write and finishes first, then A finishes. A must

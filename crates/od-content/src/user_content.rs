@@ -415,19 +415,29 @@ pub fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     nofollow::replace_file(path, bytes, kept)
 }
 
-/// Removes a user skill or override folder (never a bundled one).
+/// Removes a user skill, plugin or design system folder `dir` (an entry
+/// of `user_root`, never a bundled one) through the root's
+/// [`user_store::Guard::remove`]: an entry that is the user's own link
+/// goes as a link, never the folder it points at.
 ///
 /// # Errors
 /// [`WriteError::NotFound`] outside `user_root`, [`WriteError::Io`].
 pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
-    let root = user_root.canonicalize().map_err(io)?;
-    let dir = dir.canonicalize().map_err(io)?;
-    if dir.parent() != Some(root.as_path()) {
+    // The folder above `dir` is the root (either may be spelled through
+    // the root's link); `dir` itself is never resolved.
+    let in_root = dir.parent().is_some_and(|parent| {
+        parent == user_root
+            || parent
+                .canonicalize()
+                .is_ok_and(|p| user_root.canonicalize().is_ok_and(|r| p == r))
+    });
+    let Some(name) = dir.file_name().filter(|_| in_root) else {
         return Err(WriteError::NotFound(
             "only user content can be deleted".to_owned(),
         ));
-    }
-    std::fs::remove_dir_all(dir).map_err(io)
+    };
+    let root = UserRoot::open(user_root, MAX_PLUGIN_BYTES);
+    root.lock().remove(Path::new(name)).map_err(io)
 }
 
 /// Copies `from` into a new folder `to`, made here (`create_dir`: a folder
@@ -3865,5 +3875,40 @@ mod tests {
         restore_previous_skill(&user, "tea").unwrap();
         assert_eq!(tea_and_kept(&user), (b, snapshot(&source)));
         let _ = a;
+    }
+
+    /// Lỗi 5: deleting a skill that is the user's own link (to another
+    /// skill in the root, or to a folder outside it) removes the link
+    /// alone: the folder it points at keeps every byte.
+    #[cfg(unix)]
+    #[test]
+    fn deleting_a_linked_skill_removes_the_link_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("skills");
+        std::fs::create_dir_all(user.join("b")).unwrap();
+        std::fs::write(user.join("b/SKILL.md"), "---\n---\n\nb\n").unwrap();
+        let outside = tmp.path().join("mine");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("SKILL.md"), "mine").unwrap();
+        std::os::unix::fs::symlink(user.join("b"), user.join("a")).unwrap();
+        std::os::unix::fs::symlink(&outside, user.join("c")).unwrap();
+        delete_user_dir(&user, &user.join("a")).unwrap();
+        delete_user_dir(&user, &user.join("c")).unwrap();
+        let mut names: Vec<_> = std::fs::read_dir(&user)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["b"]);
+        assert_eq!(
+            std::fs::read(user.join("b/SKILL.md")).unwrap(),
+            b"---\n---\n\nb\n"
+        );
+        assert_eq!(std::fs::read(outside.join("SKILL.md")).unwrap(), b"mine");
+        // Named through the root's own link, the entry is still found.
+        let via = tmp.path().join("via");
+        std::os::unix::fs::symlink(&user, &via).unwrap();
+        delete_user_dir(&user, &via.join("b")).unwrap();
+        assert!(!user.join("b").exists());
     }
 }
