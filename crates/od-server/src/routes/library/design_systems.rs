@@ -420,6 +420,12 @@ fn write_revision(one: &Guard<'_>, dir: &std::path::Path, r: &Revision) -> std::
             made => made?,
         }
     }
+    // The proposed files first, `revision.json` last: a read meanwhile
+    // (the kit, the list) never finds a pending revision without them.
+    for f in &r.files {
+        one.write(&rdir.join(&f.name), f.content.as_bytes(), Expect::Any)
+            .map_err(write_io)?;
+    }
     let meta = Revision {
         files: Vec::new(),
         ..r.clone()
@@ -427,10 +433,6 @@ fn write_revision(one: &Guard<'_>, dir: &std::path::Path, r: &Revision) -> std::
     let json = serde_json::to_vec_pretty(&meta).map_err(std::io::Error::other)?;
     one.write(&rdir.join(REVISION_FILE), &json, Expect::Any)
         .map_err(write_io)?;
-    for f in &r.files {
-        one.write(&rdir.join(&f.name), f.content.as_bytes(), Expect::Any)
-            .map_err(write_io)?;
-    }
     Ok(())
 }
 
@@ -1990,6 +1992,28 @@ mod tests {
             ":root { --old: 1 }",
             "the half written file left in the package"
         );
+    }
+
+    /// A revision's files land before its `revision.json`: one that
+    /// cannot be written leaves the revision as it was listed (running),
+    /// never pending without its files (seen on Linux CI, PR #365).
+    #[test]
+    fn a_revision_is_listed_pending_only_with_its_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().join("pkg");
+        std::fs::create_dir(&d).unwrap();
+        let mut r = new_revision("agent", None, None);
+        let root = design_root(&d);
+        write_revision(&root.lock(), &d, &r).unwrap();
+        // `tokens.css` cannot be written: a folder took its name.
+        let rdir = d.join(REVISIONS_DIR).join(&r.id);
+        std::fs::create_dir_all(rdir.join("tokens.css/held")).unwrap();
+        r.status = "pending".to_owned();
+        r.files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root {}")]);
+        assert!(write_revision(&root.lock(), &d, &r).is_err());
+        let listed = revisions_of(&d);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].status, "running", "pending without its files");
     }
 
     /// A status set is written whole, beside, then renamed over
