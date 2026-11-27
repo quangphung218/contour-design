@@ -163,7 +163,7 @@ The first c4-depth run FAILED at step 1 ("timed out waiting for German Home link
 | 62 | Studio-chat | Run errors, reconnect, retry | 50 | 100 | 100 | `crates/od-ui/src/app/chat_ops.rs:405` Reconnect, Retry `chat_view.rs:196`; e2e chat step 14 |
 | 63 | Studio-chat | Export log/conversation | 100 | 100 | 100 | `crates/od-ui/src/app/agent_w3.rs:364-376` |
 | 64 | Studio-chat | Project memory (+ "Remember that…") | 100 | 100 | 100 | `crates/od-ui/src/app/agent_w3.rs:248-319` |
-| 65 | Studio-chat | Side chat | 100 | 100 | 100 | `crates/od-ui/src/app/agent_w3.rs:876-918` |
+| 65 | Studio-chat | Side chat | 100 | 100 | 100 | `crates/od-ui/src/app/agent_w3.rs:891-1075` |
 | 66 | Studio-chat | Collapse/resize the chat pane | 0 | 100 | 100 | `crates/od-ui/src/app/chat_view.rs:389` collapse, `chat_ops.rs:214` resize, `studio.rs:1120` Show chat; e2e chat step 16 |
 | 67 | Studio-chat | Post-run deliverable warning | 100 | 100 | 100 | `crates/od-ui/src/app/preview_tools.rs:1378` |
 | 68 | Studio-chat | Thumbs feedback, share to community, support dialog, balance gate | N/A | N/A | N/A | DROPPED (telemetry/share/community/billing) |

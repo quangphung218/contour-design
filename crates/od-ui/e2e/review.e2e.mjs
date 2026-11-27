@@ -187,7 +187,7 @@ try {
     await page.setViewportSize({ width: 1100, height: 760 });
     const tabsPid = await newProject('Three tabs');
     const dir = join(data, 'projects', tabsPid);
-    const files = ['index.html', 'a-rather-long-page-name-for-pricing.html', 'another-long-page-name-for-about.html'];
+    const files = ['index.html', 'a-rather-long-page-name-for-pricing.html', 'another-long-page-name-for-about.html', 'yet-another-long-page-for-contact.html', 'one-more-long-page-name-for-blog.html'];
     for (const f of files) writeFileSync(join(dir, f), `<h1>${f}</h1>`);
     await page.goto(`${BASE}/projects/${tabsPid}`);
     const row = (path) => page.locator(`[data-testid="file-row"][data-path="${path}"]`);
@@ -204,22 +204,19 @@ try {
       assert.ok(box && box.width > 0, `${id} shown`);
       assert.ok(box.x >= tabs.x - 1 && box.x + box.width <= tabs.x + tabs.width + 1, `${id} inside the tab row: ${JSON.stringify({ box, tabs })}`);
     }
-    // Share of an element shown inside the scrolling list, not under the
-    // pinned Side chat tab.
+    // Share of an element shown inside the scrolling list.
     const list = page.locator('.preview-top .tab-list');
     const shown = (sel) =>
       list.evaluate((l, sel) => {
         const el = l.querySelector(sel);
         const box = l.getBoundingClientRect();
         const r = el.getBoundingClientRect();
-        const side = l.querySelector('.side-tab');
-        const right = el === side ? box.right : Math.min(box.right, side.getBoundingClientRect().left);
-        return Math.max(0, Math.min(r.right, right) - Math.max(r.left, box.left)) / r.width;
+        return Math.max(0, Math.min(r.right, box.right) - Math.max(r.left, box.left)) / r.width;
       }, sel);
     const active = await shown('.tab.active');
-    const side = await shown('.side-tab');
     assert.ok(active > 0.99, `active tab shown ${(active * 100).toFixed(0)}%`);
-    assert.ok(side > 0.99, `Side chat shown ${(side * 100).toFixed(0)}%`);
+    // Side chat is a button over the preview, not a tab in the row.
+    assert.equal(await page.getByTestId('tabs').getByText('Side chat').count(), 0, 'no Side chat tab');
     // A vertical wheel over the row scrolls it sideways, back to the first tab.
     const before = await list.evaluate((l) => l.scrollLeft);
     assert.ok(before > 0, 'the row scrolled to the active tab');
@@ -228,11 +225,11 @@ try {
     await page.mouse.wheel(0, -400);
     await until(async () => (await list.evaluate((l) => l.scrollLeft)) < before, 'wheel scrolls the tab row');
     // Switching tabs brings the newly active one into view.
-    await row(files[1]).click();
-    await row(files[2]).click();
+    await row(files[3]).click();
+    await row(files[4]).click();
     await sleep(300);
     assert.ok((await shown('.tab.active')) > 0.99, 'active tab back in view');
-    results['4. tab row at 1100 px'] = `ok (active ${(active * 100).toFixed(0)}%, side chat ${(side * 100).toFixed(0)}%)`;
+    results['4. tab row at 1100 px'] = `ok (active ${(active * 100).toFixed(0)}%)`;
   });
 
   await check('5. settings models section', async () => {

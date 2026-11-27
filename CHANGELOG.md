@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Side chat opens from a round button at the preview's bottom right instead of a tab; closing it keeps your typing and its answer.
+
 ## [0.2.0-beta.73] - 2026-11-27
 
 ### Fixed

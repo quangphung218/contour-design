@@ -284,6 +284,25 @@ try {
   await send('c2-jury-slow again');
   const jury2 = page.getByTestId('assistant-msg').nth(5).getByTestId('jury');
   await jury2.getByTestId('jury-interrupt').waitFor({ timeout: 15_000 });
+  // Esc that closes the side chat is the panel's alone: the jury runs on,
+  // whether the focus is on a button of the panel or in its composer.
+  {
+    const interrupts = [];
+    const onReq = (req) => { if (req.method() === 'POST' && /\/critique\/[^/]+\/interrupt$/.test(new URL(req.url()).pathname)) interrupts.push(req.url()); };
+    page.on('request', onReq);
+    for (const from of ['side-chat-close', 'side-composer']) {
+      await page.getByTestId('side-chat-fab').click();
+      await page.getByTestId('side-chat').waitFor();
+      await page.getByTestId(from).focus();
+      await page.keyboard.press('Escape');
+      await page.getByTestId('side-chat').waitFor({ state: 'detached' });
+      await until(() => page.getByTestId('side-chat-fab').evaluate((b) => b === document.activeElement), `Esc from ${from}: focus back on the button`);
+      assert.equal(await jury2.getAttribute('data-status'), 'running', `Esc from ${from} stopped the jury`);
+      assert.equal(await jury2.getByTestId('jury-interrupt').count(), 1, `Esc from ${from}: Interrupt gone`);
+    }
+    page.off('request', onReq);
+    assert.deepEqual(interrupts, [], 'Esc in the side chat asked to interrupt the jury');
+  }
   await page.locator('body').click({ position: { x: 700, y: 20 } });
   await page.keyboard.press('Escape');
   await lastTurnDone(6);

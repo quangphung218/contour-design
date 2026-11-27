@@ -132,7 +132,8 @@ Weights: 400 body text, 500 buttons and labels, 600 headings. Large headings use
 ## Studio
 
 - Three areas: chat on the left, preview in the middle (the main area), file list on the right. The file column collapses (button at the top of the column, `Cmd/Ctrl+B`, stored in `od.studio.files-open`).
-- Tab row: file tabs, Side chat, "+", then on the right History (icon) and Export. Export is the primary button (`primary`) while a file is open: it is the goal of the main flow.
+- Tab row: file tabs, "+", then on the right History (icon) and Export. Export is the primary button (`primary`) while a file is open: it is the goal of the main flow.
+- Side chat: a round button (48 px, `question-answer-line`) at the preview's bottom right, its tooltip the hint. A dot shows while it answers or holds an answer not seen. It opens a panel (380 × min(560 px, 70vh)) over the workspace's bottom right, never over the main chat; under 640 px a full-window sheet. Esc or × closes it; what is typed stays.
 - The preview toolbar is **a single row of icons with tooltips** (`data-tip`, `aria-label`), left to right: reload, `Preview | Code`, device, file path (shrinkable), tool group (Add comment, All comments with a count, Inspect, Edit text, Edit element, Draw, Screenshot, Tweaks, Palette, Lint), zoom. Palette is a transparent `select` laid over its icon. Hints and status for the open tool sit in a strip below the toolbar (`ToolHints`).
 - Narrow widths (`@container preview`): below 860px the `Preview | Code` labels and the Draw bar text are hidden; below 760px the tool panels and History float over the preview instead of squeezing it; below 560px the toolbar wraps. Windows below 1100px open Studio with the file column collapsed (until the user opens it, stored in `od.studio.files-open`).
 - The Draw bar sits at the bottom of the page and does not cover the title; it wraps when narrow.
