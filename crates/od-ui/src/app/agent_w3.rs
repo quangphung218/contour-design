@@ -944,33 +944,174 @@ fn focus_fab() {
 /// and the answer on its way: both live in [`SideChat`], not here.
 #[component]
 pub fn SideChatPanel(ctx: StudioCtx) -> impl IntoView {
+    type KeyCallback = wasm_bindgen::closure::Closure<dyn FnMut(web_sys::KeyboardEvent)>;
     let side = ctx.side;
+    // What the phone sheet made inert, given back when it closes.
+    let held = StoredValue::new_local(Vec::<web_sys::Element>::new());
+    let release = move || {
+        let _ = held.try_update_value(|v| {
+            for el in v.drain(..) {
+                let _ = el.remove_attribute("inert");
+            }
+        });
+    };
     let close = move || {
+        release();
         side.open.set(false);
         focus_fab();
     };
-    // Esc closes the panel from anywhere inside it, unless an IME is
-    // composing (Esc then cancels the composition). A window listener, as
-    // the composer inside the panel listens for keydown too.
-    let esc = window_event_listener(leptos::ev::keydown, move |ev| {
-        if ev.key() != "Escape" || ev.is_composing() || !side.open.get_untracked() {
-            return;
-        }
-        let inside = ev
-            .target()
-            .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
-            .and_then(|el| el.closest("[data-testid=side-chat]").ok().flatten())
-            .is_some();
-        if inside {
-            ev.prevent_default();
-            close();
+    // The sheet covers the window: what is under it takes no focus, no
+    // click and no screen reader while it is open.
+    let sheet = RwSignal::new(is_sheet());
+    let resize = window_event_listener(leptos::ev::resize, move |_| sheet.set(is_sheet()));
+    Effect::new(move |_| {
+        let trap = side.open.get() && sheet.get();
+        release();
+        if trap {
+            request_animation_frame(move || {
+                let still = side.open.try_get_untracked() == Some(true)
+                    && sheet.try_get_untracked() == Some(true);
+                if let Some(panel) = panel_element().filter(|_| still) {
+                    let made = inert_outside(&panel);
+                    let _ = held.try_update_value(|v| v.extend(made));
+                }
+            });
         }
     });
-    on_cleanup(move || esc.remove());
+    // The panel's keys, on the window's capture phase and stopped there
+    // (as `MenuScrim`): Esc inside the panel closes it and reaches no other
+    // Esc handler (the Studio's present, comment mode and tools, a running
+    // Design Jury, the composer's menus). An IME composing keeps its Esc.
+    // On the phone sheet, Tab and Shift+Tab go round inside the panel.
+    let key = KeyCallback::new(move |ev: web_sys::KeyboardEvent| {
+        if side.open.try_get_untracked() != Some(true) {
+            return;
+        }
+        let Some(panel) = panel_element() else {
+            return;
+        };
+        match ev.key().as_str() {
+            "Escape" if !ev.is_composing() && target_inside(&ev, &panel) => {
+                ev.stop_immediate_propagation();
+                ev.prevent_default();
+                close();
+            }
+            "Tab" if sheet.try_get_untracked() == Some(true) => tab_round(&ev, &panel),
+            _ => {}
+        }
+    });
+    if let Some(w) = web_sys::window() {
+        let _ = w.add_event_listener_with_callback_and_bool(
+            "keydown",
+            wasm_bindgen::JsCast::unchecked_ref(key.as_ref()),
+            true,
+        );
+    }
+    let key = StoredValue::new_local(key);
+    on_cleanup(move || {
+        resize.remove();
+        release();
+        if let Some(w) = web_sys::window() {
+            key.with_value(|k| {
+                let _ = w.remove_event_listener_with_callback_and_bool(
+                    "keydown",
+                    wasm_bindgen::JsCast::unchecked_ref(k.as_ref()),
+                    true,
+                );
+            });
+        }
+    });
     view! {
         <Show when=move || side.open.get()>
             <SideChatView ctx=ctx on_close=Callback::new(move |()| close())/>
         </Show>
+    }
+}
+
+/// The panel shows as a full-window sheet (the CSS breakpoint).
+fn is_sheet() -> bool {
+    web_sys::window()
+        .and_then(|w| w.match_media("(max-width: 640px)").ok().flatten())
+        .is_some_and(|m| m.matches())
+}
+
+fn panel_element() -> Option<web_sys::Element> {
+    web_sys::window()?
+        .document()?
+        .query_selector("[data-testid=side-chat]")
+        .ok()
+        .flatten()
+}
+
+fn target_inside(ev: &web_sys::KeyboardEvent, panel: &web_sys::Element) -> bool {
+    ev.target()
+        .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Node>(t).ok())
+        .is_some_and(|n| panel.contains(Some(&n)))
+}
+
+/// Makes inert every element beside `panel` and beside each of its
+/// ancestors up to `<body>`; returns those it changed (not ones already
+/// inert, which stay so).
+fn inert_outside(panel: &web_sys::Element) -> Vec<web_sys::Element> {
+    let mut made = Vec::new();
+    let mut el = panel.clone();
+    while let Some(parent) = el.parent_element() {
+        if parent.tag_name() == "BODY" {
+            break;
+        }
+        let kids = parent.children();
+        for i in 0..kids.length() {
+            if let Some(kid) = kids
+                .item(i)
+                .filter(|k| *k != el && !k.has_attribute("inert"))
+            {
+                let _ = kid.set_attribute("inert", "");
+                made.push(kid);
+            }
+        }
+        el = parent;
+    }
+    made
+}
+
+/// Tab past the last control (Shift+Tab before the first, or from outside)
+/// goes round to the other end of the panel.
+fn tab_round(ev: &web_sys::KeyboardEvent, panel: &web_sys::Element) {
+    const FOCUSABLE: &str = "button:not([disabled]), textarea:not([disabled]), \
+        input:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])";
+    let Ok(list) = panel.query_selector_all(FOCUSABLE) else {
+        return;
+    };
+    let items: Vec<web_sys::HtmlElement> = (0..list.length())
+        .filter_map(|i| list.item(i))
+        .filter_map(|n| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(n).ok())
+        .filter(|e| {
+            let r = e.get_bounding_client_rect();
+            r.width() > 0.0 || r.height() > 0.0
+        })
+        .collect();
+    let (Some(first), Some(last)) = (items.first(), items.last()) else {
+        return;
+    };
+    let active = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.active_element());
+    let at = |e: &web_sys::HtmlElement| active.as_ref() == Some(e.as_ref());
+    let inside = active
+        .as_ref()
+        .is_some_and(|a| panel.contains(Some(a.as_ref())));
+    let to = if !inside {
+        Some(if ev.shift_key() { last } else { first })
+    } else if ev.shift_key() && at(first) {
+        Some(last)
+    } else if !ev.shift_key() && at(last) {
+        Some(first)
+    } else {
+        None
+    };
+    if let Some(el) = to {
+        ev.prevent_default();
+        let _ = el.focus();
     }
 }
 

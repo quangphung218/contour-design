@@ -667,6 +667,18 @@ try {
     assert.equal(await fab.locator('.fab-dot').count(), 0);
   }
   await page.getByTestId('side-chat-close').click();
+  // Esc from a button of the panel closes the panel only: the open tool
+  // (here Inspect) stays, as the Studio's own Esc would close it.
+  await page.getByTestId('inspect-mode').click();
+  await page.getByTestId('tool-panel').waitFor();
+  await fab.click();
+  await page.getByTestId('side-chat-close').focus();
+  await page.keyboard.press('Escape');
+  await sidePanel.waitFor({ state: 'detached' });
+  assert.equal(await page.getByTestId('tool-panel').count(), 1, 'Esc in the side chat closed the tool panel');
+  assert.equal(await page.getByTestId('inspect-mode').getAttribute('aria-pressed'), 'true', 'Esc in the side chat left Inspect');
+  await page.getByTestId('inspect-mode').click();
+  await page.getByTestId('tool-panel').waitFor({ state: 'detached' });
   results.sideChat = 'ok';
 
   await page.getByTestId('export-conversation').click();

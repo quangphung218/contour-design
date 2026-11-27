@@ -283,8 +283,7 @@ try {
     // A preview over 760 px: the tool panel is a column at its right.
     await page.setViewportSize({ width: 1920, height: 1000 });
     await until(async () => (await page.getByTestId('preview-pane').evaluate((e) => e.clientWidth)) > 800, 'a wide preview', 3000);
-    await sleep(300);
-    let [box, panel] = await Promise.all([fab.boundingBox(), page.getByTestId('tool-panel').boundingBox()]);
+    let [panel, box] = [await settledBox(page.getByTestId('tool-panel')), await fab.boundingBox()];
     assert.ok(apart(box, panel), `side chat button ${JSON.stringify(box)} on the tool panel column ${JSON.stringify(panel)}`);
     assert.ok(await onTop(fab), 'side chat button is covered');
     // A narrow preview: History lies over its right side.
@@ -293,8 +292,7 @@ try {
     await page.getByTestId('tool-panel').waitFor({ state: 'detached' });
     await page.getByTestId('history').click();
     await page.getByTestId('versions').waitFor();
-    await sleep(300);
-    [box, panel] = await Promise.all([fab.boundingBox(), page.getByTestId('versions').boundingBox()]);
+    [panel, box] = [await settledBox(page.getByTestId('versions')), await fab.boundingBox()];
     assert.ok(apart(box, panel), `side chat button ${JSON.stringify(box)} on History ${JSON.stringify(panel)}`);
     assert.ok(await onTop(fab), 'side chat button is covered');
     await page.getByTestId('history').click();
@@ -392,8 +390,26 @@ try {
     await page.getByTestId('side-chat-fab').click();
     const sheet = await settledBox(page.getByTestId('side-chat'));
     assert.deepEqual([sheet.x, sheet.y, sheet.width, sheet.height].map(Math.round), [0, 0, 390, 844], 'sheet over the whole window');
+    // The sheet keeps the focus: Tab and Shift+Tab go round inside it, and
+    // what is under it is inert.
+    const inSheet = () => page.evaluate(() => !!document.activeElement?.closest('[data-testid="side-chat"]'));
+    await until(inSheet, 'focus in the sheet on open', 3000);
+    for (const key of ['Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab']) {
+      await page.keyboard.press(key);
+      assert.ok(await inSheet(), `${key} took the focus out of the sheet to ${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))}`);
+    }
+    // Empty, Send is off: the composer is the last control, × the first.
+    await page.getByTestId('side-composer').focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), 'side-chat-close', 'Tab after the last control goes round to ×');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), 'side-composer', 'Shift+Tab before the first control goes round to the composer');
+    const under = ['studio-switch', 'preview-pane', 'side-chat-fab'];
+    for (const id of under) assert.ok(await page.getByTestId(id).evaluate((e) => !!e.closest('[inert]')), `${id} under the sheet is not inert`);
     await page.getByTestId('side-chat-close').click();
     await page.getByTestId('side-chat').waitFor({ state: 'detached' });
+    assert.equal(await page.locator('[inert]').count(), 0, 'inert left after the sheet closed');
+    await until(() => page.getByTestId('side-chat-fab').evaluate((b) => b === document.activeElement), 'focus back on the button', 3000);
     await preview(page).locator('#title').waitFor();
     // The switch is one Tab stop; the arrows move and pick (WAI-ARIA radio group).
     assert.deepEqual(
