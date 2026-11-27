@@ -5,3 +5,6 @@
 
 pub mod nofollow;
 pub mod user_store;
+
+#[cfg(all(test, unix))]
+pub(crate) mod hostile;

@@ -354,6 +354,13 @@ fn walk_path(
 /// with a link planted in it meanwhile: a file or link already at a name
 /// is `AlreadyExists`, never opened. Elsewhere (Windows) the folders on the
 /// way are checked for reparse points and files are made `create_new`.
+///
+/// Public for what is not under a user root yet: Copy design system and an
+/// override's first copy (`od_content::user_content::copy_dir`), a
+/// generated design system, Copy to Claude Code (PR 6 moves them to
+/// [`crate::user_store`]). Under a user root, write through
+/// [`crate::user_store::Guard::put_copy`]; `od-server/tests/user_file_writes.rs`
+/// (rule `fs`) refuses a call of it there outside its `KEPT`.
 #[derive(Debug)]
 pub struct NewDir {
     path: PathBuf,
@@ -456,7 +463,7 @@ impl NewDir {
     /// # Errors
     /// `AlreadyExists` when anything is there; `InvalidInput`; the
     /// `mkdir`'s.
-    pub fn create_dir(&self, rel: &Path) -> std::io::Result<()> {
+    pub(crate) fn create_dir(&self, rel: &Path) -> std::io::Result<()> {
         #[cfg(unix)]
         {
             let (parent, name) = self.parent_of(rel)?;
@@ -576,6 +583,9 @@ fn plain(rel: &Path) -> std::io::Result<(Vec<&OsStr>, &OsStr)> {
 ///
 /// # Errors
 /// The first write that fails.
+///
+/// Public for the callers [`NewDir`] names; under a user root
+/// [`crate::user_store::Guard::put_copy`] calls it.
 pub fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Result<()> {
     use std::io::Write;
     for d in &tree.dirs {
@@ -610,6 +620,11 @@ pub fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Res
 ///
 /// # Errors
 /// The open's, write's or rename's; the new file is removed.
+///
+/// Public for files outside a user root (`app-config.json`, a generated UI
+/// file in a project: `od-server` `routes/ui.rs`, `routes/genui.rs`) and
+/// `user_content::write_replacing` (design system files, PR 6). Under a
+/// user root, write through [`crate::user_store::Guard::write`] (rule `fs`).
 pub fn replace_file(
     path: &Path,
     bytes: &[u8],
@@ -659,6 +674,10 @@ fn replace_file_through(
 ///
 /// # Errors
 /// The open's.
+///
+/// Public for files outside a user root: the doctor's probe in `<data>`,
+/// a reference mark in a project (`od-server` `doctor.rs`,
+/// `routes/w3/reference.rs`).
 pub fn new_file(path: &Path) -> std::io::Result<File> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
