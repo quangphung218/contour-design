@@ -759,3 +759,28 @@ async fn save_anyway_over_a_deleted_override_makes_it_again_from_the_bundled_ski
         );
     }
 }
+
+/// "Save anyway" (`If-Match: *`) on an override still on disk writes over
+/// it as it is: its own `od:` block stays, not the bundled skill's.
+#[tokio::test]
+async fn save_anyway_on_a_present_override_keeps_its_own_od_block() {
+    let d = daemon().await;
+    let (_, bundled_tag) = tagged(&d, "/api/skills/animate").await;
+    let body = json!({ "name": "animate", "body": "My override." });
+    assert_eq!(
+        put(&d, "/api/skills/animate", &body, Some(&bundled_tag)).await,
+        200
+    );
+    let skill = d.data.join("skills/animate/SKILL.md");
+    let text = std::fs::read_to_string(&skill).unwrap();
+    assert!(text.contains("mode: utility"), "{text}");
+    std::fs::write(&skill, text.replace("mode: utility", "mode: own")).unwrap();
+    let typed = json!({ "name": "animate", "body": "Typed." });
+    assert_eq!(put(&d, "/api/skills/animate", &typed, Some("*")).await, 200);
+    let text = std::fs::read_to_string(&skill).unwrap();
+    assert!(
+        text.contains("mode: own"),
+        "the override's od: block: {text}"
+    );
+    assert!(text.contains("Typed."), "{text}");
+}

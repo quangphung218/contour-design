@@ -611,6 +611,8 @@ fn recover_removes_only_what_it_made() {
     std::fs::write(p.join(".notes.tmp"), "mine").unwrap();
     std::fs::write(p.join("tea/.style.v2.tmp"), "mine").unwrap();
     std::fs::create_dir(p.join(format!(".dir.{tag}.tmp"))).unwrap();
+    // A folder in an entry with a temp-like name is the user's, not a temp.
+    std::fs::create_dir(p.join(format!("tea/.dir.{tag}.tmp"))).unwrap();
     std::fs::create_dir(p.join(format!("{REMOVING}not-a-tag"))).unwrap();
     let kept = tree_of(tmp.path())
         .into_iter()
