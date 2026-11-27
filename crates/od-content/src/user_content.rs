@@ -176,7 +176,11 @@ pub fn create_skill(
         std::io::ErrorKind::AlreadyExists => WriteError::Exists(format!("skill {slug:?}")),
         _ => io(e),
     })?;
-    std::fs::write(dir.join("SKILL.md"), render_skill_md(draft, &slug, None)).map_err(io)?;
+    write_replacing(
+        &dir.join("SKILL.md"),
+        render_skill_md(draft, &slug, None).as_bytes(),
+    )
+    .map_err(io)?;
     Ok(slug)
 }
 
@@ -290,7 +294,12 @@ pub fn save_skill(
 /// Writes `bytes` as `path` through a hidden file of its own beside it,
 /// renamed over `path`: a read never finds it half written (the index, a
 /// form's `GET`), and a link put there is replaced, never written through.
-fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+/// Every write of a `SKILL.md` or `DESIGN.md` goes through it
+/// (`od-server/tests/user_file_writes.rs`).
+///
+/// # Errors
+/// The write's or the rename's; the hidden file is removed.
+pub fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let name = path

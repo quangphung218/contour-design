@@ -47,7 +47,7 @@ use axum::{Json, Router};
 use od_content::DesignSystemEntry;
 use od_content::design_kit::{self, Swatch, Token, TokenScore};
 use od_content::design_system_gen::{self, GenerateRequest};
-use od_content::user_content::copy_dir;
+use od_content::user_content::{self, copy_dir};
 use od_contracts::{ContentSource, CreateProjectRequest, ProjectMetadata, RunStatus};
 use od_runs::RunMeta;
 use od_runtime::env::{RunEnv, agent_env};
@@ -599,7 +599,8 @@ pub async fn save_design_md(
     write_and_reload(&state, move || {
         let _one = design_md_lock();
         if_match.check(&crate::cas::tag_of(shown_design_md(&e).as_bytes()))?;
-        std::fs::write(inside(&e.dir, "DESIGN.md")?, body.body).map_err(ApiErr::io)
+        user_content::write_replacing(&inside(&e.dir, "DESIGN.md")?, body.body.as_bytes())
+            .map_err(ApiErr::io)
     })
     .await?;
     Ok(Json(json!({ "ok": true })))
@@ -1200,7 +1201,7 @@ struct Prior {
 /// content back. Returns that old content, for [`put_back`] should the
 /// decision itself not be saved.
 fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<Prior>> {
-    accept_files_with(dir, files, |path, bytes| std::fs::write(path, bytes))
+    accept_files_with(dir, files, user_content::write_replacing)
 }
 
 /// [`accept_files`], each file written by `write`, so a test can fail a
@@ -1270,7 +1271,7 @@ fn put_back(prior: &[Prior]) {
             }
         }
         let undone = match &p.old {
-            Some(bytes) => std::fs::write(&p.path, bytes),
+            Some(bytes) => user_content::write_replacing(&p.path, bytes),
             None => std::fs::remove_file(&p.path).or_else(|err| {
                 if err.kind() == std::io::ErrorKind::NotFound {
                     Ok(())
