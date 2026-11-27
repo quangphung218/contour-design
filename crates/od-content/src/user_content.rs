@@ -3409,7 +3409,12 @@ mod tests {
                 assert!(std::fs::symlink_metadata(&to).is_err(), "left half copied");
                 break;
             }
-            std::fs::remove_dir_all(&to).unwrap();
+            // The planter may land its one link while the copy goes
+            // (`DirectoryNotEmpty`, seen on Linux CI); it stops then, so a
+            // second remove takes the link (never followed) too.
+            if std::fs::remove_dir_all(&to).is_err() {
+                std::fs::remove_dir_all(&to).unwrap();
+            }
         }
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
         planter.join().unwrap();
