@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.73] - 2026-11-27
+
 ### Fixed
 
 - Installing or replacing a skill or plugin, and copying one to Claude Code, never writes through a link an agent planted.
@@ -1517,7 +1519,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.72...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.73...HEAD
+[0.2.0-beta.73]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.72...v0.2.0-beta.73
 [0.2.0-beta.72]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.71...v0.2.0-beta.72
 [0.2.0-beta.71]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.70...v0.2.0-beta.71
 [0.2.0-beta.70]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.69...v0.2.0-beta.70
