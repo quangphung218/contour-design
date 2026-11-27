@@ -331,28 +331,18 @@ fn redacted(mut config: Map<String, Value>) -> Value {
     Value::Object(config)
 }
 
-/// Writes through a temp file created `0600`: the config holds the BYOK key.
+/// Writes through a new file of a random name (`O_EXCL`: a link planted at
+/// a temp name is never written through), set `0600` before the bytes go
+/// in: the config holds the BYOK key.
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let tmp = path.with_extension("json.tmp");
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&tmp)?;
-    // `mode` only applies on creation; a leftover temp file keeps its own.
-    #[cfg(unix)]
-    {
+    let perms = {
         use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
-    std::fs::rename(&tmp, path)
+        Some(std::fs::Permissions::from_mode(0o600))
+    };
+    #[cfg(not(unix))]
+    let perms = None;
+    od_content::nofollow::replace_file(path, bytes, perms)
 }
 
 async fn get_config(State(state): State<AppState>) -> ApiResult<ApiJson<Value>> {

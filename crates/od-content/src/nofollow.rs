@@ -375,10 +375,146 @@ pub fn write_tree(tree: &Tree, to: &Path, last: Option<&Path>) -> std::io::Resul
     Ok(())
 }
 
+/// Writes `bytes` as `path`, whole, through a new file beside it renamed
+/// over it: a reader never finds `path` half written, and a link at `path`
+/// is replaced, never written through. The new file has a random hidden
+/// name and is opened `O_CREAT|O_EXCL` (and `O_NOFOLLOW` on unix): a link
+/// or a file put at that name (an agent can write the folder) is never
+/// opened, the write fails instead. `perms` (none: the default for a new
+/// file) are set on the opened descriptor, never by path.
+///
+/// # Errors
+/// The open's, write's or rename's; the new file is removed.
+pub fn replace_file(
+    path: &Path,
+    bytes: &[u8],
+    perms: Option<std::fs::Permissions>,
+) -> std::io::Result<()> {
+    let name = path
+        .file_name()
+        .map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
+    let mut tries = 0;
+    loop {
+        let tmp = path.with_file_name(format!(".{name}.{}.tmp", random_tag()));
+        match replace_file_through(path, &tmp, bytes, perms.clone()) {
+            // A name already taken (by chance, or planted): another one.
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && tries < 3 => tries += 1,
+            done => return done,
+        }
+    }
+}
+
+/// [`replace_file`] through the new file `tmp`.
+fn replace_file_through(
+    path: &Path,
+    tmp: &Path,
+    bytes: &[u8],
+    perms: Option<std::fs::Permissions>,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    // Not opened: nothing of ours to remove (what is there is not ours).
+    let mut file = new_file(tmp)?;
+    let written = perms
+        .map_or(Ok(()), |p| file.set_permissions(p))
+        .and_then(|()| file.write_all(bytes))
+        .and_then(|()| file.sync_all())
+        .and_then(|()| {
+            drop(file);
+            std::fs::rename(tmp, path)
+        });
+    if written.is_err() {
+        let _ = std::fs::remove_file(tmp);
+    }
+    written
+}
+
+/// Makes the new file `path` for writing: `O_CREAT|O_EXCL` (and
+/// `O_NOFOLLOW` on unix), so a file or a link already there (planted by an
+/// agent at a temp name) is never opened: `AlreadyExists`.
+///
+/// # Errors
+/// The open's.
+pub fn new_file(path: &Path) -> std::io::Result<File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(nix::libc::O_NOFOLLOW);
+    }
+    options.open(path)
+}
+
+/// 16 hex digits another process cannot guess: std's per-process random
+/// hash keys over a counter and the time.
+#[must_use]
+pub fn random_tag() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u64(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    h.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos()),
+    );
+    format!("{:016x}", h.finish())
+}
+
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
     use super::*;
+
+    /// A link planted at the new file's name (an agent can write the
+    /// folder; PR #351 review) is never opened: nothing is written where it
+    /// points, its bits stay, and the file being replaced is not touched.
+    #[test]
+    fn a_link_planted_at_the_new_files_name_is_never_written_through() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        let outside = tmp.path().join("outside.txt");
+        std::fs::write(&outside, "NOT YOURS").unwrap();
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let target = dir.join("DESIGN.md");
+        std::fs::write(&target, "old").unwrap();
+        let planted = dir.join(".DESIGN.md.planted.tmp");
+        std::os::unix::fs::symlink(&outside, &planted).unwrap();
+        let wrote = replace_file_through(
+            &target,
+            &planted,
+            b"FROM THE FORM",
+            Some(std::fs::Permissions::from_mode(0o777)),
+        );
+        assert_eq!(
+            wrote.map_err(|e| e.kind()),
+            Err(std::io::ErrorKind::AlreadyExists)
+        );
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "NOT YOURS");
+        let mode = std::fs::metadata(&outside).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the file the link points at was chmod-ed");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "old");
+        assert!(std::fs::symlink_metadata(&target).unwrap().is_file());
+        assert!(
+            std::fs::symlink_metadata(&planted).unwrap().is_symlink(),
+            "not ours to remove"
+        );
+        // A random name: the same write through `replace_file` lands.
+        replace_file(&target, b"FROM THE FORM", None).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "FROM THE FORM");
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "NOT YOURS");
+    }
+
+    /// The new file's name is not one another process can work out (a pid
+    /// and a count were): two in a row differ.
+    #[test]
+    fn new_file_names_are_not_guessed() {
+        let (a, b) = (random_tag(), random_tag());
+        assert_ne!(a, b);
+        assert_eq!(a.len(), 16);
+    }
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, Instant};

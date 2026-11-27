@@ -301,11 +301,6 @@ pub fn save_skill(
 /// # Errors
 /// The write's or the rename's; the hidden file is removed.
 pub fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let name = path
-        .file_name()
-        .map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
     // A file there keeps its permission bits, and one made read-only is
     // refused as a write in place would be (a rename would replace it).
     let kept = match std::fs::symlink_metadata(path) {
@@ -318,14 +313,7 @@ pub fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         Ok(m) if m.is_file() => Some(m.permissions()),
         _ => None,
     };
-    let tmp = path.with_file_name(format!(".{name}.{}.{n}.tmp", std::process::id()));
-    let written = std::fs::write(&tmp, bytes)
-        .and_then(|()| kept.map_or(Ok(()), |p| std::fs::set_permissions(&tmp, p)))
-        .and_then(|()| std::fs::rename(&tmp, path));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    written
+    nofollow::replace_file(path, bytes, kept)
 }
 
 /// Removes a user skill or override folder (never a bundled one).
