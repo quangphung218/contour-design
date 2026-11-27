@@ -274,15 +274,17 @@ impl Guard<'_> {
     /// Crash-safe: a journal `.journal-<tag>` is written once the tree is
     /// built, then the entry is set aside (`.aside-<tag>`), the tree put in
     /// its place, what `keep` held set aside (`.dropping-<tag>`), the entry
-    /// moved to `keep`, the rest removed, then the journal. An app stopped
+    /// moved to `keep`; then what is left set aside is renamed
+    /// `.removing-<tag>`, the journal removed, and that removed (a recover
+    /// removes it too: never put back once the tree is in). An app stopped
     /// at any step leaves for [`UserRoot::recover`] the entry before or
     /// after, never neither; a step that fails here puts everything back.
     ///
     /// # Errors
     /// `build`'s (what it made is its to remove); `rel` or `keep` not
     /// plain, a folder on the way a link, the journal's or a rename's
-    /// (all put back). Once placed, a failure to remove the old copy is
-    /// logged and left for [`UserRoot::recover`].
+    /// (all put back). Once placed it is done: a failure to remove the old
+    /// copy or the journal is logged and left for [`UserRoot::recover`].
     pub fn put_tree<E: From<std::io::Error>>(
         &self,
         rel: &Path,
@@ -314,7 +316,8 @@ impl Guard<'_> {
     /// (when there) is kept at `kept`. Crash-safe as [`Self::put_tree`].
     ///
     /// # Errors
-    /// As [`Self::put_tree`]; nothing at `kept` is `NotFound`.
+    /// As [`Self::put_tree`]; nothing at `kept` is `NotFound` (the entry,
+    /// set aside first, is put back).
     pub fn restore(&self, rel: &Path, kept: &Path) -> std::io::Result<()> {
         self.restore_steps(rel, kept, |_| Ok(()))
     }
@@ -328,7 +331,6 @@ impl Guard<'_> {
         step: impl FnMut(PutStep) -> std::io::Result<()>,
     ) -> std::io::Result<()> {
         let put = Put::new(&nofollow::random_tag(), rel, kept, Some(kept))?;
-        std::fs::symlink_metadata(self.root.path.join(kept))?;
         self.place(&put, step)
     }
 
@@ -386,12 +388,27 @@ impl Guard<'_> {
                 return Err(undo(e, true));
             }
         }
-        if let Err(e) = step(PutStep::Clean).and_then(|()| p.clean(root)) {
-            tracing::warn!(error = %e, "replaced entry left for recover");
-            return Ok(());
+        // Placed: what was set aside (the entry, with no keep; what the
+        // keep held) is no copy anyone gets back now. Renamed to a remove's
+        // name before the journal goes, so no later recover takes it for
+        // an entry to put back (one deleted since would come back).
+        let retired = PathBuf::from(format!("{REMOVING}{}", p.tag));
+        let left = [&p.a, &p.d].into_iter().find(|n| there(n));
+        let retire = step(PutStep::Retire).and_then(|()| match left {
+            Some(left) => move_at(root, left, &retired),
+            None => Ok(()),
+        });
+        if let Err(e) = retire.or_else(|_| p.clean(root)) {
+            tracing::warn!(error = %e, "replaced entry not removed, kept hidden");
         }
-        step(PutStep::Forget)?;
-        std::fs::remove_file(&journal)
+        if let Err(e) = step(PutStep::Forget).and_then(|()| std::fs::remove_file(&journal)) {
+            // Done all the same: recover finds the tree placed.
+            tracing::warn!(error = %e, "put journal left for recover");
+        }
+        if let Err(e) = step(PutStep::Clean).and_then(|()| remove_gone(&root.join(&retired))) {
+            tracing::warn!(error = %e, "replaced entry left for recover");
+        }
+        Ok(())
     }
 }
 
@@ -410,10 +427,12 @@ pub enum PutStep {
     Drop,
     /// The entry moved to `keep`.
     Keep,
-    /// What was set aside removed.
-    Clean,
+    /// What was set aside renamed to `.removing-<tag>`.
+    Retire,
     /// The journal removed.
     Forget,
+    /// `.removing-<tag>` removed.
+    Clean,
 }
 
 /// A put under way, by the paths under the root it moves between: `r`
@@ -529,10 +548,7 @@ impl Put {
     /// Removes what was set aside once the entry is in place.
     fn clean(&self, root: &Path) -> std::io::Result<()> {
         for gone in [&self.d, &self.a] {
-            match remove_staged(&root.join(gone)) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-                _ => {}
-            }
+            remove_gone(&root.join(gone))?;
         }
         Ok(())
     }
@@ -591,6 +607,14 @@ fn remove_staged(path: &Path) -> std::io::Result<()> {
         std::fs::remove_dir_all(path)
     } else {
         std::fs::remove_file(path)
+    }
+}
+
+/// [`remove_staged`], nothing there being fine.
+fn remove_gone(path: &Path) -> std::io::Result<()> {
+    match remove_staged(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
     }
 }
 

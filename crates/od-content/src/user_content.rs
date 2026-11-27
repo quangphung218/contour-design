@@ -1994,7 +1994,7 @@ mod tests {
     /// whole, never no plugin; nothing hidden is left.
     #[test]
     fn a_plugin_install_cut_short_at_any_step_keeps_a_plugin() {
-        for stop in 1..=6 {
+        for stop in 1..=7 {
             let tmp = tempfile::tempdir().unwrap();
             let src = tmp.path().join("src/tea-plugin");
             std::fs::create_dir_all(src.join("assets")).unwrap();
@@ -2008,7 +2008,7 @@ mod tests {
                 let root = UserRoot::open(&user, MAX_PLUGIN_BYTES);
                 place_copy(&root.lock(), &src, "tea-plugin", &mut steps(&[], stop)).unwrap();
             }));
-            assert_eq!(quit.is_err(), stop <= 5, "step {stop}");
+            assert_eq!(quit.is_err(), stop <= 6, "step {stop}");
             next_run(&user);
             let now = snapshot(&user.join("tea-plugin"));
             assert!(now == old || now == snapshot(&src), "step {stop}");
@@ -3629,7 +3629,7 @@ mod tests {
     /// nothing in between and nothing left over.
     #[test]
     fn a_replace_cut_short_at_any_step_loses_nothing() {
-        for stop in 1..=8 {
+        for stop in 1..=9 {
             let tmp = tempfile::tempdir().unwrap();
             let (source, user, a, b) = replaced_and_edited(tmp.path());
             let hash = hash_of_copy(&source);
@@ -3637,7 +3637,7 @@ mod tests {
                 replace_skill_from_source_with(&source, &user, "tea", &hash, &mut steps(&[], stop))
                     .unwrap();
             }));
-            assert_eq!(quit.is_err(), stop <= 7, "step {stop}");
+            assert_eq!(quit.is_err(), stop <= 8, "step {stop}");
             next_run(&user);
             let now = tea_and_kept(&user);
             let after = (snapshot(&source), b.clone());
@@ -3662,13 +3662,13 @@ mod tests {
     /// next run finds it before or after.
     #[test]
     fn an_install_over_a_skill_keeps_it_for_one_restore() {
-        for stop in 1..=8 {
+        for stop in 1..=9 {
             let tmp = tempfile::tempdir().unwrap();
             let (source, user, a, b) = replaced_and_edited(tmp.path());
             let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 install_skill_with(&source, &user, "tea", &mut steps(&[], stop)).unwrap();
             }));
-            assert_eq!(quit.is_err(), stop <= 7, "step {stop}");
+            assert_eq!(quit.is_err(), stop <= 8, "step {stop}");
             next_run(&user);
             let now = tea_and_kept(&user);
             let after = (snapshot(&source), b.clone());
@@ -3702,7 +3702,7 @@ mod tests {
     #[test]
     fn a_first_replace_or_install_cut_short_at_any_step_loses_nothing() {
         for install in [false, true] {
-            for stop in 1..=7 {
+            for stop in 1..=8 {
                 let tmp = tempfile::tempdir().unwrap();
                 let (_, source, user) = imported_tea(tmp.path());
                 std::fs::write(user.join("tea/notes.md"), "mine").unwrap();
@@ -3724,7 +3724,7 @@ mod tests {
                     }
                 }));
                 let at = format!("install {install}, step {stop}");
-                assert_eq!(quit.is_err(), stop <= 6, "{at}");
+                assert_eq!(quit.is_err(), stop <= 7, "{at}");
                 next_run(&user);
                 assert_eq!(names(&user), [".previous", "tea"], "{at}");
                 if stop <= 3 {
@@ -3777,13 +3777,13 @@ mod tests {
     /// state before or after it.
     #[test]
     fn a_restore_cut_short_at_any_step_loses_nothing() {
-        for stop in 1..=7 {
+        for stop in 1..=8 {
             let tmp = tempfile::tempdir().unwrap();
             let (_, user, a, b) = cut_short_restore(tmp.path());
             let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 restore_previous_skill_with(&user, "tea", &mut steps(&[], stop)).unwrap();
             }));
-            assert_eq!(quit.is_err(), stop <= 6, "step {stop}");
+            assert_eq!(quit.is_err(), stop <= 7, "step {stop}");
             next_run(&user);
             let now = tea_and_kept(&user);
             assert!(

@@ -719,11 +719,11 @@ fn a_put_cut_short_at_any_step_leaves_the_entry_before_or_after() {
         assert_eq!(
             steps,
             if !keep {
-                5
-            } else if older {
-                7
-            } else {
                 6
+            } else if older {
+                8
+            } else {
+                7
             }
         );
         for stop in 1..=steps {
@@ -744,7 +744,10 @@ fn a_put_cut_short_at_any_step_leaves_the_entry_before_or_after() {
                 put(&root, keep, hook(stop, 0, &n))
             }));
             assert!(quit.is_err(), "{at}");
-            assert!(root.recover().unwrap() >= 1, "{at}");
+            // Before Clean the journal is gone: only the old copy is left
+            // to remove, and a keep with nothing in it before has none.
+            let left = stop < steps || !(keep && !older);
+            assert_eq!(root.recover().unwrap() >= 1, left, "{at}");
             let now = tree_of(&root.path().join("tea"));
             let placed = now != old;
             if placed {
@@ -779,8 +782,8 @@ fn a_put_cut_short_at_any_step_leaves_the_entry_before_or_after() {
 #[test]
 fn a_put_step_that_fails_puts_everything_back() {
     for (keep, older) in PUT_CASES {
-        // Every step up to the one that keeps the entry (`Clean` and
-        // `Forget` come after it is in place: no undo).
+        // Every step up to the one that keeps the entry (`Retire`,
+        // `Forget` and `Clean` come after it is in place: no undo).
         let undone = if !keep {
             3
         } else if older {
@@ -801,25 +804,77 @@ fn a_put_step_that_fails_puts_everything_back() {
     }
 }
 
-/// Removing the old copy fails (Clean): the put is done, the new tree in
-/// place, and the old copy is left for recover, which removes it.
+/// Placed, then a step after fails: moving the old copy to its remove's
+/// name (Retire), removing the journal (Forget) or removing the old copy
+/// (Clean). The put is done (`Ok`), the new tree in place. The entry
+/// deleted then (a Library delete) never comes back at start-up, with a
+/// keep or without, and recover leaves nothing hidden.
 #[test]
-fn an_old_copy_not_removed_is_left_for_recover() {
+fn a_put_done_then_deleted_never_comes_back() {
+    for (keep, older) in PUT_CASES {
+        // Retire, Forget, Clean: the last three steps.
+        let steps = if !keep {
+            6
+        } else if older {
+            8
+        } else {
+            7
+        };
+        for fail in steps - 2..=steps {
+            let at = format!("keep {keep}, older {older}, fail {fail}");
+            let tmp = tempfile::tempdir().unwrap();
+            let root = root_with_kept(&tmp, older);
+            let n = std::cell::Cell::new(0);
+            put(&root, keep, hook(0, fail, &n)).unwrap();
+            assert_eq!(n.get(), steps, "{at}");
+            assert_eq!(
+                std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
+                b"new",
+                "{at}"
+            );
+            root.lock().remove(Path::new("tea")).unwrap();
+            root.recover().unwrap();
+            assert!(!root.path().join("tea").exists(), "{at}: came back");
+            assert_eq!(hidden_left(&root), Vec::<String>::new(), "{at}");
+            if keep {
+                assert_eq!(
+                    std::fs::read(root.path().join(".previous/tea/SKILL.md")).unwrap(),
+                    b"tea",
+                    "{at}: the old copy kept"
+                );
+            }
+        }
+    }
+}
+
+/// A restore whose journal cannot be written changes nothing: the kept
+/// copy is the user's (no staging of ours to drop), the entry stays.
+#[test]
+fn a_restore_that_cannot_journal_keeps_both_copies() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, true);
+    let before = tree_of(tmp.path());
+    let n = std::cell::Cell::new(0);
+    let res =
+        root.lock()
+            .restore_steps(Path::new("tea"), Path::new(".previous/tea"), hook(0, 1, &n));
+    assert!(res.is_err());
+    assert_eq!(tree_of(tmp.path()), before);
+}
+
+/// A restore with nothing kept moves nothing: the entry is not set aside
+/// (and then taken for the copy to keep).
+#[test]
+fn a_restore_with_nothing_kept_moves_nothing() {
     let tmp = tempfile::tempdir().unwrap();
     let root = root_with_kept(&tmp, false);
-    let n = std::cell::Cell::new(0);
-    put(&root, false, hook(0, 4, &n)).unwrap();
-    assert_eq!(
-        std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
-        b"new"
-    );
-    assert_eq!(hidden_left(&root).len(), 2, "the old copy and its journal");
-    assert_eq!(root.recover().unwrap(), 1, "one journal settled");
-    assert_eq!(hidden_left(&root), Vec::<String>::new());
-    assert_eq!(
-        std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
-        b"new"
-    );
+    let before = tree_of(tmp.path());
+    let res = root
+        .lock()
+        .restore(Path::new("tea"), Path::new(".previous/tea"));
+    assert!(res.is_err());
+    assert_eq!(tree_of(tmp.path()), before);
+    assert_eq!(root.recover().unwrap(), 0);
 }
 
 /// A first put (nothing at the entry) cut short at any step: the entry
@@ -850,7 +905,7 @@ fn a_first_put_cut_short_is_nothing_or_the_new_tree() {
 /// recover leaves them swapped or not, both whole, never one alone.
 #[test]
 fn a_restore_cut_short_at_any_step_keeps_both_copies() {
-    for stop in 1..=7 {
+    for stop in 1..=8 {
         let tmp = tempfile::tempdir().unwrap();
         let root = root_with_kept(&tmp, true);
         let (tea, older) = (
@@ -864,7 +919,7 @@ fn a_restore_cut_short_at_any_step_keeps_both_copies() {
                 hook(stop, 0, &std::cell::Cell::new(0)),
             )
         }));
-        assert_eq!(quit.is_err(), stop <= 6, "stop {stop}");
+        assert_eq!(quit.is_err(), stop <= 7, "stop {stop}");
         root.recover().unwrap();
         let now = (
             tree_of(&root.path().join("tea")),
