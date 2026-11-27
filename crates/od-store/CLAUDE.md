@@ -24,6 +24,10 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    - `src/files.rs::moving_a_folder_through_a_link_is_refused`
 2. App files are written as temp file + rename (`src/files.rs:replace_atomic`), which replaces a link.
    - `src/versions.rs::a_manifest_that_is_a_link_is_replaced_not_written_through`
+   The memory files (`src/memory_index.rs`: `<data>/memory/MEMORY.md`, `config.json`) go through `od_fs::nofollow`:
+   written with `replace_file` (random temp name, `O_EXCL|O_NOFOLLOW`, fsync, rename), read with `read_text`/`read_file`
+   (no link followed, no FIFO waited on, bounded; either reads as missing).
+   - `tests/memory_files.rs` (one test per question of the six); `../od-server/tests/user_file_writes.rs`, `no_path_reads.rs` scan it
 3. A linked history is refused before the page is written (`src/versions.rs:refuse_linked_history`).
    An upload learns its name only after writing, so it is deleted again.
    - `src/comments.rs::a_history_folder_that_is_a_link_is_not_written_through`

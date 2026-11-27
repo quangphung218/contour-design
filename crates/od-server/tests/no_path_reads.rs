@@ -29,11 +29,13 @@ use syn::{Expr, Meta, Token, UseTree};
 
 /// The folders and files scanned, relative to this crate: the content
 /// routes read the design templates' examples (a user template is the
-/// agent's to write) and the craft sections.
+/// agent's to write) and the craft sections; the memory index reads
+/// `<data>/memory` (the agent's to write too).
 const SCANNED: &[&str] = &[
     "../od-content/src",
     "src/routes/library",
     "src/routes/content.rs",
+    "../od-store/src/memory_index.rs",
 ];
 
 /// The helper itself (relative to this crate).

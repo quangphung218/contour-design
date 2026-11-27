@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 od-contracts.workspace = true
+od-fs.workspace = true
 hex.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

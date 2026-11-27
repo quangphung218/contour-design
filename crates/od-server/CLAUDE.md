@@ -99,7 +99,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       bidi controls and marks, variation selectors, soft hyphen, Hangul fillers…) as `⟨U+…⟩` with a warning
       (`../od-ui/src/app/plugins_page.rs::the_review_marks_every_hidden_character`; the table checked against ICU's data:
       `::hidden_ranges_are_unicodes`).
-    - The Library routes (`src/routes/library`), the content routes (`src/routes/content.rs`: a design template's example, a craft section) and the content index (`../od-content/src`) read a file only through
+    - The Library routes (`src/routes/library`), the content routes (`src/routes/content.rs`: a design template's example, a craft section) the content index (`../od-content/src`) and the memory files (`../od-store/src/memory_index.rs`: `MEMORY.md`, `config.json`) read a file only through
       `od_content::nofollow` (`O_NONBLOCK`, regular file checked on the descriptor, bounded); the index still takes an
       entry that is itself a link, but no link below it (`nofollow::read_file_under`: `.claude-plugin`). No `fs::copy` and no `od_store::files::read_file` there either (a Remix copies the bytes
       its walk read: `src/routes/export/mod.rs:read_page_file`). `tests/no_path_reads.rs` (parses the sources with `syn`: paths through `use … as`/`type`, `<File>::open`, `fcntl`/`libc` opens; what stays is in `ALLOWED` with why),
@@ -137,7 +137,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     A `SKILL.md` or `DESIGN.md` is written only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
     a new file of a random name made `O_EXCL|O_NOFOLLOW`, bits set on its descriptor, renamed over it: no half-written read,
     no write through a link at the file or at the temp name), every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
-    names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content` and `od-server`, `KEPT` with why).
+    names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content`, `od-server` and `../od-store/src/memory_index.rs`, `KEPT` with why). The memory index and config are written with `nofollow::replace_file` too (`../od-store/tests/memory_files.rs`).
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     A folder filled from a tree (install, install over a user skill, Replace from source, an override's first copy,
     Copy design system, a generated design system, Copy to Claude Code) is made new (`nofollow::NewDir`: `create_dir`, never

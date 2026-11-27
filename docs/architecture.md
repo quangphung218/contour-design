@@ -34,7 +34,7 @@ Guards between them:
 | Crate | Owns | Internal deps |
 |---|---|---|
 | `od-contracts` | serde DTOs shared by daemon, CLI, UI | none |
-| `od-store` | `app.sqlite`, project folders, file history, safe paths, drafts ledger, data dir | contracts |
+| `od-store` | `app.sqlite`, project folders, file history, safe paths, drafts ledger, data dir | contracts, fs |
 | `od-runs` | run registry: event ring, `events.jsonl`, `state.json`, SSE replay | contracts |
 | `od-job` | process-tree kill (POSIX groups, Windows Job Objects) | none |
 | `od-runtime` | agent definitions, detection, spawn, stream parsers, run engine, BYOK | contracts, job, runs, store |

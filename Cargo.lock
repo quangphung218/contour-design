@@ -4434,6 +4434,7 @@ dependencies = [
  "hex",
  "nix 0.31.3",
  "od-contracts",
+ "od-fs",
  "rusqlite",
  "serde",
  "serde_json",
