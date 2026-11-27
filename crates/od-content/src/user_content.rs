@@ -187,14 +187,25 @@ pub fn create_skill(
 /// The tag of the `SKILL.md` in skill folder `dir`: sha256 of its bytes,
 /// hex; [`GONE_TAG`] when there is none, `"unreadable"` when it is there
 /// but cannot be read (a link, a FIFO, too large). The skill editor opens
-/// on it and saves only over the same tag ([`save_skill`]).
+/// on it and saves only over the same tag ([`save_skill`]): both read it
+/// the one way, through the [`user_store::Guard`] of `dir`'s parent (the
+/// folder `dir` may be the user's own link; nothing below it is).
 #[must_use]
 pub fn skill_tag(dir: &Path) -> String {
-    let path = dir.join("SKILL.md");
-    match nofollow::read_file(&path, MAX_PLUGIN_BYTES) {
-        Ok(Some(file)) => tag_of(&file.bytes),
-        _ if std::fs::symlink_metadata(&path).is_err() => GONE_TAG.to_owned(),
-        _ => "unreadable".to_owned(),
+    let (Some(root), Some(name)) = (dir.parent(), dir.file_name()) else {
+        return GONE_TAG.to_owned();
+    };
+    let root = UserRoot::open(root, MAX_PLUGIN_BYTES);
+    let found = root.lock().read(&Path::new(name).join("SKILL.md"));
+    found_tag(&found)
+}
+
+/// The [`skill_tag`] of what a read found.
+fn found_tag(found: &Found) -> String {
+    match found {
+        Found::File(read) => read.tag.as_str().to_owned(),
+        Found::Missing => GONE_TAG.to_owned(),
+        Found::Unreadable(_) => user_store::Tag::UNREADABLE.to_owned(),
     }
 }
 
@@ -280,12 +291,7 @@ pub fn save_skill(
         .ok()
         .map(|rel| one.read(&rel.join("SKILL.md")));
     if let Some(expected) = expected {
-        let now = match &found {
-            Some(Found::File(read)) => read.tag.as_str().to_owned(),
-            Some(Found::Missing) => GONE_TAG.to_owned(),
-            Some(Found::Unreadable(_)) => user_store::Tag::UNREADABLE.to_owned(),
-            None => skill_tag(&target),
-        };
+        let now = found.as_ref().map_or_else(|| skill_tag(&target), found_tag);
         if expected == GONE_TAG || now != expected {
             return Err(WriteError::Stale);
         }

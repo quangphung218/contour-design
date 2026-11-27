@@ -217,13 +217,21 @@ impl MemoryFiles {
         self.edit(|index| without_line(index, id))
     }
 
-    fn edit(&self, change: impl FnOnce(&str) -> String) -> std::io::Result<()> {
+    /// Rewrites a stored index with `change`. An agent that wrote it
+    /// between this read and the rename (its own process: the lock does not
+    /// hold it) makes the write stale: read again and tried once more, so
+    /// an entry saved in the database is not answered as a failure.
+    fn edit(&self, change: impl Fn(&str) -> String) -> std::io::Result<()> {
         let one = self.root.lock();
-        match stored(&one) {
-            (Stored::Text(index), expect) => {
-                self.write_locked(&one, INDEX_FILE, change(&index).as_bytes(), expect)
+        let mut tries = 0;
+        loop {
+            let (Stored::Text(index), expect) = stored(&one) else {
+                return Ok(());
+            };
+            match self.write_locked(&one, INDEX_FILE, change(&index).as_bytes(), expect) {
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && tries == 0 => tries += 1,
+                done => return done,
             }
-            _ => Ok(()),
         }
     }
 }
@@ -526,6 +534,38 @@ mod tests {
             text: text.to_owned(),
             created_at: 0,
         }
+    }
+
+    /// An agent writes the index between `link`'s read and its rename
+    /// (its own process): the write is stale, read again and tried once
+    /// more, so the line lands beside the agent's and nothing fails.
+    #[test]
+    fn a_link_raced_by_an_agent_tries_once_more() {
+        let tmp = tempfile::tempdir().unwrap();
+        let files = MemoryFiles::in_data_dir(tmp.path());
+        files.write_index("# Memory\n").unwrap();
+        let at = files.dir().join(INDEX_FILE);
+        let calls = std::cell::Cell::new(0);
+        let raced = files.edit(|index| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                std::fs::write(&at, "# Memory\n- [agent](agent.md) — user\n").unwrap();
+            }
+            with_line(index, &entry("a1", "user", "fact"))
+        });
+        assert!(raced.is_ok(), "{raced:?}");
+        assert_eq!(calls.get(), 2);
+        let now = std::fs::read_to_string(&at).unwrap();
+        assert!(now.contains("agent.md") && now.contains("a1.md"), "{now}");
+        // Raced every time: one retry, then the error.
+        let tries = std::cell::Cell::new(0);
+        let always = files.edit(|index| {
+            tries.set(tries.get() + 1);
+            std::fs::write(&at, format!("{index}x\n")).unwrap();
+            index.to_owned()
+        });
+        assert_eq!(always.unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+        assert_eq!(tries.get(), 2, "one retry, no more");
     }
 
     #[test]

@@ -166,19 +166,70 @@ fn a_link_at_the_file_is_replaced_never_written_through() {
 }
 
 #[test]
-fn a_link_at_a_folder_on_the_way_is_never_followed() {
+fn a_link_at_a_folder_below_the_entry_is_never_followed() {
     let tmp = tempfile::tempdir().unwrap();
     let root = root(&tmp);
     let away = tmp.path().join("away");
     std::fs::create_dir(&away).unwrap();
     std::fs::write(away.join("SKILL.md"), "outside").unwrap();
-    symlink(&away, root.path().join("away")).unwrap();
-    let rel = Path::new("away/SKILL.md");
+    symlink(&away, root.path().join("tea/away")).unwrap();
+    let rel = Path::new("tea/away/SKILL.md");
     let g = root.lock();
     assert!(matches!(g.read(rel), Found::Unreadable(Unreadable::Link)));
     assert!(g.write(rel, b"form", Expect::Any).is_err());
     assert_eq!(names_in(&away), ["SKILL.md"]);
     assert_eq!(std::fs::read(away.join("SKILL.md")).unwrap(), b"outside");
+}
+
+/// The entry (a skill's folder) may be the user's own link, as the index
+/// takes it: read and written where it points, with the same tag a read
+/// gives. Below it, a link (folder or file) is still never followed.
+#[test]
+fn the_entry_may_be_a_link_and_nothing_below_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let real = tmp.path().join("elsewhere/mine");
+    std::fs::create_dir_all(real.join("assets")).unwrap();
+    std::fs::write(real.join("SKILL.md"), "old").unwrap();
+    symlink(&real, root.path().join("mine")).unwrap();
+    let rel = Path::new("mine/SKILL.md");
+    let g = root.lock();
+    let opened = g.read(rel).expect();
+    assert_eq!(opened, Expect::Tag(Tag::of(b"old")));
+    let tag = g.write(rel, b"new", opened).unwrap();
+    assert_eq!(std::fs::read(real.join("SKILL.md")).unwrap(), b"new");
+    assert_eq!(tag_read_at(&g, rel), tag);
+    assert!(
+        std::fs::symlink_metadata(root.path().join("mine"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    // A link at the file inside the linked entry: not followed.
+    let victim = tmp.path().join("victim");
+    std::fs::write(&victim, "the user's own").unwrap();
+    symlink(&victim, real.join("assets/SKILL.md")).unwrap();
+    let below = Path::new("mine/assets/SKILL.md");
+    assert!(matches!(g.read(below), Found::Unreadable(Unreadable::Link)));
+    // A folder below the linked entry that is a link: not followed.
+    symlink(tmp.path(), real.join("up")).unwrap();
+    let up = Path::new("mine/up/victim");
+    assert!(matches!(g.read(up), Found::Unreadable(Unreadable::Link)));
+    assert!(g.write(up, b"x", Expect::Any).is_err());
+    assert_eq!(std::fs::read(&victim).unwrap(), b"the user's own");
+    // A file at the root (`MEMORY.md`) that is a link: never followed.
+    symlink(&victim, root.path().join("MEMORY.md")).unwrap();
+    assert!(matches!(
+        g.read(Path::new("MEMORY.md")),
+        Found::Unreadable(Unreadable::Link)
+    ));
+}
+
+fn tag_read_at(g: &Guard<'_>, rel: &Path) -> Tag {
+    match g.read(rel) {
+        Found::File(r) => r.tag,
+        other => panic!("no file: {other:?}"),
+    }
 }
 
 /// The temp file is made new: a link put at every name a counter or the

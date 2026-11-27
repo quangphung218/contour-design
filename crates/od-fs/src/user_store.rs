@@ -3,10 +3,13 @@
 //! holds the one lock every writer of it takes; [`Guard`] (the lock held) reads
 //! and writes a file under it by a plain relative path.
 //!
-//! - Every folder below the root is opened from the one above it with
-//!   `O_NOFOLLOW` and every file through its folder's descriptor (unix
-//!   `openat`/`renameat`): a link anywhere below the root is never followed.
-//!   The root itself is followed (resolved once per call).
+//! - The root and the entry under it (the first folder of a path: a
+//!   skill's or a design system's folder, which may be the user's own
+//!   link, as the index takes it) are followed, each resolved once per
+//!   call. Every folder below the entry is opened from the one above it
+//!   with `O_NOFOLLOW` and every file through its folder's descriptor (unix
+//!   `openat`/`renameat`): no link below the entry, and no link at the file,
+//!   is ever followed.
 //! - A read is bounded (the root's limit), waits on no FIFO, and tells a
 //!   file that is not there ([`Found::Missing`]) from one that is there but
 //!   cannot be read ([`Found::Unreadable`]: a link, a FIFO, too large).
@@ -249,8 +252,14 @@ mod at {
             Err(Errno::ENOENT) => return Ok(None),
             Err(e) => return Err(e),
         };
-        for dir in dirs {
-            fd = match openat(&fd, *dir, DIR | OFlag::O_NOFOLLOW, Mode::empty()) {
+        for (depth, dir) in dirs.iter().enumerate() {
+            // The entry may be the user's own link; nothing below it.
+            let flags = if depth == 0 {
+                DIR
+            } else {
+                DIR | OFlag::O_NOFOLLOW
+            };
+            fd = match openat(&fd, *dir, flags, Mode::empty()) {
                 Ok(next) => next,
                 Err(Errno::ENOENT) => return Ok(None),
                 Err(e) => return Err(e),
@@ -294,8 +303,15 @@ fn read_under(root: &Path, rel: &Path, limit: u64) -> Result<Option<ReadFile>, U
 #[cfg(not(unix))]
 fn read_under(root: &Path, rel: &Path, limit: u64) -> Result<Option<ReadFile>, Unreadable> {
     use nofollow::TreeError;
-    split(rel).map_err(Unreadable::Io)?;
-    match nofollow::read_file_under(root, rel, limit) {
+    let (dirs, _) = split(rel).map_err(Unreadable::Io)?;
+    let mut at = root.to_path_buf();
+    for (depth, dir) in dirs.iter().enumerate() {
+        at.push(dir);
+        if depth > 0 && std::fs::symlink_metadata(&at).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(Unreadable::Link);
+        }
+    }
+    match nofollow::read_file(&root.join(rel), limit) {
         Ok(Some(file)) => Ok(Some(file)),
         Err(TreeError::TooLarge) => Err(Unreadable::TooLarge),
         Err(TreeError::Io(e)) => Err(Unreadable::Io(e)),
@@ -378,9 +394,15 @@ fn new_file_at(
 fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let (dirs, _) = split(rel)?;
     let mut at = root.to_path_buf();
-    for dir in dirs {
+    for (depth, dir) in dirs.iter().enumerate() {
         at.push(dir);
-        if !std::fs::symlink_metadata(&at)?.is_dir() {
+        // The entry may be the user's own link; nothing below it.
+        let meta = if depth == 0 {
+            std::fs::metadata(&at)?
+        } else {
+            std::fs::symlink_metadata(&at)?
+        };
+        if !meta.is_dir() {
             return Err(std::io::ErrorKind::NotADirectory.into());
         }
     }
