@@ -5,7 +5,7 @@
 //! arrows/Home/End drive a deck, Esc leaves present and comment modes
 //! (spec 1.2). Cmd/Ctrl+K (palette) and ? (shortcuts) are app-wide.
 
-use super::agent_w3::{SideChat, SideChatView, is_side_chat_title};
+use super::agent_w3::{SideChat, SideChatFab, SideChatPanel, is_side_chat_title};
 use super::bridge::{self, Source};
 use super::chat_view::{ChatItem, ChatPane};
 use super::deck::{DeckBar, NotesPanel, ThumbRail};
@@ -510,7 +510,6 @@ impl StudioCtx {
     /// Opens `path` in a tab without leaving the pane shown (the entry file
     /// opened on load must not pull a phone away from the chat).
     pub(crate) fn show_tab(self, path: &str) {
-        self.side.open.set(false);
         self.active_term.set(None);
         self.tabs.update(|t| t.open(path));
         self.recent.update(|r| touch_recent(r, path));
@@ -2049,9 +2048,7 @@ pub fn Studio() -> impl IntoView {
         match p {
             NarrowPane::Chat => ctx.chat.collapsed.set(false),
             NarrowPane::Files => ctx.files_open.set(true),
-            // The side chat covers the preview on a phone: Preview brings
-            // the page back.
-            NarrowPane::Preview => ctx.side.open.set(false),
+            NarrowPane::Preview => {}
         }
         pane.set(p);
     };
@@ -2106,6 +2103,7 @@ pub fn Studio() -> impl IntoView {
                     <Show when=move || ctx.files_open.get()>
                         <FilesPanel ctx=ctx/>
                     </Show>
+                    <SideChatPanel ctx=ctx/>
                 </section>
             </Show>
             <Show when=move || ctx.switcher_open.get()>
@@ -2129,7 +2127,6 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
     // view when it changes (UI-015).
     Effect::new(move |_| {
         ctx.tabs.with(|t| t.active.clone());
-        ctx.side.open.track();
         ctx.active_term.track();
         if let Some(el) = list.get() {
             request_animation_frame(move || reveal_active_tab(&el));
@@ -2154,17 +2151,11 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
             <div class="tab-list" role="tablist" node_ref=list on:keydown=tab_keys on:wheel=wheel>
             {move || {
                 let tabs = ctx.tabs.get();
-                let side_open = ctx.side.open.get();
-                let side_tab = view! {
-                    <div class="tab side-tab" class:active=side_open role="presentation" data-testid="side-chat-tab" title=t(T::SideChatHint)>
-                        <button class="tab-name" role="tab" aria-selected=side_open.to_string() on:click=move |_| ctx.side.show(ctx)>{icon(Glyph::SideChat)}{t(T::SideChat)}</button>
-                    </div>
-                };
                 let term_active = ctx.active_term.with(Option::is_some);
-                let files = tabs.open
+                tabs.open
                     .iter()
                     .map(|path| {
-                        let active = !side_open && !term_active && tabs.active.as_deref() == Some(path.as_str());
+                        let active = !term_active && tabs.active.as_deref() == Some(path.as_str());
                         let live = super::live_view::is_live(path);
                         let name = if live {
                             super::live_view::tab_label(files_ui, path)
@@ -2192,20 +2183,19 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
                             </div>
                         }
                     })
-                    .collect_view();
-                view! { {files}{side_tab} }
+                    .collect_view()
             }}
             {move || {
                 ctx.terms
                     .get()
                     .into_iter()
                     .map(|term| {
-                        let active = !ctx.side.open.get() && ctx.active_term.with(|a| a.as_deref() == Some(term.id.as_str()));
+                        let active = ctx.active_term.with(|a| a.as_deref() == Some(term.id.as_str()));
                         let (show, close, close_key) = (term.id.clone(), term.id.clone(), term.id.clone());
                         view! {
                             <div class="tab term-tab" class:active=active role="presentation" data-testid="terminal-tab">
                                 <button class="tab-name" role="tab" aria-selected=active.to_string() aria-keyshortcuts="Delete Backspace"
-                                    on:click=move |_| { ctx.side.open.set(false); ctx.active_term.set(Some(show.clone())); }
+                                    on:click=move |_| ctx.active_term.set(Some(show.clone()))
                                     on:keydown=move |ev| if is_delete_key(&ev) { ev.prevent_default(); terminal::close(ctx, close_key.clone()); }
                                 >
                                     {icon(Glyph::Terminal)}
@@ -2234,29 +2224,17 @@ fn TabsBar(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// Scrolls `list` so its active tab is in view, clear of the Side chat tab
-/// when that is pinned at its right edge (not in a phone-width preview).
-/// A tab wider than the room left shows from its start.
+/// Scrolls `list` so its active tab is in view. A tab wider than the list
+/// shows from its start.
 fn reveal_active_tab(list: &web_sys::HtmlDivElement) {
-    let Ok(Some(tab)) = list.query_selector(".tab.active:not(.side-tab)") else {
+    let Ok(Some(tab)) = list.query_selector(".tab.active") else {
         return;
     };
-    let pinned = list
-        .query_selector(".side-tab")
-        .ok()
-        .flatten()
-        .filter(|s| {
-            web_sys::window()
-                .and_then(|w| w.get_computed_style(s).ok().flatten())
-                .and_then(|st| st.get_property_value("position").ok())
-                .is_some_and(|p| p == "sticky")
-        })
-        .map_or(0.0, |s| s.get_bounding_client_rect().width());
     let (box_, rect) = (
         list.get_bounding_client_rect(),
         tab.get_bounding_client_rect(),
     );
-    let room_right = box_.right() - pinned;
+    let room_right = box_.right();
     let shift = if rect.left() < box_.left() || rect.width() > room_right - box_.left() {
         rect.left() - box_.left()
     } else if rect.right() > room_right {
@@ -2493,7 +2471,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             <div class="preview-top">
                 <TabsBar ctx=ctx/>
                 <div class="preview-actions">
-                    <Show when=move || is_html() && !ctx.side.open.get() && ctx.active_term.with(Option::is_none)>
+                    <Show when=move || is_html() && ctx.active_term.with(Option::is_none)>
                         <button
                             class="icon-btn"
                             class:active=move || ctx.history_open.get()
@@ -2509,7 +2487,7 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
                     <ExportMenu ctx=ctx/>
                 </div>
             </div>
-            <Show when=move || !ctx.side.open.get() fallback=move || view! { <SideChatView ctx=ctx/> }>
+            <StackFrame>
             {move || ctx.active_term.get().map(|id| view! { <TerminalView id=id/> })}
             <div class="preview-main" style=move || if ctx.active_term.with(Option::is_some) { "display:none" } else { "display:contents" }>
             <div class="pane-head preview-head" class:tools-open=move || ctx.preview_tools_open.get() data-testid="preview-toolbar">
@@ -2640,9 +2618,18 @@ fn PreviewPane(ctx: StudioCtx) -> impl IntoView {
             </div>
             <NotesPanel ctx=ctx/>
             </div>
-            </Show>
+            </StackFrame>
+            <SideChatFab ctx=ctx/>
         </section>
     }
+}
+
+/// Builds `children` in a frame of their own: the preview's body is one
+/// large view, and built in its parent's frame it overflows the debug WASM
+/// stack ("memory access out of bounds" on opening a project).
+#[component]
+fn StackFrame(children: Children) -> impl IntoView {
+    children()
 }
 
 /// A file shown by its own view instead of the preview frame.

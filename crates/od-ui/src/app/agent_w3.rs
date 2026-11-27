@@ -1,4 +1,4 @@
-//! Track W3-agent UI (spec 1.1, 1.5): session mode toggle, side chat tab,
+//! Track W3-agent UI (spec 1.1, 1.5): session mode toggle, side chat panel,
 //! project memory panel, Design Jury switch and theater, conversation
 //! export, and the warning for agents that can hang in "Ask first" mode.
 
@@ -681,14 +681,19 @@ fn serde_status(status: CritiqueStatus) -> &'static str {
 }
 
 /// The side chat: its own conversation in chat mode, with the same agent,
-/// shown as a workspace tab next to the file tabs.
+/// in a panel opened from a round button at the workspace's bottom right.
 #[derive(Clone, Copy)]
 pub struct SideChat {
-    /// The side chat tab is the active workspace tab.
+    /// The panel is open.
     pub open: RwSignal<bool>,
     pub conversation_id: RwSignal<Option<String>>,
     pub items: RwSignal<Vec<ChatItem>>,
     pub live_run: RwSignal<Option<String>>,
+    /// What is typed in the panel: here, not in the panel, so closing it
+    /// keeps the text.
+    pub draft: RwSignal<String>,
+    /// An answer ended while the panel was closed and is not seen yet.
+    pub unseen: RwSignal<bool>,
     loaded: StoredValue<bool>,
     stream: StoredValue<Option<SendWrapper<Sse>>>,
 }
@@ -700,6 +705,8 @@ impl SideChat {
             conversation_id: RwSignal::new(None),
             items: RwSignal::new(Vec::new()),
             live_run: RwSignal::new(None),
+            draft: RwSignal::new(String::new()),
+            unseen: RwSignal::new(false),
             loaded: StoredValue::new(false),
             stream: StoredValue::new(None),
         }
@@ -709,10 +716,10 @@ impl SideChat {
         self.stream.set_value(None);
     }
 
-    /// Shows the side chat tab, loading its history the first time.
+    /// Opens the panel, loading its history the first time.
     pub fn show(self, ctx: StudioCtx) {
-        ctx.active_term.set(None);
         self.open.set(true);
+        self.unseen.set(false);
         if self.loaded.get_value() {
             return;
         }
@@ -847,6 +854,9 @@ impl SideChat {
 
     fn finish(self, ctx: StudioCtx) {
         self.live_run.set(None);
+        if !self.open.get_untracked() {
+            self.unseen.set(true);
+        }
         self.stream.with_value(|s| {
             if let Some(s) = s {
                 s.close();
@@ -878,12 +888,109 @@ fn fail(turn: RwSignal<AssistantTurn>, message: String) {
     });
 }
 
+/// The side chat's round button, at the preview's bottom right (CSS moves
+/// it clear of the preview's own panels). A dot on it says an answer is on
+/// its way or came while the panel was closed.
 #[component]
-pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
+pub fn SideChatFab(ctx: StudioCtx) -> impl IntoView {
     let side = ctx.side;
-    let draft = RwSignal::new(String::new());
+    let news = move || {
+        if side.live_run.with(Option::is_some) {
+            "live"
+        } else if side.unseen.get() {
+            "unseen"
+        } else {
+            "none"
+        }
+    };
+    view! {
+        <button
+            class="side-fab"
+            data-testid="side-chat-fab"
+            aria-label=t(T::SideChatHint)
+            data-tip=t(T::SideChatHint)
+            aria-expanded=move || side.open.get().to_string()
+            aria-controls="side-chat-panel"
+            data-news=news
+            on:click=move |_| side.show(ctx)
+        >
+            {icon(Glyph::SideChat)}
+            <Show when=move || news() != "none">
+                <span class="fab-dot" aria-hidden="true"></span>
+            </Show>
+        </button>
+    }
+}
+
+/// Focuses the side chat's round button once it shows again.
+fn focus_fab() {
+    request_animation_frame(|| {
+        let fab = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| {
+                d.query_selector("[data-testid=side-chat-fab]")
+                    .ok()
+                    .flatten()
+            })
+            .and_then(|el| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(el).ok());
+        if let Some(fab) = fab {
+            let _ = fab.focus();
+        }
+    });
+}
+
+/// The side chat panel while it is open, over the workspace's bottom
+/// right (a full-screen sheet on a phone). Closing it keeps what is typed
+/// and the answer on its way: both live in [`SideChat`], not here.
+#[component]
+pub fn SideChatPanel(ctx: StudioCtx) -> impl IntoView {
+    let side = ctx.side;
+    let close = move || {
+        side.open.set(false);
+        focus_fab();
+    };
+    // Esc closes the panel from anywhere inside it, unless an IME is
+    // composing (Esc then cancels the composition). A window listener, as
+    // the composer inside the panel listens for keydown too.
+    let esc = window_event_listener(leptos::ev::keydown, move |ev| {
+        if ev.key() != "Escape" || ev.is_composing() || !side.open.get_untracked() {
+            return;
+        }
+        let inside = ev
+            .target()
+            .and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::Element>(t).ok())
+            .and_then(|el| el.closest("[data-testid=side-chat]").ok().flatten())
+            .is_some();
+        if inside {
+            ev.prevent_default();
+            close();
+        }
+    });
+    on_cleanup(move || esc.remove());
+    view! {
+        <Show when=move || side.open.get()>
+            <SideChatView ctx=ctx on_close=Callback::new(move |()| close())/>
+        </Show>
+    }
+}
+
+#[component]
+pub fn SideChatView(ctx: StudioCtx, on_close: Callback<()>) -> impl IntoView {
+    let side = ctx.side;
+    let draft = side.draft;
     let list_ref = NodeRef::<leptos::html::Div>::new();
+    let composer = NodeRef::<leptos::html::Textarea>::new();
     let follow = StickToBottom::new(list_ref);
+    // Opened: the caret goes to the end of what was typed before.
+    Effect::new(move |_| {
+        if let Some(el) = composer.get() {
+            request_animation_frame(move || {
+                let _ = el.focus();
+                let end = u32::try_from(el.value().encode_utf16().count()).unwrap_or(u32::MAX);
+                let _ = el.set_selection_range(end, end);
+            });
+        }
+    });
     Effect::new(move |prev: Option<Option<String>>| {
         let last = side.items.with(|items| {
             if let Some(ItemKind::Assistant(turn)) = items.last().map(|i| &i.kind) {
@@ -906,8 +1013,16 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
     // Forms belong to the main chat; here they only show.
     let never = Signal::derive(|| false);
     view! {
-        <section class="side-chat" data-testid="side-chat" aria-label=t(T::SideChat)>
-            <p class="mode-hint">{icon(Glyph::SideChat)}{t(T::SideChatHint)}</p>
+        <section class="side-chat" id="side-chat-panel" data-testid="side-chat" aria-label=t(T::SideChat)>
+            <div class="side-chat-head">
+                {icon(Glyph::SideChat)}
+                <span class="side-chat-title">{t(T::SideChat)}</span>
+                <span class="spacer"></span>
+                <button class="icon-btn" data-testid="side-chat-close" aria-label=t(T::Close) data-tip=t(T::Close) data-tip-pos="left" on:click=move |_| on_close.run(())>
+                    {icon(Glyph::Close)}
+                </button>
+            </div>
+            <p class="mode-hint">{t(T::SideChatHint)}</p>
             <div class="messages" node_ref=list_ref data-testid="side-messages" on:wheel=move |ev| follow.on_wheel(&ev) on:scroll=move |_| follow.on_scroll()>
                 <For
                     each=move || side.items.get()
@@ -931,6 +1046,7 @@ pub fn SideChatView(ctx: StudioCtx) -> impl IntoView {
                 <textarea
                     class="composer-input"
                     data-testid="side-composer"
+                    node_ref=composer
                     rows="2"
                     placeholder=t(T::SideChatPlaceholder)
                     prop:value=move || draft.get()

@@ -215,7 +215,7 @@ try {
       await sleep(600);
     });
     await shot('studio-side-chat', async () => {
-      await page.getByTestId('side-chat-tab').click();
+      await page.getByTestId('side-chat-fab').click();
       await page.getByTestId('side-chat').waitFor();
     });
 

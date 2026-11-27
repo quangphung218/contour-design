@@ -573,34 +573,66 @@ try {
   await page.getByTestId('memory-toggle').click();
   results.memory = 'ok';
 
+  // Side chat: a round button at the preview's bottom right, not a tab.
+  const fab = page.getByTestId('side-chat-fab');
+  const sidePanel = page.getByTestId('side-chat');
+  const sideComposer = page.getByTestId('side-composer');
+  const focused = () => page.evaluate(() => document.activeElement?.dataset.testid);
+  assert.equal(await page.getByTestId('tabs').getByText('Side chat').count(), 0, 'no Side chat tab');
+  assert.equal(await fab.getAttribute('aria-label'), await fab.getAttribute('data-tip'), 'tooltip says what the name says');
+  assert.match(await fab.getAttribute('aria-label'), /side/i);
+  assert.equal(await fab.getAttribute('aria-expanded'), 'false');
   const mainCount = await assistant.count();
-  await page.getByTestId('side-chat-tab').click();
-  await page.getByTestId('side-composer').fill('is the hero too big?');
-  await page.getByTestId('side-composer').press('Enter');
+  await fab.click();
+  await sidePanel.waitFor();
+  await until(async () => (await focused()) === 'side-composer', 'open: focus in the side composer');
+  assert.equal(await fab.getAttribute('aria-expanded'), 'true');
+  {
+    // Over the preview, clear of the main chat and its Send.
+    const [panel, chat, send] = await Promise.all([sidePanel.boundingBox(), page.locator('.studio > .chat').boundingBox(), page.getByTestId('send').boundingBox()]);
+    assert.ok(panel.x >= chat.x + chat.width, `the panel leaves the main chat (${panel.x} < ${chat.x + chat.width})`);
+    assert.ok(panel.x >= send.x + send.width, 'the panel leaves Send');
+    assert.ok(panel.width <= 381 && panel.height <= 561, `panel size ${panel.width}×${panel.height}`);
+  }
+  await sideComposer.fill('is the hero too big?');
+  await sideComposer.press('Enter');
   const sideMsg = page.getByTestId('side-assistant-msg');
   await sideMsg.last().getByText('Mode: chat.').waitFor();
   await until(async () => (await sideMsg.last().getAttribute('data-state')) === 'succeeded', 'side turn done');
   assert.equal(await assistant.count(), mainCount, 'the main chat is untouched');
   assert.notEqual(runBodies.at(-1).conversationId, mainCid, 'own conversation');
+  // What is typed stays when the panel closes (Esc, then ×) and opens again.
+  await sideComposer.fill('half a question');
+  await sideComposer.press('Escape');
+  await sidePanel.waitFor({ state: 'detached' });
+  await until(async () => (await focused()) === 'side-chat-fab', 'closed: focus back on the button');
+  await page.keyboard.press('Enter');
+  await sidePanel.waitFor();
+  assert.equal(await sideComposer.inputValue(), 'half a question', 'Esc keeps what is typed');
+  await page.getByTestId('side-chat-close').click();
+  await sidePanel.waitFor({ state: 'detached' });
+  await until(async () => (await focused()) === 'side-chat-fab', '× : focus back on the button');
   await page.getByTestId('tab').first().locator('.tab-name').click();
   await page.getByTestId('preview').waitFor();
-  await page.getByTestId('side-chat-tab').click();
-  assert.equal(await sideMsg.count(), 1, 'history kept across tabs');
+  await fab.click();
+  assert.equal(await sideComposer.inputValue(), 'half a question', '× and a file tab keep what is typed');
+  assert.equal(await sideMsg.count(), 1, 'history kept while closed');
+  await sideComposer.fill('');
   await page.reload();
   await page.getByTestId('composer').waitFor();
   await until(async () => (await page.getByTestId('conversation').inputValue()) === mainCid, 'main conversation reopened');
   // The side chat's conversation stays out of the main list.
   const conversationNames = await page.locator('[data-testid="conversation"] option').allTextContents();
   assert.ok(!conversationNames.includes('Side chat'), `main list: ${conversationNames}`);
-  await page.getByTestId('side-chat-tab').click();
+  await fab.click();
   await sideMsg.first().getByText('Mode: chat.').waitFor();
   // The side chat follows its stream the same way: small wheel steps up
   // while it streams keep the reader's place, Jump goes back to the end.
   {
     const list = page.getByTestId('side-messages');
     const metrics = () => list.evaluate((e) => ({ top: e.scrollTop, gap: e.scrollHeight - e.scrollTop - e.clientHeight, height: e.scrollHeight }));
-    await page.getByTestId('side-composer').fill('a rapid answer');
-    await page.getByTestId('side-composer').press('Enter');
+    await sideComposer.fill('a rapid answer');
+    await sideComposer.press('Enter');
     const live = sideMsg.last();
     await until(async () => /line20\b/.test(await live.textContent()), 'side run streaming');
     assert.ok((await metrics()).gap <= 48, 'the side chat follows its stream');
@@ -617,14 +649,24 @@ try {
     const later = await metrics();
     assert.ok(later.height > held.height, 'side run still streaming');
     assert.ok(Math.abs(later.top - held.top) <= 1, `side chat: output does not pull the reader down (${held.top} → ${later.top})`);
-    await page.getByTestId('jump-latest').focus();
+    await sidePanel.getByTestId('jump-latest').focus();
     await page.keyboard.press('Enter');
     await until(async () => (await metrics()).gap <= 48, 'side chat: jumped');
-    assert.equal(await page.evaluate(() => document.activeElement?.dataset.testid), 'side-composer', 'focus lands in the side composer');
-    await until(async () => (await live.getAttribute('data-state')) === 'succeeded', 'side rapid turn done', 20_000);
-    assert.ok((await metrics()).gap <= 48, 'side chat: follows again to the end of the run');
+    assert.equal(await focused(), 'side-composer', 'focus lands in the side composer');
+    // Closed while it streams: the run goes on, the button's dot says so,
+    // then that an answer waits; opening shows it whole and clears the dot.
+    await page.getByTestId('side-chat-close').click();
+    await sidePanel.waitFor({ state: 'detached' });
+    assert.equal(await fab.getAttribute('data-news'), 'live', 'dot while the side chat answers');
+    await fab.locator('.fab-dot').waitFor();
+    await until(async () => (await fab.getAttribute('data-news')) === 'unseen', 'dot: an answer not seen yet', 20_000);
+    await fab.click();
+    await until(async () => (await sideMsg.last().getAttribute('data-state')) === 'succeeded', 'side rapid turn done after closing');
+    assert.match(await sideMsg.last().textContent(), /line249\b/, 'the answer streamed while closed');
+    assert.equal(await fab.getAttribute('data-news'), 'none', 'seen: no dot');
+    assert.equal(await fab.locator('.fab-dot').count(), 0);
   }
-  await page.getByTestId('tab').first().locator('.tab-name').click();
+  await page.getByTestId('side-chat-close').click();
   results.sideChat = 'ok';
 
   await page.getByTestId('export-conversation').click();

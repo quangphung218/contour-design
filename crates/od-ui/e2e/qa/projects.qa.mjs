@@ -310,13 +310,14 @@ test('PRJ-18', 'Asking in the side chat of a project deleted from another tab sa
   await page.route(/\/api\/projects\/[^/]+\/events$/, () => {});
   await page.goto(`${d.base}/projects/${id}`);
   await page.getByTestId('composer').waitFor();
-  await page.getByTestId('side-chat-tab').click();
+  await page.getByTestId('side-chat-fab').click();
   await page.getByTestId('side-composer').waitFor();
   assert.equal((await api(`/api/projects/${id}`, { method: 'DELETE' })).status, 200);
   await page.getByTestId('side-composer').fill('tiêu đề có to quá không? 🤔');
   await page.getByTestId('side-composer').press('Enter');
   await page.getByTestId('load-error').getByText('This project was deleted or the link is wrong.').waitFor({ timeout: 10_000 });
   assert.equal(await page.getByTestId('side-chat').count(), 0, 'the side chat of a deleted project');
+  assert.equal(await page.getByTestId('side-chat-fab').count(), 0, 'the side chat button of a deleted project');
   assert.equal(await page.getByTestId('side-composer').count(), 0, 'a side composer for a deleted project');
   const said = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
   assert.doesNotMatch(said, /HTTP 404|check the agent in Settings|Reconnecting/i, said.slice(0, 300));
@@ -487,7 +488,7 @@ test('PRJ-25', 'Asking again in the side chat of a project deleted from another 
   await page.route(/\/api\/projects\/[^/]+\/events$/, () => {});
   await page.goto(`${d.base}/projects/${id}`);
   await page.getByTestId('composer').waitFor();
-  await page.getByTestId('side-chat-tab').click();
+  await page.getByTestId('side-chat-fab').click();
   const ask = async (text) => {
     await page.getByTestId('side-composer').fill(text);
     await page.getByTestId('side-composer').press('Enter');

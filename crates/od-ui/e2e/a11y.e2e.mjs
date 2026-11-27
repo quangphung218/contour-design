@@ -121,6 +121,13 @@ async function setLocale(locale) {
 
 const preview = (page) => page.frameLocator('[data-testid="preview"]');
 // The element under the middle of `locator`, as the user would click it.
+// The box of `locator` once its opening animation is over.
+const settledBox = async (locator) => {
+  await locator.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+  return locator.boundingBox();
+};
+// Two boxes share no pixel.
+const apart = (a, b) => a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
 const onTop = (locator) =>
   locator.evaluate((el) => {
     const r = el.getBoundingClientRect();
@@ -147,6 +154,8 @@ try {
   await page.waitForURL('**/projects/*');
   const projectUrl = page.url();
   await until(async () => (await page.getByTestId('assistant-msg').first().getAttribute('data-state')) === 'succeeded', 'first turn');
+  // A second page, for a second tab.
+  await fetch(`${BASE}/api/projects/${projectUrl.split('/').pop()}/files`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'about.html', content: '<!doctype html><h1 id="title">About</h1>' }) });
   const form = new FormData();
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
   form.append('file', new Blob([png], { type: 'image/png' }), 'mood.png');
@@ -248,6 +257,8 @@ try {
     await until(() => page.getByTestId('export').evaluate((b) => b === document.activeElement), 'focus back on Export', 3000);
   });
   await check('Left/Right move between tabs', async () => {
+    await page.locator('.file', { hasText: 'about.html' }).click();
+    await page.locator('.file', { hasText: 'index.html' }).click();
     const tabs = page.locator('[data-testid="tabs"] [role="tablist"] [role="tab"]');
     assert.ok((await tabs.count()) >= 2, 'two tabs');
     await tabs.first().focus();
@@ -262,6 +273,31 @@ try {
     const swatch = page.getByTestId('inspect-background-color-picker');
     await until(async () => /transparent/.test(await swatch.getAttribute('class')), 'checker swatch', 5000);
     await shot(page, 'inspect-1440-light');
+    // The side chat button moves beside the tool panel, still on top.
+    const [fab, panel] = await Promise.all([page.getByTestId('side-chat-fab').boundingBox(), page.getByTestId('tool-panel').boundingBox()]);
+    assert.ok(apart(fab, panel), `side chat button ${JSON.stringify(fab)} on the tool panel ${JSON.stringify(panel)}`);
+    assert.ok(await onTop(page.getByTestId('side-chat-fab')), 'side chat button is covered');
+  });
+  await check('side chat button beside the preview panels', async () => {
+    const fab = page.getByTestId('side-chat-fab');
+    // A preview over 760 px: the tool panel is a column at its right.
+    await page.setViewportSize({ width: 1920, height: 1000 });
+    await until(async () => (await page.getByTestId('preview-pane').evaluate((e) => e.clientWidth)) > 800, 'a wide preview', 3000);
+    await sleep(300);
+    let [box, panel] = await Promise.all([fab.boundingBox(), page.getByTestId('tool-panel').boundingBox()]);
+    assert.ok(apart(box, panel), `side chat button ${JSON.stringify(box)} on the tool panel column ${JSON.stringify(panel)}`);
+    assert.ok(await onTop(fab), 'side chat button is covered');
+    // A narrow preview: History lies over its right side.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByTestId('inspect-mode').click();
+    await page.getByTestId('tool-panel').waitFor({ state: 'detached' });
+    await page.getByTestId('history').click();
+    await page.getByTestId('versions').waitFor();
+    await sleep(300);
+    [box, panel] = await Promise.all([fab.boundingBox(), page.getByTestId('versions').boundingBox()]);
+    assert.ok(apart(box, panel), `side chat button ${JSON.stringify(box)} on History ${JSON.stringify(panel)}`);
+    assert.ok(await onTop(fab), 'side chat button is covered');
+    await page.getByTestId('history').click();
   });
   await page.context().close();
 
@@ -280,6 +316,30 @@ try {
     assert.ok(panel.y >= stage.y + stage.height - 1, `panel (top ${panel.y}) covers the page (bottom ${stage.y + stage.height})`);
     assert.ok(panel.height <= body.height * 0.45 + 1, `panel is ${Math.round((panel.height / body.height) * 100)}% high`);
     assert.ok(await onTop(page.getByTestId('preview')), 'preview frame is covered');
+    // The side chat button sits above the sheet, not on it.
+    const fab = await page.getByTestId('side-chat-fab').boundingBox();
+    assert.ok(apart(fab, panel), `side chat button ${JSON.stringify(fab)} on the sheet ${JSON.stringify(panel)}`);
+    assert.ok(await onTop(page.getByTestId('side-chat-fab')), 'side chat button is covered');
+  });
+  await page.context().close();
+
+  // 600: chat over preview; the side chat opens as a sheet over the window.
+  page = await newPage(600, 800, 'light');
+  await openStudio(page);
+  await check('600: side chat button leaves Send; its panel is a full sheet', async () => {
+    const fab = page.getByTestId('side-chat-fab');
+    const [box, send, composer] = await Promise.all([fab.boundingBox(), page.getByTestId('send').boundingBox(), page.getByTestId('composer').boundingBox()]);
+    assert.ok(apart(box, send) && apart(box, composer), `side chat button ${JSON.stringify(box)} on the composer ${JSON.stringify(composer)}`);
+    assert.ok(await onTop(fab), 'side chat button is covered');
+    await fab.click();
+    const sheet = await settledBox(page.getByTestId('side-chat'));
+    assert.deepEqual([sheet.x, sheet.y, sheet.width, sheet.height].map(Math.round), [0, 0, 600, 800], 'sheet over the whole window');
+    assert.ok(await onTop(page.getByTestId('side-composer')), 'side composer is covered');
+    assert.ok(await onTop(page.getByTestId('side-chat-close')), 'close is covered');
+    await shot(page, 'studio-side-chat-600-light');
+    await page.keyboard.press('Escape');
+    await page.getByTestId('side-chat').waitFor({ state: 'detached' });
+    await until(() => fab.evaluate((b) => b === document.activeElement), 'focus back on the side chat button', 3000);
   });
   await page.context().close();
 
@@ -314,6 +374,7 @@ try {
     assert.ok(await onTop(page.getByTestId('composer')), 'composer is covered');
     assert.ok(!(await page.getByTestId('preview').isVisible()), 'preview shows with the chat');
     assert.ok(!(await page.getByTestId('collapse-chat').isVisible()), 'collapse chat shows, but the switch replaces it');
+    assert.ok(!(await page.getByTestId('side-chat-fab').isVisible()), 'the side chat button shows over the chat');
     // A file opened from the chat shows the preview too.
     await page.getByTestId('turn-file-open').first().click();
     await until(async () => (await page.getByTestId('pane-preview').getAttribute('aria-checked')) === 'true', 'a file opened from the chat shows the preview');
@@ -327,10 +388,11 @@ try {
     await preview(page).locator('#title').waitFor();
     await shot(page, 'studio-preview-390-light');
     assert.ok(await onTop(page.getByTestId('preview')), 'preview frame is covered');
-    // The side chat covers the preview; Preview on the switch brings it back.
-    await page.locator('[data-testid="side-chat-tab"] .tab-name').click();
-    await page.getByTestId('side-chat').waitFor();
-    await page.getByTestId('pane-preview').click();
+    // The side chat: a sheet over the window from Preview, closed by ×.
+    await page.getByTestId('side-chat-fab').click();
+    const sheet = await settledBox(page.getByTestId('side-chat'));
+    assert.deepEqual([sheet.x, sheet.y, sheet.width, sheet.height].map(Math.round), [0, 0, 390, 844], 'sheet over the whole window');
+    await page.getByTestId('side-chat-close').click();
     await page.getByTestId('side-chat').waitFor({ state: 'detached' });
     await preview(page).locator('#title').waitFor();
     // The switch is one Tab stop; the arrows move and pick (WAI-ARIA radio group).

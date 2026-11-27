@@ -990,22 +990,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .preview-top .tab-name { min-width: 0; flex: 1; }
 .preview-top .tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .preview-top > .tabs > :not(.tab-list):not(.spacer) { flex: none; }
-/* Side chat stays pinned at the right edge of the scrolling list, with a
-   fade over the tabs that slide under it. */
-.preview-top .tab-list > .side-tab { position: sticky; right: 0; z-index: 1; flex: none; min-width: 0; background: var(--color-surface); }
-.preview-top .tab-list > .side-tab.active { background: var(--color-surface-raised); }
-.preview-top .tab-list > .side-tab::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: var(--space-4); background: linear-gradient(to right, transparent, var(--color-surface)); pointer-events: none; }
-/* A phone-width preview leaves the list less room than one tab and Side
-   chat (about 210 px): pinned, Side chat would cover the open tab. There
-   it scrolls with the other tabs. */
-@container preview (max-width: 440px) {
-  .preview-top .tab-list > .side-tab { position: static; }
-  .preview-top .tab-list > .side-tab::before { content: none; }
-}
 .preview-actions { flex: none; display: flex; align-items: center; gap: var(--space-1); padding-right: var(--space-2); }
 .preview-actions:empty { display: none; }
 .tab-add { margin-left: var(--space-1); }
-.side-tab .tab-name .ico { color: var(--color-accent); }
 .preview-head { gap: var(--space-1); padding-left: var(--space-1-5); }
 .preview-head .path-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-head .segmented .seg .ico + .btn-label { margin-left: var(--space-1); }
@@ -1246,7 +1233,57 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .term-host { flex: 1; min-height: 0; padding: var(--space-2-5) var(--space-3); overflow: hidden; border-radius: var(--radius-lg); background: var(--color-terminal); box-shadow: var(--shadow-md); transition: box-shadow var(--duration-base) var(--ease-out); }
 .term-host:focus-within { box-shadow: 0 0 0 2px var(--color-focus-ring), var(--shadow-md); }
 .term-host .xterm { height: 100%; }
-.side-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--color-surface); }
+/* Side chat: a round button at the preview's bottom right opens a panel
+   over the workspace's bottom right; never over the main chat. */
+.preview { position: relative; }
+.side-fab {
+  position: absolute; right: var(--space-4); bottom: var(--space-4); z-index: var(--z-sticky);
+  display: inline-grid; place-items: center; width: 48px; height: 48px; padding: 0;
+  border: 1px solid var(--color-border); border-radius: var(--radius-full);
+  background: var(--color-surface-raised); color: var(--color-accent); box-shadow: var(--shadow-lg);
+  cursor: pointer; transition: transform var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
+}
+.side-fab:hover { background: var(--color-fill); transform: translateY(-1px); }
+.side-fab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-focus-ring), var(--shadow-lg); }
+.side-fab .ico { width: 22px; height: 22px; }
+.side-fab .fab-dot { position: absolute; top: 3px; right: 3px; width: 10px; height: 10px; border: 2px solid var(--color-surface-raised); border-radius: var(--radius-full); background: var(--color-accent); pointer-events: none; }
+.side-fab[data-news="live"] .fab-dot { animation: pulse 1.4s var(--ease-out) infinite; }
+/* Its tip opens up and to the left: below or centred, it leaves the window. */
+.preview > .side-fab[data-tip]::after { top: auto; bottom: calc(100% + 6px); left: auto; right: 0; transform: translate(0, 2px); }
+.preview > .side-fab[data-tip]:hover::after, .preview > .side-fab[data-tip]:focus-visible::after { transform: translate(0, 0); }
+/* Open, the panel takes its place. */
+.side-fab[aria-expanded="true"], .preview.presenting > .side-fab { visibility: hidden; }
+/* Clear of the preview's own panels (History 292 px, a tool panel 316 px): beside them… */
+.preview:has(.preview-body > .versions) > .side-fab { right: calc(316px + var(--space-4)); }
+@container preview (max-width: 760px) {
+  .preview:has(.preview-body > .versions) > .side-fab { right: max(var(--space-4), min(calc(316px + var(--space-4)), calc(100% - 48px - var(--space-4)))); }
+  /* …and above a tool panel that turned into a sheet under the page. */
+  .preview:has(.preview-body > .tool-panel) > .side-fab { right: var(--space-4); bottom: calc(45% + var(--space-4)); }
+}
+/* The first-artifact hint, drawing tools and slide notes keep the corner free. */
+.preview .first-artifact-hint { bottom: calc(var(--space-4) + 56px); }
+.preview .draw-tools { max-width: calc(100% - 2 * (48px + var(--space-5))); }
+.preview .notes-panel { padding-right: calc(48px + 2 * var(--space-4)); }
+/* Toasts stack above the button. */
+body:has(.side-fab) .toast-region { bottom: calc(var(--space-5) + 56px); }
+body:has(.side-fab) .brand-ready { bottom: calc(var(--space-5) + 64px + 56px); }
+
+.workspace { position: relative; }
+.side-chat {
+  position: absolute; right: var(--space-4); bottom: var(--space-4); z-index: var(--z-popover);
+  display: flex; flex-direction: column; min-height: 0;
+  width: min(380px, calc(100% - 2 * var(--space-4)));
+  height: min(560px, 70vh, calc(100% - 2 * var(--space-4)));
+  overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-xl);
+  background: var(--color-surface); box-shadow: var(--shadow-lg);
+  animation: dialog-in var(--duration-base) var(--ease-emphasized);
+}
+/* Beside the files column, over the preview. */
+.workspace:not(.files-closed) > .side-chat { right: calc(224px + var(--space-4)); width: min(380px, calc(100% - 224px - 2 * var(--space-4))); }
+.side-chat-head { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-1) var(--space-1-5) var(--space-1) var(--space-3); border-bottom: 1px solid var(--color-border-subtle); color: var(--color-accent); }
+.side-chat-title { color: var(--color-text); font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+.side-chat > .mode-hint { flex: none; }
+@media (prefers-reduced-motion: reduce) { .side-chat { animation: none; } .side-fab[data-news="live"] .fab-dot { animation: none; } }
 
 @keyframes panel-in { from { opacity: 0; transform: translateX(8px); } }
 
@@ -1290,6 +1327,20 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
   .studio .workspace, .studio .workspace.files-closed { grid-template-columns: minmax(0, 1fr); }
   .studio[data-pane="files"] .preview { display: none; }
   .studio[data-pane="files"] .files { display: flex; border-left: 0; }
+}
+@media (max-width: 1180px) {
+  .workspace:not(.files-closed) > .side-chat { right: calc(196px + var(--space-4)); width: min(380px, calc(100% - 196px - 2 * var(--space-4))); }
+}
+@media (max-width: 900px) {
+  .workspace:not(.files-closed) > .side-chat { right: var(--space-4); width: min(380px, calc(100% - 2 * var(--space-4))); }
+}
+/* Phone width: the panel is a sheet over the whole window. */
+@media (max-width: 640px) {
+  .workspace > .side-chat, .workspace:not(.files-closed) > .side-chat {
+    position: fixed; inset: 0; z-index: var(--z-overlay); width: auto; height: auto;
+    border: 0; border-radius: 0; box-shadow: none;
+  }
+  .side-chat-head { min-height: 48px; }
 }
 
 /* command palette (shares the quick switcher's frame) */
