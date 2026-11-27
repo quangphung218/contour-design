@@ -130,9 +130,13 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     again by its `GET` for its own answer (`routes/content.rs:skill_for_form`), never stored in the shared index (a read
     may find it half written in place; a run's prompt reads the index): held still over `SETTLE`, that file (empty, or
     under another `name:`, too); written all along, the index's copy with its own tag (the Save is a 412); not a skill
-    (too large, unparsable), the index's copy tagged with that file, so a Save puts a skill there again.
-    A `SKILL.md` or `DESIGN.md` is written only through `user_content::write_replacing` (a file renamed over it: no
-    half-written read, no write through a link), and a folder under the user root is named by an id only after the
+    (too large, unparsable, a link: tag `unreadable`), the index's copy tagged with that file, so a Save puts a skill there
+    again; gone (no `SKILL.md`), the index is read again: the bundled copy of a deleted override, a 404 for a deleted
+    skill. No form is ever given the tag of nothing (`GONE_TAG`), and a Save that sends it is a 412; a `PUT` of a skill gone
+    from the index is a 412 with a tag, and `*` ("Save anyway") puts it back as a user skill.
+    A `SKILL.md` or `DESIGN.md` is written only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
+    a new file of a random name made `O_EXCL|O_NOFOLLOW`, bits set on its descriptor, renamed over it: no half-written read,
+    no write through a link at the file or at the temp name), every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
     names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content` and `od-server`, `KEPT` with why).
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and

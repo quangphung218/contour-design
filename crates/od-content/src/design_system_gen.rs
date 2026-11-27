@@ -7,7 +7,6 @@
 use crate::design_systems::{USER_ID_PREFIX, is_valid_id, read_package_file};
 use serde_json::json;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// H2 sections the agent is asked to write (spec 3.5: at least seven).
 pub const SECTIONS: [&str; 9] = [
@@ -370,14 +369,11 @@ fn install_checked(
     std::fs::create_dir_all(user_root).map_err(io)?;
     // Build the package next to its destination, then rename: the index
     // never sees a half-written folder. Each job has its own (hidden,
-    // never listed) folder, so two jobs for one name do not collide.
-    static JOB: AtomicU64 = AtomicU64::new(0);
-    let tmp = user_root.join(format!(
-        ".installing-{}-{}",
-        std::process::id(),
-        JOB.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&tmp).map_err(io)?;
+    // never listed) folder, so two jobs for one name do not collide. Its
+    // name is random and it is made new (`create_dir`): a link planted at a
+    // name worked out beforehand would send every file written there out.
+    let tmp = user_root.join(format!(".installing-{}", crate::nofollow::random_tag()));
+    std::fs::create_dir(&tmp).map_err(io)?;
     let built = build_and_place(files, &tmp, user_root, req, origin);
     if built.is_err() {
         let _ = std::fs::remove_dir_all(&tmp);

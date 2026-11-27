@@ -11,6 +11,11 @@
 //!   `refuse_case_twin`): on macOS and Windows `user_root.join("ad-creative")`
 //!   also opens `Ad-Creative`, another skill.
 //!
+//! - `tmp`: a function that renames a file it wrote makes it with
+//!   `create_new` (`O_EXCL`; `od_content::nofollow::new_file`,
+//!   `replace_file`): `fs::write`, `File::create` or `.create(true)` open a
+//!   link planted at a temp name and write wherever it points.
+//!
 //! What stays is in `KEPT`, by file, function and count, with why.
 //!
 //! The sources are parsed as Rust (`syn`): comments and strings are no
@@ -139,6 +144,20 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "write",
         1,
         "into the revision's temporary working folder (`tempfile`), never the package",
+    ),
+    (
+        "../od-content/src/user_content.rs",
+        "save_skill_again",
+        "user_root.join",
+        1,
+        "after `entry_like` finds no entry of that name in another case, under `REPLACE_LOCK`",
+    ),
+    (
+        "../od-content/src/design_system_gen.rs",
+        "build_and_place",
+        "tmp",
+        1,
+        "its files are written in the folder its caller made new (`create_dir`, a random name): nothing planted is in it",
     ),
     (
         "src/routes/library/design_systems.rs",
@@ -393,6 +412,8 @@ fn is_root(e: &Expr, roots: &HashSet<String>) -> bool {
         {
             is_root(&m.receiver, roots)
         }
+        // `state.store.data_dir().user_skills_dir()`, `paths.user_root()`.
+        Expr::MethodCall(m) => matches!(name(&m.method).as_str(), "user_skills_dir" | "user_root"),
         Expr::Path(p) => p.path.get_ident().is_some_and(|i| {
             let n = name(i);
             n == "user_root" || roots.contains(&n)
@@ -431,7 +452,30 @@ struct Writes<'n> {
     names: &'n Names,
     func: String,
     binds: Bindings,
+    /// In the function being read: a `fs::rename`, a write that is not
+    /// `create_new` (`fs::write`, `File::create`, `.create(true)`,
+    /// `.truncate(true)`), a `create_new`; the line of the first rename.
+    renames: Option<usize>,
+    plain_call: bool,
+    plain_write: bool,
+    create_new: bool,
     found: Vec<(&'static str, String, usize)>,
+}
+
+/// The method names of a chain `a.b(…).c(…)`, outermost first, and the
+/// expression it starts from.
+fn chain(mut e: &Expr) -> (Vec<String>, &Expr) {
+    let mut names = Vec::new();
+    while let Expr::MethodCall(m) = e {
+        names.push(name(&m.method));
+        e = &m.receiver;
+    }
+    (names, e)
+}
+
+/// Whether `e` is the literal `true`.
+fn is_true(e: Option<&Expr>) -> bool {
+    matches!(e, Some(Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. })) if b.value)
 }
 
 impl Writes<'_> {
@@ -445,6 +489,24 @@ impl Writes<'_> {
         b.visit_block(block);
         self.binds = b.out;
         self.func = name(func);
+        self.renames = None;
+        self.plain_call = false;
+        self.plain_write = false;
+        self.create_new = false;
+    }
+
+    /// Leaving a function: one that renames a file it wrote without
+    /// `create_new` wrote a temp file a link planted at its name sends
+    /// anywhere (`O_EXCL` is what refuses one).
+    fn leave(&mut self) {
+        // `fs::write`/`File::create` never make a file new; a
+        // `.create(true)` may sit beside a `create_new` in another branch.
+        if let Some(line) = self.renames
+            && (self.plain_call || (self.plain_write && !self.create_new))
+        {
+            self.push("tmp", line);
+        }
+        self.renames = None;
     }
 
     fn known_files(&self) -> HashSet<String> {
@@ -474,12 +536,14 @@ impl<'ast> Visit<'ast> for Writes<'_> {
     fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
         self.enter(&f.sig.ident, &f.block);
         visit::visit_item_fn(self, f);
+        self.leave();
     }
 
     fn visit_impl_item_fn(&mut self, f: &'ast syn::ImplItemFn) {
         if !test_only(&f.attrs) {
             self.enter(&f.sig.ident, &f.block);
             visit::visit_impl_item_fn(self, f);
+            self.leave();
         }
     }
 
@@ -499,11 +563,19 @@ impl<'ast> Visit<'ast> for Writes<'_> {
                 (prev, last),
                 (Some("fs"), Some("write")) | (Some("File"), Some("create"))
             );
-            if writes
-                && c.args
-                    .first()
-                    .is_some_and(|a| mentions_a_file(a, &self.known_files()))
+            self.plain_call |= writes;
+            if matches!((prev, last), (Some("fs"), Some("rename" | "hard_link")))
+                && self.renames.is_none()
             {
+                self.renames = Some(Self::line(&c.func));
+            }
+            // `fs::copy(from, to)` writes `to`.
+            let target = match (prev, last) {
+                (Some("fs"), Some("copy")) => c.args.iter().nth(1),
+                _ if writes => c.args.first(),
+                _ => None,
+            };
+            if target.is_some_and(|a| mentions_a_file(a, &self.known_files())) {
                 self.push("write", Self::line(&c.func));
             }
             // `Path::join(user_root, id)`.
@@ -520,6 +592,31 @@ impl<'ast> Visit<'ast> for Writes<'_> {
     }
 
     fn visit_expr_method_call(&mut self, m: &'ast syn::ExprMethodCall) {
+        let method = name(&m.method);
+        match method.as_str() {
+            "create" | "truncate" if is_true(m.args.first()) => self.plain_write = true,
+            "create_new" if is_true(m.args.first()) => self.create_new = true,
+            _ => {}
+        }
+        // `OpenOptions::new().write(true)….open(path)`, `File::options()…`,
+        // or options bound earlier (`o.open(path)`: its flags unseen, taken
+        // for a write).
+        if method == "open" {
+            let (calls, start) = chain(&m.receiver);
+            let writes = calls.iter().any(|c| {
+                matches!(
+                    c.as_str(),
+                    "write" | "append" | "create" | "truncate" | "create_new"
+                )
+            }) || (calls.is_empty() && matches!(start, Expr::Path(_)));
+            if writes
+                && m.args
+                    .first()
+                    .is_some_and(|a| mentions_a_file(a, &self.known_files()))
+            {
+                self.push("write", m.method.span().start().line);
+            }
+        }
         if m.method == "join"
             && is_root(&m.receiver, &self.binds.roots)
             && !m.args.first().is_some_and(names_no_id)
@@ -554,6 +651,10 @@ fn writes(src: &str) -> Vec<(&'static str, String, usize)> {
         names: &names,
         func: String::new(),
         binds: Bindings::default(),
+        renames: None,
+        plain_call: false,
+        plain_write: false,
+        create_new: false,
         found: Vec::new(),
     };
     out.visit_file(&file);
@@ -705,6 +806,69 @@ fn every_spelling_of_a_write_is_caught() {
             r#"fn f() { let w = || std::fs::write(d.join("SKILL.md"), b); }"#,
             "write",
         ),
+        // Opened for writing, copied onto (PR #351 review: both passed).
+        (
+            r#"fn f() { std::fs::OpenOptions::new().write(true).truncate(true).open(inside(&e.dir, "DESIGN.md")?); }"#,
+            "write",
+        ),
+        (
+            r#"use std::fs::OpenOptions; fn f() { OpenOptions::new().append(true).open(d.join("SKILL.md")); }"#,
+            "write",
+        ),
+        (
+            r#"fn f() { std::fs::File::options().write(true).open(d.join("SKILL.md")); }"#,
+            "write",
+        ),
+        (
+            r#"fn f() { let mut o = std::fs::OpenOptions::new(); o.write(true); o.open(d.join("SKILL.md")); }"#,
+            "write",
+        ),
+        (
+            r#"fn f() { std::fs::copy(src, d.join("SKILL.md")); }"#,
+            "write",
+        ),
+        (
+            r#"use std::fs::copy as dup; fn f() { dup(src, d.join("DESIGN.md")); }"#,
+            "write",
+        ),
+        // A temp file written plainly, then renamed (PR #351 review).
+        (
+            "fn f() { std::fs::write(&tmp, b); std::fs::rename(&tmp, p); }",
+            "tmp",
+        ),
+        (
+            "fn f() { let f = std::fs::File::create(&tmp); std::fs::rename(&tmp, p); }",
+            "tmp",
+        ),
+        (
+            "use std::fs; fn f() { let o = fs::OpenOptions::new().write(true).create(true).truncate(true).open(&tmp); fs::rename(&tmp, p); }",
+            "tmp",
+        ),
+        (
+            "fn f() { let mut o = std::fs::OpenOptions::new(); o.write(true).create(true); let x = o.open(&tmp); std::fs::rename(&tmp, p); }",
+            "tmp",
+        ),
+        (
+            "impl S {\n    fn f() { std::fs::write(&tmp, b).and_then(|()| std::fs::rename(&tmp, p)); }\n}",
+            "tmp",
+        ),
+        (
+            "fn f() { std::fs::write(&tmp, b); let _ = std::fs::hard_link(&tmp, p); }",
+            "tmp",
+        ),
+        (
+            "fn f() { std::fs::write(&tmp, b); std::fs::hard_link(&tmp, p); OpenOptions::new().write(true).create_new(true).open(p); }",
+            "tmp",
+        ),
+        // The user root through a chain of calls (PR #351 review).
+        (
+            "fn f(s: &S) { let _p = s.store.data_dir().user_skills_dir().join(&id); }",
+            "user_root.join",
+        ),
+        (
+            "fn f(s: &S) { let r = s.store.data_dir().user_skills_dir(); r.join(id); }",
+            "user_root.join",
+        ),
         // A folder named by an id under the user root, however written.
         (
             "fn f(user_root: &Path) { user_root.join(id); }",
@@ -764,6 +928,14 @@ fn f() {}"#,
         "fn f(user_root: &Path) { user_root.join(format!(\".installing-{id}\")); }",
         "fn f(user_root: &Path) { user_root.join(PREVIOUS_DIR).join(id); }",
         "fn f(other: &Path) { other.join(id); }",
+        r#"fn f() { std::fs::OpenOptions::new().read(true).open(d.join("SKILL.md")); }"#,
+        r#"fn f() { std::fs::copy(d.join("SKILL.md"), out); }"#,
+        "fn f() { std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp); std::fs::rename(&tmp, p); }",
+        "fn f() { let f = nofollow::new_file(&tmp); std::fs::rename(&tmp, p); }",
+        "fn f() { OpenOptions::new().write(true).create_new(true).truncate(true).open(&tmp); std::fs::rename(&tmp, p); }",
+        "fn f() { std::fs::rename(&a, &b); }",
+        "fn f() { std::fs::write(&p, b); }",
+        "fn f(s: &S) { s.store.data_dir().user_skills_dir().join(\"x\"); }",
         "// user_root.join(id)\nfn f() {}",
     ] {
         assert!(rules(src).is_empty(), "{src}: {:?}", rules(src));
