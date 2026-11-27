@@ -145,11 +145,17 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     descriptor; Windows `create_new` and no reparse point on the way): a link an agent plants in it is never written
     through. Staging names (`.installing-`, `.incoming-`, `.old-`, `.swap-`) take `nofollow::random_tag()`, never a pid
     (`user_file_writes.rs` rule `pid`); what a run cut short left is still read back by id with a pid or a tag.
+    No half-copied folder is ever left where an index lists it: `copy_dir` removes the folder it made when a write
+    fails, and an override's first copy and Copy design system are built in a hidden `.copying-<name>-<tag>`
+    (`user_content::copy_dir_into_place`), finished there, then renamed into place; something already at the name is a
+    409 named by its folder name.
     - `../od-content/tests/planted_links.rs`, `../od-content/src/nofollow.rs::a_new_dir_writes_through_no_link_planted_in_it`,
       `::a_new_dir_is_new`, `../od-content/src/user_content.rs::leftovers_are_read_by_id_with_a_random_tag_or_a_pid`,
       `::an_install_cut_short_with_a_random_tag_is_put_back`,
       `../od-content/src/design_system_gen.rs::a_link_planted_in_the_staging_folder_is_never_written_through`,
-      `src/doctor.rs::the_data_folder_check_never_writes_through_a_planted_link`
+      `src/doctor.rs::the_data_folder_check_never_writes_through_a_planted_link`, `::the_probe_file_is_made_new`,
+      `../od-content/src/nofollow.rs::a_new_dir_swapped_for_a_link_before_it_is_opened_is_refused`,
+      `../od-content/src/user_content.rs::a_copy_into_place_is_whole_or_not_there`, `::a_copy_cut_short_removes_its_folder`
     - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and
       24 saves at once from one copy land once, per lock; `a_skill_read_while_written_in_place_leaves_the_index_whole`,
       `a_bundled_skill_saved_beside_one_named_alike_writes_nothing`), `src/cas.rs::tests`

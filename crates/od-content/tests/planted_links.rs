@@ -316,3 +316,94 @@ fn copy_dir_refuses_a_folder_already_there() {
     assert!(matches!(copied, Err(WriteError::Exists(_))), "{copied:?}");
     assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
 }
+
+/// An override's first copy cut short by a planted link (reviewer probe,
+/// PR #353 round 1): nothing half copied is left at `<user>/tea`, so the
+/// next Save copies it again, whole, with every side file.
+#[test]
+fn an_override_copy_cut_short_leaves_nothing_and_the_next_save_is_whole() {
+    let tmp = tempfile::tempdir().unwrap();
+    let user = tmp.path().join("skills");
+    std::fs::create_dir_all(&user).unwrap();
+    let bundled = tmp.path().join("bundled/tea");
+    source_skill(&bundled, "BUNDLED");
+    let victim = victim(tmp.path());
+    let draft = SkillDraft {
+        name: "tea".into(),
+        description: "d".into(),
+        triggers: vec![],
+        body: "edited".into(),
+    };
+    fn side_files(dir: &Path) -> usize {
+        std::fs::read_dir(dir.join("assets"))
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+    let half_seen = Arc::new(AtomicBool::new(false));
+    for i in 0..20 {
+        let saved = {
+            // At the last side file, in the override and in any hidden
+            // folder it may be built in.
+            let (v, at) = (victim.clone(), user.join("tea/assets/a299.txt"));
+            let _at = Planter::start(move || {
+                let _ = std::os::unix::fs::symlink(&v, &at);
+            });
+            let _watch = Planter::start(plant_in_new_folders(
+                vec![user.clone()],
+                |n| n.starts_with('.'),
+                &["assets/a299.txt"],
+                victim.clone(),
+            ));
+            // An index reading `tea` meanwhile sees it whole or not at all.
+            let (seen, at) = (Arc::clone(&half_seen), user.join("tea"));
+            let _look = Planter::start(move || {
+                let n = side_files(&at);
+                if n > 0 && n < 300 {
+                    seen.store(true, Ordering::Relaxed);
+                }
+            });
+            user_content::save_skill(&user, "tea", &bundled, false, &draft, None)
+        };
+        assert!(
+            !half_seen.load(Ordering::Relaxed),
+            "try {i}: `tea` seen half copied"
+        );
+        assert_untouched(&victim, "an override's copy", i);
+        let tea = user.join("tea");
+        match &saved {
+            // Landed: whole.
+            Ok(_) => assert_eq!(side_files(&tea), 300, "try {i}"),
+            // Refused: nothing there to be taken for an override later.
+            Err(e) => {
+                assert!(
+                    std::fs::symlink_metadata(&tea).is_err(),
+                    "try {i}: {e:?} left {:?}",
+                    std::fs::read_dir(&tea).map(|d| d.count())
+                );
+                break;
+            }
+        }
+        std::fs::remove_dir_all(&tea).unwrap();
+    }
+    // The agent is gone; the user saves again.
+    let dir = user_content::save_skill(&user, "tea", &bundled, false, &draft, None).unwrap();
+    assert_eq!(side_files(&dir), 300);
+    // Only `tea` shows. A hidden `.copying-tea-…` may stay when the agent
+    // was still writing in it as it was removed: no index lists it.
+    let names: Vec<String> = std::fs::read_dir(&user)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| !n.starts_with(".copying-tea-"))
+        .collect();
+    assert_eq!(names, ["tea"]);
+    let listed: Vec<PathBuf> = od_content::skills::list_skills(std::slice::from_ref(&user), true)
+        .into_iter()
+        .map(|e| e.dir)
+        .collect();
+    assert_eq!(listed, [user.join("tea")]);
+}

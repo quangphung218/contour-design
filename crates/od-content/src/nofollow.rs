@@ -371,18 +371,9 @@ impl NewDir {
         std::fs::create_dir(path)?;
         #[cfg(unix)]
         {
-            use nix::fcntl::{OFlag, open};
-            use nix::sys::stat::Mode;
-            // Swapped for a link since `create_dir`: `ELOOP`, not followed.
-            let fd = open(
-                path,
-                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-                Mode::empty(),
-            )
-            .map_err(std::io::Error::from)?;
             Ok(Self {
                 path: path.to_path_buf(),
-                fd,
+                fd: Self::hold(path)?,
             })
         }
         #[cfg(not(unix))]
@@ -393,6 +384,23 @@ impl NewDir {
             made.check_no_reparse(Path::new(""))?;
             Ok(made)
         }
+    }
+
+    /// Opens the folder just made at `path` for [`NewDir::create`]: one
+    /// swapped for a link since (an agent can rename a link of its own
+    /// over it) is `ELOOP`, never followed, so nothing is ever made in the
+    /// folder the link points at (`O_EXCL` alone refuses only a name
+    /// taken, not a new file there).
+    #[cfg(unix)]
+    fn hold(path: &Path) -> std::io::Result<std::os::fd::OwnedFd> {
+        use nix::fcntl::{OFlag, open};
+        use nix::sys::stat::Mode;
+        open(
+            path,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(std::io::Error::from)
     }
 
     /// The path it was made at (for messages and the moves after).
@@ -785,6 +793,23 @@ mod tests {
         // Removing a link removes the link, not what it points at.
         made.remove_file(Path::new("SKILL.md")).unwrap();
         assert!(outside.exists());
+    }
+
+    /// The folder just made, swapped for a link to a folder outside before
+    /// it is opened (PR #353 review: too narrow a window to race): the
+    /// open refuses the link, so nothing is made where it points.
+    #[test]
+    fn a_new_dir_swapped_for_a_link_before_it_is_opened_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        let link = tmp.path().join("made");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let held = NewDir::hold(&link);
+        assert!(held.is_err(), "the link was opened");
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        // The folder itself is opened.
+        assert!(NewDir::hold(&outside).is_ok());
     }
 
     /// A folder already at the name, or a link there, is never taken; a

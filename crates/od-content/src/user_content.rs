@@ -292,7 +292,10 @@ pub fn save_skill(
     } else {
         let dir = user_root.join(id);
         if !dir.exists() {
-            copy_dir(current_dir, &dir, u64::MAX)?;
+            // Whole or not at all: a copy cut short (a link an agent
+            // planted) leaves no override for the next Save to take as
+            // done.
+            copy_dir_into_place(current_dir, &dir, u64::MAX, |_| Ok::<(), WriteError>(()))?;
         }
         dir
     };
@@ -397,7 +400,9 @@ pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
 /// it is resolved once, and only what lies under it is read link-free.
 ///
 /// # Errors
-/// [`WriteError::BadRequest`] when too large, [`WriteError::Io`].
+/// [`WriteError::BadRequest`] when too large, [`WriteError::Exists`] for
+/// something at `to` already, [`WriteError::Io`] (`to` removed when it was
+/// made here).
 pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> {
     let from = std::fs::canonicalize(from).map_err(io)?;
     let tree = nofollow::read_tree(&from, keep_entry(true), budget).map_err(tree_error)?;
@@ -407,18 +412,67 @@ pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> 
         std::fs::create_dir_all(parent).map_err(io)?;
     }
     let made = nofollow::NewDir::create(to).map_err(|e| made_error(to, e))?;
-    nofollow::write_tree(&tree, &made, None).map_err(io)?;
+    // Made here: a copy cut short (a link planted in it) is removed, never
+    // left for a caller to take for done.
+    if let Err(e) = nofollow::write_tree(&tree, &made, None) {
+        let _ = std::fs::remove_dir_all(to);
+        return Err(io(e));
+    }
     Ok(tree.files.iter().map(|(_, f)| f.bytes.len() as u64).sum())
 }
 
 /// A folder that could not be made new: one there already is
-/// [`WriteError::Exists`].
+/// [`WriteError::Exists`], named by its folder name (the message a 409
+/// shows), not its whole path.
 fn made_error(at: &Path, e: std::io::Error) -> WriteError {
     if e.kind() == std::io::ErrorKind::AlreadyExists {
-        WriteError::Exists(at.display().to_string())
+        WriteError::Exists(folder_name(at))
     } else {
         io(e)
     }
+}
+
+fn folder_name(at: &Path) -> String {
+    at.file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+}
+
+/// Copies `from` as the new folder `to`, whole or not at all: built (as
+/// [`copy_dir`] builds) in a hidden folder beside it,
+/// `.copying-<name>-<random tag>`, which `finish` may change further
+/// (Copy design system rewrites its manifest), then renamed to `to`. An
+/// index never lists the hidden folder; on any failure it is removed and
+/// nothing is at `to`, so nothing half copied is ever taken for done.
+/// Something at `to` already (a folder, a link, a name differing only in
+/// case on macOS and Windows) is [`WriteError::Exists`]. Cut short (the
+/// app quit) before the rename, the hidden folder stays and `from` is
+/// untouched.
+///
+/// # Errors
+/// [`copy_dir`]'s, `finish`'s, [`WriteError::Exists`], [`WriteError::Io`].
+pub fn copy_dir_into_place<E: From<WriteError>>(
+    from: &Path,
+    to: &Path,
+    budget: u64,
+    finish: impl FnOnce(&Path) -> Result<(), E>,
+) -> Result<u64, E> {
+    let staging = to.with_file_name(format!(
+        ".copying-{}-{}",
+        folder_name(to),
+        nofollow::random_tag()
+    ));
+    // Not made here (the name taken): not ours to remove.
+    let copied = copy_dir(from, &staging, budget)?;
+    let placed = finish(&staging).and_then(|()| {
+        if std::fs::symlink_metadata(to).is_ok() {
+            return Err(WriteError::Exists(folder_name(to)).into());
+        }
+        std::fs::rename(&staging, to).map_err(|e| made_error(to, e).into())
+    });
+    if placed.is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+    placed.map(|()| copied)
 }
 
 /// Installs the plugin in `source` (a local folder with `SKILL.md` or
@@ -3187,6 +3241,101 @@ mod tests {
         // Forgotten (the skill deleted): nothing to restore.
         forget_previous_skill(&user, "tea").unwrap();
         assert!(!has_previous_skill(&user, "tea"));
+    }
+
+    /// A copy into place is whole or not there (PR #353 review): a step
+    /// that fails after the copy leaves nothing at `to` and no hidden
+    /// folder; something at `to` already (a folder, a link) is `Exists`
+    /// named by its folder name, never filled.
+    #[cfg(unix)]
+    #[test]
+    fn a_copy_into_place_is_whole_or_not_there() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("from");
+        std::fs::create_dir_all(from.join("assets")).unwrap();
+        std::fs::write(from.join("SKILL.md"), "s").unwrap();
+        std::fs::write(from.join("assets/a.css"), "a").unwrap();
+        let root = tmp.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+        let to = root.join("tea");
+        let failed: Result<u64, WriteError> = copy_dir_into_place(&from, &to, u64::MAX, |s| {
+            assert!(
+                s.join("assets/a.css").is_file(),
+                "finish sees the whole copy"
+            );
+            Err(WriteError::Io("cut short".into()))
+        });
+        assert!(matches!(failed, Err(WriteError::Io(_))));
+        assert!(
+            std::fs::read_dir(&root).unwrap().next().is_none(),
+            "{:?}",
+            names(&root)
+        );
+        // Taken: a folder there, or a link to one outside.
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &to).unwrap();
+        let taken = copy_dir_into_place(&from, &to, u64::MAX, |_| Ok::<(), WriteError>(()));
+        assert!(
+            matches!(&taken, Err(WriteError::Exists(n)) if n == "tea"),
+            "{taken:?}"
+        );
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        assert_eq!(names(&root), ["tea"]);
+        std::fs::remove_file(&to).unwrap();
+        // Landed: whole, nothing hidden beside it.
+        copy_dir_into_place(&from, &to, u64::MAX, |_| Ok::<(), WriteError>(())).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(to.join("assets/a.css")).unwrap(),
+            "a"
+        );
+        assert_eq!(names(&root), ["tea"]);
+        // `copy_dir` itself: something at `to` is named, not pathed.
+        let there = copy_dir(&from, &to, u64::MAX);
+        assert!(
+            matches!(&there, Err(WriteError::Exists(n)) if n == "tea"),
+            "{there:?}"
+        );
+    }
+
+    /// `copy_dir` cut short after making its folder (a link planted in
+    /// it) removes it: nothing half copied is left.
+    #[cfg(unix)]
+    #[test]
+    fn a_copy_cut_short_removes_its_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("from");
+        std::fs::create_dir_all(&from).unwrap();
+        for i in 0..50 {
+            std::fs::write(from.join(format!("f{i:02}")), "x").unwrap();
+        }
+        let victim = tmp.path().join("victim");
+        std::fs::write(&victim, "mine").unwrap();
+        let to = tmp.path().join("to");
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let planter = {
+            let (stop, at, victim) = (std::sync::Arc::clone(&stop), to.join("f49"), victim.clone());
+            std::thread::spawn(move || {
+                // Once: an agent writing on while the folder is removed
+                // could keep it (`remove_dir_all` then fails).
+                while !stop.load(std::sync::atomic::Ordering::Relaxed)
+                    && std::os::unix::fs::symlink(&victim, &at).is_err()
+                {}
+            })
+        };
+        let mut cut = false;
+        for _ in 0..200 {
+            if copy_dir(&from, &to, u64::MAX).is_err() {
+                cut = true;
+                assert!(std::fs::symlink_metadata(&to).is_err(), "left half copied");
+                break;
+            }
+            std::fs::remove_dir_all(&to).unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        planter.join().unwrap();
+        assert!(cut, "no copy was cut short in 200 tries");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "mine");
     }
 
     /// What a replace, install or restore leaves is named with a random

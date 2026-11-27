@@ -47,7 +47,7 @@ use axum::{Json, Router};
 use od_content::DesignSystemEntry;
 use od_content::design_kit::{self, Swatch, Token, TokenScore};
 use od_content::design_system_gen::{self, GenerateRequest};
-use od_content::user_content::{self, copy_dir};
+use od_content::user_content::{self, copy_dir_into_place};
 use od_contracts::{ContentSource, CreateProjectRequest, ProjectMetadata, RunStatus};
 use od_runs::RunMeta;
 use od_runtime::env::{RunEnv, agent_env};
@@ -696,31 +696,34 @@ pub async fn copy(
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        copy_dir(&e.dir, &dest, u64::MAX)?;
-        let _ = std::fs::remove_dir_all(dest.join(REVISIONS_DIR));
-        // `copy_dir` leaves hidden files; the sent names go too, or the
-        // copy's `logo-chính.png` would take `logo chính.png`'s (QA-109).
-        write_sent_names(&dest, &read_sent_names(&e.dir)).map_err(ApiErr::io)?;
-        // The manifest names its folder; keep it valid for the new one.
-        let manifest_path = dest.join("manifest.json");
-        if let Some(mut m) = read_text(&manifest_path)
-            .ok()
-            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        {
-            m["id"] = json!(folder);
-            m["name"] = json!(name);
-            m["source"] =
-                json!({ "type": "local", "origin": format!("copied from {}", e.summary.id) });
-            let _ = std::fs::write(
-                &manifest_path,
-                serde_json::to_vec_pretty(&m).unwrap_or_default(),
-            );
-        }
-        patch_metadata(
-            &dest,
-            &json!({ "title": name, "category": e.summary.category, "status": "draft" }),
-        )
-        .map_err(ApiErr::io)?;
+        // Built whole beside it, then renamed: a copy that fails half way
+        // is removed, never listed (`user_content::copy_dir_into_place`).
+        copy_dir_into_place(&e.dir, &dest, u64::MAX, |staging| {
+            let _ = std::fs::remove_dir_all(staging.join(REVISIONS_DIR));
+            // `copy_dir` leaves hidden files; the sent names go too, or the
+            // copy's `logo-chính.png` would take `logo chính.png`'s (QA-109).
+            write_sent_names(staging, &read_sent_names(&e.dir)).map_err(ApiErr::io)?;
+            // The manifest names its folder; keep it valid for the new one.
+            let manifest_path = staging.join("manifest.json");
+            if let Some(mut m) = read_text(&manifest_path)
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            {
+                m["id"] = json!(folder);
+                m["name"] = json!(name);
+                m["source"] =
+                    json!({ "type": "local", "origin": format!("copied from {}", e.summary.id) });
+                let _ = std::fs::write(
+                    &manifest_path,
+                    serde_json::to_vec_pretty(&m).unwrap_or_default(),
+                );
+            }
+            patch_metadata(
+                staging,
+                &json!({ "title": name, "category": e.summary.category, "status": "draft" }),
+            )
+            .map_err(ApiErr::io)
+        })?;
         Ok(format!(
             "{}{folder}",
             od_content::design_systems::USER_ID_PREFIX

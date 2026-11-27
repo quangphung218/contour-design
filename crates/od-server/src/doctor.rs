@@ -198,10 +198,7 @@ pub fn data_dir_check(root: &Path) -> Check {
     // data folder, and a link it planted at a name worked out beforehand
     // (a pid) was written through.
     let probe = root.join(format!(".od-doctor-{}", od_content::nofollow::random_tag()));
-    let written = std::fs::create_dir_all(root)
-        .and_then(|()| od_content::nofollow::new_file(&probe))
-        .and_then(|mut file| std::io::Write::write_all(&mut file, b"ok"))
-        .and_then(|()| std::fs::remove_file(&probe));
+    let written = std::fs::create_dir_all(root).and_then(|()| write_probe(&probe));
     match written {
         Ok(()) => Check::ok(ID, format!("Data folder {} is writable.", root.display())),
         Err(e) => Check::fail(
@@ -210,6 +207,16 @@ pub fn data_dir_check(root: &Path) -> Check {
             "Give your user write access to that folder, or set OD_DATA_DIR to a folder you own.",
         ),
     }
+}
+
+/// Writes and removes the file `probe`, made new (`O_EXCL|O_NOFOLLOW`):
+/// a file or link already at that name is `AlreadyExists`, never written
+/// through.
+fn write_probe(probe: &Path) -> std::io::Result<()> {
+    let mut file = od_content::nofollow::new_file(probe)?;
+    std::io::Write::write_all(&mut file, b"ok")?;
+    drop(file);
+    std::fs::remove_file(probe)
 }
 
 // ---------------------------------------------------------------------------
@@ -645,6 +652,29 @@ mod tests {
             "the user's own file"
         );
         assert!(std::fs::symlink_metadata(&guessed).unwrap().is_symlink());
+    }
+
+    /// Even at a name it did not work out beforehand (the random name
+    /// seen by listing), a link there is never written through.
+    #[cfg(unix)]
+    #[test]
+    fn the_probe_file_is_made_new() {
+        let tmp = tempfile::tempdir().unwrap();
+        let victim = tmp.path().join("victim.txt");
+        std::fs::write(&victim, "the user's own file").unwrap();
+        let at = tmp.path().join(".od-doctor-seen");
+        std::os::unix::fs::symlink(&victim, &at).unwrap();
+        assert_eq!(
+            write_probe(&at).map_err(|e| e.kind()),
+            Err(std::io::ErrorKind::AlreadyExists)
+        );
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "the user's own file"
+        );
+        assert!(std::fs::symlink_metadata(&at).unwrap().is_symlink());
+        write_probe(&tmp.path().join(".od-doctor-new")).unwrap();
+        assert!(!tmp.path().join(".od-doctor-new").exists());
     }
 
     #[cfg(unix)]
