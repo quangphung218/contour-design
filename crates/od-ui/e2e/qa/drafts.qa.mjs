@@ -277,7 +277,8 @@ test('DL-07', 'The brief and design system chosen on Home survive a trip to Sett
   const ds = await page.locator('[data-testid="design-system"] option').nth(2).getAttribute('value');
   await page.getByTestId('design-system').selectOption(ds);
   await page.getByTestId('brief').fill('Trang menu quán cà phê');
-  await page.getByRole('link', { name: 'Settings' }).first().click();
+  await page.getByTestId('quick-menu').click();
+  await page.getByTestId('quick-open-settings').click();
   await page.waitForURL('**/settings');
   await page.getByRole('link', { name: 'Home' }).first().click();
   await page.getByTestId('brief').waitFor();

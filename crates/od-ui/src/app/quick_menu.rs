@@ -1,7 +1,8 @@
-//! Quick settings in the sidebar corner (track C2-chat-home). The original
-//! has an account avatar menu (cloud, N/A here) and, signed out, a "Local
-//! mode" avatar; its settings popover (`EntrySettingsMenu`) carries
-//! language and a way into Settings. This one: theme, language, the main
+//! The Settings button in the sidebar corner (track C2-chat-home). The
+//! original has an account avatar menu (cloud, N/A here) and, signed out, a
+//! "Local mode" avatar; Contour has no account, so the corner is one
+//! Settings button. Its menu: Open Settings (also Cmd/Ctrl+, and the
+//! desktop Settings item, `od:menu` `settings`), theme, language, the main
 //! Settings sections, shortcuts, and Help (Documentation, Report Issue),
 //! which the desktop Help menu reaches too (`od:menu` `docs` /
 //! `report-issue`).
@@ -59,6 +60,17 @@ pub fn request_report() {
 /// Window event of [`request_report`].
 const REPORT_EVENT: &str = "od:report-issue";
 
+/// Asks the quick menu to open Settings (Cmd/Ctrl+,): it sits inside the
+/// router, so the page opens through the leave guard.
+pub fn request_settings() {
+    if let (Some(w), Ok(ev)) = (web_sys::window(), web_sys::Event::new(SETTINGS_EVENT)) {
+        let _ = w.dispatch_event(&ev);
+    }
+}
+
+/// Window event of [`request_settings`].
+const SETTINGS_EVENT: &str = "od:open-settings";
+
 const SECTIONS: [(&str, T, Glyph); 4] = [
     ("execution", T::SettingsModels, Glyph::Agent),
     ("memory", T::GlobalMemory, Glyph::Memory),
@@ -99,12 +111,14 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
     };
     let to_docs = open_page.clone();
     let go_docs = Callback::new(move |()| to_docs("/docs"));
-    // The desktop Help menu.
-    let go_docs_menu = move || go_docs.run(());
+    let to_settings = open_page.clone();
+    let go_settings = Callback::new(move |()| to_settings("/settings"));
+    // The desktop Help and Settings items.
     let menu = window_event_listener(
         leptos::ev::Custom::<web_sys::CustomEvent>::new("od:menu"),
         move |ev| match ev.detail().as_string().as_deref() {
-            Some("docs") => go_docs_menu(),
+            Some("docs") => go_docs.run(()),
+            Some("settings") => go_settings.run(()),
             Some("report-issue") => report(),
             _ => {}
         },
@@ -113,9 +127,14 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
         leptos::ev::Custom::<web_sys::Event>::new(REPORT_EVENT),
         move |_| report(),
     );
+    let settings_key = window_event_listener(
+        leptos::ev::Custom::<web_sys::Event>::new(SETTINGS_EVENT),
+        move |_| go_settings.run(()),
+    );
     on_cleanup(move || {
         menu.remove();
         asked.remove();
+        settings_key.remove();
     });
     let save = move |f: Box<dyn FnOnce(&mut crate::settings::AppConfig)>| {
         let mut next = shell.config.get_untracked().unwrap_or_default();
@@ -131,35 +150,43 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
             .config
             .with(|c| c.as_ref().map(|c| c.theme).unwrap_or_default())
     };
-    let go = move |href: String| {
+    // A `Callback` is `Copy`: the menu's items are built again on each open.
+    let go = Callback::new(move |href: String| {
         open.set(false);
         open_page(&href);
-    };
-    let go_section = go.clone();
+    });
     view! {
         <div class="menu-wrap quick-menu" node_ref=wrap>
             <button
                 class="nav-link quick-trigger"
                 data-testid="quick-menu"
-                aria-haspopup="menu"
+                aria-haspopup="dialog"
                 aria-expanded=move || open.get().to_string()
-                aria-label=move || if rail.get() { t(T::QuickSettings) } else { t(T::LocalMode) }
-                data-tip=move || rail.get().then(|| t(T::QuickSettings))
+                // The rail hides the label: the button keeps its name.
+                aria-label=t(T::NavSettings)
+                data-tip=move || rail.get().then(|| t(T::NavSettings))
                 data-tip-pos="right"
-                on:click=move |_| open.update(|o| *o = !*o)
+                on:click=move |ev| {
+                    // WebKit does not focus a clicked button: focus it, so
+                    // the closed menu gives the focus back to it.
+                    if let Some(b) = ev.current_target().and_then(|t| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(t).ok()) {
+                        let _ = b.focus();
+                    }
+                    open.update(|o| *o = !*o);
+                }
             >
-                <span class="quick-avatar" aria-hidden="true">{icon(Glyph::Terminal)}</span>
-                <span class="nav-label">{t(T::LocalMode)}</span>
+                {icon(Glyph::Settings)}
+                <span class="nav-label">{t(T::NavSettings)}</span>
             </button>
             <Show when=move || open.get()>
-                <div class="menu up quick-pop" role="menu" data-testid="quick-menu-pop" aria-label=t(T::QuickSettings)>
-                    <div class="quick-head">
-                        <span class="quick-avatar" aria-hidden="true">{icon(Glyph::Terminal)}</span>
-                        <span class="grow">
-                            <strong class="block">{t(T::LocalMode)}</strong>
-                            <span class="muted small">{t(T::LocalModeHint)}</span>
-                        </span>
-                    </div>
+                <QuickPop on_close=Callback::new(move |()| open.set(false))>
+                    <button class="menu-item" data-testid="quick-open-settings"
+                        on:click=move |_| { open.set(false); go_settings.run(()); }>
+                        {icon(Glyph::Settings)}{t(T::OpenSettings)}
+                        // Keeps "Open Settings Ctrl+," apart in the read text.
+                        {" "}
+                        <kbd class="menu-hint">{format!("{},", super::shortcuts::modifier())}</kbd>
+                    </button>
                     <div class="menu-sep" role="presentation">{t(T::Appearance)}</div>
                     <div class="segmented small quick-theme" role="group" aria-label=t(T::Appearance)>
                         {Theme::ALL.into_iter().map(|th| {
@@ -190,28 +217,27 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
                     </select>
                     <div class="menu-sep" role="presentation">{t(T::NavSettings)}</div>
                     {SECTIONS.into_iter().map(|(id, label, glyph)| {
-                        let go = go_section.clone();
                         view! {
-                            <button class="menu-item" role="menuitem" data-testid=format!("quick-section-{id}")
-                                on:click=move |_| go(format!("/settings#settings-{id}"))>
+                            <button class="menu-item" data-testid=format!("quick-section-{id}")
+                                on:click=move |_| go.run(format!("/settings#settings-{id}"))>
                                 {icon(glyph)}{t(label)}
                             </button>
                         }
                     }).collect_view()}
-                    <button class="menu-item" role="menuitem" data-testid="quick-shortcuts"
+                    <button class="menu-item" data-testid="quick-shortcuts"
                         on:click=move |_| { open.set(false); shell.shortcuts.set(true); }>
                         {icon(Glyph::Keyboard)}{t(T::KeyboardShortcuts)}
                     </button>
                     <div class="menu-sep" role="presentation">{t(T::Help)}</div>
-                    <button class="menu-item" role="menuitem" data-testid="quick-docs"
+                    <button class="menu-item" data-testid="quick-docs"
                         on:click=move |_| { open.set(false); go_docs.run(()); }>
                         {icon(Glyph::Book)}{t(T::Documentation)}
                     </button>
-                    <button class="menu-item" role="menuitem" data-testid="quick-report"
+                    <button class="menu-item" data-testid="quick-report"
                         on:click=move |_| { open.set(false); report(); }>
                         {icon(Glyph::Warning)}{t(T::ReportIssue)}
                     </button>
-                </div>
+                </QuickPop>
             </Show>
             {move || manual.get().map(|text| view! {
                 <super::lib_ui::Modal title=t(T::ReportIssue).to_owned() glyph=Glyph::Warning testid="report-manual"
@@ -243,3 +269,26 @@ pub fn QuickMenu(#[prop(into)] rail: Signal<bool>) -> impl IntoView {
         </div>
     }
 }
+
+/// The open menu: focus moves to its first item, the arrows go through its
+/// items, Esc closes it and nothing under it (a running jury, comment
+/// mode), and focus goes back to the Settings button when it closes.
+/// A non-modal dialog, not `role=menu`: it holds a language `<select>` and
+/// theme toggles, which a menu may not (axe `aria-required-children`).
+#[component]
+fn QuickPop(on_close: Callback<()>, children: Children) -> impl IntoView {
+    super::menu_scrim::close_on_escape(on_close);
+    let pop = NodeRef::<Div>::new();
+    super::focus::focus_while_open(pop, |p| {
+        p.query_selector(super::focus::FIRST_ITEM).ok().flatten()
+    });
+    view! {
+        <div class="menu up quick-pop" role="dialog" data-testid="quick-menu-pop" aria-label=t(T::QuickSettings)
+            node_ref=pop on:keydown=move |ev| super::focus::menu_keys(&ev, MENU_ITEMS)>
+            {children()}
+        </div>
+    }
+}
+
+/// What the arrows go through: every control of the menu.
+const MENU_ITEMS: &str = ".menu-item, .quick-theme .seg, .quick-language";

@@ -215,6 +215,10 @@ messages! {
     NavHome => "Home", "Trang chủ";
     NavProjects => "Projects", "Project";
     NavSettings => "Settings", "Cài đặt";
+    NavGroupCreate => "Create", "Tạo";
+    NavGroupLibrary => "Library", "Thư viện";
+    NavGroupAutomate => "Automate", "Tự động";
+    OpenSettings => "Open Settings", "Mở Cài đặt";
     PageNotFound => "Page not found", "Không tìm thấy trang";
     PageNotFoundBody => "The link may be old or mistyped.", "Link có thể đã cũ hoặc gõ sai.";
     GoToHome => "Go to Home", "Về trang chủ";
@@ -2026,8 +2030,6 @@ messages! {
     HomeNoSystems => "No design systems yet.", "Chưa có design system nào.";
     HomeAllDesigns => "All projects", "Mọi project";
     QuickSettings => "Quick settings", "Cài đặt nhanh";
-    LocalMode => "Local mode", "Chế độ cục bộ";
-    LocalModeHint => "No account. Everything stays on this computer.", "Không cần tài khoản. Mọi thứ nằm trên máy này.";
     Help => "Help", "Trợ giúp";
     Documentation => "Documentation", "Tài liệu hướng dẫn";
     // The desktop app's native menu bar (QA-049).
