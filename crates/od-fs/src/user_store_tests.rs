@@ -1116,3 +1116,94 @@ fn recover_moves_nothing_over_what_took_the_entrys_place() {
     );
     assert!(hidden_left(&root).iter().any(|n| n.starts_with(JOURNAL)));
 }
+
+// make_dir, remove_hidden, put_copy: the doors `user_content` and the
+// memory index take instead of `std::fs` (`tests/user_file_writes.rs`
+// rule `fs`).
+
+/// One plain name, made new: a path below it is refused, and a link (or
+/// anything) at the name is `AlreadyExists`, never followed.
+#[test]
+fn make_dir_makes_one_new_name_and_follows_no_link() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let g = root.lock();
+    let kind = |r: std::io::Result<()>| r.map_err(|e| e.kind());
+    assert_eq!(
+        kind(g.make_dir(Path::new("tea/x"))),
+        Err(std::io::ErrorKind::InvalidInput)
+    );
+    assert!(!root.path().join("tea/x").exists());
+    std::fs::create_dir(tmp.path().join("outside")).unwrap();
+    symlink(tmp.path().join("outside"), root.path().join("linked")).unwrap();
+    assert_eq!(
+        kind(g.make_dir(Path::new("linked"))),
+        Err(std::io::ErrorKind::AlreadyExists)
+    );
+    assert_eq!(names_in(&tmp.path().join("outside")), Vec::<String>::new());
+    g.make_dir(Path::new("new")).unwrap();
+    assert!(root.path().join("new").is_dir());
+}
+
+/// Only under a hidden folder of the root, never through a link there;
+/// nothing there is fine.
+#[test]
+fn remove_hidden_takes_only_a_hidden_folder_and_no_link() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    std::fs::write(root.path().join("tea/SKILL.md"), "tea").unwrap();
+    let g = root.lock();
+    assert!(g.remove_hidden(Path::new("tea/SKILL.md")).is_err());
+    assert!(root.path().join("tea/SKILL.md").is_file());
+    // `.previous` a link to a folder outside: nothing in it goes.
+    std::fs::create_dir_all(tmp.path().join("outside/tea")).unwrap();
+    symlink(tmp.path().join("outside"), root.path().join(".previous")).unwrap();
+    assert!(g.remove_hidden(Path::new(".previous/tea")).is_err());
+    assert!(tmp.path().join("outside/tea").is_dir());
+    std::fs::remove_file(root.path().join(".previous")).unwrap();
+    std::fs::create_dir_all(root.path().join(".previous/tea/assets")).unwrap();
+    g.remove_hidden(Path::new(".previous/tea")).unwrap();
+    g.remove_hidden(Path::new(".previous/tea")).unwrap();
+    assert_eq!(
+        names_in(&root.path().join(".previous")),
+        Vec::<String>::new()
+    );
+}
+
+/// A first install makes the root; a tree that cannot be written leaves
+/// no staging folder behind and the entry as it was.
+#[test]
+fn put_copy_makes_the_root_and_leaves_nothing_when_a_write_fails() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = UserRoot::open(&tmp.path().join("new-root"), LIMIT);
+    let file = |b: &[u8]| ReadFile {
+        bytes: b.to_vec(),
+        mode: 0o644,
+    };
+    let tree = crate::nofollow::Tree {
+        dirs: vec![],
+        files: vec![(PathBuf::from("SKILL.md"), file(b"new"))],
+    };
+    root.lock()
+        .put_copy(Path::new("tea"), None, &tree, None)
+        .unwrap();
+    assert_eq!(
+        std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
+        b"new"
+    );
+    // A file in a folder the tree does not make: the write fails.
+    let broken = crate::nofollow::Tree {
+        dirs: vec![],
+        files: vec![(PathBuf::from("missing/x.css"), file(b"x"))],
+    };
+    assert!(
+        root.lock()
+            .put_copy(Path::new("tea"), None, &broken, None)
+            .is_err()
+    );
+    assert_eq!(names_in(root.path()), ["tea"]);
+    assert_eq!(
+        std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
+        b"new"
+    );
+}

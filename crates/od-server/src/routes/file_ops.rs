@@ -261,9 +261,13 @@ async fn save_template(
     let slug = template_slug(&name);
     let skill = move |tid: &str| template_skill_md(tid, &name, &description, mode);
     let id = crate::spawn::spawn_blocking_in_span(move || -> std::io::Result<String> {
-        std::fs::create_dir_all(&root)?;
-        // `create_dir` claims the id: two saves of one name never share it.
-        let (tid, dir) = (1..1000)
+        use od_content::user_store::{Expect, UserRoot, WriteError};
+        let store = UserRoot::open(&root, od_content::user_content::MAX_PLUGIN_BYTES);
+        store.make_root()?;
+        let one = store.lock();
+        // `make_dir` claims the id (made new, never one there in any case
+        // the disk folds): two saves of one name never share it.
+        let tid = (1..1000)
             .map(|n| {
                 if n == 1 {
                     format!("my-{slug}")
@@ -271,13 +275,19 @@ async fn save_template(
                     format!("my-{slug}-{n}")
                 }
             })
-            .find_map(|tid| {
-                let dir = root.join(&tid);
-                std::fs::create_dir(&dir).ok().map(|()| (tid, dir))
-            })
+            .find(|tid| one.make_dir(std::path::Path::new(tid)).is_ok())
             .ok_or_else(|| std::io::Error::other("no free template id"))?;
-        std::fs::write(dir.join("example.html"), html)?;
-        std::fs::write(dir.join("SKILL.md"), skill(&tid))?;
+        let dir = std::path::Path::new(&tid);
+        for (file, bytes) in [
+            ("example.html", html.into_bytes()),
+            ("SKILL.md", skill(&tid).into_bytes()),
+        ] {
+            one.write(&dir.join(file), &bytes, Expect::Absent)
+                .map_err(|e| match e {
+                    WriteError::Io(e) => e,
+                    WriteError::Stale => std::io::Error::other(format!("{file} made meanwhile")),
+                })?;
+        }
         Ok(tid)
     })
     .await

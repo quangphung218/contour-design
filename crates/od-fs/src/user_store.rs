@@ -155,6 +155,15 @@ impl UserRoot {
         &self.path
     }
 
+    /// Makes the root folder, and the folders above it, when missing (no
+    /// lock needed: nothing there is changed).
+    ///
+    /// # Errors
+    /// [`std::fs::create_dir_all`]'s.
+    pub fn make_root(&self) -> std::io::Result<()> {
+        std::fs::create_dir_all(&self.path)
+    }
+
     /// Waits for the root's other writers; reads and writes go through the
     /// [`Guard`].
     #[must_use]
@@ -309,6 +318,78 @@ impl Guard<'_> {
         let put = Put::new(&tag, rel, &staged, keep)?;
         build(&self.root.path.join(&staged))?;
         Ok(self.place(&put, step)?)
+    }
+
+    /// [`Self::put_tree`] of `tree`: written into the new staging folder
+    /// through its descriptor ([`nofollow::write_tree`]: no link planted in
+    /// it is written through), `last` (when given) written last; the root
+    /// made first when missing (a first install).
+    ///
+    /// # Errors
+    /// As [`Self::put_tree`]; a write that fails removes what it made.
+    pub fn put_copy(
+        &self,
+        rel: &Path,
+        keep: Option<&Path>,
+        tree: &nofollow::Tree,
+        last: Option<&Path>,
+    ) -> std::io::Result<()> {
+        self.put_copy_steps(rel, keep, tree, last, |_| Ok(()))
+    }
+
+    /// [`Self::put_copy`] with the `step` of [`Self::put_tree_steps`].
+    #[doc(hidden)]
+    pub fn put_copy_steps(
+        &self,
+        rel: &Path,
+        keep: Option<&Path>,
+        tree: &nofollow::Tree,
+        last: Option<&Path>,
+        step: impl FnMut(PutStep) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        self.root.make_root()?;
+        let build = |at: &Path| {
+            let made = nofollow::NewDir::create(at)?;
+            nofollow::write_tree(tree, &made, last).inspect_err(|_| {
+                let _ = std::fs::remove_dir_all(at);
+            })
+        };
+        self.put_tree_steps(rel, keep, build, step)
+    }
+
+    /// Removes what is at `rel`, a path under a hidden folder of the root
+    /// (`.previous/<id>`): a folder and what it holds (no link in it
+    /// followed), else the file or link itself; nothing there is fine. No
+    /// folder on the way that is a link is followed.
+    ///
+    /// # Errors
+    /// `rel` not plain or not under a hidden folder, a folder on the way a
+    /// link, the remove's.
+    pub fn remove_hidden(&self, rel: &Path) -> std::io::Result<()> {
+        let (dirs, _) = split(rel)?;
+        if !dirs
+            .first()
+            .is_some_and(|d| d.as_encoded_bytes().starts_with(b"."))
+        {
+            return Err(bad_path(rel));
+        }
+        folder_link_free(&self.root.path, &dirs)?;
+        remove_gone(&self.root.path.join(rel))
+    }
+
+    /// Makes the new folder `name` (one plain name) right in the root,
+    /// through the root's descriptor (unix `mkdirat`): something there
+    /// already, a link too, is `AlreadyExists`, never followed or taken.
+    ///
+    /// # Errors
+    /// `name` not one plain name, `AlreadyExists`, the root missing
+    /// (`NotFound`), the make's.
+    pub fn make_dir(&self, name: &Path) -> std::io::Result<()> {
+        let (dirs, last) = split(name)?;
+        if !dirs.is_empty() {
+            return Err(bad_path(name));
+        }
+        make_dir_at(&self.root.path, last)
     }
 
     /// Swaps the entry `rel` and the copy kept at `kept` (as
@@ -554,6 +635,40 @@ impl Put {
     }
 }
 
+/// Checks that the folders `dirs` under `root` are there and no link
+/// (but an entry, which may be the user's own link).
+#[cfg(unix)]
+fn folder_link_free(root: &Path, dirs: &[&std::ffi::OsStr]) -> std::io::Result<()> {
+    at::folder(root, dirs)?
+        .map(drop)
+        .ok_or_else(|| std::io::ErrorKind::NotFound.into())
+}
+
+#[cfg(not(unix))]
+fn folder_link_free(root: &Path, dirs: &[&std::ffi::OsStr]) -> std::io::Result<()> {
+    let mut at = root.to_path_buf();
+    for dir in dirs {
+        at.push(dir);
+        if !std::fs::symlink_metadata(&at)?.is_dir() {
+            return Err(std::io::ErrorKind::NotADirectory.into());
+        }
+    }
+    Ok(())
+}
+
+/// Makes folder `name` right in `root`, through the root's descriptor.
+#[cfg(unix)]
+fn make_dir_at(root: &Path, name: &std::ffi::OsStr) -> std::io::Result<()> {
+    let dir = at::folder(root, &[])?.ok_or(std::io::ErrorKind::NotFound)?;
+    nix::sys::stat::mkdirat(&dir, name, nix::sys::stat::Mode::from_bits_truncate(0o777))
+        .map_err(Into::into)
+}
+
+#[cfg(not(unix))]
+fn make_dir_at(root: &Path, name: &std::ffi::OsStr) -> std::io::Result<()> {
+    std::fs::create_dir(root.join(name))
+}
+
 /// Renames `from` to `to` (paths under `root`), each through its folder's
 /// descriptor: no folder on the way that is a link is followed (but an
 /// entry, which may be the user's own link).
@@ -743,7 +858,7 @@ mod at {
 
     /// The folder `dirs` under `root`, opened link-free below `root`.
     /// `Ok(None)` when one of them is not there.
-    pub fn folder(root: &Path, dirs: &[&OsStr]) -> Result<Option<OwnedFd>, Errno> {
+    pub(super) fn folder(root: &Path, dirs: &[&OsStr]) -> Result<Option<OwnedFd>, Errno> {
         let mut fd = match open(root, DIR, Mode::empty()) {
             Ok(fd) => fd,
             Err(Errno::ENOENT) => return Ok(None),
@@ -766,7 +881,7 @@ mod at {
         Ok(Some(fd))
     }
 
-    pub fn why(e: Errno) -> Unreadable {
+    pub(super) fn why(e: Errno) -> Unreadable {
         match e {
             Errno::ELOOP | Errno::ENOTDIR => Unreadable::Link,
             Errno::ENXIO | Errno::EOPNOTSUPP => Unreadable::NotAFile,

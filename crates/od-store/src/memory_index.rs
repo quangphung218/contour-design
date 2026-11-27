@@ -202,7 +202,7 @@ impl MemoryFiles {
         bytes: &[u8],
         expect: Expect,
     ) -> std::io::Result<()> {
-        std::fs::create_dir_all(self.dir())?;
+        self.root.make_root()?;
         match one.write(Path::new(name), bytes, expect) {
             Ok(_) => Ok(()),
             Err(user_store::WriteError::Stale) => Err(std::io::ErrorKind::WouldBlock.into()),

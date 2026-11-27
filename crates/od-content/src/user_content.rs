@@ -177,11 +177,11 @@ pub fn create_skill(
     if taken(&slug) {
         return Err(WriteError::Exists(format!("skill {slug:?}")));
     }
-    std::fs::create_dir_all(user_root).map_err(io)?;
     let root = skills_root(user_root);
+    root.make_root().map_err(io)?;
     let one = root.lock();
     let dir = user_root.join(&slug);
-    std::fs::create_dir(&dir).map_err(|e| match e.kind() {
+    one.make_dir(Path::new(&slug)).map_err(|e| match e.kind() {
         std::io::ErrorKind::AlreadyExists => WriteError::Exists(format!("skill {slug:?}")),
         _ => io(e),
     })?;
@@ -309,8 +309,15 @@ pub fn save_skill(
         .and_then(|f| String::from_utf8(f.bytes).ok());
     let dir = if is_user {
         // Deleted since ("Save anyway" over a skill removed on disk): it is
-        // put back where it was.
-        std::fs::create_dir_all(current_dir).map_err(io)?;
+        // put back where it was, an entry of the root.
+        let name = current_dir
+            .strip_prefix(user_root)
+            .map_err(|_| WriteError::Io(format!("{} is no user skill", current_dir.display())))?;
+        root.make_root().map_err(io)?;
+        match one.make_dir(name) {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            made => made.map_err(io)?,
+        }
         current_dir.to_path_buf()
     } else {
         let dir = user_root.join(id);
@@ -358,7 +365,7 @@ pub fn save_skill_again(user_root: &Path, id: &str, draft: &SkillDraft) -> Resul
     // written through or over.
     match std::fs::symlink_metadata(&dir) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::create_dir(&dir).map_err(io)?;
+            one.make_dir(Path::new(id)).map_err(io)?;
         }
         Err(e) => return Err(io(e)),
         Ok(m) if !m.file_type().is_dir() => {
@@ -462,8 +469,7 @@ pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
 /// something at `to` already, [`WriteError::Io`] (`to` removed when it was
 /// made here).
 pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> {
-    let from = std::fs::canonicalize(from).map_err(io)?;
-    let tree = nofollow::read_tree(&from, keep_entry(true), budget).map_err(tree_error)?;
+    let tree = read_copy(from, budget)?;
     // The root above it may not be there yet (a first install, a first
     // override): made as before; only `to` must be new.
     if let Some(parent) = to.parent() {
@@ -477,6 +483,13 @@ pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> 
         return Err(io(e));
     }
     Ok(tree.files.iter().map(|(_, f)| f.bytes.len() as u64).sum())
+}
+
+/// What [`copy_dir`] copies of `from`: `from` resolved once, what lies
+/// under it read link-free ([`nofollow::read_tree`]), up to `budget` bytes.
+fn read_copy(from: &Path, budget: u64) -> Result<nofollow::Tree, WriteError> {
+    let from = std::fs::canonicalize(from).map_err(io)?;
+    nofollow::read_tree(&from, keep_entry(true), budget).map_err(tree_error)
 }
 
 /// A folder that could not be made new: one there already is
@@ -573,7 +586,9 @@ pub fn install_plugin(source: &Path, user_root: &Path) -> Result<PluginEntry, Wr
 /// there (Linux would keep both, which collide once synced). The same id
 /// is no clash: reinstalling replaces it.
 fn refuse_case_twin(user_root: &Path, id: &str, what: &str) -> Result<(), WriteError> {
-    std::fs::create_dir_all(user_root).map_err(io)?;
+    UserRoot::open(user_root, MAX_PLUGIN_BYTES)
+        .make_root()
+        .map_err(io)?;
     let key = od_contracts::name_key(id);
     for entry in std::fs::read_dir(user_root).map_err(io)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -860,14 +875,18 @@ impl ExportFiles {
         }
     }
 
+    /// This content as a tree to write, with each file's permission bits.
+    fn tree(&self) -> nofollow::Tree {
+        nofollow::Tree {
+            dirs: self.dirs.clone(),
+            files: self.files.clone(),
+        }
+    }
+
     /// Writes this content into the folder `to` (made here), with each
     /// file's permission bits, the top `SKILL.md` last.
     fn write_into(&self, to: &nofollow::NewDir) -> Result<(), WriteError> {
-        let tree = nofollow::Tree {
-            dirs: self.dirs.clone(),
-            files: self.files.clone(),
-        };
-        nofollow::write_tree(&tree, to, Some(Path::new("SKILL.md"))).map_err(io)
+        nofollow::write_tree(&self.tree(), to, Some(Path::new("SKILL.md"))).map_err(io)
     }
 }
 
@@ -986,13 +1005,9 @@ fn place_copy(
     id: &str,
     steps: Steps<'_>,
 ) -> Result<(), WriteError> {
-    // `copy_dir` removes what it made when it fails.
-    one.put_tree_steps(
-        Path::new(id),
-        None,
-        |at| copy_dir(source, at, MAX_PLUGIN_BYTES).map(drop),
-        steps,
-    )
+    let tree = read_copy(source, MAX_PLUGIN_BYTES)?;
+    one.put_copy_steps(Path::new(id), None, &tree, None, steps)
+        .map_err(io)
 }
 
 /// Installs the skill in `source` (a local folder with a `SKILL.md` that
@@ -1039,14 +1054,11 @@ fn install_skill_with(
     let Some(current) = user_skill_dir(user_root, id) else {
         return place_copy(&one, source, id, steps);
     };
-    let keep = previous_root(user_root, id)?;
+    let keep = previous_root(&one, user_root, id)?;
     let name = current.file_name().map(PathBuf::from).unwrap_or_default();
-    one.put_tree_steps(
-        &name,
-        Some(&keep),
-        |at| copy_dir(source, at, MAX_PLUGIN_BYTES).map(drop),
-        steps,
-    )
+    let tree = read_copy(source, MAX_PLUGIN_BYTES)?;
+    one.put_copy_steps(&name, Some(&keep), &tree, None, steps)
+        .map_err(io)
 }
 
 /// The id and front matter of the skill in `source`: the front matter's
@@ -1360,15 +1372,16 @@ fn replace_skill_from_source_with(
     let one = root.lock();
     let current = user_skill_dir(user_root, id)
         .ok_or_else(|| WriteError::NotFound(format!("no user skill {id:?}")))?;
-    let keep = previous_root(user_root, id)?;
+    let keep = previous_root(&one, user_root, id)?;
     let name = current.file_name().map(PathBuf::from).unwrap_or_default();
-    let build = |at: &Path| {
-        let made = nofollow::NewDir::create(at).map_err(|e| made_error(at, e))?;
-        files.write_into(&made).inspect_err(|_| {
-            let _ = std::fs::remove_dir_all(at);
-        })
-    };
-    one.put_tree_steps(&name, Some(&keep), build, steps)?;
+    one.put_copy_steps(
+        &name,
+        Some(&keep),
+        &files.tree(),
+        Some(Path::new("SKILL.md")),
+        steps,
+    )
+    .map_err(io)?;
     Ok(files)
 }
 
@@ -1426,8 +1439,18 @@ fn restore_previous_skill_with(
 /// `.previous/<id>`, the path under `user_root` a replace keeps skill
 /// `id` at: `.previous` made if missing; a link or file there is refused,
 /// never followed.
-fn previous_root(user_root: &Path, id: &str) -> Result<PathBuf, WriteError> {
+fn previous_root(
+    one: &user_store::Guard<'_>,
+    user_root: &Path,
+    id: &str,
+) -> Result<PathBuf, WriteError> {
     let held = user_root.join(PREVIOUS_DIR);
+    // Made new when missing; then taken only when it is a folder (a link
+    // or file there, planted before or meanwhile, is refused).
+    match one.make_dir(Path::new(PREVIOUS_DIR)) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        made => made.map_err(io)?,
+    }
     match std::fs::symlink_metadata(&held) {
         Ok(m) if m.is_dir() => {}
         Ok(_) => {
@@ -1435,9 +1458,6 @@ fn previous_root(user_root: &Path, id: &str) -> Result<PathBuf, WriteError> {
                 "{} is not a folder",
                 held.display()
             )));
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::create_dir_all(&held).map_err(io)?;
         }
         Err(e) => return Err(io(e)),
     }
@@ -1450,8 +1470,10 @@ fn previous_root(user_root: &Path, id: &str) -> Result<PathBuf, WriteError> {
 /// only copy of a skill. A `.previous` that is a link is left alone.
 pub fn recover_previous(user_root: &Path) {
     let held = user_root.join(PREVIOUS_DIR);
+    let root = skills_root(user_root);
+    let one = root.lock();
     if std::fs::symlink_metadata(&held).is_ok_and(|m| m.is_dir())
-        && let Err(e) = recover_cut_short(user_root, &held)
+        && let Err(e) = recover_cut_short(&one, user_root, &held)
     {
         tracing::warn!(at = %held.display(), error = %e, "previous copies not recovered");
     }
@@ -1522,13 +1544,17 @@ fn left_by(name: &str) -> Option<Left<'_>> {
 ///
 /// An entry that cannot be dealt with is logged and left: it never stops
 /// a replace or restore of any skill.
-fn recover_cut_short(user_root: &Path, held: &Path) -> Result<(), WriteError> {
+fn recover_cut_short(
+    one: &user_store::Guard<'_>,
+    user_root: &Path,
+    held: &Path,
+) -> Result<(), WriteError> {
     for entry in std::fs::read_dir(held).map_err(io)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = entry.path();
         let done = match left_by(&name) {
-            Some(Left::Incoming(id)) => recover_incoming(user_root, held, id, &path),
-            Some(Left::Old(id)) => recover_old(user_root, held, id, &path),
+            Some(Left::Incoming(id)) => recover_incoming(one, user_root, held, id, &path),
+            Some(Left::Old(id)) => recover_old(one, user_root, held, id, &path),
             Some(Left::Swap(id)) => recover_swap(user_root, held, id, &name, &path),
             Some(Left::Kept(_)) | None => Ok(()),
         };
@@ -1540,6 +1566,7 @@ fn recover_cut_short(user_root: &Path, held: &Path) -> Result<(), WriteError> {
 }
 
 fn recover_incoming(
+    one: &user_store::Guard<'_>,
     user_root: &Path,
     held: &Path,
     id: Option<&str>,
@@ -1551,15 +1578,21 @@ fn recover_incoming(
     {
         std::fs::rename(held.join(id), user_root.join(id))?;
     }
-    remove_any(incoming)
+    remove_any(one, user_root, incoming)
 }
 
-fn recover_old(user_root: &Path, held: &Path, id: &str, old: &Path) -> std::io::Result<()> {
+fn recover_old(
+    one: &user_store::Guard<'_>,
+    user_root: &Path,
+    held: &Path,
+    id: &str,
+    old: &Path,
+) -> std::io::Result<()> {
     let previous = held.join(id);
     let skill = entry_like(user_root, id).ok().flatten().is_some();
     let kept = std::fs::symlink_metadata(&previous).is_ok();
     match (skill, kept) {
-        (true, true) => remove_any(old),
+        (true, true) => remove_any(one, user_root, old),
         (false, true) => {
             std::fs::rename(&previous, user_root.join(id))?;
             std::fs::rename(old, &previous)
@@ -1608,19 +1641,19 @@ pub fn forget_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteErro
         return Ok(());
     }
     let root = skills_root(user_root);
-    let _one = root.lock();
+    let one = root.lock();
     let held = user_root.join(PREVIOUS_DIR);
     if !std::fs::symlink_metadata(&held).is_ok_and(|m| m.is_dir()) {
         return Ok(());
     }
-    let mut failed = remove_any(&held.join(id)).err();
+    let mut failed = remove_any(&one, user_root, &held.join(id)).err();
     for entry in std::fs::read_dir(&held).map_err(io)?.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let of_id = matches!(
             left_by(&name),
             Some(Left::Old(i) | Left::Swap(i) | Left::Kept(i) | Left::Incoming(Some(i))) if i == id
         );
-        if of_id && let Err(e) = remove_any(&entry.path()) {
+        if of_id && let Err(e) = remove_any(&one, user_root, &entry.path()) {
             failed.get_or_insert(e);
         }
     }
@@ -1632,15 +1665,14 @@ fn valid_skill_id(id: &str) -> bool {
     crate::design_systems::is_valid_id(id) && !id.starts_with(['.', '_'])
 }
 
-/// Removes whatever is at `path` (a folder and all in it, a file, a link
-/// itself); nothing there is fine.
-fn remove_any(path: &Path) -> std::io::Result<()> {
-    match std::fs::symlink_metadata(path) {
-        Ok(m) if m.is_dir() => std::fs::remove_dir_all(path),
-        Ok(_) => std::fs::remove_file(path),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
-    }
+/// Removes whatever is at `path` (under a hidden folder of `user_root`:
+/// a folder and all in it, a file, a link itself) through
+/// [`user_store::Guard::remove_hidden`]; nothing there is fine.
+fn remove_any(one: &user_store::Guard<'_>, user_root: &Path, path: &Path) -> std::io::Result<()> {
+    let rel = path
+        .strip_prefix(user_root)
+        .map_err(|_| std::io::Error::other(format!("{} is not under the root", path.display())))?;
+    one.remove_hidden(rel)
 }
 
 /// The front matter of a `SKILL.md`; text without one, or with one that
@@ -1790,6 +1822,28 @@ mod tests {
     /// The form opens on the bundled copy, so its tag is the bundled one,
     /// and a Save of `ad-creative` is refused, never written into the
     /// other skill.
+    /// "Save anyway" puts a deleted user skill back only as an entry of
+    /// the root: a folder the index names outside it is never made.
+    #[test]
+    fn a_user_skill_put_back_is_made_only_under_the_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user");
+        let elsewhere = tmp.path().join("elsewhere/tea");
+        let saved = save_skill(
+            &user,
+            "tea",
+            &elsewhere,
+            true,
+            &draft("tea", "Typed."),
+            None,
+        );
+        assert!(matches!(saved, Err(WriteError::Io(_))), "{saved:?}");
+        assert!(!tmp.path().join("elsewhere").exists());
+        let gone = user.join("tea");
+        save_skill(&user, "tea", &gone, true, &draft("tea", "Typed."), None).unwrap();
+        assert!(gone.join("SKILL.md").is_file());
+    }
+
     #[test]
     fn a_save_never_lands_in_a_skill_named_alike() {
         let tmp = tempfile::tempdir().unwrap();
