@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Settings ▸ Memory warns when MEMORY.md cannot be read, and no memory reaches a chat until the index is saved again.
+
 ## [0.2.0-beta.74] - 2026-11-27
 
 ### Changed
