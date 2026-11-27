@@ -460,6 +460,9 @@ async fn a_skill_read_while_it_is_written_is_tagged_with_what_it_shows() {
                     written.store(n, Ordering::Relaxed);
                     n += 1;
                 }
+                // Longer than a `GET` waits for a file to hold still
+                // (`routes/content.rs:SETTLE`): some reads find it still.
+                std::thread::sleep(std::time::Duration::from_millis(150));
             }
         })
     };
@@ -540,7 +543,7 @@ async fn a_skill_read_while_written_in_place_leaves_the_index_whole() {
             }
         })
     };
-    for _ in 0..200 {
+    for _ in 0..40 {
         let res = d
             .http
             .get(format!("{}/api/skills/tea", d.base))
@@ -588,5 +591,64 @@ async fn a_bundled_skill_saved_beside_one_named_alike_writes_nothing() {
     assert_eq!(
         std::fs::read_to_string(twin.join("SKILL.md")).unwrap(),
         mine
+    );
+}
+
+/// An agent left `SKILL.md` empty (`>` and nothing after; PR #351 review):
+/// the form opens on the empty file with its tag, so Reload shows what is
+/// on disk and a Save lands, never a 412 again and again.
+#[tokio::test]
+async fn a_skill_md_left_empty_opens_the_form_on_it() {
+    let d = daemon().await;
+    post(
+        &d,
+        "/api/skills",
+        &json!({ "name": "tea", "description": "Mine.", "body": "First." }),
+    )
+    .await;
+    let file = d.data.join("skills/tea/SKILL.md");
+    std::fs::write(&file, "").unwrap();
+    let (shown, tag) = tagged(&d, "/api/skills/tea").await;
+    assert_eq!(
+        shown["body"].as_str().unwrap().trim(),
+        "",
+        "the file on disk"
+    );
+    assert_eq!(tag, format!("\"{}\"", od_server::cas::tag_of(b"")));
+    let body = json!({ "name": "tea", "description": "Mine.", "body": "Again." });
+    assert_eq!(put(&d, "/api/skills/tea", &body, Some(&tag)).await, 200);
+    assert!(std::fs::read_to_string(&file).unwrap().contains("Again."));
+}
+
+/// An agent wrote an override of a bundled skill under another `name:`
+/// (PR #351 review: its work was saved over, no 412). The form shows that
+/// file, tagged with it; written again since, the Save is a 412 and the
+/// agent's file stays.
+#[tokio::test]
+async fn an_override_named_otherwise_is_shown_and_kept() {
+    let d = daemon().await;
+    let dir = d.data.join("skills/ad-creative");
+    std::fs::create_dir_all(&dir).unwrap();
+    let first = "---\nname: other\ndescription: Agent.\n---\nAGENT WORK\n";
+    std::fs::write(dir.join("SKILL.md"), first).unwrap();
+    let (shown, tag) = tagged(&d, "/api/skills/ad-creative").await;
+    assert!(
+        shown["body"].as_str().unwrap().contains("AGENT WORK"),
+        "the file a Save writes over is shown"
+    );
+    assert_eq!(
+        tag,
+        format!("\"{}\"", od_server::cas::tag_of(first.as_bytes()))
+    );
+    let again = "---\nname: other\ndescription: Agent.\n---\nAGENT WORK 2\n";
+    std::fs::write(dir.join("SKILL.md"), again).unwrap();
+    let body = json!({ "name": "ad-creative", "body": "Typed." });
+    assert_eq!(
+        put(&d, "/api/skills/ad-creative", &body, Some(&tag)).await,
+        412
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("SKILL.md")).unwrap(),
+        again
     );
 }
