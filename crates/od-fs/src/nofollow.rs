@@ -355,13 +355,12 @@ fn walk_path(
 /// is `AlreadyExists`, never opened. Elsewhere (Windows) the folders on the
 /// way are checked for reparse points and files are made `create_new`.
 ///
-/// Public for what is not under a user root yet: an override's first copy
-/// (`od_content::user_content::copy_dir`), Copy to Claude Code (PR 6b
-/// moves them to [`crate::user_store`]). Under a user root, write through
-/// [`crate::user_store::Guard::put_copy`]; `od-server/tests/user_file_writes.rs`
-/// (rule `fs`) refuses a call of it there outside its `KEPT`.
+/// Crate-only: every folder filled from a tree goes through
+/// [`crate::user_store::Guard`] (`put_copy`, `put_new`, `make_tree`).
 #[derive(Debug)]
-pub struct NewDir {
+pub(crate) struct NewDir {
+    // Read on Windows (paths, no descriptor) and by tests.
+    #[cfg_attr(all(unix, not(test)), allow(dead_code))]
     path: PathBuf,
     #[cfg(unix)]
     fd: std::os::fd::OwnedFd,
@@ -409,7 +408,8 @@ impl NewDir {
         .map_err(std::io::Error::from)
     }
 
-    /// The path it was made at (for messages and the moves after).
+    /// The path it was made at (tests plant links in it by path).
+    #[cfg(all(unix, test))]
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
@@ -583,9 +583,8 @@ fn plain(rel: &Path) -> std::io::Result<(Vec<&OsStr>, &OsStr)> {
 /// # Errors
 /// The first write that fails.
 ///
-/// Public for the callers [`NewDir`] names; under a user root
-/// [`crate::user_store::Guard::put_copy`] calls it.
-pub fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Result<()> {
+/// Crate-only, as [`NewDir`].
+pub(crate) fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Result<()> {
     use std::io::Write;
     for d in &tree.dirs {
         to.create_dir(d)?;

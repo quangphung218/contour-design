@@ -1214,8 +1214,9 @@ fn put_copy_makes_the_root_and_leaves_nothing_when_a_write_fails() {
     );
 }
 
-// put_new, remove_file: a new entry never over one (Copy design system,
-// a generated one), a file below an entry removed.
+// put_new, make_tree, remove_unfinished, remove_file: a new entry never
+// over one (Copy design system, a generated one, an override's first
+// copy; Copy to Claude Code), a file below an entry removed.
 
 fn small_tree(name: &str) -> crate::nofollow::Tree {
     let file = |b: &[u8]| ReadFile {
@@ -1374,6 +1375,124 @@ fn a_name_taken_after_the_pick_is_kept() {
     );
     assert_eq!(names_in(&at), Vec::<String>::new());
     assert_eq!(names_in(root.path()), ["mint", "tea"]);
+}
+
+/// Made at its name with nothing hidden beside it: the mark goes once
+/// `last` is in; a folder there is kept; a copy cut short (mark, no
+/// `last`) is removed by `remove_unfinished`, nothing else is.
+#[test]
+fn make_tree_writes_at_its_name_and_only_its_unfinished_copy_goes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = UserRoot::open(&tmp.path().join("skills"), LIMIT);
+    let g = root.lock();
+    let mark = Path::new(".mark");
+    let last = Path::new("manifest.json");
+    g.make_tree(Path::new("mint"), &small_tree("m"), Some(last), mark)
+        .unwrap();
+    assert_eq!(names_in(root.path()), ["mint"]);
+    assert_eq!(
+        names_in(&root.path().join("mint")),
+        ["assets", "manifest.json"]
+    );
+    let again = g.make_tree(Path::new("mint"), &small_tree("x"), Some(last), mark);
+    assert_eq!(
+        again.map_err(|e| e.kind()),
+        Err(std::io::ErrorKind::AlreadyExists)
+    );
+    assert_eq!(
+        std::fs::read(root.path().join("mint/manifest.json")).unwrap(),
+        b"m"
+    );
+    assert!(g.remove_unfinished(Path::new("mint"), mark, last).is_err());
+    assert!(root.path().join("mint/manifest.json").is_file());
+    // A mark beside `last` (a copy done, the mark left), or neither: kept.
+    std::fs::create_dir_all(root.path().join("done")).unwrap();
+    std::fs::write(root.path().join("done/.mark"), "").unwrap();
+    std::fs::write(root.path().join("done/manifest.json"), "d").unwrap();
+    assert!(g.remove_unfinished(Path::new("done"), mark, last).is_err());
+    std::fs::create_dir_all(root.path().join("theirs")).unwrap();
+    assert!(
+        g.remove_unfinished(Path::new("theirs"), mark, last)
+            .is_err()
+    );
+    assert!(root.path().join("done/manifest.json").is_file());
+    assert!(root.path().join("theirs").is_dir());
+    std::fs::create_dir_all(root.path().join("cut/assets")).unwrap();
+    std::fs::write(root.path().join("cut/.mark"), "").unwrap();
+    g.remove_unfinished(Path::new("cut"), mark, last).unwrap();
+    assert!(!root.path().join("cut").exists());
+    // A link at the name is no copy of ours, whatever it points at.
+    std::fs::create_dir_all(tmp.path().join("away")).unwrap();
+    std::fs::write(tmp.path().join("away/.mark"), "").unwrap();
+    symlink(tmp.path().join("away"), root.path().join("linked")).unwrap();
+    assert!(
+        g.remove_unfinished(Path::new("linked"), mark, last)
+            .is_err()
+    );
+    assert!(tmp.path().join("away/.mark").is_file());
+    // A write that fails removes the folder made.
+    let broken = crate::nofollow::Tree {
+        dirs: vec![],
+        files: vec![(
+            PathBuf::from("missing/x"),
+            ReadFile {
+                bytes: b"x".to_vec(),
+                mode: 0o644,
+            },
+        )],
+    };
+    assert!(g.make_tree(Path::new("half"), &broken, None, mark).is_err());
+    assert!(!root.path().join("half").exists());
+    // One plain visible name: nothing hidden beside it, nothing elsewhere.
+    for bad in [".hid", "a/b", "../out"] {
+        assert!(
+            g.make_tree(Path::new(bad), &small_tree("m"), Some(last), mark)
+                .is_err(),
+            "{bad}"
+        );
+        assert!(
+            g.remove_unfinished(Path::new(bad), mark, last).is_err(),
+            "{bad}"
+        );
+    }
+    assert_eq!(names_in(root.path()), ["done", "linked", "mint", "theirs"]);
+    assert!(!tmp.path().join("out").exists());
+    // Outside the root, a copy cut short of ours is never removed.
+    std::fs::create_dir_all(tmp.path().join("out")).unwrap();
+    std::fs::write(tmp.path().join("out/.mark"), "").unwrap();
+    assert!(
+        g.remove_unfinished(Path::new("../out"), mark, last)
+            .is_err()
+    );
+    assert!(tmp.path().join("out/.mark").is_file());
+}
+
+/// Stopped once the mark is in: the folder holds the mark and no `last`,
+/// the copy cut short `remove_unfinished` takes.
+#[test]
+fn a_make_tree_cut_short_is_marked_unfinished() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = UserRoot::open(&tmp.path().join("skills"), LIMIT);
+    let g = root.lock();
+    let (mark, last) = (Path::new(".mark"), Path::new("manifest.json"));
+    let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        g.make_tree_steps(
+            Path::new("mint"),
+            &small_tree("m"),
+            Some(last),
+            mark,
+            |step| panic!("quit before {step:?}"),
+        )
+    }));
+    assert!(quit.is_err());
+    assert_eq!(names_in(&root.path().join("mint")), [".mark"]);
+    g.remove_unfinished(Path::new("mint"), mark, last).unwrap();
+    g.make_tree(Path::new("mint"), &small_tree("m"), Some(last), mark)
+        .unwrap();
+    assert_eq!(
+        names_in(&root.path().join("mint")),
+        ["assets", "manifest.json"]
+    );
 }
 
 /// A file below an entry goes; a link there goes as a link; a folder, a

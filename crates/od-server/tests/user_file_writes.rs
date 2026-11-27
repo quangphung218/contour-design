@@ -51,9 +51,7 @@
 //!
 //! What stays is in `KEPT`, by file, function and count, with why: a
 //! write outside every user root (a temp folder, a generation's staging),
-//! or an older version's leftovers moved back once at start-up; `PR 6b`
-//! marks what the next PR moves to `user_store` (an override's first
-//! copy, Copy to Claude Code).
+//! or an older version's leftovers moved back once at start-up.
 //!
 //! The sources are parsed as Rust (`syn`): comments and strings are no
 //! code, items built only for tests are left out. A path to the file is
@@ -205,13 +203,6 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "after `entry_like` finds no entry of that name in another case, under `REPLACE_LOCK`",
     ),
     (
-        "../od-content/src/user_content.rs",
-        "copy_dir_into_place",
-        "swap",
-        1,
-        "removes only its own `.copying-<name>-<tag>` when the rename fails; renames into a name that must be free, never over a copy",
-    ),
-    (
         "src/routes/w3/reference.rs",
         "hold",
         "pid",
@@ -238,34 +229,6 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "fs",
         1,
         "as `recover_incoming`: an older version's `.swap-<id>-*` moved back to a free name",
-    ),
-    (
-        "../od-content/src/user_content.rs",
-        "copy_dir",
-        "fs",
-        4,
-        "PR 6b: `Place::New` (a new folder, never over one there); an override's first copy",
-    ),
-    (
-        "../od-content/src/user_content.rs",
-        "copy_dir_into_place",
-        "fs",
-        2,
-        "PR 6b: as `copy_dir`, its `.copying-<name>-<tag>` renamed to a free name",
-    ),
-    (
-        "../od-content/src/user_content.rs",
-        "export_skill_with",
-        "fs",
-        4,
-        "PR 6b: Copy to Claude Code writes `HOME/.claude/skills`, a root outside `<data>`",
-    ),
-    (
-        "../od-content/src/user_content.rs",
-        "write_into",
-        "fs",
-        1,
-        "PR 6b: only `export_skill_with` writes through it",
     ),
     (
         "src/routes/library/design_systems.rs",

@@ -10,7 +10,7 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use od_content::design_system_gen::{self, GenerateRequest};
-use od_content::user_content::{self, ExportFiles, SkillDraft, WriteError};
+use od_content::user_content::{self, ExportFiles, SkillDraft};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -294,29 +294,6 @@ fn design_md() -> String {
     s
 }
 
-/// `copy_dir` makes its folder new: one already there (an agent's, with
-/// a link in it) is refused, never filled.
-#[test]
-fn copy_dir_refuses_a_folder_already_there() {
-    let tmp = tempfile::tempdir().unwrap();
-    let src = tmp.path().join("src/tea");
-    source_skill(&src, "FROM THE SOURCE");
-    let victim = victim(tmp.path());
-    let to = tmp.path().join("to");
-    std::fs::create_dir(&to).unwrap();
-    std::os::unix::fs::symlink(&victim, to.join("SKILL.md")).unwrap();
-    let copied = user_content::copy_dir(&src, &to, u64::MAX);
-    assert!(matches!(copied, Err(WriteError::Exists(_))), "{copied:?}");
-    assert_untouched(&victim, "copy_dir", 0);
-    // A link at the folder's name: not followed either.
-    let elsewhere = tmp.path().join("elsewhere");
-    std::fs::create_dir(&elsewhere).unwrap();
-    std::os::unix::fs::symlink(&elsewhere, tmp.path().join("linked")).unwrap();
-    let copied = user_content::copy_dir(&src, &tmp.path().join("linked"), u64::MAX);
-    assert!(matches!(copied, Err(WriteError::Exists(_))), "{copied:?}");
-    assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
-}
-
 /// An override's first copy cut short by a planted link (reviewer probe,
 /// PR #353 round 1): nothing half copied is left at `<user>/tea`, so the
 /// next Save copies it again, whole, with every side file.
@@ -392,13 +369,14 @@ fn an_override_copy_cut_short_leaves_nothing_and_the_next_save_is_whole() {
     // The agent is gone; the user saves again.
     let dir = user_content::save_skill(&user, "tea", &bundled, false, &draft, None).unwrap();
     assert_eq!(side_files(&dir), 300);
-    // Only `tea` shows. A hidden `.copying-tea-…` may stay when the agent
-    // was still writing in it as it was removed: no index lists it.
+    // Only `tea` shows. A hidden `.putting-…` may stay when the agent was
+    // still writing in it as it was removed: no index lists it, and the
+    // next start-up removes it (`UserRoot::recover`: no journal).
     let names: Vec<String> = std::fs::read_dir(&user)
         .unwrap()
         .flatten()
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| !n.starts_with(".copying-tea-"))
+        .filter(|n| !n.starts_with(".putting-"))
         .collect();
     assert_eq!(names, ["tea"]);
     let listed: Vec<PathBuf> = od_content::skills::list_skills(std::slice::from_ref(&user), true)
