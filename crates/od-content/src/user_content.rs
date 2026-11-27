@@ -322,7 +322,24 @@ pub fn save_skill_again(user_root: &Path, id: &str, draft: &SkillDraft) -> Resul
         return Err(WriteError::Exists(format!("skill {twin:?}")));
     }
     let dir = user_root.join(id);
-    std::fs::create_dir_all(&dir).map_err(io)?;
+    // Only an empty place is taken: a link there (to a folder outside the
+    // root) or a folder that still holds a `SKILL.md` (a skill renamed on
+    // disk, which the index lists under its new name) is refused, never
+    // written through or over.
+    match std::fs::symlink_metadata(&dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir(&dir).map_err(io)?;
+        }
+        Err(e) => return Err(io(e)),
+        Ok(m) if !m.file_type().is_dir() => {
+            return Err(WriteError::Exists(format!("skill {id:?}")));
+        }
+        Ok(_) => match std::fs::symlink_metadata(dir.join("SKILL.md")) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(io(e)),
+            Ok(_) => return Err(WriteError::Exists(format!("skill {id:?}"))),
+        },
+    }
     let text = render_skill_md(draft, id, None);
     frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
     write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)
@@ -1580,6 +1597,52 @@ mod tests {
             triggers: vec!["brand".to_owned(), " ".to_owned()],
             body: body.to_owned(),
         }
+    }
+
+    #[test]
+    fn save_again_takes_an_empty_place_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // Gone for good: made again.
+        save_skill_again(root, "tea", &draft("Tea", "Again.")).unwrap();
+        assert!(
+            std::fs::read_to_string(root.join("tea/SKILL.md"))
+                .unwrap()
+                .contains("Again.")
+        );
+        // A folder left without its SKILL.md: filled.
+        std::fs::create_dir(root.join("mint")).unwrap();
+        save_skill_again(root, "mint", &draft("Mint", "Back.")).unwrap();
+        assert!(root.join("mint/SKILL.md").is_file());
+    }
+
+    #[test]
+    fn save_again_refuses_a_skill_renamed_on_disk() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir(root.join("foo")).unwrap();
+        let theirs = "---\nname: baz\ndescription: Renamed.\n---\nTheir work.\n";
+        std::fs::write(root.join("foo/SKILL.md"), theirs).unwrap();
+        let err = save_skill_again(root, "foo", &draft("Foo", "Mine.")).unwrap_err();
+        assert!(matches!(err, WriteError::Exists(_)), "{err:?}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("foo/SKILL.md")).unwrap(),
+            theirs
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_again_never_writes_through_a_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("skills");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("zed")).unwrap();
+        let err = save_skill_again(&root, "zed", &draft("Zed", "Mine.")).unwrap_err();
+        assert!(matches!(err, WriteError::Exists(_)), "{err:?}");
+        assert!(!outside.join("SKILL.md").exists());
     }
 
     #[test]
