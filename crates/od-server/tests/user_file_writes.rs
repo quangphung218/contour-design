@@ -1,6 +1,6 @@
 //! Two kinds of write into the folders a form edits and an agent writes
-//! too (`crates/od-server/CLAUDE.md`, invariant 16), in `od-content` and
-//! `od-server`:
+//! too (`crates/od-server/CLAUDE.md`, invariant 16), in `od-content`,
+//! `od-server` and the memory index (`od-store/src/memory_index.rs`):
 //!
 //! - `write`: a `SKILL.md` or `DESIGN.md` is written only through
 //!   `od_content::user_content::write_replacing` (a file of its own, renamed
@@ -45,8 +45,14 @@ use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 use syn::{Expr, Meta, Token, UseTree};
 
-/// The folders scanned, relative to this crate.
-const SCANNED: &[&str] = &["../od-content/src", "src"];
+/// The folders and files scanned, relative to this crate. The memory
+/// index (`<data>/memory`, a folder an agent can write) is written outside
+/// `od-content` and `od-server`.
+const SCANNED: &[&str] = &[
+    "../od-content/src",
+    "src",
+    "../od-store/src/memory_index.rs",
+];
 
 /// The files a form edits.
 const USER_FILES: &[&str] = &["SKILL.md", "DESIGN.md"];
@@ -682,11 +688,21 @@ fn user_files_are_written_whole_and_named_as_on_disk() {
     for dir in SCANNED {
         let at = here.join(dir);
         let mut files = Vec::new();
-        rust_files(&at, &mut files);
-        assert!(files.len() > 3, "no sources under {dir}");
+        if at.is_file() {
+            files.push(at.clone());
+        } else {
+            rust_files(&at, &mut files);
+            assert!(files.len() > 3, "no sources under {dir}");
+        }
+        // A file named alone is scanned too, or the guard checks nothing there.
+        assert!(!files.is_empty(), "nothing scanned at {dir}");
         for file in files {
             let under = file.strip_prefix(&at).unwrap().to_string_lossy();
-            let rel = format!("{dir}/{}", under.replace('\\', "/"));
+            let rel = if under.is_empty() {
+                (*dir).to_owned()
+            } else {
+                format!("{dir}/{}", under.replace('\\', "/"))
+            };
             let text = std::fs::read_to_string(&file).unwrap();
             for (rule, func, line) in writes(&text) {
                 found

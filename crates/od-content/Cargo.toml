@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 od-contracts.workspace = true
+od-fs.workspace = true
 arc-swap.workspace = true
 hex.workspace = true
 rayon.workspace = true

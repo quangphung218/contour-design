@@ -4135,6 +4135,7 @@ dependencies = [
  "hex",
  "nix 0.31.3",
  "od-contracts",
+ "od-fs",
  "rayon",
  "regex",
  "serde",
@@ -4206,6 +4207,14 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "zip",
+]
+
+[[package]]
+name = "od-fs"
+version = "0.2.0-beta.73"
+dependencies = [
+ "nix 0.31.3",
+ "tempfile",
 ]
 
 [[package]]
@@ -4425,6 +4434,7 @@ dependencies = [
  "hex",
  "nix 0.31.3",
  "od-contracts",
+ "od-fs",
  "rusqlite",
  "serde",
  "serde_json",

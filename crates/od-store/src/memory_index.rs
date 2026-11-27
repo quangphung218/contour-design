@@ -5,8 +5,15 @@
 //! The index links each entry as `- [label](<id>.md) — <kind>`. Only linked
 //! entries reach the prompt, so deleting a line turns a fact off without
 //! deleting it. A missing index means every entry is linked.
+//!
+//! An agent can write this folder (its shell, or a call on loopback from
+//! outside its sandbox), so the files are read and written through
+//! `od_fs::nofollow`: a read follows no link and waits on no FIFO (either
+//! reads as missing), a write goes through a new file of a random name
+//! made `O_EXCL|O_NOFOLLOW`, synced, then renamed over the file.
 
 use crate::manage::GlobalMemory;
+use od_fs::nofollow;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,6 +24,11 @@ pub const INDEX_FILE: &str = "MEMORY.md";
 pub const CONFIG_FILE: &str = "config.json";
 /// Largest index accepted from Settings (bytes).
 pub const MAX_INDEX_BYTES: usize = 64 * 1024;
+/// Largest index read back: `link` appends past what Settings accepts.
+/// Past it, the index reads as missing.
+pub const MAX_INDEX_READ_BYTES: u64 = 1024 * 1024;
+/// Largest config read back.
+const MAX_CONFIG_READ_BYTES: u64 = 64 * 1024;
 /// Most entries one import proposes.
 pub const MAX_IMPORT: usize = 50;
 /// Characters of an entry's text shown as its index label.
@@ -99,12 +111,14 @@ impl MemoryFiles {
         &self.dir
     }
 
-    /// The config; defaults when missing or unreadable.
+    /// The config; defaults when missing, unreadable, or not a regular
+    /// file (a link, a FIFO).
     #[must_use]
     pub fn config(&self) -> MemoryConfig {
-        std::fs::read(self.dir.join(CONFIG_FILE))
+        nofollow::read_file(&self.dir.join(CONFIG_FILE), MAX_CONFIG_READ_BYTES)
             .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
+            .flatten()
+            .and_then(|f| serde_json::from_slice(&f.bytes).ok())
             .unwrap_or_default()
     }
 
@@ -129,13 +143,15 @@ impl MemoryFiles {
         let _g = self.guard();
         std::fs::create_dir_all(&self.dir)?;
         let bytes = serde_json::to_vec_pretty(config).map_err(std::io::Error::other)?;
-        write_atomic(&self.dir.join(CONFIG_FILE), &bytes)
+        nofollow::replace_file(&self.dir.join(CONFIG_FILE), &bytes, None)
     }
 
-    /// The stored index, `None` when the user never saved one.
+    /// The stored index, `None` when the user never saved one, or when it
+    /// is no regular UTF-8 file of at most [`MAX_INDEX_READ_BYTES`] (a
+    /// link, a FIFO: never followed, never waited on).
     #[must_use]
     pub fn stored_index(&self) -> Option<String> {
-        std::fs::read_to_string(self.dir.join(INDEX_FILE)).ok()
+        nofollow::read_text(&self.dir.join(INDEX_FILE), MAX_INDEX_READ_BYTES)
     }
 
     /// The index to show: the stored one, else one linking every entry.
@@ -174,7 +190,7 @@ impl MemoryFiles {
 
     fn write_index_locked(&self, index: &str) -> std::io::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
-        write_atomic(&self.dir.join(INDEX_FILE), index.as_bytes())
+        nofollow::replace_file(&self.dir.join(INDEX_FILE), index.as_bytes(), None)
     }
 
     /// Links a new entry in a stored index (a missing one links it anyway).
@@ -200,19 +216,6 @@ impl MemoryFiles {
             None => Ok(()),
         }
     }
-}
-
-/// Writes through a temp file of its own (pid + counter), so a writer
-/// never renames another one's half-written file.
-fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmp = path.with_extension(format!("{}.{n}.tmp", std::process::id()));
-    let written = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, path));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    written
 }
 
 /// The index line of `entry`.
