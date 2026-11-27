@@ -4,3 +4,4 @@
 //! Shared by `od-content` and `od-store`.
 
 pub mod nofollow;
+pub mod user_store;

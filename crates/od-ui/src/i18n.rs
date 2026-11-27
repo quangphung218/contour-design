@@ -1978,6 +1978,7 @@ messages! {
     MemoryImportPartial => "Saved {0}, {1} failed.", "Đã lưu {0}, {1} mục lỗi.";
     MemoryIndexTitle => "MEMORY.md (index)", "MEMORY.md (mục lục)";
     MemoryIndexHint => "Only facts linked here reach the prompt. Delete a line to turn a fact off; the entry stays in the list. Not saved until Save index.", "Chỉ mục có liên kết ở đây mới vào prompt. Xoá một dòng để tắt mục đó; mục vẫn còn trong danh sách. Chỉ lưu khi bấm Lưu mục lục.";
+    MemoryIndexUnreadable => "MEMORY.md cannot be read (a link, a FIFO or too large), so no memory reaches a chat. Save index writes it again.", "Không đọc được MEMORY.md (link, FIFO hoặc quá lớn) nên không mục nào vào chat. Bấm Lưu mục lục để ghi lại.";
     MemoryIndexSave => "Save index", "Lưu mục lục";
     MemoryIndexSaved => "Index saved", "Đã lưu mục lục";
     MemoryUnsaved => "Unsaved changes", "Chưa lưu";

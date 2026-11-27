@@ -4,19 +4,21 @@
 //!
 //! The index links each entry as `- [label](<id>.md) — <kind>`. Only linked
 //! entries reach the prompt, so deleting a line turns a fact off without
-//! deleting it. A missing index means every entry is linked.
+//! deleting it. A missing index means every entry is linked; one that is
+//! there but cannot be read (a link, a FIFO, too large) links none: no
+//! memory reaches the prompt and Settings says so (fail closed).
 //!
 //! An agent can write this folder (its shell, or a call on loopback from
 //! outside its sandbox), so the files are read and written through
-//! `od_fs::nofollow`: a read follows no link and waits on no FIFO (either
-//! reads as missing), a write goes through a new file of a random name
-//! made `O_EXCL|O_NOFOLLOW`, synced, then renamed over the file.
+//! `od_fs::user_store` under the folder's lock: a read follows no link and
+//! waits on no FIFO, a write goes through a new file of a random name made
+//! `O_EXCL|O_NOFOLLOW`, synced, then renamed over the file it compared.
 
 use crate::manage::GlobalMemory;
 use od_fs::nofollow;
+use od_fs::user_store::{self, Expect, Found, Guard, UserRoot};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Folder under the data dir.
 pub const MEMORY_DIR: &str = "memory";
@@ -92,117 +94,119 @@ impl MemoryConfig {
     }
 }
 
-/// Paths of the memory files under a data dir.
+/// The memory folder under a data dir, and its lock ([`UserRoot`]).
 #[derive(Debug, Clone)]
 pub struct MemoryFiles {
-    dir: PathBuf,
+    root: UserRoot,
+}
+
+/// The stored index as read: a file that is there but cannot be read (a
+/// link, a FIFO, past [`MAX_INDEX_READ_BYTES`], not UTF-8) is not one that
+/// is missing. Missing, every entry is linked; unreadable, none is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Stored {
+    Text(String),
+    Missing,
+    Unreadable,
 }
 
 impl MemoryFiles {
     #[must_use]
     pub fn in_data_dir(root: &Path) -> Self {
         Self {
-            dir: root.join(MEMORY_DIR),
+            root: UserRoot::open(&root.join(MEMORY_DIR), MAX_INDEX_READ_BYTES),
         }
     }
 
     #[must_use]
     pub fn dir(&self) -> &Path {
-        &self.dir
+        self.root.path()
     }
 
     /// The config; defaults when missing, unreadable, or not a regular
     /// file (a link, a FIFO).
     #[must_use]
     pub fn config(&self) -> MemoryConfig {
-        nofollow::read_file(&self.dir.join(CONFIG_FILE), MAX_CONFIG_READ_BYTES)
+        nofollow::read_file(&self.dir().join(CONFIG_FILE), MAX_CONFIG_READ_BYTES)
             .ok()
             .flatten()
             .and_then(|f| serde_json::from_slice(&f.bytes).ok())
             .unwrap_or_default()
     }
 
-    /// One writer at a time per memory folder: `link`/`unlink` read, edit
-    /// and write the index, and two runs may learn a fact at once.
-    fn guard(&self) -> std::sync::MutexGuard<'static, ()> {
-        type Locks = std::sync::Mutex<HashMap<PathBuf, &'static std::sync::Mutex<()>>>;
-        static LOCKS: std::sync::OnceLock<Locks> = std::sync::OnceLock::new();
-        let lock = *LOCKS
-            .get_or_init(Locks::default)
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .entry(self.dir.clone())
-            .or_insert_with(|| Box::leak(Box::default()));
-        lock.lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
     /// # Errors
     /// I/O errors.
     pub fn write_config(&self, config: &MemoryConfig) -> std::io::Result<()> {
-        let _g = self.guard();
-        std::fs::create_dir_all(&self.dir)?;
+        let one = self.root.lock();
         let bytes = serde_json::to_vec_pretty(config).map_err(std::io::Error::other)?;
-        nofollow::replace_file(&self.dir.join(CONFIG_FILE), &bytes, None)
+        self.write_locked(&one, CONFIG_FILE, &bytes, Expect::Any)
     }
 
-    /// The stored index, `None` when the user never saved one, or when it
-    /// is no regular UTF-8 file of at most [`MAX_INDEX_READ_BYTES`] (a
-    /// link, a FIFO: never followed, never waited on).
+    /// The stored index.
     #[must_use]
-    pub fn stored_index(&self) -> Option<String> {
-        nofollow::read_text(&self.dir.join(INDEX_FILE), MAX_INDEX_READ_BYTES)
+    pub fn stored_index(&self) -> Stored {
+        stored(&self.root.lock()).0
     }
 
     /// The index to show: the stored one, else one linking every entry.
     #[must_use]
     pub fn index(&self, entries: &[GlobalMemory]) -> String {
-        self.stored_index()
-            .unwrap_or_else(|| default_index(entries))
+        shown(self.stored_index(), entries)
     }
 
     /// # Errors
     /// I/O errors.
     pub fn write_index(&self, index: &str) -> std::io::Result<()> {
-        let _g = self.guard();
-        self.write_index_locked(index)
+        let one = self.root.lock();
+        self.write_locked(&one, INDEX_FILE, index.as_bytes(), Expect::Any)
     }
 
     /// Writes `index` only if `unchanged` (asked under the lock `link` and
-    /// `unlink` take, so no entry lands between) still holds: a Save of the
-    /// index editor goes only over the index it opened on. `Ok(false)`
-    /// when nothing was written.
+    /// `unlink` take, so no entry lands between) holds for the index stored,
+    /// and only over that same file. `Ok(false)` when nothing was written.
     ///
     /// # Errors
     /// What `unchanged` returns, I/O errors.
     pub fn write_index_if<E: From<std::io::Error>>(
         &self,
         index: &str,
-        unchanged: impl FnOnce(&Self) -> Result<bool, E>,
+        unchanged: impl FnOnce(Stored) -> Result<bool, E>,
     ) -> Result<bool, E> {
-        let _g = self.guard();
-        if !unchanged(self)? {
+        let one = self.root.lock();
+        let (stored, expect) = stored(&one);
+        if !unchanged(stored)? {
             return Ok(false);
         }
-        self.write_index_locked(index)?;
-        Ok(true)
+        match self.write_locked(&one, INDEX_FILE, index.as_bytes(), expect) {
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(false),
+            done => done.map(|()| true).map_err(E::from),
+        }
     }
 
-    fn write_index_locked(&self, index: &str) -> std::io::Result<()> {
-        std::fs::create_dir_all(&self.dir)?;
-        nofollow::replace_file(&self.dir.join(INDEX_FILE), index.as_bytes(), None)
+    /// Writes `bytes` as `name` when what is there is what `expect` says;
+    /// a stale one is `WouldBlock`.
+    fn write_locked(
+        &self,
+        one: &Guard<'_>,
+        name: &str,
+        bytes: &[u8],
+        expect: Expect,
+    ) -> std::io::Result<()> {
+        std::fs::create_dir_all(self.dir())?;
+        match one.write(Path::new(name), bytes, expect) {
+            Ok(_) => Ok(()),
+            Err(user_store::WriteError::Stale) => Err(std::io::ErrorKind::WouldBlock.into()),
+            Err(user_store::WriteError::Io(e)) => Err(e),
+        }
     }
 
-    /// Links a new entry in a stored index (a missing one links it anyway).
+    /// Links a new entry in a stored index (a missing one links it anyway;
+    /// one that cannot be read is left as it is).
     ///
     /// # Errors
     /// I/O errors.
     pub fn link(&self, entry: &GlobalMemory) -> std::io::Result<()> {
-        let _g = self.guard();
-        match self.stored_index() {
-            Some(index) => self.write_index_locked(&with_line(&index, entry)),
-            None => Ok(()),
-        }
+        self.edit(|index| with_line(index, entry))
     }
 
     /// Drops a deleted entry's line from a stored index.
@@ -210,11 +214,49 @@ impl MemoryFiles {
     /// # Errors
     /// I/O errors.
     pub fn unlink(&self, id: &str) -> std::io::Result<()> {
-        let _g = self.guard();
-        match self.stored_index() {
-            Some(index) => self.write_index_locked(&without_line(&index, id)),
-            None => Ok(()),
+        self.edit(|index| without_line(index, id))
+    }
+
+    /// Rewrites a stored index with `change`. An agent that wrote it
+    /// between this read and the rename (its own process: the lock does not
+    /// hold it) makes the write stale: read again and tried once more, so
+    /// an entry saved in the database is not answered as a failure.
+    fn edit(&self, change: impl Fn(&str) -> String) -> std::io::Result<()> {
+        let one = self.root.lock();
+        let mut tries = 0;
+        loop {
+            let (Stored::Text(index), expect) = stored(&one) else {
+                return Ok(());
+            };
+            match self.write_locked(&one, INDEX_FILE, change(&index).as_bytes(), expect) {
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock && tries == 0 => tries += 1,
+                done => return done,
+            }
         }
+    }
+}
+
+/// The index stored, read under the lock, and the [`Expect`] of a write
+/// over that same file.
+fn stored(one: &Guard<'_>) -> (Stored, Expect) {
+    let found = one.read(Path::new(INDEX_FILE));
+    let expect = found.expect();
+    let stored = match found {
+        Found::File(read) => String::from_utf8(read.bytes).map_or(Stored::Unreadable, Stored::Text),
+        Found::Missing => Stored::Missing,
+        Found::Unreadable(_) => Stored::Unreadable,
+    };
+    (stored, expect)
+}
+
+/// The index a Settings page shows for `stored`: the file, else one
+/// linking every entry (an unreadable one is shown so, with a notice, and
+/// a Save puts it back).
+#[must_use]
+pub fn shown(stored: Stored, entries: &[GlobalMemory]) -> String {
+    match stored {
+        Stored::Text(index) => index,
+        Stored::Missing | Stored::Unreadable => default_index(entries),
     }
 }
 
@@ -302,13 +344,17 @@ pub fn without_line(index: &str, id: &str) -> String {
 #[must_use]
 pub fn active<'a>(
     config: &MemoryConfig,
-    index: Option<&str>,
+    index: &Stored,
     entries: &'a [GlobalMemory],
 ) -> Vec<&'a GlobalMemory> {
-    if !config.enabled {
-        return Vec::new();
-    }
-    let linked: Option<Vec<&str>> = index.map(|i| i.lines().filter_map(linked_id).collect());
+    let linked: Option<Vec<&str>> = match index {
+        // Fail closed: an index there that cannot be read (a link, a FIFO,
+        // too large) never turns every entry on.
+        _ if !config.enabled => return Vec::new(),
+        Stored::Unreadable => return Vec::new(),
+        Stored::Missing => None,
+        Stored::Text(i) => Some(i.lines().filter_map(linked_id).collect()),
+    };
     entries
         .iter()
         .filter(|e| linked.as_ref().is_none_or(|l| l.contains(&e.id.as_str())))
@@ -490,6 +536,38 @@ mod tests {
         }
     }
 
+    /// An agent writes the index between `link`'s read and its rename
+    /// (its own process): the write is stale, read again and tried once
+    /// more, so the line lands beside the agent's and nothing fails.
+    #[test]
+    fn a_link_raced_by_an_agent_tries_once_more() {
+        let tmp = tempfile::tempdir().unwrap();
+        let files = MemoryFiles::in_data_dir(tmp.path());
+        files.write_index("# Memory\n").unwrap();
+        let at = files.dir().join(INDEX_FILE);
+        let calls = std::cell::Cell::new(0);
+        let raced = files.edit(|index| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                std::fs::write(&at, "# Memory\n- [agent](agent.md) — user\n").unwrap();
+            }
+            with_line(index, &entry("a1", "user", "fact"))
+        });
+        assert!(raced.is_ok(), "{raced:?}");
+        assert_eq!(calls.get(), 2);
+        let now = std::fs::read_to_string(&at).unwrap();
+        assert!(now.contains("agent.md") && now.contains("a1.md"), "{now}");
+        // Raced every time: one retry, then the error.
+        let tries = std::cell::Cell::new(0);
+        let always = files.edit(|index| {
+            tries.set(tries.get() + 1);
+            std::fs::write(&at, format!("{index}x\n")).unwrap();
+            index.to_owned()
+        });
+        assert_eq!(always.unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+        assert_eq!(tries.get(), 2, "one retry, no more");
+    }
+
     #[test]
     fn concurrent_links_all_land_in_the_index() {
         let tmp = tempfile::tempdir().unwrap();
@@ -510,7 +588,9 @@ mod tests {
         for t in threads {
             t.join().unwrap().unwrap();
         }
-        let index = files.stored_index().unwrap();
+        let Stored::Text(index) = files.stored_index() else {
+            panic!("no index")
+        };
         let linked = index.lines().filter_map(linked_id).count();
         assert_eq!(linked, 40, "{index}");
     }
@@ -527,15 +607,20 @@ mod tests {
             "{index}"
         );
         let config = MemoryConfig::default();
-        assert_eq!(active(&config, Some(&index), &entries).len(), 2);
+        assert_eq!(
+            active(&config, &Stored::Text(index.clone()), &entries).len(),
+            2
+        );
         let trimmed = without_line(&index, "a1");
-        let ids: Vec<&str> = active(&config, Some(&trimmed), &entries)
+        let ids: Vec<&str> = active(&config, &Stored::Text(trimmed), &entries)
             .iter()
             .map(|e| e.id.as_str())
             .collect();
         assert_eq!(ids, ["b2"]);
         // No index at all: everything is active.
-        assert_eq!(active(&config, None, &entries).len(), 2);
+        assert_eq!(active(&config, &Stored::Missing, &entries).len(), 2);
+        // An index that cannot be read: nothing is (fail closed).
+        assert!(active(&config, &Stored::Unreadable, &entries).is_empty());
     }
 
     #[test]
@@ -548,13 +633,13 @@ mod tests {
             enabled: false,
             ..MemoryConfig::default()
         };
-        assert!(active(&off, None, &entries).is_empty());
+        assert!(active(&off, &Stored::Missing, &entries).is_empty());
         assert!(hook_instructions(&off, true).is_none());
         let no_profile = MemoryConfig {
             profile_enabled: false,
             ..MemoryConfig::default()
         };
-        let ids: Vec<&str> = active(&no_profile, None, &entries)
+        let ids: Vec<&str> = active(&no_profile, &Stored::Missing, &entries)
             .iter()
             .map(|e| e.id.as_str())
             .collect();

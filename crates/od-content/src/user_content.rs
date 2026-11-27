@@ -6,6 +6,7 @@
 use crate::frontmatter;
 use crate::nofollow;
 use crate::plugins::{PluginEntry, load_plugin};
+use od_fs::user_store::{self, Expect, Found, UserRoot};
 use std::path::{Path, PathBuf};
 
 /// Longest skill folder name (the original caps slugs at 64).
@@ -171,30 +172,40 @@ pub fn create_skill(
         return Err(WriteError::Exists(format!("skill {slug:?}")));
     }
     std::fs::create_dir_all(user_root).map_err(io)?;
+    let root = skills_root(user_root);
+    let one = root.lock();
     let dir = user_root.join(&slug);
     std::fs::create_dir(&dir).map_err(|e| match e.kind() {
         std::io::ErrorKind::AlreadyExists => WriteError::Exists(format!("skill {slug:?}")),
         _ => io(e),
     })?;
-    write_replacing(
-        &dir.join("SKILL.md"),
-        render_skill_md(draft, &slug, None).as_bytes(),
-    )
-    .map_err(io)?;
+    let text = render_skill_md(draft, &slug, None);
+    write_skill_md(&one, user_root, &dir, &text, Expect::Absent)?;
     Ok(slug)
 }
 
 /// The tag of the `SKILL.md` in skill folder `dir`: sha256 of its bytes,
 /// hex; [`GONE_TAG`] when there is none, `"unreadable"` when it is there
 /// but cannot be read (a link, a FIFO, too large). The skill editor opens
-/// on it and saves only over the same tag ([`save_skill`]).
+/// on it and saves only over the same tag ([`save_skill`]): both read it
+/// the one way, through the [`user_store::Guard`] of `dir`'s parent (the
+/// folder `dir` may be the user's own link; nothing below it is).
 #[must_use]
 pub fn skill_tag(dir: &Path) -> String {
-    let path = dir.join("SKILL.md");
-    match nofollow::read_file(&path, MAX_PLUGIN_BYTES) {
-        Ok(Some(file)) => tag_of(&file.bytes),
-        _ if std::fs::symlink_metadata(&path).is_err() => GONE_TAG.to_owned(),
-        _ => "unreadable".to_owned(),
+    let (Some(root), Some(name)) = (dir.parent(), dir.file_name()) else {
+        return GONE_TAG.to_owned();
+    };
+    let root = UserRoot::open(root, MAX_PLUGIN_BYTES);
+    let found = root.lock().read(&Path::new(name).join("SKILL.md"));
+    found_tag(&found)
+}
+
+/// The [`skill_tag`] of what a read found.
+fn found_tag(found: &Found) -> String {
+    match found {
+        Found::File(read) => read.tag.as_str().to_owned(),
+        Found::Missing => GONE_TAG.to_owned(),
+        Found::Unreadable(_) => user_store::Tag::UNREADABLE.to_owned(),
     }
 }
 
@@ -261,9 +272,8 @@ pub fn save_skill(
     if !crate::design_systems::is_valid_id(id) {
         return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
     }
-    let _one = REPLACE_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = skills_root(user_root);
+    let one = root.lock();
     // A user skill named like it in another case or Unicode form is the
     // folder `<user_root>/<id>` opens on macOS and Windows: an override
     // there would write over that skill.
@@ -273,11 +283,18 @@ pub fn save_skill(
     {
         return Err(WriteError::Exists(format!("skill {twin:?}")));
     }
-    if let Some(expected) = expected
-        && (expected == GONE_TAG
-            || skill_tag(&skill_write_dir(user_root, id, current_dir, is_user)) != expected)
-    {
-        return Err(WriteError::Stale);
+    // What the form opened on: the file under the root, read once, compared
+    // here and again by the write; a bundled one (no override yet) by path.
+    let target = skill_write_dir(user_root, id, current_dir, is_user);
+    let found = target
+        .strip_prefix(user_root)
+        .ok()
+        .map(|rel| one.read(&rel.join("SKILL.md")));
+    if let Some(expected) = expected {
+        let now = found.as_ref().map_or_else(|| skill_tag(&target), found_tag);
+        if expected == GONE_TAG || now != expected {
+            return Err(WriteError::Stale);
+        }
     }
     // Not through a link or from a FIFO an agent put there.
     let previous = nofollow::read_file(&current_dir.join("SKILL.md"), MAX_PLUGIN_BYTES)
@@ -302,7 +319,12 @@ pub fn save_skill(
     let text = render_skill_md(draft, id, previous.as_deref());
     // Validate before writing: a broken file would drop the skill.
     frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
-    write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)?;
+    // Over the file compared, else (`*`, a first override) what is there.
+    let expect = match found {
+        Some(found) if expected.is_some() && target == dir => found.expect(),
+        _ => Expect::Any,
+    };
+    write_skill_md(&one, user_root, &dir, &text, expect)?;
     Ok(dir)
 }
 
@@ -318,9 +340,8 @@ pub fn save_skill_again(user_root: &Path, id: &str, draft: &SkillDraft) -> Resul
     if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
         return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
     }
-    let _one = REPLACE_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = skills_root(user_root);
+    let one = root.lock();
     if let Some(twin) = entry_like(user_root, id)?.filter(|name| name != id) {
         return Err(WriteError::Exists(format!("skill {twin:?}")));
     }
@@ -345,7 +366,28 @@ pub fn save_skill_again(user_root: &Path, id: &str, draft: &SkillDraft) -> Resul
     }
     let text = render_skill_md(draft, id, None);
     frontmatter::parse(&text).map_err(|e| WriteError::BadRequest(e.to_string()))?;
-    write_replacing(&dir.join("SKILL.md"), text.as_bytes()).map_err(io)
+    write_skill_md(&one, user_root, &dir, &text, Expect::Absent)
+}
+
+/// Writes `text` as the `SKILL.md` of skill folder `dir` (under
+/// `user_root`) through the root's [`user_store::Guard`] when what is
+/// there is what `expect` says: no link below the root is followed.
+fn write_skill_md(
+    one: &user_store::Guard<'_>,
+    user_root: &Path,
+    dir: &Path,
+    text: &str,
+    expect: Expect,
+) -> Result<(), WriteError> {
+    let rel = dir
+        .strip_prefix(user_root)
+        .map_err(|_| WriteError::NotFound(format!("{} is no user skill", dir.display())))?
+        .join("SKILL.md");
+    match one.write(&rel, text.as_bytes(), expect) {
+        Ok(_) => Ok(()),
+        Err(user_store::WriteError::Stale) => Err(WriteError::Stale),
+        Err(user_store::WriteError::Io(e)) => Err(io(e)),
+    }
 }
 
 /// Writes `bytes` as `path` through a hidden file of its own beside it,
@@ -981,9 +1023,8 @@ fn install_skill_with(
     id: &str,
     rename: Rename<'_>,
 ) -> Result<(), WriteError> {
-    let _one = REPLACE_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = skills_root(user_root);
+    let _one = root.lock();
     let Some(current) = user_skill_dir(user_root, id) else {
         return place_copy(source, user_root, id);
     };
@@ -1199,8 +1240,12 @@ fn user_skill_dir(user_root: &Path, id: &str) -> Option<PathBuf> {
 /// top either.
 pub const PREVIOUS_DIR: &str = ".previous";
 
-/// One replace or restore at a time in this process.
-static REPLACE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// `<data>/skills` and the one lock its writers take in this process (a
+/// save, a replace, a restore, an install): a save compares and writes in
+/// one step, and nothing lands between.
+fn skills_root(user_root: &Path) -> UserRoot {
+    UserRoot::open(user_root, MAX_PLUGIN_BYTES)
+}
 
 /// What "Review and replace" shows: the agent CLI folder as an install
 /// would copy it, the user skill as it is, and the files that differ.
@@ -1300,9 +1345,8 @@ fn replace_skill_from_source_with(
             "the source is the skill {named:?} now, not {id:?}"
         )));
     }
-    let _one = REPLACE_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = skills_root(user_root);
+    let _one = root.lock();
     let current = user_skill_dir(user_root, id)
         .ok_or_else(|| WriteError::NotFound(format!("no user skill {id:?}")))?;
     let held = previous_root(user_root)?;
@@ -1400,9 +1444,8 @@ fn restore_previous_skill_with(
     if !crate::design_systems::is_valid_id(id) || id.starts_with(['.', '_']) {
         return Err(WriteError::BadRequest(format!("invalid skill id {id:?}")));
     }
-    let _one = REPLACE_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = skills_root(user_root);
+    let _one = root.lock();
     // A restore cut short may have left the copy to restore in a swap.
     if std::fs::symlink_metadata(user_root.join(PREVIOUS_DIR)).is_ok_and(|m| m.is_dir()) {
         previous_root(user_root)?;
@@ -1610,9 +1653,8 @@ pub fn forget_previous_skill(user_root: &Path, id: &str) -> Result<(), WriteErro
     if !valid_skill_id(id) {
         return Ok(());
     }
-    let _one = REPLACE_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = skills_root(user_root);
+    let _one = root.lock();
     let held = user_root.join(PREVIOUS_DIR);
     if !std::fs::symlink_metadata(&held).is_ok_and(|m| m.is_dir()) {
         return Ok(());

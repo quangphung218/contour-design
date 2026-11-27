@@ -49,7 +49,7 @@ pub struct Tree {
 
 /// Reads `file` (opened already) when it is a regular file, at most
 /// `limit` bytes; `Ok(None)` for anything else (a FIFO, a device).
-fn read_opened(file: File, limit: u64) -> Result<Option<ReadFile>, TreeError> {
+pub(crate) fn read_opened(file: File, limit: u64) -> Result<Option<ReadFile>, TreeError> {
     let meta = file.metadata()?;
     if !meta.is_file() {
         return Ok(None);

@@ -1753,6 +1753,7 @@ MemoryImported = บันทึกความจำแล้ว {0} ราย�
 MemoryImportPartial = บันทึกแล้ว {0} ล้มเหลว {1}
 MemoryIndexTitle = MEMORY.md (ดัชนี)
 MemoryIndexHint = เฉพาะข้อมูลที่ลิงก์ไว้ที่นี่เท่านั้นที่เข้าพรอมต์ ลบหนึ่งบรรทัดเพื่อปิดข้อมูลนั้น รายการยังอยู่ในลิสต์ ยังไม่บันทึกจนกว่าจะกดบันทึกดัชนี
+MemoryIndexUnreadable = อ่าน MEMORY.md ไม่ได้ (เป็นลิงก์ FIFO หรือใหญ่เกินไป) จึงไม่มีความจำเข้าแชต กดบันทึกดัชนีเพื่อเขียนใหม่
 MemoryIndexSave = บันทึกดัชนี
 MemoryIndexSaved = บันทึกดัชนีแล้ว
 MemoryUnsaved = ยังไม่ได้บันทึก

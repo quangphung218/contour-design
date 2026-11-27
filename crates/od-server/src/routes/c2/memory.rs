@@ -18,7 +18,7 @@ use axum::http::{HeaderValue, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use od_store::memory_index::{
-    self, MAX_INDEX_BYTES, MemoryConfig, MemoryConfigPatch, MemoryFiles, Suggestion,
+    self, MAX_INDEX_BYTES, MemoryConfig, MemoryConfigPatch, MemoryFiles, Stored, Suggestion,
 };
 use od_store::{Store, StoreError};
 use serde::{Deserialize, Serialize};
@@ -109,8 +109,9 @@ pub fn prepare_turn(s: &Store, project_id: &str, message: &str) -> Result<TurnMe
         );
     }
     let entries = s.list_global_memory()?;
+    // An index there that cannot be read links no entry (fail closed).
     let index = files.stored_index();
-    let active = memory_index::active(&config, index.as_deref(), &entries);
+    let active = memory_index::active(&config, &index, &entries);
     let has_rules = active.iter().any(|e| e.kind == "rule");
     let facts = active
         .iter()
@@ -165,6 +166,9 @@ pub struct IndexResponse {
     pub index: String,
     /// Where the memory files live, for "copy path".
     pub root_dir: String,
+    /// `MEMORY.md` is there but cannot be read (a link, a FIFO, too large,
+    /// not UTF-8): no entry reaches a chat until a Save writes it again.
+    pub unreadable: bool,
 }
 
 /// `GET /api/memory/index`, with the `ETag` of the index shown: the
@@ -173,8 +177,10 @@ pub async fn get_index(State(state): State<AppState>) -> ApiResult<impl IntoResp
     let res = state
         .blocking(|s| {
             let f = files(s);
+            let stored = f.stored_index();
             Ok(IndexResponse {
-                index: f.index(&s.list_global_memory()?),
+                unreadable: stored == Stored::Unreadable,
+                index: memory_index::shown(stored, &s.list_global_memory()?),
                 root_dir: f.dir().display().to_string(),
             })
         })
@@ -200,13 +206,14 @@ pub async fn put_index(
     let res = state
         .blocking(move |s| {
             let f = files(s);
-            let written = f.write_index_if(&body.index, |f| {
-                let shown = f.index(&s.list_global_memory()?);
+            let written = f.write_index_if(&body.index, |stored| {
+                let shown = memory_index::shown(stored, &s.list_global_memory()?);
                 Ok::<_, StoreError>(if_match.allows(&crate::cas::tag_of(shown.as_bytes())))
             })?;
             Ok(written.then(|| IndexResponse {
                 index: body.index,
                 root_dir: f.dir().display().to_string(),
+                unreadable: false,
             }))
         })
         .await?
