@@ -1817,11 +1817,6 @@ mod tests {
         assert!(!dir.exists());
     }
 
-    /// A user skill `Ad-Creative` beside the bundled `ad-creative` (PR #349
-    /// review): on macOS and Windows `<user>/ad-creative` is that folder.
-    /// The form opens on the bundled copy, so its tag is the bundled one,
-    /// and a Save of `ad-creative` is refused, never written into the
-    /// other skill.
     /// "Save anyway" puts a deleted user skill back only as an entry of
     /// the root: a folder the index names outside it is never made.
     #[test]
@@ -1844,6 +1839,11 @@ mod tests {
         assert!(gone.join("SKILL.md").is_file());
     }
 
+    /// A user skill `Ad-Creative` beside the bundled `ad-creative` (PR #349
+    /// review): on macOS and Windows `<user>/ad-creative` is that folder.
+    /// The form opens on the bundled copy, so its tag is the bundled one,
+    /// and a Save of `ad-creative` is refused, never written into the
+    /// other skill.
     #[test]
     fn a_save_never_lands_in_a_skill_named_alike() {
         let tmp = tempfile::tempdir().unwrap();

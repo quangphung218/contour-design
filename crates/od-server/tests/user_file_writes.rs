@@ -32,11 +32,16 @@
 //!
 //! - `fs`: in a module that reads and writes a user root ([`ZONE`]), the
 //!   disk changes only through `od_fs::user_store` (`UserRoot`, `Guard`):
-//!   no `std::fs`/`tokio::fs` write, remove, rename, copy, link or bits,
-//!   no `File::create`, no open option that writes, no `nix` `…at` call, no
-//!   `libc`, no `use …::fs::*`, whatever the arguments; and no call of a
-//!   function in another module ([`HELPER_SOURCES`]) that does any of
-//!   these, itself or through one it calls. A path call is matched by its
+//!   no `std::fs`/`tokio::fs` write, remove, rename, copy, link, bits or
+//!   owner, no `File::create`, no `DirBuilder`, no open option that writes,
+//!   no `set_permissions`/`set_len`/`persist` on a file, no `nix` `…at`,
+//!   `unlink`, `mkdir`, `rmdir` or writing `open`, no `libc`, no
+//!   `tempfile` `…_in`, no `Command` running `rm`/`mv`/`cp`…, no `use
+//!   …::fs::*`; and no call of a function in another module
+//!   ([`HELPER_SOURCES`]) that does any of these, itself or through one it
+//!   calls. A function named as a value (`.map(std::fs::remove_file)`, `let
+//!   w = std::fs::write`) counts as called: clippy's `redundant_closure`
+//!   asks for that spelling. A path call is matched by its
 //!   last two names (`nofollow::replace_file`, `NewDir::create`), a
 //!   `crate::f`/`super::f` by a name only writing functions bear; a method
 //!   call (`x.f()`) is followed only to a type of the same file, as the
@@ -94,6 +99,7 @@ const ZONE: &[&str] = &[
     "src/skill_export.rs",
     "src/routes/platform/evolution.rs",
     "src/routes/file_ops.rs",
+    "src/routes/w3/design_systems.rs",
 ];
 
 /// Where a helper a zone module calls may live (rule `fs`: a helper that
@@ -356,6 +362,20 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "fs",
         1,
         "PR 6: the files of a revision accept that failed, put back",
+    ),
+    (
+        "src/routes/w3/design_systems.rs",
+        "generate",
+        "fs",
+        3,
+        "PR 6: a generation's staging `<data>/<STAGING_DIR>/<job>`, outside a user root; the package goes in through `design_system_gen::install`",
+    ),
+    (
+        "src/routes/w3/design_systems.rs",
+        "finish",
+        "fs",
+        1,
+        "PR 6: removes that staging folder",
     ),
 ];
 
@@ -644,12 +664,27 @@ fn names_no_id(arg: &Expr) -> bool {
     }
 }
 
-/// Whether the call `full` (a path, aliases expanded) changes the file
-/// system by itself: `std::fs`/`tokio::fs` writes, removes, renames, copies,
-/// links, bits; `File::create`; `nix` `…at` calls; anything in `libc`.
-fn raw_write(full: &[String]) -> bool {
+/// Whether the function `full` (a path, aliases expanded) changes the file
+/// system, called with `args` (`None`: named as a value, `.map(f)`, `let
+/// w = f`): `std::fs`/`tokio::fs` writes, removes, renames, copies, links,
+/// bits, owners; `File::create`; `DirBuilder`; `nix` `…at` calls and
+/// `unlink`/`mkdir`/`rmdir`/`open` (an `open` only with a flag that makes
+/// or changes a file); anything in `libc`; `tempfile`'s `…_in`; a
+/// `Command` running `rm`, `mv`, `cp`….
+fn raw_write(full: &[String], args: Option<&Punctuated<Expr, Token![,]>>) -> bool {
     let last = full.last().map(String::as_str);
+    // A constant named as a value (`libc::O_NOFOLLOW`) is no function.
+    if args.is_none()
+        && last.is_some_and(|l| {
+            l.chars()
+                .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
+        })
+    {
+        return false;
+    }
     let prev = full.len().checked_sub(2).map(|i| full[i].as_str());
+    let nix = full.iter().any(|s| s == "nix");
+    let flags = || args.is_none_or(|a| a.iter().any(|e| names_any(e, WRITE_FLAGS)));
     matches!(
         (prev, last),
         (
@@ -669,8 +704,12 @@ fn raw_write(full: &[String]) -> bool {
                     | "symlink_file"
                     | "symlink_dir"
                     | "set_permissions"
+                    | "chown"
+                    | "lchown"
+                    | "fchown"
             )
         ) | (Some("File"), Some("create" | "create_new"))
+            | (Some("DirBuilder"), Some("new"))
     ) || matches!(
         last,
         Some(
@@ -683,18 +722,70 @@ fn raw_write(full: &[String]) -> bool {
                 | "linkat"
                 | "fchmodat"
         )
-    ) || full.iter().any(|s| s == "libc")
+    ) || (nix
+        && matches!(
+            last,
+            Some("unlink" | "mkdir" | "rmdir" | "mkfifo" | "truncate")
+        ))
+        || (nix && last == Some("open") && flags())
+        || full.iter().any(|s| s == "libc")
+        || (last.is_some_and(|l| l.ends_with("_in"))
+            && full
+                .iter()
+                .any(|s| matches!(s.as_str(), "tempfile" | "NamedTempFile" | "TempDir")))
+        || (matches!((prev, last), (Some("Command"), Some("new")))
+            && args.and_then(|a| a.first()).is_some_and(|e| {
+                matches!(e, Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. })
+                    if SHELL_WRITES.contains(&s.value().as_str()))
+            }))
 }
 
-/// Whether a method call sets an open option that makes or changes a
-/// file (`OpenOptions`, `File::options()`, options bound earlier):
-/// `.write(true)`, `.append(true)`, `.create(true)`, `.truncate(true)`,
-/// `.create_new(true)`.
+/// The commands that change files, run through `Command::new`.
+const SHELL_WRITES: &[&str] = &[
+    "rm", "mv", "cp", "ln", "mkdir", "rmdir", "chmod", "chown", "touch", "install", "rsync",
+];
+
+/// Whether `e` names one of `names` (`OFlag::O_CREAT | …`).
+fn names_any(e: &Expr, names: &[&str]) -> bool {
+    struct Find<'a> {
+        names: &'a [&'a str],
+        hit: bool,
+    }
+    impl<'ast> Visit<'ast> for Find<'_> {
+        fn visit_ident(&mut self, i: &'ast syn::Ident) {
+            self.hit |= self.names.contains(&name(i).as_str());
+        }
+    }
+    let mut f = Find { names, hit: false };
+    f.visit_expr(e);
+    f.hit
+}
+
+/// Whether a method call changes the file system, its receiver's type
+/// unknown: an open option that makes or changes a file (`OpenOptions`,
+/// `File::options()`, `DirBuilder`, options bound earlier: `.write(…)`,
+/// `.append(…)`, `.create(…)`, `.truncate(…)`, `.create_new(…)`, with any
+/// one argument but `false` or a reference, which no flag is: `v.append(&mut
+/// w)`, `h.write(&bytes)`), bits or length set through a file
+/// (`set_permissions`, `set_len`), a temp file kept or made in a folder
+/// (`persist`, `tempdir_in`, `tempfile_in`).
 fn sets_write(m: &syn::ExprMethodCall) -> bool {
-    matches!(
-        name(&m.method).as_str(),
-        "write" | "append" | "create" | "truncate" | "create_new"
-    ) && is_true(m.args.first())
+    let flag = m.args.len() == 1
+        && !matches!(
+            m.args.first(),
+            Some(Expr::Reference(_))
+                | Some(Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(_) | syn::Lit::ByteStr(_) | syn::Lit::Int(_),
+                    ..
+                }))
+        )
+        && !matches!(m.args.first(), Some(Expr::Lit(syn::ExprLit { lit: syn::Lit::Bool(b), .. })) if !b.value);
+    match name(&m.method).as_str() {
+        "write" | "append" | "create" | "truncate" | "create_new" => flag,
+        "set_permissions" | "set_len" | "persist" | "persist_noclobber" | "tempdir_in"
+        | "tempfile_in" => true,
+        _ => false,
+    }
 }
 
 /// The writes found in one file: rule, function, line.
@@ -839,7 +930,7 @@ impl<'ast> Visit<'ast> for Writes<'_> {
             );
             self.plain_call |= writes;
             if self.zone
-                && (raw_write(&full)
+                && (raw_write(&full, Some(&c.args))
                     || callee(&full, self.impls.last().map(String::as_str))
                         .is_some_and(|c| self.helpers.has(&c)))
             {
@@ -872,8 +963,29 @@ impl<'ast> Visit<'ast> for Writes<'_> {
             {
                 self.push("user_root.join", Self::line(&c.func));
             }
+            // The function's path is read above, never again as a value.
+            for a in &c.args {
+                self.visit_expr(a);
+            }
+            return;
         }
         visit::visit_expr_call(self, c);
+    }
+
+    /// A function named as a value (`.map(std::fs::remove_dir_all)`, `let w
+    /// = std::fs::write`): what it does is done where it is called.
+    fn visit_expr_path(&mut self, p: &'ast syn::ExprPath) {
+        if self.zone {
+            let segs: Vec<String> = p.path.segments.iter().map(|s| name(&s.ident)).collect();
+            let full = self.names.expand(segs);
+            if raw_write(&full, None)
+                || callee(&full, self.impls.last().map(String::as_str))
+                    .is_some_and(|c| self.helpers.has(&c))
+            {
+                self.push("fs", p.path.span().start().line);
+            }
+        }
+        visit::visit_expr_path(self, p);
     }
 
     fn visit_expr_method_call(&mut self, m: &'ast syn::ExprMethodCall) {
@@ -1082,14 +1194,35 @@ impl<'ast> Visit<'ast> for Calls<'_> {
             let module = self.module.last().cloned().unwrap_or_default();
             if let Some(f) = self.open.last_mut() {
                 // An `openat` that only reads is no write (`nofollow::read_*`).
-                f.direct |= raw_write(&full) && full.last().is_some_and(|l| l != "openat");
+                f.direct |=
+                    raw_write(&full, Some(&c.args)) && full.last().is_some_and(|l| l != "openat");
                 match callee(&full, here.as_deref()) {
                     Some(c) => f.calls.insert(c),
                     None => f.calls.insert(Callee::Key((module, full[0].clone()))),
                 };
             }
+            for a in &c.args {
+                self.visit_expr(a);
+            }
+            return;
         }
         visit::visit_expr_call(self, c);
+    }
+
+    /// A function named as a value: called where it is passed.
+    fn visit_expr_path(&mut self, p: &'ast syn::ExprPath) {
+        let segs: Vec<String> = p.path.segments.iter().map(|s| name(&s.ident)).collect();
+        let full = self.names.expand(segs);
+        let here = self.impls.last().cloned();
+        let module = self.module.last().cloned().unwrap_or_default();
+        if let Some(f) = self.open.last_mut() {
+            f.direct |= raw_write(&full, None) && full.last().is_some_and(|l| l != "openat");
+            match callee(&full, here.as_deref()) {
+                Some(c) => f.calls.insert(c),
+                None => f.calls.insert(Callee::Key((module, full[0].clone()))),
+            };
+        }
+        visit::visit_expr_path(self, p);
     }
 
     fn visit_expr_method_call(&mut self, m: &'ast syn::ExprMethodCall) {
@@ -1631,6 +1764,8 @@ const UTIL: (&str, &str) = (
     "pub fn put(p: &Path) { std::fs::write(p, b\"x\").unwrap(); }
      pub fn put_twice(p: &Path) { put(p); put(p); }
      pub fn peek(p: &Path) { std::fs::read(p).unwrap(); }
+     pub fn sweep(ps: &[PathBuf]) { ps.iter().for_each(std::fs::remove_file); }
+     pub fn put_all(ps: &[PathBuf]) { ps.iter().for_each(put); }
      pub struct Box2;
      impl Box2 {
          pub fn fill(&self, p: &Path) { self.drop_in(p) }
@@ -1710,8 +1845,50 @@ fn every_spelling_of_a_write_in_the_zone_is_caught() {
         "fn f() { assert!(std::fs::write(p, b).is_ok()); }",
         "fn f() { let w = || std::fs::write(p, b); }",
         "impl S {\n    fn f(&self) { std::fs::remove_file(p); }\n}",
+        // A function named as a value (PR #364 review: clippy's
+        // `redundant_closure` asks for this very spelling).
+        "fn f() { p.map(std::fs::remove_dir_all); }",
+        "fn f() { entries.for_each(std::fs::remove_file); }",
+        "use std::fs; fn f() { p.and_then(fs::create_dir_all); }",
+        "fn f() { let w = std::fs::write; w(p, b); }",
+        "fn f() { p.map(util::put); }",
+        "fn f() { util::sweep(ps); }",
+        "fn f() { util::put_all(ps); }",
+        "use crate::util::put; fn f() { p.map(put); }",
+        "fn f() { p.map(od_fs::nofollow::NewDir::create); }",
+        "async fn f() { p.then(tokio::fs::remove_file); }",
+        // Folders made by a builder; open options from a variable.
+        "fn f() { std::fs::DirBuilder::new().recursive(true).create(p); }",
+        "use std::fs::DirBuilder; fn f() { let b = DirBuilder::new(); }",
+        "fn f() { std::fs::OpenOptions::new().write(w).open(p); }",
+        "fn f() { std::fs::OpenOptions::new().create(!read_only).open(p); }",
+        // `nix` beyond the `…at` calls.
+        "fn f() { nix::unistd::unlink(p); }",
+        "use nix::unistd; fn f() { unistd::mkdir(p, m); }",
+        "fn f() { nix::unistd::rmdir(p); }",
+        "fn f() { nix::fcntl::open(p, OFlag::O_CREAT | OFlag::O_WRONLY, m); }",
+        "use nix::fcntl::{open, OFlag}; fn f() { open(p, OFlag::O_RDWR, m); }",
+        "fn f() { p.map(nix::unistd::unlink); }",
+        // Bits, owner, length through a file or a path.
+        "fn f() { std::fs::File::open(p)?.set_permissions(m); }",
+        "fn f() { file.set_len(0); }",
+        "fn f() { std::os::unix::fs::chown(p, u, g); }",
+        "fn f() { std::os::unix::fs::lchown(p, u, g); }",
+        // A temp file or folder made in the root, or kept there.
+        "fn f() { tempfile::tempdir_in(root); }",
+        "fn f() { tempfile::NamedTempFile::new_in(root); }",
+        "fn f() { tempfile::Builder::new().tempdir_in(root); }",
+        "fn f() { t.persist(p); }",
+        // A shell doing it.
+        "fn f() { std::process::Command::new(\"rm\").arg(p).status(); }",
+        "use std::process::Command; fn f() { Command::new(\"mv\").args([a, b]); }",
+        "fn f() { tokio::process::Command::new(\"cp\"); }",
     ] {
-        assert_eq!(zone_rules(src, &others), ["fs"], "{src}");
+        let found = zone_rules(src, &others);
+        assert!(
+            !found.is_empty() && found.iter().all(|r| *r == "fs"),
+            "{src}: {found:?}"
+        );
     }
     for src in [
         "// std::fs::write(p, b)\nfn f() {}",
@@ -1728,6 +1905,15 @@ fn every_spelling_of_a_write_in_the_zone_is_caught() {
         "#[cfg(test)] mod tests { fn t() { std::fs::write(p, b); } }",
         "#[test] fn t() { std::fs::remove_dir_all(p); }",
         "#[cfg(test)] use std::fs::*;",
+        // Values that are no writing function, and arguments no flag takes.
+        "fn f() { let o = libc::O_NOFOLLOW; options.custom_flags(nix::libc::O_NONBLOCK); }",
+        "fn f() { p.map(std::fs::read); p.map(util::peek); }",
+        "fn f() { v.append(&mut w); h.write(&bytes); s.write(\"x\"); }",
+        "fn f() { std::fs::OpenOptions::new().write(false).open(p); }",
+        "fn f() { one.write(rel, b, Expect::Any); }",
+        "fn f() { nix::fcntl::open(p, OFlag::O_RDONLY | OFlag::O_NOFOLLOW, m); }",
+        "fn f() { tempfile::tempdir(); }",
+        "fn f() { std::process::Command::new(\"git\"); }",
     ] {
         assert!(
             zone_rules(src, &others).is_empty(),

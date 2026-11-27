@@ -463,7 +463,7 @@ impl NewDir {
     /// # Errors
     /// `AlreadyExists` when anything is there; `InvalidInput`; the
     /// `mkdir`'s.
-    pub fn create_dir(&self, rel: &Path) -> std::io::Result<()> {
+    pub(crate) fn create_dir(&self, rel: &Path) -> std::io::Result<()> {
         #[cfg(unix)]
         {
             let (parent, name) = self.parent_of(rel)?;

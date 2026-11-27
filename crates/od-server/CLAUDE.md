@@ -148,10 +148,12 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content`, `od-server` and `../od-store/src/memory_index.rs`, `KEPT` with why). The memory index and config are written with `Guard::write` too (`../od-store/tests/memory_files.rs`).
     A module that reads and writes a user root (`ZONE` in `tests/user_file_writes.rs`: `user_content.rs`, `skills.rs`,
     `plugins.rs`, `index.rs`, `design_system_gen.rs`, `memory_index.rs`, `routes/library/**`, the memory routes,
-    `routes/content.rs`, `skill_export.rs`, `routes/platform/evolution.rs`, `routes/file_ops.rs`: Save as template) changes the disk only through `od_fs::user_store` (`Guard::write`, `remove`,
+    `routes/content.rs`, `skill_export.rs`, `routes/platform/evolution.rs`, `routes/file_ops.rs`: Save as template, `routes/w3/design_systems.rs`) changes the disk only through `od_fs::user_store` (`Guard::write`, `remove`,
     `put_tree`, `put_copy`, `restore`, `make_dir`, `remove_hidden`, `UserRoot::make_root`): rule `fs` refuses there any
-    `std::fs`/`tokio::fs` write, remove, rename, copy, link or bits, `File::create`, open options that write, a `nix` `…at`
-    call, `libc`, a `use …::fs::*`, and a call of a function elsewhere in `od-content`, `od-server`, `od-store` or
+    `std::fs`/`tokio::fs` write, remove, rename, copy, link, bits or owner, `File::create`, `DirBuilder`, open options that
+    write (any argument but `false` or a reference), `set_permissions`/`set_len`/`persist` on a file, a `nix` `…at` call,
+    `unlink`/`mkdir`/`rmdir`, an `open` with a flag that writes, `libc`, `tempfile`'s `…_in`, `Command::new("rm"|"mv"|"cp"…)`,
+    a `use …::fs::*`, each named as a value too (`.map(std::fs::remove_file)`, `let w = std::fs::write`), and a function elsewhere in `od-content`, `od-server`, `od-store` or
     `od_fs::nofollow` that does (found by name, to a fixed point); `KEPT` with why (`PR 6`: design systems, Copy to
     Claude Code). `../od-fs/src/hostile.rs` runs every `Guard` call against a linked entry, a link below it, a link or
     FIFO at the file, a file too large, a `0555` folder and a name alike in another case.
