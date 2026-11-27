@@ -104,20 +104,6 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
     ),
     (
         "../od-content/src/user_content.rs",
-        "place_copy",
-        "user_root.join",
-        1,
-        "its callers run `refuse_case_twin` (install) or replace that very id",
-    ),
-    (
-        "../od-content/src/user_content.rs",
-        "restore_previous_skill_with",
-        "user_root.join",
-        1,
-        "after `refuse_case_twin`, when `user_skill_dir` finds no entry of that name in any case",
-    ),
-    (
-        "../od-content/src/user_content.rs",
         "recover_incoming",
         "user_root.join",
         1,
