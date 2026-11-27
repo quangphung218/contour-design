@@ -198,6 +198,9 @@ fn filter(query: &str, all: Vec<Command>) -> Vec<Command> {
 #[component]
 pub fn CommandPalette() -> impl IntoView {
     let shell = Shell::get();
+    // Closed, the focus goes back where it was (a popup under it, the
+    // composer), not to the page body.
+    super::focus::return_focus_on_cleanup();
     let navigate = super::leave_guard::use_leave();
     let query = RwSignal::new(String::new());
     let selected = RwSignal::new(0usize);

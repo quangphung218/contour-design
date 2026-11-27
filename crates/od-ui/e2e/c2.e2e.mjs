@@ -517,6 +517,143 @@ try {
   await page.getByTestId('report-notice').waitFor();
   results.quickMenu = 'ok';
 
+  // 10b. The sidebar corner is one Settings button: no "Local mode", no
+  // separate Shortcuts button or Settings link; the pages in three groups.
+  await page.goto(BASE + '/');
+  const trigger = page.getByTestId('quick-menu');
+  await trigger.waitFor();
+  assert.equal(await trigger.getAttribute('aria-label'), 'Settings');
+  assert.equal((await trigger.innerText()).trim(), 'Settings', 'the name is the visible text');
+  assert.equal(await page.getByTestId('open-shortcuts').count(), 0, 'no separate Shortcuts button');
+  assert.equal(await page.locator('.sidebar a[href="/settings"]').count(), 0, 'no separate Settings link');
+  const groups = () => page.locator('nav.sidenav .nav-group').evaluateAll((gs) =>
+    gs.map((g) => [g.getAttribute('aria-label'), g.querySelector('.nav-group-label').textContent, [...g.querySelectorAll('a')].map((a) => a.getAttribute('href'))]));
+  const hrefs = [['/', '/projects', '/templates'], ['/design-systems', '/skills', '/plugins', '/media'], ['/automations', '/integrations', '/inbox']];
+  assert.deepEqual(await groups(), [['Create', 'Create', hrefs[0]], ['Library', 'Library', hrefs[1]], ['Automate', 'Automate', hrefs[2]]]);
+  // Keyboard: focus goes in, the arrows move, Esc closes the menu and
+  // nothing under it, focus goes back to the button.
+  const focused = () => page.evaluate(() => document.activeElement?.dataset?.testid ?? document.activeElement?.tagName);
+  await trigger.click();
+  await until(async () => (await focused()) === 'quick-open-settings', 'focus on Open Settings');
+  assert.match(await page.getByTestId('quick-open-settings').innerText(), /^Open Settings\s+(⌘|Ctrl\+),$/);
+  assert.equal(await page.getByText('Local mode').count(), 0, 'no Local mode in the menu');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await focused(), 'quick-theme-system');
+  await page.keyboard.press('ArrowUp');
+  assert.equal(await focused(), 'quick-open-settings');
+  await page.keyboard.press('ArrowUp');
+  assert.equal(await focused(), 'quick-report', 'Up on the first item goes to the last');
+  await page.keyboard.press('Home');
+  assert.equal(await focused(), 'quick-open-settings');
+  await page.evaluate(() => {
+    window.__escBelow = 0;
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.__escBelow += 1; });
+  });
+  await page.keyboard.press('Escape');
+  await page.getByTestId('quick-menu-pop').waitFor({ state: 'detached' });
+  assert.equal(await page.evaluate(() => window.__escBelow), 0, 'Esc closes the menu only (no jury stop, no comment mode)');
+  await until(async () => (await focused()) === 'quick-menu', 'focus back on the Settings button');
+  // A layer opened over the popup (palette, shortcuts) takes Esc first;
+  // the next Esc closes the popup.
+  const pop = page.getByTestId('quick-menu-pop');
+  for (const [keys, testid] of [['Control+k', 'command-palette'], ['Control+/', 'shortcuts']]) {
+    await trigger.click();
+    await until(async () => (await focused()) === 'quick-open-settings', 'popup open');
+    await page.keyboard.press(keys);
+    await page.getByTestId(testid).waitFor();
+    // The layer takes the focus (next task); until then Esc is the popup's.
+    await until(async () => !(await focused())?.startsWith('quick-'), `focus in ${testid}`);
+    await page.keyboard.press('Escape');
+    await page.getByTestId(testid).waitFor({ state: 'detached' });
+    assert.ok(await pop.isVisible(), `Esc closed ${testid} and left the popup under it`);
+    await until(async () => (await focused())?.startsWith('quick-'), `focus back in the popup after ${testid}`);
+    await page.keyboard.press('Escape');
+    await pop.waitFor({ state: 'detached' });
+  }
+  // Cmd/Ctrl+, with the popup open closes it (a leave question would
+  // otherwise sit over it).
+  await trigger.click();
+  await pop.waitFor();
+  await page.keyboard.press('Control+Comma');
+  await page.waitForURL(BASE + '/settings');
+  await pop.waitFor({ state: 'detached' });
+  await page.goto(BASE + '/');
+  await trigger.waitFor();
+  await until(async () => { await trigger.focus(); return (await focused()) === 'quick-menu'; }, 'focus on the button');
+  await page.keyboard.press('Enter');
+  await until(async () => (await focused()) === 'quick-open-settings', 'Enter opens the menu');
+  await page.keyboard.press('Enter');
+  await page.waitForURL(BASE + '/settings');
+  // Cmd/Ctrl+, and the desktop Settings item open Settings with no
+  // Settings link in the sidebar.
+  await page.goto(BASE + '/projects');
+  await trigger.waitFor();
+  await page.keyboard.press('Control+Comma');
+  await page.waitForURL(BASE + '/settings');
+  await page.goto(BASE + '/projects');
+  await trigger.waitFor();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('od:menu', { detail: 'settings' })));
+  await page.waitForURL(BASE + '/settings');
+  // A short window (desktop's smallest: 600 px less the title bar): the
+  // pages scroll, the Settings button stays whole in the sidebar.
+  for (const height of [520, 600]) {
+    await page.setViewportSize({ width: 1280, height });
+    await page.goto(BASE + '/');
+    await trigger.waitFor();
+    const fit = await page.evaluate(() => {
+      const side = document.querySelector('.sidebar').getBoundingClientRect();
+      const b = document.querySelector('[data-testid=quick-menu]').getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { bottom: b.bottom, side: side.bottom, top: b.top, onTop: !!hit?.closest('[data-testid=quick-menu]') };
+    });
+    assert.ok(fit.bottom <= fit.side && fit.top >= 0 && fit.onTop, `Settings button in view at ${height}: ${JSON.stringify(fit)}`);
+    const inbox = page.locator('.sidenav a[href="/inbox"]');
+    await inbox.scrollIntoViewIfNeeded();
+    // Scrolled to, the last page sits whole above the button, not under it.
+    const last = await page.evaluate(() => {
+      const a = document.querySelector('.sidenav a[href="/inbox"]').getBoundingClientRect();
+      const b = document.querySelector('[data-testid=quick-menu]').getBoundingClientRect();
+      return { bottom: a.bottom, button: b.top };
+    });
+    assert.ok(last.bottom <= last.button, `Inbox above the Settings button at ${height}: ${JSON.stringify(last)}`);
+    await inbox.click();
+    await page.waitForURL(BASE + '/inbox');
+    await trigger.click();
+    await pop.waitFor();
+    const popBox = await pop.boundingBox();
+    assert.ok(popBox.y >= 0, `popup inside the window at ${height}: ${popBox.y}`);
+    await page.keyboard.press('Escape');
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // The rail: the button keeps its name, its tip says Settings, group names hide.
+  await page.goto(BASE + '/');
+  await trigger.waitFor();
+  const isRail = async () => (await page.locator('.sidebar').getAttribute('class')).includes('rail');
+  assert.equal(await isRail(), false);
+  await page.keyboard.press('Control+b');
+  await until(isRail, 'rail');
+  assert.equal(await trigger.getAttribute('data-tip'), 'Settings');
+  assert.equal(await trigger.getAttribute('aria-label'), 'Settings');
+  assert.equal(await page.locator('.nav-group-label').evaluateAll((l) => l.filter((e) => e.offsetParent).length), 0, 'no group name on the rail');
+  await page.keyboard.press('Control+b');
+  await until(async () => !(await isRail()), 'sidebar open again');
+  // Vietnamese.
+  await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ locale: 'vi' }) });
+  await page.reload();
+  await page.getByTestId('home-title').getByText('Cùng tạo', { exact: false }).waitFor();
+  assert.equal(await trigger.getAttribute('aria-label'), 'Cài đặt');
+  assert.equal((await trigger.innerText()).trim(), 'Cài đặt');
+  assert.deepEqual(await groups(), [['Tạo', 'Tạo', hrefs[0]], ['Thư viện', 'Thư viện', hrefs[1]], ['Tự động', 'Tự động', hrefs[2]]]);
+  await trigger.click();
+  assert.match(await page.getByTestId('quick-open-settings').innerText(), /^Mở Cài đặt\s+(⌘|Ctrl\+),$/);
+  assert.equal(await page.getByText('Chế độ cục bộ').count(), 0);
+  await shot('quick-menu-vi', async () => page.getByTestId('quick-menu-pop').waitFor());
+  await page.keyboard.press('Escape');
+  await api('/api/app-config', { method: 'PUT', body: JSON.stringify({ locale: 'en' }) });
+  await page.reload();
+  await page.getByTestId('home-title').getByText('Let’s create', { exact: false }).waitFor();
+  results.settingsButton = 'ok';
+
   // 11. Brand font banner on the extracted (editable) system.
   await page.goto(BASE + `/design-systems?id=${encodeURIComponent(dsId)}`);
   const banner = page.getByTestId('missing-fonts');

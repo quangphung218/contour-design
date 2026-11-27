@@ -1227,6 +1227,17 @@ pub fn FilePicker(trigger: RwSignal<u32>, on_files: Callback<Vec<web_sys::File>>
 
 /// Closes `open` on a press outside `wrap` or on Esc.
 pub fn close_outside(open: RwSignal<bool>, wrap: NodeRef<Div>) {
+    close_on_press_outside(open, wrap);
+    let key = window_event_listener(ev::keydown, move |e| {
+        if e.key() == "Escape" && open.get_untracked() {
+            open.set(false);
+        }
+    });
+    on_cleanup(move || key.remove());
+}
+
+/// Closes `open` on a press outside `wrap` (Esc is the caller's).
+pub fn close_on_press_outside(open: RwSignal<bool>, wrap: NodeRef<Div>) {
     let down = window_event_listener(ev::mousedown, move |e| {
         if !open.get_untracked() {
             return;
@@ -1240,15 +1251,7 @@ pub fn close_outside(open: RwSignal<bool>, wrap: NodeRef<Div>) {
             open.set(false);
         }
     });
-    let key = window_event_listener(ev::keydown, move |e| {
-        if e.key() == "Escape" && open.get_untracked() {
-            open.set(false);
-        }
-    });
-    on_cleanup(move || {
-        down.remove();
-        key.remove();
-    });
+    on_cleanup(move || down.remove());
 }
 
 /// Which part of the "+" menu shows.

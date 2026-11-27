@@ -100,13 +100,14 @@
 /* ---------- Quick settings menu ---------- */
 .quick-menu { display: flex; }
 .quick-trigger { width: 100%; }
-.quick-avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 22px; height: 22px; border-radius: var(--radius-full); background: var(--color-accent-soft); color: var(--color-accent-text); }
-.quick-avatar .ico { width: var(--icon-sm); height: var(--icon-sm); color: inherit; }
-/* Fixed, so the sidebar (and its icon rail) does not clip it. */
-.menu.up.quick-pop { position: fixed; left: var(--space-2); right: auto; bottom: 132px; top: auto; width: 264px; max-height: calc(100vh - 160px); overflow-y: auto; z-index: var(--z-popover); }
+/* Fixed, so the sidebar (and its icon rail) does not clip it; just above
+   the Settings button, the last control of the sidebar. */
+.menu.up.quick-pop { position: fixed; left: var(--space-2); right: auto; bottom: calc(var(--space-3) + var(--control-md) + var(--space-1-5)); top: auto; width: 264px; max-height: calc(100vh - 160px); overflow-y: auto; z-index: var(--z-popover); }
+/* A phone's rail buttons are 44 px tall (app.css). */
+@media (max-width: 480px) {
+  .menu.up.quick-pop { bottom: calc(var(--space-3) + 44px + var(--space-1-5)); }
+}
 .quick-theme .seg { flex: 1; justify-content: center; }
-.quick-head { display: flex; align-items: center; gap: var(--space-2-5); padding: var(--space-2) var(--space-2) var(--space-2-5); border-bottom: 1px solid var(--color-border-subtle); margin-bottom: var(--space-1); }
-.quick-head .quick-avatar { width: 32px; height: 32px; }
 .quick-theme { margin: 0 var(--space-1) var(--space-1); }
 .quick-language { margin: 0 var(--space-1) var(--space-1); width: calc(100% - 2 * var(--space-1)); }
 
