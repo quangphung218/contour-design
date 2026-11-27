@@ -3,8 +3,8 @@
 //! `od-server` and the memory index (`od-store/src/memory_index.rs`):
 //!
 //! - `write`: a `SKILL.md` or `DESIGN.md` is written only through
-//!   `od_content::user_content::write_replacing` (a file of its own, renamed
-//!   over it). A `std::fs::write`/`File::create` in place lets a read (the
+//!   `od_fs::user_store::Guard::write` (a file of its own, renamed over
+//!   it). A `std::fs::write`/`File::create` in place lets a read (the
 //!   index, a form's `GET`) find it half written, and writes through a link.
 //! - `user_root.join`: a folder under the user root is named by an id only
 //!   where the code checks the names on disk (`named_exactly`, `entry_like`,
@@ -49,9 +49,11 @@
 //!   is made (`NewDir::create`). The visibility of `od-fs` does the rest:
 //!   its low-level writers are private but those with a caller outside it.
 //!
-//! What stays is in `KEPT`, by file, function and count, with why; `PR 6`
-//! marks what the next PR moves to `user_store` (design systems, Copy to
-//! Claude Code).
+//! What stays is in `KEPT`, by file, function and count, with why: a
+//! write outside every user root (a temp folder, a generation's staging),
+//! or an older version's leftovers moved back once at start-up; `PR 6b`
+//! marks what the next PR moves to `user_store` (an override's first
+//! copy, Copy to Claude Code).
 //!
 //! The sources are parsed as Rust (`syn`): comments and strings are no
 //! code, items built only for tests are left out. A path to the file is
@@ -189,6 +191,13 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "into the revision's temporary working folder (`tempfile`), never the package",
     ),
     (
+        "../od-content/src/design_system_gen.rs",
+        "install_checked",
+        "user_root.join",
+        1,
+        "the name `Guard::put_new` just made there, byte for byte",
+    ),
+    (
         "../od-content/src/user_content.rs",
         "save_skill_again",
         "user_root.join",
@@ -203,25 +212,11 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "removes only its own `.copying-<name>-<tag>` when the rename fails; renames into a name that must be free, never over a copy",
     ),
     (
-        "../od-content/src/design_system_gen.rs",
-        "build_and_place",
-        "swap",
-        1,
-        "removes only the folder it claimed with `create_dir` in this call when a move into it fails; no copy there before",
-    ),
-    (
         "src/routes/w3/reference.rs",
         "hold",
         "pid",
         1,
         "the pid is written in the mark's body (who holds it), never a name",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "copy",
-        "user_root.join",
-        3,
-        "a free folder name: `exists()` in any case skips a taken one, never opens it",
     ),
     (
         "../od-content/src/user_content.rs",
@@ -249,133 +244,56 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "copy_dir",
         "fs",
         4,
-        "PR 6: `Place::New` (a new folder, never over one there); the override's first copy and Copy design system",
+        "PR 6b: `Place::New` (a new folder, never over one there); an override's first copy",
     ),
     (
         "../od-content/src/user_content.rs",
         "copy_dir_into_place",
         "fs",
         2,
-        "PR 6: as `copy_dir`, its `.copying-<name>-<tag>` renamed to a free name",
+        "PR 6b: as `copy_dir`, its `.copying-<name>-<tag>` renamed to a free name",
     ),
     (
         "../od-content/src/user_content.rs",
         "export_skill_with",
         "fs",
         4,
-        "PR 6: Copy to Claude Code writes `HOME/.claude/skills`, a root outside `<data>`",
+        "PR 6b: Copy to Claude Code writes `HOME/.claude/skills`, a root outside `<data>`",
     ),
     (
         "../od-content/src/user_content.rs",
         "write_into",
         "fs",
         1,
-        "PR 6: only `export_skill_with` writes through it",
-    ),
-    (
-        "../od-content/src/user_content.rs",
-        "write_replacing",
-        "fs",
-        1,
-        "PR 6: its one caller is `design_systems.rs:put_back` (a revision accept undone)",
-    ),
-    (
-        "../od-content/src/design_system_gen.rs",
-        "install_checked",
-        "fs",
-        3,
-        "PR 6: a generated design system is placed as Copy design system is (a free folder name)",
-    ),
-    (
-        "../od-content/src/design_system_gen.rs",
-        "build_and_place",
-        "fs",
-        4,
-        "PR 6: as `install_checked`",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "copy",
-        "fs",
-        3,
-        "PR 6: Copy design system",
+        "PR 6b: only `export_skill_with` writes through it",
     ),
     (
         "src/routes/library/design_systems.rs",
         "copy_revisable",
         "fs",
         1,
-        "PR 6: a revision's temporary working folder (`tempfile`)",
+        "into the revision's working folder, a `tempfile` of the system's temp folder, outside every user root",
     ),
     (
         "src/routes/library/design_systems.rs",
         "import",
         "fs",
         2,
-        "PR 6: an import's temporary folder (`tempfile`)",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "patch_metadata",
-        "fs",
-        1,
-        "PR 6: `metadata.json` written in place",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "write_revision",
-        "fs",
-        3,
-        "PR 6: an accepted revision",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "upload_assets",
-        "fs",
-        3,
-        "PR 6: asset upload",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "write_new_asset",
-        "fs",
-        3,
-        "PR 6: asset upload",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "write_sent_names",
-        "fs",
-        5,
-        "PR 6: asset upload",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "delete_asset",
-        "fs",
-        1,
-        "PR 6: asset delete",
-    ),
-    (
-        "src/routes/library/design_systems.rs",
-        "put_back",
-        "fs",
-        1,
-        "PR 6: the files of a revision accept that failed, put back",
+        "a `tempfile::tempdir` of the system's temp folder, outside every user root; the package goes in through `design_system_gen::install_imported` (`Guard::put_new`)",
     ),
     (
         "src/routes/w3/design_systems.rs",
         "generate",
         "fs",
         3,
-        "PR 6: a generation's staging `<data>/<STAGING_DIR>/<job>`, outside a user root; the package goes in through `design_system_gen::install`",
+        "a generation's staging `<data>/<STAGING_DIR>/<job>` (`design-system-jobs`), outside every user root; the package goes in through `design_system_gen::install` (`Guard::put_new`)",
     ),
     (
         "src/routes/w3/design_systems.rs",
         "finish",
         "fs",
         1,
-        "PR 6: removes that staging folder",
+        "removes that staging folder, outside every user root",
     ),
 ];
 
@@ -1452,7 +1370,7 @@ fn user_files_are_written_whole_and_named_as_on_disk() {
     }
     assert!(
         wrong.is_empty(),
-        "write a SKILL.md or DESIGN.md through `user_content::write_replacing`, name a folder under the \
+        "write a SKILL.md or DESIGN.md through `Guard::write`, name a folder under the \
          user root only after checking the names on disk (`named_exactly`, `entry_like`), or list it in \
          KEPT with why:\n{}",
         wrong.join("\n")
@@ -1714,8 +1632,8 @@ fn every_spelling_of_a_write_is_caught() {
 fn f() {}"#,
         r#"fn f() { let s = "std::fs::write(d.join(SKILL.md), b)"; }"#,
         r#"fn f() { std::fs::write(d.join("tokens.css"), b); }"#,
-        r#"fn f() { write_replacing(&d.join("SKILL.md"), b); }"#,
-        r#"fn f() { user_content::write_replacing(&inside(&d, "DESIGN.md")?, b); }"#,
+        r#"fn f() { one.write(&d.join("SKILL.md"), b, Expect::Any); }"#,
+        r#"fn f() { one.write(&rel.join("DESIGN.md"), b, found.expect()); }"#,
         r#"fn f() { std::fs::read(d.join("SKILL.md")); }"#,
         r#"#[cfg(test)] mod tests { fn t() { std::fs::write(d.join("SKILL.md"), b); } }"#,
         r#"#[test] fn t() { std::fs::write(d.join("SKILL.md"), b); }"#,

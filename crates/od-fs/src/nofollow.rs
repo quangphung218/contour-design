@@ -355,10 +355,9 @@ fn walk_path(
 /// is `AlreadyExists`, never opened. Elsewhere (Windows) the folders on the
 /// way are checked for reparse points and files are made `create_new`.
 ///
-/// Public for what is not under a user root yet: Copy design system and an
-/// override's first copy (`od_content::user_content::copy_dir`), a
-/// generated design system, Copy to Claude Code (PR 6 moves them to
-/// [`crate::user_store`]). Under a user root, write through
+/// Public for what is not under a user root yet: an override's first copy
+/// (`od_content::user_content::copy_dir`), Copy to Claude Code (PR 6b
+/// moves them to [`crate::user_store`]). Under a user root, write through
 /// [`crate::user_store::Guard::put_copy`]; `od-server/tests/user_file_writes.rs`
 /// (rule `fs`) refuses a call of it there outside its `KEPT`.
 #[derive(Debug)]
@@ -622,9 +621,8 @@ pub fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Res
 /// The open's, write's or rename's; the new file is removed.
 ///
 /// Public for files outside a user root (`app-config.json`, a generated UI
-/// file in a project: `od-server` `routes/ui.rs`, `routes/genui.rs`) and
-/// `user_content::write_replacing` (design system files, PR 6). Under a
-/// user root, write through [`crate::user_store::Guard::write`] (rule `fs`).
+/// file in a project: `od-server` `routes/ui.rs`, `routes/genui.rs`). Under
+/// a user root, write through [`crate::user_store::Guard::write`] (rule `fs`).
 pub fn replace_file(
     path: &Path,
     bytes: &[u8],

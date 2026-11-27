@@ -47,7 +47,7 @@ use axum::{Json, Router};
 use od_content::DesignSystemEntry;
 use od_content::design_kit::{self, Swatch, Token, TokenScore};
 use od_content::design_system_gen::{self, GenerateRequest};
-use od_content::user_content::{self, copy_dir_into_place};
+use od_content::user_content;
 use od_content::user_store::{self, Expect, Found, Guard, UserRoot};
 use od_contracts::{ContentSource, CreateProjectRequest, ProjectMetadata, RunStatus};
 use od_runs::RunMeta;
@@ -407,21 +407,48 @@ fn revisions_of(dir: &std::path::Path) -> Vec<Revision> {
     out
 }
 
-fn write_revision(dir: &std::path::Path, r: &Revision) -> std::io::Result<()> {
-    let rdir = format!("{REVISIONS_DIR}/{}", r.id);
-    std::fs::create_dir_all(inside_io(dir, &rdir)?)?;
+/// Writes revision `r` of package `dir` (`revisions/<id>/`: its
+/// `revision.json` and proposed files) through `one`, the lock of
+/// [`design_root`] held: each file whole, no link below the package
+/// followed.
+fn write_revision(one: &Guard<'_>, dir: &std::path::Path, r: &Revision) -> std::io::Result<()> {
+    let revisions = package_rel(dir).join(REVISIONS_DIR);
+    let rdir = revisions.join(&r.id);
+    for d in [&revisions, &rdir] {
+        match one.make_dir(d) {
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            made => made?,
+        }
+    }
     let meta = Revision {
         files: Vec::new(),
         ..r.clone()
     };
-    std::fs::write(
-        inside_io(dir, &format!("{rdir}/{REVISION_FILE}"))?,
-        serde_json::to_vec_pretty(&meta).map_err(std::io::Error::other)?,
-    )?;
+    let json = serde_json::to_vec_pretty(&meta).map_err(std::io::Error::other)?;
+    one.write(&rdir.join(REVISION_FILE), &json, Expect::Any)
+        .map_err(write_io)?;
     for f in &r.files {
-        std::fs::write(inside_io(dir, &format!("{rdir}/{}", f.name))?, &f.content)?;
+        one.write(&rdir.join(&f.name), f.content.as_bytes(), Expect::Any)
+            .map_err(write_io)?;
     }
     Ok(())
+}
+
+/// [`write_revision`] under the lock, off the async runtime.
+async fn save_revision(dir: PathBuf, r: Revision) -> std::io::Result<()> {
+    crate::spawn::spawn_blocking_in_span(move || {
+        write_revision(&design_root(&dir).lock(), &dir, &r)
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
+/// A [`Guard::write`] error as an I/O one (`Any` is never stale).
+fn write_io(e: user_store::WriteError) -> std::io::Error {
+    match e {
+        user_store::WriteError::Io(e) => e,
+        user_store::WriteError::Stale => std::io::Error::other("changed since it was read"),
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -625,23 +652,47 @@ pub async fn save_design_md(
     Ok(Json(json!({ "ok": true })))
 }
 
-/// Merges `patch` into the package's `metadata.json`.
-fn patch_metadata(dir: &std::path::Path, patch: &Value) -> std::io::Result<()> {
-    let path = inside_io(dir, "metadata.json")?;
-    let mut meta = read_text(&path)
-        .ok()
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .filter(Value::is_object)
-        .unwrap_or_else(|| json!({}));
+/// Merges `patch`'s keys into `meta` (an object, else `{}`).
+fn merged(meta: Option<Value>, patch: &Value) -> Value {
+    let mut meta = meta.filter(Value::is_object).unwrap_or_else(|| json!({}));
     if let (Some(m), Some(p)) = (meta.as_object_mut(), patch.as_object()) {
         for (k, v) in p {
             m.insert(k.clone(), v.clone());
         }
     }
-    std::fs::write(
-        path,
-        serde_json::to_vec_pretty(&meta).map_err(std::io::Error::other)?,
-    )
+    meta
+}
+
+/// Merges `patch` into the package's `metadata.json` through `one` (the
+/// lock of [`design_root`] held): read once, written whole over that
+/// very file (a new file renamed over it: an app stopped half way leaves
+/// the old one, never a cut one), a file an agent wrote since is a 412.
+fn patch_metadata(one: &Guard<'_>, dir: &std::path::Path, patch: &Value) -> ApiResult<()> {
+    patch_metadata_with(one, dir, patch, || {})
+}
+
+/// [`patch_metadata`], `between` run after the read, before the write: a
+/// test writes the file there as an agent would.
+fn patch_metadata_with(
+    one: &Guard<'_>,
+    dir: &std::path::Path,
+    patch: &Value,
+    between: impl FnOnce(),
+) -> ApiResult<()> {
+    let rel = package_rel(dir).join("metadata.json");
+    let found = one.read(&rel);
+    between();
+    let meta = match &found {
+        Found::File(read) => serde_json::from_slice::<Value>(&read.bytes).ok(),
+        _ => None,
+    };
+    let bytes = serde_json::to_vec_pretty(&merged(meta, patch))
+        .map_err(|e| ApiErr::internal(e.to_string()))?;
+    match one.write(&rel, &bytes, found.expect()) {
+        Ok(_) => Ok(()),
+        Err(user_store::WriteError::Stale) => Err(crate::cas::changed()),
+        Err(user_store::WriteError::Io(e)) => Err(ApiErr::io(e)),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -660,7 +711,8 @@ pub async fn set_status(
     let e = editable(&state, &id)?;
     let status = body.status.clone();
     write_and_reload(&state, move || {
-        patch_metadata(&e.dir, &json!({ "status": status })).map_err(ApiErr::io)
+        let root = design_root(&e.dir);
+        patch_metadata(&root.lock(), &e.dir, &json!({ "status": status }))
     })
     .await?;
     Ok(Json(json!({ "status": body.status })))
@@ -699,50 +751,47 @@ pub async fn copy(
         .unwrap_or_else(|| format!("{} copy", e.summary.title));
     let root = user_root(&state);
     let new_id = write_and_reload(&state, move || {
-        std::fs::create_dir_all(&root).map_err(ApiErr::io)?;
+        // Read as an install reads (no link below the package, no FIFO);
+        // its revisions stay behind.
+        let mut tree = user_content::read_copy(&e.dir, u64::MAX)?;
+        let revisions = std::path::Path::new(REVISIONS_DIR);
+        tree.dirs.retain(|d| !d.starts_with(revisions));
+        tree.files.retain(|(p, _)| !p.starts_with(revisions));
+        // Hidden, so not read above; the sent names go too, or the copy's
+        // `logo-chính.png` would take `logo chính.png`'s (QA-109).
+        let sent = read_sent_names(&e.dir);
         let slug = design_system_gen::slugify(&name);
-        let dest = (1..)
-            .map(|n| {
-                if n == 1 {
-                    root.join(&slug)
-                } else {
-                    root.join(format!("{slug}-{n}"))
+        // A free name picked and taken under the root's lock (two Copies
+        // at once land in two folders); built hidden, then renamed in.
+        let folder = UserRoot::open(&root, MAX_READ_BYTES).lock().put_new(
+            design_system_gen::folder_names(&slug),
+            |folder| {
+                if !sent.is_empty() {
+                    let bytes = serde_json::to_vec_pretty(&sent).map_err(std::io::Error::other)?;
+                    put_file(&mut tree, SENT_NAMES, bytes);
                 }
-            })
-            .find(|p| !p.exists())
-            .unwrap_or_else(|| root.join(&slug));
-        let folder = dest
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        // Built whole beside it, then renamed: a copy that fails half way
-        // is removed, never listed (`user_content::copy_dir_into_place`).
-        copy_dir_into_place(&e.dir, &dest, u64::MAX, |staging| {
-            let _ = std::fs::remove_dir_all(staging.join(REVISIONS_DIR));
-            // `copy_dir` leaves hidden files; the sent names go too, or the
-            // copy's `logo-chính.png` would take `logo chính.png`'s (QA-109).
-            write_sent_names(staging, &read_sent_names(&e.dir)).map_err(ApiErr::io)?;
-            // The manifest names its folder; keep it valid for the new one.
-            let manifest_path = staging.join("manifest.json");
-            if let Some(mut m) = read_text(&manifest_path)
-                .ok()
-                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-            {
-                m["id"] = json!(folder);
-                m["name"] = json!(name);
-                m["source"] =
-                    json!({ "type": "local", "origin": format!("copied from {}", e.summary.id) });
-                let _ = std::fs::write(
-                    &manifest_path,
-                    serde_json::to_vec_pretty(&m).unwrap_or_default(),
-                );
-            }
-            patch_metadata(
-                staging,
-                &json!({ "title": name, "category": e.summary.category, "status": "draft" }),
-            )
-            .map_err(ApiErr::io)
-        })?;
+                // The manifest names its folder; keep it valid for the new one.
+                if let Some(mut m) = tree_file(&tree, "manifest.json")
+                    .and_then(|b| serde_json::from_slice::<Value>(b).ok())
+                {
+                    m["id"] = json!(folder);
+                    m["name"] = json!(name);
+                    m["source"] = json!({ "type": "local", "origin": format!("copied from {}", e.summary.id) });
+                    let bytes = serde_json::to_vec_pretty(&m).map_err(std::io::Error::other)?;
+                    put_file(&mut tree, "manifest.json", bytes);
+                }
+                let meta = tree_file(&tree, "metadata.json")
+                    .and_then(|b| serde_json::from_slice::<Value>(b).ok());
+                let patch =
+                    json!({ "title": name, "category": e.summary.category, "status": "draft" });
+                let bytes =
+                    serde_json::to_vec_pretty(&merged(meta, &patch)).map_err(std::io::Error::other)?;
+                put_file(&mut tree, "metadata.json", bytes);
+                Ok::<_, std::io::Error>(tree)
+            },
+            None,
+        )
+        .map_err(ApiErr::io)?;
         Ok(format!(
             "{}{folder}",
             od_content::design_systems::USER_ID_PREFIX
@@ -750,6 +799,25 @@ pub async fn copy(
     })
     .await?;
     Ok(Json(json!({ "id": new_id })))
+}
+
+/// The bytes of file `name` at the top of `tree`.
+fn tree_file<'a>(tree: &'a od_content::nofollow::Tree, name: &str) -> Option<&'a [u8]> {
+    tree.files
+        .iter()
+        .find(|(p, _)| p.as_os_str() == name)
+        .map(|(_, f)| f.bytes.as_slice())
+}
+
+/// Sets file `name` at the top of `tree` to `bytes` (its bits kept).
+fn put_file(tree: &mut od_content::nofollow::Tree, name: &str, bytes: Vec<u8>) {
+    match tree.files.iter_mut().find(|(p, _)| p.as_os_str() == name) {
+        Some((_, f)) => f.bytes = bytes,
+        None => tree.files.push((
+            PathBuf::from(name),
+            od_content::nofollow::ReadFile { bytes, mode: 0o644 },
+        )),
+    }
 }
 
 /// Package files for the archive: everything visible except revisions,
@@ -872,10 +940,6 @@ fn sent_name(raw: &str) -> &str {
 /// with the package (QA-109).
 const SENT_NAMES: &str = ".sent-names.json";
 
-/// One upload or delete of assets at a time: each reads [`SENT_NAMES`],
-/// picks names and writes it back.
-static ASSET_WRITES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 /// [`SENT_NAMES`] of package folder `dir`; empty when missing,
 /// unreadable or a link (never followed out of the package).
 fn read_sent_names(dir: &std::path::Path) -> BTreeMap<String, String> {
@@ -885,36 +949,26 @@ fn read_sent_names(dir: &std::path::Path) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-/// Writes [`SENT_NAMES`] whole (a new file renamed over it: a link
-/// planted there is replaced, not followed). A few hundred bytes, so
-/// written in place from async code too.
+/// Writes [`SENT_NAMES`] of package `dir` whole through `one` (the lock
+/// of [`design_root`] held: one upload or delete at a time reads it,
+/// picks names and writes it back): a new file renamed over it, a link
+/// planted there replaced, not followed; none left, it goes.
 fn write_sent_names(
+    one: &Guard<'_>,
     dir: &std::path::Path,
     names: &BTreeMap<String, String>,
 ) -> std::io::Result<()> {
-    use std::io::Write as _;
-    let path = dir.join(SENT_NAMES);
+    let rel = package_rel(dir).join(SENT_NAMES);
     if names.is_empty() {
-        return match std::fs::remove_file(&path) {
+        return match one.remove_file(&rel) {
             Err(err) if err.kind() != std::io::ErrorKind::NotFound => Err(err),
             _ => Ok(()),
         };
     }
-    let tmp = dir.join(format!(
-        "{SENT_NAMES}.{}.tmp",
-        uuid::Uuid::new_v4().simple()
-    ));
     let bytes = serde_json::to_vec_pretty(names).map_err(std::io::Error::other)?;
-    let written = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp)
-        .and_then(|mut file| file.write_all(&bytes))
-        .and_then(|()| std::fs::rename(&tmp, &path));
-    if written.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    written
+    one.write(&rel, &bytes, Expect::Any)
+        .map(drop)
+        .map_err(write_io)
 }
 
 /// The asset a file sent as `sent` replaces: the one sent under that name
@@ -984,7 +1038,7 @@ fn candidate_names(name: &str) -> impl Iterator<Item = String> + '_ {
 /// Where one file of an upload goes.
 enum Target {
     /// Over this asset, sent under the same name before.
-    Replace(String, PathBuf),
+    Replace(String),
     /// A new asset: its cleaned name, or the first free `stem-N.ext`.
     New(String),
 }
@@ -1029,22 +1083,40 @@ pub async fn upload_assets(
             .iter()
             .map(|(raw, name, _)| (raw.as_str(), name.as_str())),
     )?;
-    let assets = inside(&e.dir, ASSETS_DIR)?;
-    tokio::fs::create_dir_all(&assets)
+    let dir = e.dir.clone();
+    let saved = crate::spawn::spawn_blocking_in_span(move || write_assets(&dir, parts))
         .await
-        .map_err(ApiErr::io)?;
-    let _writes = ASSET_WRITES.lock().await;
+        .map_err(|err| ApiErr::internal(err.to_string()))??;
+    Ok(Json(json!({ "assets": saved })))
+}
+
+/// Writes the checked files of an upload into package `dir`, under the
+/// lock of [`design_root`] (one upload or delete at a time, and none
+/// between a Save's compare and its write).
+fn write_assets(
+    dir: &std::path::Path,
+    parts: Vec<(String, String, axum::body::Bytes)>,
+) -> ApiResult<Vec<Value>> {
+    let root = design_root(dir);
+    let one = root.lock();
+    let assets_rel = package_rel(dir).join(ASSETS_DIR);
+    match one.make_dir(&assets_rel) {
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+        made => io(made)?,
+    }
+    let assets = inside(dir, ASSETS_DIR)?;
     // A file replaces only the asset sent under its name before; any
     // other takes the first free `stem-N.ext`, never a name of the batch's
     // other files: `🖼.png` after `🎨.png` (both `_.png`), `logo-chính.png`
     // after `logo chính.png`, two long names alike up to the cut (QA-109).
-    let mut sent_names = read_sent_names(&e.dir);
+    let mut sent_names = read_sent_names(dir);
     let mut targets = Vec::with_capacity(parts.len());
     for (raw, name, _) in &parts {
         targets.push(match replaced_asset(&assets, &sent_names, sent_name(raw)) {
             Some(old) => {
-                let path = inside(&e.dir, &format!("{ASSETS_DIR}/{old}"))?;
-                Target::Replace(old, path)
+                // Checked as every package path is (a link planted at it).
+                inside(dir, &format!("{ASSETS_DIR}/{old}"))?;
+                Target::Replace(old)
             }
             None => Target::New(name.clone()),
         });
@@ -1055,12 +1127,14 @@ pub async fn upload_assets(
     let mut saved = Vec::with_capacity(parts.len());
     for ((raw, _, bytes), target) in parts.into_iter().zip(targets) {
         let name = match target {
-            Target::Replace(name, path) => {
-                tokio::fs::write(path, &bytes).await.map_err(ApiErr::io)?;
+            Target::Replace(name) => {
+                io(one
+                    .write(&assets_rel.join(&name), &bytes, Expect::Any)
+                    .map_err(write_io))?;
                 name
             }
             Target::New(name) => {
-                let name = write_new_asset(&e.dir, &name, &batch, &bytes).await?;
+                let name = write_new_asset(&one, dir, &name, &batch, &bytes)?;
                 let sent = sent_name(&raw);
                 let changed = if sent == name {
                     sent_names.remove(&name).is_some()
@@ -1069,8 +1143,8 @@ pub async fn upload_assets(
                 };
                 // Not kept without its sent name: Try again would add a
                 // `stem-1` copy, or let a cleaned name replace it.
-                if changed && let Err(err) = write_sent_names(&e.dir, &sent_names) {
-                    let _ = tokio::fs::remove_file(assets.join(&name)).await;
+                if changed && let Err(err) = write_sent_names(&one, dir, &sent_names) {
+                    let _ = one.remove_file(&assets_rel.join(&name));
                     return Err(ApiErr::io(err));
                 }
                 name
@@ -1078,18 +1152,19 @@ pub async fn upload_assets(
         };
         saved.push(json!({ "name": name, "kind": asset_kind(&name), "size": bytes.len() }));
     }
-    Ok(Json(json!({ "assets": saved })))
+    Ok(saved)
 }
 
 /// Writes a new asset under the first of its candidate names free on
-/// disk and not another file's of the batch, never over a file.
-async fn write_new_asset(
+/// disk and not another file's of the batch, never over a file (or a
+/// link) there: written only where nothing is ([`Expect::Absent`]).
+fn write_new_asset(
+    one: &Guard<'_>,
     dir: &std::path::Path,
     name: &str,
     batch: &[String],
     bytes: &[u8],
 ) -> ApiResult<String> {
-    use tokio::io::AsyncWriteExt as _;
     let own = name_key(name);
     for candidate in candidate_names(name) {
         let key = name_key(&candidate);
@@ -1106,26 +1181,11 @@ async fn write_new_asset(
         {
             continue;
         }
-        let opened = tokio::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .await;
-        match opened {
-            Ok(mut file) => {
-                let written = async {
-                    file.write_all(bytes).await?;
-                    file.flush().await
-                }
-                .await;
-                if let Err(err) = written {
-                    let _ = tokio::fs::remove_file(&path).await;
-                    return Err(ApiErr::io(err));
-                }
-                return Ok(candidate);
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(err) => return Err(ApiErr::io(err)),
+        let rel = package_rel(dir).join(ASSETS_DIR).join(&candidate);
+        match one.write(&rel, bytes, Expect::Absent) {
+            Ok(_) => return Ok(candidate),
+            Err(user_store::WriteError::Stale) => {}
+            Err(user_store::WriteError::Io(err)) => return Err(ApiErr::io(err)),
         }
     }
     Err(ApiErr::bad_request(format!(
@@ -1138,19 +1198,27 @@ pub async fn delete_asset(
     Path((id, name)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     let e = editable(&state, &id)?;
-    let name = existing_asset_name(&name).ok_or_else(|| ApiErr::bad_request("invalid asset"))?;
-    let _writes = ASSET_WRITES.lock().await;
-    tokio::fs::remove_file(inside(&e.dir, &format!("{ASSETS_DIR}/{name}"))?)
-        .await
-        .map_err(|_| ApiErr::not_found("asset not found"))?;
-    // Its sent name goes with it: a file put there after (the agent's) was
-    // not sent as that. The asset is gone either way.
-    let mut sent_names = read_sent_names(&e.dir);
-    if sent_names.remove(name).is_some()
-        && let Err(err) = write_sent_names(&e.dir, &sent_names)
-    {
-        tracing::warn!(error = %err, "the sent name of a deleted asset kept");
-    }
+    existing_asset_name(&name).ok_or_else(|| ApiErr::bad_request("invalid asset"))?;
+    let dir = e.dir.clone();
+    crate::spawn::spawn_blocking_in_span(move || {
+        inside(&dir, &format!("{ASSETS_DIR}/{name}"))?;
+        let root = design_root(&dir);
+        let one = root.lock();
+        // The asset itself, or a link at its name: never what it points at.
+        one.remove_file(&package_rel(&dir).join(ASSETS_DIR).join(&name))
+            .map_err(|_| ApiErr::not_found("asset not found"))?;
+        // Its sent name goes with it: a file put there after (the agent's)
+        // was not sent as that. The asset is gone either way.
+        let mut sent_names = read_sent_names(&dir);
+        if sent_names.remove(&name).is_some()
+            && let Err(err) = write_sent_names(&one, &dir, &sent_names)
+        {
+            tracing::warn!(error = %err, "the sent name of a deleted asset kept");
+        }
+        Ok::<_, ApiErr>(())
+    })
+    .await
+    .map_err(|err| ApiErr::internal(err.to_string()))??;
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -1189,12 +1257,7 @@ pub async fn rebuild(
         name: "tokens.css".to_owned(),
         content: rebuilt,
     }];
-    let dir = e.dir.clone();
-    let saved = r.clone();
-    crate::spawn::spawn_blocking_in_span(move || write_revision(&dir, &saved))
-        .await
-        .map_err(|err| ApiErr::internal(err.to_string()))?
-        .map_err(ApiErr::io)?;
+    io(save_revision(e.dir.clone(), r.clone()).await)?;
     Ok(Json(
         json!({ "decision": "revision", "score": s, "revision": r }),
     ))
@@ -1210,7 +1273,8 @@ pub async fn list_revisions(
 
 /// A package file an accept writes.
 struct Prior {
-    path: PathBuf,
+    /// Its path under [`design_root`].
+    rel: PathBuf,
     /// What it held before (`None`: it was not there).
     old: Option<Vec<u8>>,
     /// What the accept wrote; `None` while it is written (a write that
@@ -1218,17 +1282,27 @@ struct Prior {
     wrote: Option<Vec<u8>>,
 }
 
-/// Writes an accepted revision's files into the package `dir`, all or
-/// nothing: on an error those written (or being written) get their old
-/// content back. Returns that old content, for [`put_back`] should the
-/// decision itself not be saved.
-fn accept_files(dir: &std::path::Path, files: &[RevisionFile]) -> ApiResult<Vec<Prior>> {
-    accept_files_with(dir, files, user_content::write_replacing)
+/// Writes an accepted revision's files into the package `dir` through
+/// `one` (the lock of [`design_root`] held), all or nothing: each file
+/// whole (a new file renamed over it), and on an error those written (or
+/// being written) get their old content back. Returns that old content,
+/// for [`put_back`] should the decision itself not be saved.
+fn accept_files(
+    one: &Guard<'_>,
+    dir: &std::path::Path,
+    files: &[RevisionFile],
+) -> ApiResult<Vec<Prior>> {
+    accept_files_with(one, dir, files, |rel, bytes| {
+        one.write(rel, bytes, Expect::Any)
+            .map(drop)
+            .map_err(write_io)
+    })
 }
 
 /// [`accept_files`], each file written by `write`, so a test can fail a
 /// write half way as a full disk would.
 fn accept_files_with(
+    one: &Guard<'_>,
     dir: &std::path::Path,
     files: &[RevisionFile],
     mut write: impl FnMut(&std::path::Path, &[u8]) -> std::io::Result<()>,
@@ -1238,30 +1312,33 @@ fn accept_files_with(
         .iter()
         .filter(|f| REVISABLE.contains(&f.name.as_str()))
         .try_for_each(|f| {
-            let path = inside(dir, &f.name)?;
-            let old = match od_content::nofollow::read_file(&path, MAX_READ_BYTES) {
-                Ok(Some(file)) => Some(file.bytes),
+            let rel = package_rel(dir).join(&f.name);
+            let old = match one.read(&rel) {
+                Found::File(read) => Some(read.bytes),
                 // Missing: the accept makes it.
-                Ok(None) if std::fs::symlink_metadata(&path).is_err() => None,
-                // A FIFO or a device: writing would wait on it.
-                Ok(None) => {
+                Found::Missing => None,
+                Found::Unreadable(user_store::Unreadable::TooLarge) => {
+                    return Err(ApiErr::bad_request(format!("{} is too large", f.name)));
+                }
+                Found::Unreadable(user_store::Unreadable::Io(err)) => {
+                    return Err(ApiErr::io(err));
+                }
+                // A FIFO, a device, a link: writing would wait on it or
+                // replace what the agent put there.
+                Found::Unreadable(_) => {
                     return Err(ApiErr::bad_request(format!(
                         "{} is not a regular file",
                         f.name
                     )));
                 }
-                Err(od_content::nofollow::TreeError::TooLarge) => {
-                    return Err(ApiErr::bad_request(format!("{} is too large", f.name)));
-                }
-                Err(od_content::nofollow::TreeError::Io(err)) => return Err(ApiErr::io(err)),
             };
             // Listed before the write: one that fails half way is put back.
             prior.push(Prior {
-                path: path.clone(),
+                rel: rel.clone(),
                 old,
                 wrote: None,
             });
-            io(write(&path, f.content.as_bytes()))?;
+            io(write(&rel, f.content.as_bytes()))?;
             if let Some(p) = prior.last_mut() {
                 p.wrote = Some(f.content.clone().into_bytes());
             }
@@ -1270,31 +1347,34 @@ fn accept_files_with(
     match wrote {
         Ok(()) => Ok(prior),
         Err(err) => {
-            put_back(&prior);
+            put_back(one, &prior);
             Err(err)
         }
     }
 }
 
-/// Undoes [`accept_files`]: each file gets back what it held, if it still
-/// holds what the accept wrote. One changed since (the agent revising the
-/// package, the user's editor), or gone, is theirs now: it is left as it
-/// is. What stays: a change that writes the very same content is taken for
-/// the accept's.
-fn put_back(prior: &[Prior]) {
+/// Undoes [`accept_files`] through `one`: each file gets back what it
+/// held, if it still holds what the accept wrote. One changed since (the
+/// agent revising the package, the user's editor), or gone, is theirs
+/// now: it is left as it is. What stays: a change that writes the very
+/// same content is taken for the accept's.
+fn put_back(one: &Guard<'_>, prior: &[Prior]) {
     for p in prior.iter().rev() {
         if let Some(wrote) = &p.wrote {
-            match read_bytes(&p.path) {
-                Ok(now) if now == *wrote => {}
+            match one.read(&p.rel) {
+                Found::File(now) if now.bytes == *wrote => {}
                 _ => {
-                    tracing::warn!(file = %p.path.display(), "a file an accept wrote changed since: left as it is");
+                    tracing::warn!(file = %p.rel.display(), "a file an accept wrote changed since: left as it is");
                     continue;
                 }
             }
         }
         let undone = match &p.old {
-            Some(bytes) => user_content::write_replacing(&p.path, bytes),
-            None => std::fs::remove_file(&p.path).or_else(|err| {
+            Some(bytes) => one
+                .write(&p.rel, bytes, Expect::Any)
+                .map(drop)
+                .map_err(write_io),
+            None => one.remove_file(&p.rel).or_else(|err| {
                 if err.kind() == std::io::ErrorKind::NotFound {
                     Ok(())
                 } else {
@@ -1303,7 +1383,7 @@ fn put_back(prior: &[Prior]) {
             }),
         };
         if let Err(err) = undone {
-            tracing::warn!(file = %p.path.display(), error = %err, "an accept that failed cannot be undone");
+            tracing::warn!(file = %p.rel.display(), error = %err, "an accept that failed cannot be undone");
         }
     }
 }
@@ -1350,13 +1430,14 @@ pub async fn decide(
 /// an accept never lands between a Save's compare and its write.
 fn decide_on_disk(dir: &std::path::Path, r: Revision, accept: bool) -> ApiResult<()> {
     let root = design_root(dir);
-    let _one = root.lock();
+    let one = root.lock();
     let prior = if accept {
-        accept_files(dir, &r.files)?
+        accept_files(&one, dir, &r.files)?
     } else {
         Vec::new()
     };
     let decided = write_revision(
+        &one,
         dir,
         &Revision {
             files: Vec::new(),
@@ -1366,7 +1447,7 @@ fn decide_on_disk(dir: &std::path::Path, r: Revision, accept: bool) -> ApiResult
     // Still pending: the package goes back to what it was, so a
     // Reject after this leaves none of the revision in it.
     if decided.is_err() {
-        put_back(&prior);
+        put_back(&one, &prior);
     }
     io(decided)
 }
@@ -1444,7 +1525,7 @@ pub async fn revise(
     .await?;
     r.run_id = Some(launched.run_id.clone());
     let dir = e.dir.clone();
-    io(write_revision(&dir, &r))?;
+    io(save_revision(dir.clone(), r.clone()).await)?;
     let out = r.clone();
     crate::spawn::spawn_in_span(async move {
         let outcome = launched.handle.await;
@@ -1471,7 +1552,7 @@ pub async fn revise(
                 Err(err) => err.to_string(),
             });
         }
-        if let Err(err) = write_revision(&dir, &r) {
+        if let Err(err) = save_revision(dir, r).await {
             tracing::warn!(error = %err, "could not save a design system revision");
         }
         drop(work);
@@ -1699,14 +1780,16 @@ mod tests {
         std::os::unix::fs::symlink(&outside, pkg.join(SENT_NAMES)).unwrap();
         assert!(read_sent_names(&pkg).is_empty(), "read through a link");
         let names = BTreeMap::from([("_.png".to_owned(), "🎨.png".to_owned())]);
-        write_sent_names(&pkg, &names).unwrap();
+        let one = design_root(&pkg);
+        let one = one.lock();
+        write_sent_names(&one, &pkg, &names).unwrap();
         assert_eq!(
             std::fs::read(&outside).unwrap(),
             br#"{"_.png": "secret.png"}"#,
             "written through a link"
         );
         assert_eq!(read_sent_names(&pkg), names);
-        write_sent_names(&pkg, &BTreeMap::new()).unwrap();
+        write_sent_names(&one, &pkg, &BTreeMap::new()).unwrap();
         assert!(!pkg.join(SENT_NAMES).exists());
         let left: Vec<_> = std::fs::read_dir(&pkg).unwrap().collect();
         assert!(left.is_empty(), "a temporary file left");
@@ -1756,9 +1839,11 @@ mod tests {
         let d = tmp.path();
         std::fs::write(d.join("DESIGN.md"), "old").unwrap();
         let files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root {}")]);
-        let prior = accept_files(d, &files).unwrap();
+        let root = design_root(d);
+        let one = root.lock();
+        let prior = accept_files(&one, d, &files).unwrap();
         std::fs::write(d.join("tokens.css"), "the agent's").unwrap();
-        put_back(&prior);
+        put_back(&one, &prior);
         assert_eq!(std::fs::read_to_string(d.join("DESIGN.md")).unwrap(), "old");
         assert_eq!(
             std::fs::read_to_string(d.join("tokens.css")).unwrap(),
@@ -1766,10 +1851,10 @@ mod tests {
             "a file the agent wrote deleted"
         );
 
-        let prior = accept_files(d, &files).unwrap();
+        let prior = accept_files(&one, d, &files).unwrap();
         std::fs::write(d.join("DESIGN.md"), "the agent's").unwrap();
         std::fs::remove_file(d.join("tokens.css")).unwrap();
-        put_back(&prior);
+        put_back(&one, &prior);
         assert_eq!(
             std::fs::read_to_string(d.join("DESIGN.md")).unwrap(),
             "the agent's",
@@ -1854,7 +1939,8 @@ mod tests {
                 read_sent_names(&d).len(),
                 inside_io(&d, "DESIGN.md").and_then(read_bytes).is_err(),
             );
-            let accepted = accept_files(&d, &revision(&[("DESIGN.md", "new")]));
+            let root = design_root(&d);
+            let accepted = accept_files(&root.lock(), &d, &revision(&[("DESIGN.md", "new")]));
             let _ = tx.send((read_all, accepted.is_err()));
         });
         let (read_all, accepted) = rx
@@ -1874,7 +1960,7 @@ mod tests {
         // Not a file: it cannot be read nor written.
         std::fs::create_dir(d.join("tokens.css")).unwrap();
         let files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root {}")]);
-        assert!(accept_files(d, &files).is_err());
+        assert!(accept_files(&design_root(d).lock(), d, &files).is_err());
         assert_eq!(std::fs::read_to_string(d.join("DESIGN.md")).unwrap(), "old");
     }
 
@@ -1887,7 +1973,10 @@ mod tests {
         std::fs::write(d.join("DESIGN.md"), "old").unwrap();
         std::fs::write(d.join("tokens.css"), ":root { --old: 1 }").unwrap();
         let files = revision(&[("DESIGN.md", "new"), ("tokens.css", ":root { --new: 2 }")]);
-        let res = accept_files_with(d, &files, |path, bytes| {
+        let root = design_root(d);
+        let one = root.lock();
+        let res = accept_files_with(&one, d, &files, |rel, bytes| {
+            let path = d.join(rel.file_name().unwrap());
             if path.ends_with("tokens.css") {
                 std::fs::write(path, &bytes[..bytes.len() / 2])?;
                 return Err(std::io::Error::other("no space left on device"));
@@ -1900,6 +1989,73 @@ mod tests {
             std::fs::read_to_string(d.join("tokens.css")).unwrap(),
             ":root { --old: 1 }",
             "the half written file left in the package"
+        );
+    }
+
+    /// A status set is written whole, beside, then renamed over
+    /// `metadata.json`: a read meanwhile (the index), like an app stopped
+    /// half way through, finds the old file or the new one, never a cut
+    /// one (before, it was written in place: empty, then part of it).
+    #[test]
+    fn metadata_is_never_found_cut() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().join("pkg");
+        std::fs::create_dir(&d).unwrap();
+        let meta = d.join("metadata.json");
+        let notes = "x".repeat(512 * 1024);
+        std::fs::write(
+            &meta,
+            serde_json::to_vec(&json!({ "title": "Tea", "notes": notes })).unwrap(),
+        )
+        .unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let reader = {
+            let (stop, meta) = (Arc::clone(&stop), meta.clone());
+            std::thread::spawn(move || {
+                let mut cut = 0;
+                while !stop.load(Ordering::Relaxed) {
+                    if let Ok(bytes) = std::fs::read(&meta)
+                        && serde_json::from_slice::<Value>(&bytes).is_err()
+                    {
+                        cut += 1;
+                    }
+                }
+                cut
+            })
+        };
+        let root = design_root(&d);
+        for i in 0..100 {
+            let status = if i % 2 == 0 { "draft" } else { "published" };
+            patch_metadata(&root.lock(), &d, &json!({ "status": status })).unwrap();
+        }
+        stop.store(true, Ordering::Relaxed);
+        assert_eq!(reader.join().unwrap(), 0, "metadata.json read cut");
+        let now: Value = serde_json::from_slice(&std::fs::read(&meta).unwrap()).unwrap();
+        assert_eq!(now["status"], "published");
+        assert_eq!(now["title"], "Tea");
+        assert_eq!(now["notes"].as_str().map(str::len), Some(notes.len()));
+    }
+
+    /// An agent writing `metadata.json` between the read and the write
+    /// is not written over: the patch is a 412, the agent's file kept.
+    #[test]
+    fn a_status_over_metadata_changed_since_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().join("pkg");
+        std::fs::create_dir(&d).unwrap();
+        std::fs::write(d.join("metadata.json"), r#"{"title":"Tea"}"#).unwrap();
+        let root = design_root(&d);
+        let res = patch_metadata_with(&root.lock(), &d, &json!({ "status": "draft" }), || {
+            std::fs::write(d.join("metadata.json"), r#"{"title":"Agent"}"#).unwrap();
+        });
+        assert_eq!(
+            res.map_err(|e| e.status),
+            Err(StatusCode::PRECONDITION_FAILED)
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.join("metadata.json")).unwrap(),
+            r#"{"title":"Agent"}"#
         );
     }
 

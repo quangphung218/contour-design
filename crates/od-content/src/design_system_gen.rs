@@ -4,7 +4,9 @@
 //! and moves the package into the user root (`<data>/design-systems`),
 //! where the index lists it as `user:<id>` next to the bundled ones.
 
-use crate::design_systems::{USER_ID_PREFIX, is_valid_id, read_package_file};
+use crate::design_systems::{USER_ID_PREFIX, read_package_file};
+use crate::nofollow::{ReadFile, Tree};
+use od_fs::user_store::UserRoot;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -55,6 +57,12 @@ pub enum GenError {
     MissingTokens(Vec<String>),
     #[error("installing the design system failed: {0}")]
     Io(String),
+}
+
+impl From<std::io::Error> for GenError {
+    fn from(e: std::io::Error) -> Self {
+        io(e)
+    }
 }
 
 impl GenerateRequest {
@@ -303,21 +311,15 @@ fn io(e: std::io::Error) -> GenError {
     GenError::Io(e.to_string())
 }
 
-/// How often a job looks for the next free folder when others take it.
-const MAX_PLACE_TRIES: usize = 64;
-
-/// First free folder name `<slug>`, `<slug>-2`, … under `root`.
-fn free_folder(root: &Path, slug: &str) -> PathBuf {
-    (1..)
-        .map(|n| {
-            if n == 1 {
-                root.join(slug)
-            } else {
-                root.join(format!("{slug}-{n}"))
-            }
-        })
-        .find(|p| !p.exists())
-        .unwrap_or_else(|| root.join(slug))
+/// Folder names for `slug`: `<slug>`, `<slug>-2`, …
+pub fn folder_names(slug: &str) -> impl Iterator<Item = String> + '_ {
+    (1..).map(move |n| {
+        if n == 1 {
+            slug.to_owned()
+        } else {
+            format!("{slug}-{n}")
+        }
+    })
 }
 
 /// Validates `staging`, keeps only the package files, writes the manifest
@@ -360,56 +362,23 @@ pub fn install_imported(
     install_checked(&Staged { design, tokens }, user_root, req, origin)
 }
 
+/// Puts the package in the first free `<slug>` folder of `user_root`
+/// through [`UserRoot`]'s `put_new`: the name picked and taken under the
+/// root's lock (two jobs for one name land in two folders), the package
+/// built in a hidden folder through its descriptor (no link an agent
+/// plants there written through), `DESIGN.md` last, then renamed in: the
+/// index never lists a half-written folder.
 fn install_checked(
     files: &Staged,
     user_root: &Path,
     req: &GenerateRequest,
     origin: &str,
 ) -> Result<Installed, GenError> {
-    std::fs::create_dir_all(user_root).map_err(io)?;
-    // Build the package next to its destination, then rename: the index
-    // never sees a half-written folder. Each job has its own (hidden,
-    // never listed) folder, so two jobs for one name do not collide. Its
-    // name is random and it is made new (`create_dir`): a link planted at a
-    // name worked out beforehand would send every file written there out.
-    // Its files are made through its descriptor (`NewDir`): a link planted
-    // once its name is listed is never written through either.
-    let path = user_root.join(format!(".installing-{}", crate::nofollow::random_tag()));
-    let tmp = crate::nofollow::NewDir::create(&path).map_err(io)?;
-    let built = build_and_place(files, &tmp, user_root, req, origin);
-    if built.is_err() {
-        let _ = std::fs::remove_dir_all(&path);
-    }
-    built
-}
-
-/// Fills `tmp` and renames it to a free `<slug>` folder; when another job
-/// takes that folder first, the next free one.
-fn build_and_place(
-    files: &Staged,
-    made: &crate::nofollow::NewDir,
-    user_root: &Path,
-    req: &GenerateRequest,
-    origin: &str,
-) -> Result<Installed, GenError> {
-    let tmp = made.path();
-    let write = |name: &str, bytes: &[u8]| {
-        use std::io::Write;
-        made.new_file(Path::new(name))?.write_all(bytes)
-    };
-    write("DESIGN.md", files.design.as_bytes()).map_err(io)?;
-    write("tokens.css", files.tokens.as_bytes()).map_err(io)?;
     let slug = slugify(&req.name);
     let category = req.category.clone().unwrap_or_else(|| "Custom".to_owned());
-    let mut tries = 0;
-    loop {
-        let dest = free_folder(user_root, &slug);
-        let id = dest
-            .file_name()
-            .and_then(|n| n.to_str())
-            .filter(|n| is_valid_id(n))
-            .ok_or_else(|| GenError::Io("bad folder name".to_owned()))?
-            .to_owned();
+    let root = UserRoot::open(user_root, crate::user_content::MAX_PLUGIN_BYTES);
+    // Every name `folder_names` gives is a valid id (a test holds it).
+    let package = |id: &str| -> Result<Tree, GenError> {
         let manifest = json!({
             "schemaVersion": "od-design-system-project/v1",
             "id": id,
@@ -422,44 +391,33 @@ fn build_and_place(
             "craft": { "applies": [], "suggested": ["color", "typography"], "exemptions": [] },
         });
         let metadata = json!({ "title": req.name, "category": category, "status": "draft" });
-        for (file, value) in [("manifest.json", manifest), ("metadata.json", metadata)] {
-            let text =
-                serde_json::to_string_pretty(&value).map_err(|e| GenError::Io(e.to_string()))?;
-            // Written again for the next free folder: the one before goes
-            // first (unlinked through the folder's descriptor).
-            match made.remove_file(Path::new(file)) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io(e)),
-                _ => {}
-            }
-            write(file, text.as_bytes()).map_err(io)?;
-        }
-        // Claim the folder: another job may have made it in the meantime.
-        if std::fs::create_dir(&dest).is_err() {
-            tries += 1;
-            if tries > MAX_PLACE_TRIES {
-                return Err(GenError::Io(format!("no free folder for {slug}")));
-            }
-            continue;
-        }
-        // `DESIGN.md` goes last: the index lists a folder only once it has
-        // one, so it never sees a half-moved package.
-        let moved = ["tokens.css", "manifest.json", "metadata.json", "DESIGN.md"]
-            .iter()
-            .try_for_each(|f| std::fs::rename(tmp.join(f), dest.join(f)));
-        return match moved {
-            Ok(()) => {
-                let _ = std::fs::remove_dir(tmp);
-                Ok(Installed {
-                    id: format!("{USER_ID_PREFIX}{id}"),
-                    dir: dest,
-                })
-            }
-            Err(e) => {
-                let _ = std::fs::remove_dir_all(&dest);
-                Err(io(e))
-            }
+        let json = |v: &serde_json::Value| {
+            serde_json::to_vec_pretty(v).map_err(|e| GenError::Io(e.to_string()))
         };
-    }
+        let file = |bytes: Vec<u8>| ReadFile { bytes, mode: 0o644 };
+        Ok(Tree {
+            dirs: Vec::new(),
+            files: vec![
+                (
+                    PathBuf::from("tokens.css"),
+                    file(files.tokens.clone().into_bytes()),
+                ),
+                (PathBuf::from("manifest.json"), file(json(&manifest)?)),
+                (PathBuf::from("metadata.json"), file(json(&metadata)?)),
+                (
+                    PathBuf::from("DESIGN.md"),
+                    file(files.design.clone().into_bytes()),
+                ),
+            ],
+        })
+    };
+    let id = root
+        .lock()
+        .put_new(folder_names(&slug), package, Some(Path::new("DESIGN.md")))?;
+    Ok(Installed {
+        dir: user_root.join(&id),
+        id: format!("{USER_ID_PREFIX}{id}"),
+    })
 }
 
 fn first_line(brief: &str) -> String {
@@ -649,36 +607,86 @@ mod tests {
         }
     }
 
-    /// The staging folder is the agent's to write too: a link put in it
-    /// once it is listed (its random name seen) is never written through,
-    /// whichever file it sits at.
+    /// A folder name is always an id the index takes, whatever the name
+    /// given: the package is placed under it with no check of its own.
+    #[test]
+    fn every_folder_name_is_a_valid_id() {
+        let long = "Ā".repeat(200);
+        for name in [
+            "Trà Đá",
+            "!!!",
+            "🎨 palette",
+            "..",
+            "a/b\\c",
+            "_x",
+            long.as_str(),
+        ] {
+            for folder in folder_names(&slugify(name)).take(12) {
+                assert!(
+                    crate::design_systems::is_valid_id(&folder),
+                    "{name:?} gives {folder:?}"
+                );
+                assert!(
+                    !folder.starts_with(['.', '_', '-']),
+                    "{name:?} gives {folder:?}"
+                );
+            }
+        }
+    }
+
+    /// A link an agent put at the first free name is skipped, never
+    /// written through, and the package lands whole in the next.
     #[cfg(unix)]
     #[test]
-    fn a_link_planted_in_the_staging_folder_is_never_written_through() {
-        for at in ["DESIGN.md", "tokens.css", "manifest.json", "metadata.json"] {
-            let tmp = tempfile::tempdir().unwrap();
-            let user = tmp.path().join("design-systems");
-            std::fs::create_dir_all(&user).unwrap();
-            let victim = tmp.path().join("victim.txt");
-            std::fs::write(&victim, "the user's own file").unwrap();
-            let staging =
-                crate::nofollow::NewDir::create(&user.join(".installing-planted")).unwrap();
-            std::os::unix::fs::symlink(&victim, staging.path().join(at)).unwrap();
-            let req = GenerateRequest::new("Trà Đá", "Street tea stall.", None).unwrap();
-            let files = Staged {
-                design: good_design("Trà Đá"),
-                tokens: TOKENS.to_owned(),
-            };
-            // Refused (`DESIGN.md`, `tokens.css`), or the link unlinked
-            // and the file made new in its place (the JSON files, written
-            // again for each folder tried): never written through.
-            let _ = build_and_place(&files, &staging, &user, &req, "x");
-            assert_eq!(
-                std::fs::read_to_string(&victim).unwrap(),
-                "the user's own file",
-                "{at}: written through the link"
-            );
-        }
+    fn a_link_at_the_free_name_is_never_written_through() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("design-systems");
+        std::fs::create_dir_all(&user).unwrap();
+        let away = tmp.path().join("away");
+        std::fs::create_dir(&away).unwrap();
+        std::os::unix::fs::symlink(&away, user.join("tra-da")).unwrap();
+        let req = GenerateRequest::new("Trà Đá", "Street tea stall.", None).unwrap();
+        let files = Staged {
+            design: good_design("Trà Đá"),
+            tokens: TOKENS.to_owned(),
+        };
+        let got = install_checked(&files, &user, &req, "x").unwrap();
+        assert_eq!(got.id, "user:tra-da-2");
+        assert_eq!(std::fs::read_dir(&away).unwrap().count(), 0);
+        let mut names: Vec<_> = std::fs::read_dir(&user)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["tra-da", "tra-da-2"], "nothing hidden left");
+    }
+
+    /// Jobs of one name at once land in folders of their own.
+    #[test]
+    fn installs_of_one_name_at_once_take_a_folder_each() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("design-systems");
+        let req = GenerateRequest::new("Trà Đá", "Street tea stall.", None).unwrap();
+        let files = Staged {
+            design: good_design("Trà Đá"),
+            tokens: TOKENS.to_owned(),
+        };
+        let mut ids: Vec<String> = std::thread::scope(|s| {
+            let runs: Vec<_> = (0..4)
+                .map(|_| s.spawn(|| install_checked(&files, &user, &req, "x").unwrap().id))
+                .collect();
+            runs.into_iter().map(|r| r.join().unwrap()).collect()
+        });
+        ids.sort();
+        assert_eq!(
+            ids,
+            [
+                "user:tra-da",
+                "user:tra-da-2",
+                "user:tra-da-3",
+                "user:tra-da-4"
+            ]
+        );
     }
 
     #[test]

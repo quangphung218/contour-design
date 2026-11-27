@@ -142,20 +142,19 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     lists it) are followed, every folder below the entry and the file itself `O_NOFOLLOW`, temp file `O_EXCL` of a random
     name, fsync, `renameat`; one test per question of the six in `user_store_tests.rs`). The skill form's `GET` tags
     `SKILL.md` through the same `Guard::read` (`user_content::skill_tag`), so GET and PUT see one file
-    (`tests/linked_entries.rs`). Any other write of one goes only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
-    a new file of a random name made `O_EXCL|O_NOFOLLOW`, bits set on its descriptor, renamed over it: no half-written read,
-    no write through a link at the file or at the temp name), every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
+    (`tests/linked_entries.rs`). Every other write of one (an accepted revision, its undo) goes through `Guard::write` too,
+    every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
     names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content`, `od-server` and `../od-store/src/memory_index.rs`, `KEPT` with why). The memory index and config are written with `Guard::write` too (`../od-store/tests/memory_files.rs`).
     A module that reads and writes a user root (`ZONE` in `tests/user_file_writes.rs`: `user_content.rs`, `skills.rs`,
     `plugins.rs`, `index.rs`, `design_system_gen.rs`, `memory_index.rs`, `routes/library/**`, the memory routes,
     `routes/content.rs`, `skill_export.rs`, `routes/platform/evolution.rs`, `routes/file_ops.rs`: Save as template, `routes/w3/design_systems.rs`) changes the disk only through `od_fs::user_store` (`Guard::write`, `remove`,
-    `put_tree`, `put_copy`, `restore`, `make_dir`, `remove_hidden`, `UserRoot::make_root`): rule `fs` refuses there any
+    `put_tree`, `put_copy`, `put_new`, `restore`, `make_dir`, `remove_file`, `remove_hidden`, `UserRoot::make_root`): rule `fs` refuses there any
     `std::fs`/`tokio::fs` write, remove, rename, copy, link, bits or owner, `File::create`, `DirBuilder`, open options that
     write (any argument but `false` or a reference), `set_permissions`/`set_len`/`persist` on a file, a `nix` `…at` call,
     `unlink`/`mkdir`/`rmdir`, an `open` with a flag that writes, `libc`, `tempfile`'s `…_in`, `Command::new("rm"|"mv"|"cp"…)`,
     a `use …::fs::*`, each named as a value too (`.map(std::fs::remove_file)`, `let w = std::fs::write`), and a function elsewhere in `od-content`, `od-server`, `od-store` or
-    `od_fs::nofollow` that does (found by name, to a fixed point); `KEPT` with why (`PR 6`: design systems, Copy to
-    Claude Code). `../od-fs/src/hostile.rs` runs every `Guard` call against a linked entry, a link below it, a link or
+    `od_fs::nofollow` that does (found by name, to a fixed point); `KEPT` with why (a temp folder or a generation's staging
+    outside every user root; `PR 6b`: an override's first copy, Copy to Claude Code). `../od-fs/src/hostile.rs` runs every `Guard` call against a linked entry, a link below it, a link or
     FIFO at the file, a file too large, a `0555` folder and a name alike in another case.
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     A folder filled from a tree (install, install over a user skill, Replace from source, an override's first copy,
@@ -180,13 +179,25 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     the bundled skill (`routes/library/skills.rs:save`), `od:` block and side files kept, never a `SKILL.md` alone.
     - `tests/form_cas.rs::save_anyway_over_a_deleted_override_makes_it_again_from_the_bundled_skill`
     No half-copied folder is ever left where an index lists it: `copy_dir` removes the folder it made when a write
-    fails, and an override's first copy and Copy design system are built in a hidden `.copying-<name>-<tag>`
+    fails, and an override's first copy is built in a hidden `.copying-<name>-<tag>`
     (`user_content::copy_dir_into_place`), finished there, then renamed into place; something already at the name is a
-    409 named by its folder name.
+    409 named by its folder name. Copy design system and a generated or imported design system go through
+    `Guard::put_new`: the name picked and taken under the root's lock (the first free `<slug>`, `<slug>-2`…: nothing at it,
+    a link too, and no entry alike in another case; two Copies at once land in two folders), the tree built in a hidden
+    `.putting-<tag>` through its descriptor, renamed in; a write that fails removes it, an app stopped leaves only that
+    hidden folder (no journal: `recover` removes it). A design system's `metadata.json` (Set status), revisions, an accept
+    and its undo, assets and `.sent-names.json` are written through `Guard::write`, `make_dir` and `remove_file` under the
+    lock of `<data>/design-systems` (no file written in place, none read cut).
     - `../od-content/tests/planted_links.rs`, `../od-fs/src/nofollow.rs::a_new_dir_writes_through_no_link_planted_in_it`,
       `::a_new_dir_is_new`, `../od-content/src/user_content.rs::leftovers_are_read_by_id_with_a_random_tag_or_a_pid`,
+      `../od-fs/src/user_store_tests.rs::put_new_takes_the_first_free_name_and_never_one_there`,
+      `::two_puts_of_one_name_at_once_take_two_names`, `::a_put_new_cut_short_is_nothing_at_the_name`,
+      `::a_name_taken_after_the_pick_is_kept`, `::remove_file_takes_a_file_below_an_entry_and_follows_no_link`,
+      `tests/library.rs::copies_under_one_name_at_once_land_in_folders_of_their_own`,
+      `src/routes/library/design_systems.rs::metadata_is_never_found_cut`, `::a_status_over_metadata_changed_since_is_refused`,
       `::an_install_cut_short_with_a_random_tag_is_put_back`,
-      `../od-content/src/design_system_gen.rs::a_link_planted_in_the_staging_folder_is_never_written_through`,
+      `../od-content/src/design_system_gen.rs::a_link_at_the_free_name_is_never_written_through`,
+      `::installs_of_one_name_at_once_take_a_folder_each`,
       `src/doctor.rs::the_data_folder_check_never_writes_through_a_planted_link`, `::the_probe_file_is_made_new`,
       `../od-fs/src/nofollow.rs::a_new_dir_swapped_for_a_link_before_it_is_opened_is_refused`,
       `../od-content/src/user_content.rs::a_copy_into_place_is_whole_or_not_there`, `::a_copy_cut_short_removes_its_folder`

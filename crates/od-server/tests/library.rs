@@ -3452,10 +3452,71 @@ async fn design_system_from_sources() {
     assert!(brands["brands"].as_array().unwrap().len() >= 30);
 }
 
+/// Copies of one design system under one name at once land in folders of
+/// their own, each whole and named in its manifest: the free name is
+/// picked and taken under the root's lock (`Guard::put_new`), never by
+/// two (before, the second found the name taken at its rename: a 409).
+#[tokio::test]
+async fn copies_under_one_name_at_once_land_in_folders_of_their_own() {
+    let d = daemon().await;
+    for round in 0..3 {
+        let name = format!("Twin {round}");
+        let copy = || {
+            call(
+                &d,
+                "POST",
+                "/api/design-systems/airbnb/copy",
+                Some(json!({ "name": name })),
+            )
+        };
+        let (a, b, c) = tokio::join!(copy(), copy(), copy());
+        let mut ids = Vec::new();
+        for (s, v) in [a, b, c] {
+            assert_eq!(s, 200, "round {round}: {v}");
+            ids.push(v["id"].as_str().unwrap().to_owned());
+        }
+        ids.sort();
+        let slug = format!("twin-{round}");
+        assert_eq!(
+            ids,
+            [
+                format!("user:{slug}"),
+                format!("user:{slug}-2"),
+                format!("user:{slug}-3")
+            ]
+        );
+        for id in &ids {
+            let folder = id.trim_start_matches("user:");
+            let dir = d.data.join("design-systems").join(folder);
+            let manifest: Value =
+                serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+            assert_eq!(manifest["id"], json!(folder));
+            assert!(dir.join("DESIGN.md").is_file(), "{folder} not whole");
+        }
+    }
+    // A copy of a copy leaves its revisions behind.
+    let (from, _) = ds_copy(&d, "airbnb", "With revisions").await;
+    let folder = from.trim_start_matches("user:");
+    let rdir = d
+        .data
+        .join("design-systems")
+        .join(folder)
+        .join("revisions/r1");
+    std::fs::create_dir_all(&rdir).unwrap();
+    std::fs::write(rdir.join("revision.json"), "{}").unwrap();
+    let (copy, _) = ds_copy(&d, &from, "No revisions").await;
+    let dir = d
+        .data
+        .join("design-systems")
+        .join(copy.trim_start_matches("user:"));
+    assert!(dir.join("DESIGN.md").is_file());
+    assert!(!dir.join("revisions").exists(), "the revisions were copied");
+}
+
 /// A copy whose last steps fail (the source's `metadata.json` is a folder,
 /// so the copy's title cannot be written) leaves nothing on disk and
 /// nothing listed, even after the index is read again: it is built whole
-/// beside its place and renamed in (`copy_dir_into_place`), never half.
+/// beside its place and renamed in (`Guard::put_new`), never half.
 #[tokio::test]
 async fn a_design_system_copy_that_fails_leaves_nothing_listed() {
     let d = daemon().await;
