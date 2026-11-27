@@ -23,6 +23,13 @@
 //!   `od_content::nofollow::random_tag()`, and a folder filled there is
 //!   made new and written through its descriptor (`nofollow::NewDir`).
 //!
+//! - `swap`: no function both removes a folder (`fs::remove_dir_all`)
+//!   and renames one (`fs::rename`): removing the copy there, then
+//!   renaming the new one in, loses both when the app stops between the
+//!   two (plugin install, 2026-11-27). A tree goes in place through
+//!   `od_fs::user_store::Guard::put_tree` (journaled, the old copy removed
+//!   last).
+//!
 //! What stays is in `KEPT`, by file, function and count, with why.
 //!
 //! The sources are parsed as Rust (`syn`): comments and strings are no
@@ -104,20 +111,6 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
     ),
     (
         "../od-content/src/user_content.rs",
-        "place_copy",
-        "user_root.join",
-        1,
-        "its callers run `refuse_case_twin` (install) or replace that very id",
-    ),
-    (
-        "../od-content/src/user_content.rs",
-        "restore_previous_skill_with",
-        "user_root.join",
-        1,
-        "after `refuse_case_twin`, when `user_skill_dir` finds no entry of that name in any case",
-    ),
-    (
-        "../od-content/src/user_content.rs",
         "recover_incoming",
         "user_root.join",
         1,
@@ -157,6 +150,20 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "user_root.join",
         1,
         "after `entry_like` finds no entry of that name in another case, under `REPLACE_LOCK`",
+    ),
+    (
+        "../od-content/src/user_content.rs",
+        "copy_dir_into_place",
+        "swap",
+        1,
+        "removes only its own `.copying-<name>-<tag>` when the rename fails; renames into a name that must be free, never over a copy",
+    ),
+    (
+        "../od-content/src/design_system_gen.rs",
+        "build_and_place",
+        "swap",
+        1,
+        "removes only the folder it claimed with `create_dir` in this call when a move into it fails; no copy there before",
     ),
     (
         "src/routes/w3/reference.rs",
@@ -462,6 +469,8 @@ struct Writes<'n> {
     /// `create_new` (`fs::write`, `File::create`, `.create(true)`,
     /// `.truncate(true)`), a `create_new`; the line of the first rename.
     renames: Option<usize>,
+    /// A `fs::remove_dir_all` in the function being read.
+    removes: bool,
     plain_call: bool,
     plain_write: bool,
     create_new: bool,
@@ -496,6 +505,7 @@ impl Writes<'_> {
         self.binds = b.out;
         self.func = name(func);
         self.renames = None;
+        self.removes = false;
         self.plain_call = false;
         self.plain_write = false;
         self.create_new = false;
@@ -511,6 +521,11 @@ impl Writes<'_> {
             && (self.plain_call || (self.plain_write && !self.create_new))
         {
             self.push("tmp", line);
+        }
+        if let Some(line) = self.renames
+            && self.removes
+        {
+            self.push("swap", line);
         }
         self.renames = None;
     }
@@ -573,6 +588,7 @@ impl<'ast> Visit<'ast> for Writes<'_> {
             if full.len() >= 2 && full[full.len() - 2] == "process" && last == Some("id") {
                 self.push("pid", Self::line(&c.func));
             }
+            self.removes |= matches!((prev, last), (Some("fs"), Some("remove_dir_all")));
             if matches!((prev, last), (Some("fs"), Some("rename" | "hard_link")))
                 && self.renames.is_none()
             {
@@ -661,6 +677,7 @@ fn writes(src: &str) -> Vec<(&'static str, String, usize)> {
         func: String::new(),
         binds: Bindings::default(),
         renames: None,
+        removes: false,
         plain_call: false,
         plain_write: false,
         create_new: false,
@@ -960,6 +977,32 @@ fn every_spelling_of_a_write_is_caught() {
             "fn f(user_root: &Path) { let s = format!(\"{}\", user_root.join(id).display()); }",
             "user_root.join",
         ),
+        // A folder removed and one renamed in one function, however
+        // written (2026-11-27: plugin install lost both).
+        (
+            "fn f() { std::fs::remove_dir_all(&dest); std::fs::rename(&tmp, &dest); }",
+            "swap",
+        ),
+        (
+            "use std::fs; fn f() { if dest.exists() { fs::remove_dir_all(&dest)?; }\n    fs::rename(\n        &tmp,\n        &dest,\n    )?; }",
+            "swap",
+        ),
+        (
+            "use std::fs::remove_dir_all as rm; use std::fs::rename as mv; fn f() { rm(&d); mv(&t, &d); }",
+            "swap",
+        ),
+        (
+            "async fn f() { tokio::fs::remove_dir_all(&d).await; tokio::fs::rename(&t, &d).await; }",
+            "swap",
+        ),
+        (
+            "fn f() { std::fs::rename(&t, &d).map_err(|e| { let _ = ::std::fs::remove_dir_all(&t); e }); }",
+            "swap",
+        ),
+        (
+            "impl S {\n    fn f() { let undo = || std::fs::remove_dir_all(&t); std::fs::rename(&t, &d); }\n}",
+            "swap",
+        ),
     ] {
         assert_eq!(rules(src), [rule], "{src}");
     }
@@ -992,6 +1035,10 @@ fn f() {}"#,
         "#[cfg(test)] mod tests { fn t() { std::process::id(); } }",
         "fn f() { d.join(format!(\".x-{}\", nofollow::random_tag())); }",
         "fn f() { s.id(); child.id(); }",
+        "fn f() { std::fs::remove_dir_all(&d); }",
+        "fn f() { std::fs::remove_dir_all(&d); } fn g() { std::fs::rename(&t, &d); }",
+        "// std::fs::remove_dir_all(&d)\nfn f() { std::fs::rename(&t, &d); }",
+        "#[cfg(test)] mod tests { fn t() { std::fs::remove_dir_all(&d); std::fs::rename(&t, &d); } }",
     ] {
         assert!(rules(src).is_empty(), "{src}: {:?}", rules(src));
     }

@@ -112,11 +112,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       reads an agent folder `local-sources` lists under that id (any other path is a 400), and
       `POST /api/skills/{id}/replace-from-source` takes the `hash` shown (`ExportFiles::read_copy`: what an install copies) and is
       refused as `changed` (409) with nothing written once the folder changed. The copy in Contour moves to
-      `<data>/skills/.previous/<id>` (`restore-previous` swaps it back, one level; a `.previous` that is a link is refused; `DELETE` drops it and every `.swap-<id>-*`/`.old-<id>-*` left; an install over a user skill keeps it there too; a failed replace keeps the copy kept before (set aside as `.old-*`, removed only once both land); what a replace or restore cut short left is put back, never removed, and one entry that cannot move is logged, never stops another skill); the index lists no hidden folder.
+      `<data>/skills/.previous/<id>` (`restore-previous` swaps it back, one level; a `.previous` that is a link is refused; `DELETE` drops it and every `.swap-<id>-*`/`.old-<id>-*` an older version left; an install over a user skill keeps it there too). Install (plugin, skill), replace and restore go through `Guard::put_tree`/`Guard::restore` (`../od-fs/src/user_store.rs`): the tree built in `.putting-<tag>`, a journal, the entry set aside (`.aside-<tag>`), the tree renamed in, the copy kept before set aside (`.dropping-<tag>`), the entry moved to `.previous`; then what is left set aside is renamed `.removing-<tag>` before the journal goes, so no later start-up puts back an entry deleted since; a step that fails before that puts everything back; an app stopped on the way leaves the entry before or after for `UserRoot::recover` at start-up, never missing. What an older version's replace or restore left in `.previous` is put back once at start-up (`user_content::recover_previous`), never removed, and one entry that cannot move is logged, never stops another skill; the index lists no hidden folder.
       `tests/library.rs::an_imported_skill_is_replaced_from_its_source_and_restored`;
       `../od-content/src/user_content.rs::a_replace_keeps_the_copy_in_contour_for_one_restore`,
       `::a_replace_writes_nothing_for_a_source_changed_or_renamed`, `::a_replace_follows_no_link_and_waits_on_no_fifo`,
-      `::only_a_listed_agent_folder_is_taken`; `::a_replace_cut_short_at_any_step_loses_nothing`, `::a_first_replace_or_install_cut_short_at_any_step_loses_nothing`, `::a_restore_cut_short_at_any_step_loses_nothing`, `::a_replace_that_fails_keeps_the_copy_kept_before`, `::a_deleted_skill_never_comes_back_from_what_a_restore_left`, `::one_leftover_that_cannot_move_stops_nothing_else`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`
+      `::only_a_listed_agent_folder_is_taken`; `::a_replace_cut_short_at_any_step_loses_nothing`, `::a_first_replace_or_install_cut_short_at_any_step_loses_nothing`, `::a_restore_cut_short_at_any_step_loses_nothing`, `::a_replace_that_fails_keeps_the_copy_kept_before`, `::a_plugin_install_cut_short_at_any_step_keeps_a_plugin`, `::a_deleted_skill_never_comes_back_from_what_a_restore_left`, `::one_leftover_that_cannot_move_stops_nothing_else`; `../od-content/src/skills.rs::hidden_folders_are_no_skills`; `../od-content/src/index.rs::loading_puts_back_a_skill_a_replace_or_restore_cut_short_left`; `../od-fs/src/user_store_tests.rs::a_put_cut_short_at_any_step_leaves_the_entry_before_or_after`, `::a_put_step_that_fails_puts_everything_back`, `::a_restore_cut_short_at_any_step_keeps_both_copies`, `::recover_never_removes_an_entry_set_aside_alone`, `::recover_moves_nothing_over_what_took_the_entrys_place`, `::a_journal_naming_other_paths_moves_nothing`, `::a_put_done_then_deleted_never_comes_back`, `::a_restore_that_cannot_journal_keeps_both_copies`; `tests/user_file_writes.rs` rule `swap` (no function both `remove_dir_all`s and `rename`s; `KEPT` with why)
 16. A form that saves a user's file saves only over the copy it opened on (`src/cas.rs`): the `GET` it opens on
     answers an `ETag` (sha256 of the content shown: `GET /api/skills/{id}`, `GET /api/design-systems/{id}/kit`,
     `GET /api/memory/index`), its `PUT` sends it as `If-Match`, and a file changed since is a 412 with nothing written.
@@ -151,14 +151,15 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     Copy design system, a generated design system, Copy to Claude Code) is made new (`nofollow::NewDir`: `create_dir`, never
     one already there) and filled through its descriptor (`mkdirat`, `openat` `O_CREAT|O_EXCL|O_NOFOLLOW`, bits set on the
     descriptor; Windows `create_new` and no reparse point on the way): a link an agent plants in it is never written
-    through. Staging names (`.installing-`, `.incoming-`, `.old-`, `.swap-`) take `nofollow::random_tag()`, never a pid
+    through. Staging names (`.putting-`, `.aside-`, `.dropping-`, `.copying-`) take `nofollow::random_tag()`, never a pid
     (`user_file_writes.rs` rule `pid`); what a run cut short left is still read back by id with a pid or a tag.
     A Library delete (skill, plugin, design system: `user_content::delete_user_dir`) goes through `Guard::remove` under the
     root's lock: an entry that is the user's own link goes as a link, never the folder it points at; a folder is journaled
     (`.journal-<tag>`), renamed to a hidden `.removing-<tag>`, then removed (no link in it followed). `UserRoot::recover`
     runs once at start-up for each root (`od_content::ContentStore::load`: skills, design systems, plugins;
-    `od_store::Store::open`: memory): it finishes a journaled remove, leaves an entry never renamed whole, keeps a journal
-    of another kind, and removes a `Guard::write` temp file left (`.<file>.<tag>.tmp`), nothing else.
+    `od_store::Store::open`: memory): it finishes a journaled remove, leaves an entry never renamed whole, settles a
+    journaled put (back before the tree is placed, on after), removes a `.putting-<tag>` with no journal, keeps a journal of another kind
+    and an `.aside-`/`.dropping-` with no journal, and removes a `Guard::write` temp file left (`.<file>.<tag>.tmp`), nothing else.
     - `../od-fs/src/user_store_tests.rs::a_remove_cut_short_at_any_step_loses_nothing_of_another_entry`,
       `::removing_a_linked_entry_removes_the_link_alone`, `::removing_a_folder_follows_no_link_in_it`,
       `::recover_removes_only_what_it_made`; `../od-content/src/user_content.rs::deleting_a_linked_skill_removes_the_link_alone`,

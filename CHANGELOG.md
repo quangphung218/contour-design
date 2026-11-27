@@ -12,6 +12,7 @@ All notable changes to Contour are recorded here. The format follows
 
 - Deleting a skill, plugin or design system that is a link removes only the link, and a delete cut short finishes on the next start.
 - Save anyway on a skill override deleted outside Contour keeps the bundled skill's mode and side files.
+- Installing a plugin or skill, Replace from source and Restore keep the copy when Contour quits halfway; the next start finishes or undoes it.
 
 ## [0.2.0-beta.75] - 2026-11-27
 

@@ -65,6 +65,9 @@ impl ContentRoots {
             &self.user_design_systems,
             &self.user_plugins,
         ];
+        if let Some(skills) = &self.user_skills {
+            crate::user_content::recover_previous(skills);
+        }
         for root in user.into_iter().flatten() {
             let root =
                 od_fs::user_store::UserRoot::open(root, crate::user_content::MAX_PLUGIN_BYTES);
@@ -287,6 +290,48 @@ mod tests {
             assert_eq!(names(&root), ["kept"], "{}", root.display());
             assert_eq!(names(&root.join("kept")), ["SKILL.md"]);
         }
+    }
+
+    /// Loading settles a replace cut short (the skill set aside, its
+    /// journal there) and puts back what an older version's restore left
+    /// in `.previous` (`.swap-<id>-<pid>`): both skills are listed, whole.
+    #[test]
+    fn loading_puts_back_a_skill_a_replace_or_restore_cut_short_left() {
+        let data = tempfile::tempdir().unwrap();
+        let content = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../content");
+        let skills = data.path().join("skills");
+        let tag = "0123456789abcdef";
+        let skill = |dir: &Path, id: &str| {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(
+                dir.join("SKILL.md"),
+                format!("---\nname: {id}\n---\n\nMine.\n"),
+            )
+            .unwrap();
+        };
+        skill(&skills.join(format!(".aside-{tag}")), "tea");
+        skill(&skills.join(format!(".putting-{tag}")), "tea");
+        std::fs::write(
+            skills.join(format!(".journal-{tag}")),
+            format!("put\ntea\n.putting-{tag}\n.previous/tea"),
+        )
+        .unwrap();
+        skill(&skills.join(".previous/.swap-mint-4711"), "mint");
+        let store = ContentStore::load(ContentRoots::bundled(&content).with_user_root(data.path()));
+        let listed: Vec<_> = store
+            .snapshot()
+            .skills
+            .iter()
+            .filter(|s| s.dir.starts_with(&skills))
+            .map(|s| s.info.id.clone())
+            .collect();
+        assert_eq!(listed, ["mint", "tea"]);
+        let mut names: Vec<_> = std::fs::read_dir(&skills)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(names, [".previous", "mint", "tea"]);
     }
 
     /// Deterministic order: reload A starts (before a write), reload B

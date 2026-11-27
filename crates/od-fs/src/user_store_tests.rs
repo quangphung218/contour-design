@@ -638,3 +638,481 @@ fn recover_of_a_root_not_there_is_nothing() {
     let root = UserRoot::open(&tmp.path().join("none"), LIMIT);
     assert_eq!(root.recover().unwrap(), 0);
 }
+
+// Put and restore: the entry is the one before or the one after, whole,
+// at every step an app may stop or a step fail; recover settles the rest.
+
+/// Builds the tree `new` (two files, one in a folder) at `at`.
+fn build_new(at: &Path) -> std::io::Result<()> {
+    std::fs::create_dir(at)?;
+    std::fs::write(at.join("SKILL.md"), "new")?;
+    std::fs::create_dir(at.join("assets"))?;
+    std::fs::write(at.join("assets/a.css"), "new css")
+}
+
+/// `root_of_three` with a copy of `tea` kept in `.previous/tea` (`older`)
+/// when `older`.
+fn root_with_kept(tmp: &tempfile::TempDir, older: bool) -> UserRoot {
+    let root = root_of_three(tmp);
+    std::fs::create_dir(root.path().join(".previous")).unwrap();
+    if older {
+        std::fs::create_dir(root.path().join(".previous/tea")).unwrap();
+        std::fs::write(root.path().join(".previous/tea/SKILL.md"), "older").unwrap();
+    }
+    root
+}
+
+/// A step hook that panics (the app quitting) at call `stop` and fails
+/// the calls in `fail` (1-based); counts the calls in `n`.
+fn hook(
+    stop: usize,
+    fail: usize,
+    n: &std::cell::Cell<usize>,
+) -> impl FnMut(PutStep) -> std::io::Result<()> + '_ {
+    move |step| {
+        n.set(n.get() + 1);
+        assert!(n.get() != stop, "quit before {step:?}");
+        if n.get() == fail {
+            return Err(std::io::Error::other(format!("{step:?} failed")));
+        }
+        Ok(())
+    }
+}
+
+/// The hidden names left in the root but `.previous`.
+fn hidden_left(root: &UserRoot) -> Vec<String> {
+    names_in(root.path())
+        .into_iter()
+        .filter(|n| n.starts_with('.') && n != ".previous")
+        .collect()
+}
+
+/// The three cases a put runs in: no keep, a keep with nothing there, a
+/// keep with an older copy (dropped once the entry lands in it).
+const PUT_CASES: [(bool, bool); 3] = [(false, false), (true, false), (true, true)];
+
+fn put(
+    root: &UserRoot,
+    keep: bool,
+    step: impl FnMut(PutStep) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let keep = keep.then(|| Path::new(".previous/tea"));
+    root.lock()
+        .put_tree_steps(Path::new("tea"), keep, build_new, step)
+}
+
+/// Stopped before each step, then recovered: `tea` is the old tree or
+/// the new one, whole; once the new one is in, the old one is at
+/// `.previous/tea` (with a keep); every other entry, the file outside
+/// and the links keep every byte; nothing hidden is left, and a second
+/// recover finds nothing.
+#[test]
+fn a_put_cut_short_at_any_step_leaves_the_entry_before_or_after() {
+    for (keep, older) in PUT_CASES {
+        let steps = {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = root_with_kept(&tmp, older);
+            let n = std::cell::Cell::new(0);
+            put(&root, keep, hook(0, 0, &n)).unwrap();
+            n.get()
+        };
+        assert_eq!(
+            steps,
+            if !keep {
+                6
+            } else if older {
+                8
+            } else {
+                7
+            }
+        );
+        for stop in 1..=steps {
+            let at = format!("keep {keep}, older {older}, stop {stop}");
+            let tmp = tempfile::tempdir().unwrap();
+            let root = root_with_kept(&tmp, older);
+            let old = tree_of(&root.path().join("tea"));
+            let others = |r: &UserRoot| {
+                (
+                    tree_of(&r.path().join("kept")),
+                    std::fs::read_link(r.path().join("linked")).unwrap(),
+                    std::fs::read(tmp.path().join("outside.txt")).unwrap(),
+                )
+            };
+            let before = others(&root);
+            let n = std::cell::Cell::new(0);
+            let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                put(&root, keep, hook(stop, 0, &n))
+            }));
+            assert!(quit.is_err(), "{at}");
+            // Before Clean the journal is gone: only the old copy is left
+            // to remove, and a keep with nothing in it before has none.
+            let left = stop < steps || !(keep && !older);
+            assert_eq!(root.recover().unwrap() >= 1, left, "{at}");
+            let now = tree_of(&root.path().join("tea"));
+            let placed = now != old;
+            if placed {
+                assert_eq!(
+                    std::fs::read(root.path().join("tea/assets/a.css")).unwrap(),
+                    b"new css",
+                    "{at}"
+                );
+                assert_eq!(now.len(), 3, "{at}: the new tree, whole");
+            }
+            // Placed once the tree is renamed in: before the third step.
+            assert_eq!(placed, stop > 3, "{at}");
+            let kept_now = std::fs::symlink_metadata(root.path().join(".previous/tea"))
+                .is_ok()
+                .then(|| tree_of(&root.path().join(".previous/tea")));
+            let older_tree = older.then(|| vec![(PathBuf::from("SKILL.md"), b"older".to_vec())]);
+            let want_kept = if keep && placed {
+                Some(old.clone())
+            } else {
+                older_tree
+            };
+            assert_eq!(kept_now, want_kept, "{at}");
+            assert_eq!(others(&root), before, "{at}");
+            assert_eq!(hidden_left(&root), Vec::<String>::new(), "{at}");
+            assert_eq!(root.recover().unwrap(), 0, "{at}");
+        }
+    }
+}
+
+/// A step that fails (a rename refused) puts everything back at once:
+/// the old tree in place, the older copy kept, no journal, nothing hidden.
+#[test]
+fn a_put_step_that_fails_puts_everything_back() {
+    for (keep, older) in PUT_CASES {
+        // Every step up to the one that keeps the entry (`Retire`,
+        // `Forget` and `Clean` come after it is in place: no undo).
+        let undone = if !keep {
+            3
+        } else if older {
+            5
+        } else {
+            4
+        };
+        for fail in 1..=undone {
+            let at = format!("keep {keep}, older {older}, fail {fail}");
+            let tmp = tempfile::tempdir().unwrap();
+            let root = root_with_kept(&tmp, older);
+            let before = tree_of(tmp.path());
+            let n = std::cell::Cell::new(0);
+            assert!(put(&root, keep, hook(0, fail, &n)).is_err(), "{at}");
+            assert_eq!(tree_of(tmp.path()), before, "{at}");
+            assert_eq!(root.recover().unwrap(), 0, "{at}");
+        }
+    }
+}
+
+/// Placed, then a step after fails: moving the old copy to its remove's
+/// name (Retire), removing the journal (Forget) or removing the old copy
+/// (Clean). The put is done (`Ok`), the new tree in place. The entry
+/// deleted then (a Library delete) never comes back at start-up, with a
+/// keep or without, and recover leaves nothing hidden.
+#[test]
+fn a_put_done_then_deleted_never_comes_back() {
+    for (keep, older) in PUT_CASES {
+        // Retire, Forget, Clean: the last three steps.
+        let steps = if !keep {
+            6
+        } else if older {
+            8
+        } else {
+            7
+        };
+        for fail in steps - 2..=steps {
+            let at = format!("keep {keep}, older {older}, fail {fail}");
+            let tmp = tempfile::tempdir().unwrap();
+            let root = root_with_kept(&tmp, older);
+            let n = std::cell::Cell::new(0);
+            put(&root, keep, hook(0, fail, &n)).unwrap();
+            assert_eq!(n.get(), steps, "{at}");
+            assert_eq!(
+                std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
+                b"new",
+                "{at}"
+            );
+            root.lock().remove(Path::new("tea")).unwrap();
+            root.recover().unwrap();
+            assert!(!root.path().join("tea").exists(), "{at}: came back");
+            assert_eq!(hidden_left(&root), Vec::<String>::new(), "{at}");
+            if keep {
+                assert_eq!(
+                    std::fs::read(root.path().join(".previous/tea/SKILL.md")).unwrap(),
+                    b"tea",
+                    "{at}: the old copy kept"
+                );
+            }
+        }
+    }
+}
+
+/// A restore whose journal cannot be written changes nothing: the kept
+/// copy is the user's (no staging of ours to drop), the entry stays.
+#[test]
+fn a_restore_that_cannot_journal_keeps_both_copies() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, true);
+    let before = tree_of(tmp.path());
+    let n = std::cell::Cell::new(0);
+    let res =
+        root.lock()
+            .restore_steps(Path::new("tea"), Path::new(".previous/tea"), hook(0, 1, &n));
+    assert!(res.is_err());
+    assert_eq!(tree_of(tmp.path()), before);
+}
+
+/// A restore with nothing kept moves nothing: the entry is not set aside
+/// (and then taken for the copy to keep).
+#[test]
+fn a_restore_with_nothing_kept_moves_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, false);
+    let before = tree_of(tmp.path());
+    let res = root
+        .lock()
+        .restore(Path::new("tea"), Path::new(".previous/tea"));
+    assert!(res.is_err());
+    assert_eq!(tree_of(tmp.path()), before);
+    assert_eq!(root.recover().unwrap(), 0);
+}
+
+/// A first put (nothing at the entry) cut short at any step: the entry
+/// is missing (as before) or the new tree.
+#[test]
+fn a_first_put_cut_short_is_nothing_or_the_new_tree() {
+    for stop in 1..=4 {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = root_with_kept(&tmp, false);
+        let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            root.lock().put_tree_steps(
+                Path::new("mint"),
+                Some(Path::new(".previous/mint")),
+                build_new,
+                hook(stop, 0, &std::cell::Cell::new(0)),
+            )
+        }));
+        assert!(quit.is_err(), "stop {stop}");
+        root.recover().unwrap();
+        let mint = root.path().join("mint");
+        assert_eq!(mint.exists(), stop > 2, "stop {stop}");
+        assert!(!root.path().join(".previous/mint").exists(), "stop {stop}");
+        assert_eq!(hidden_left(&root), Vec::<String>::new(), "stop {stop}");
+    }
+}
+
+/// A restore swaps the entry and its kept copy; cut short at any step,
+/// recover leaves them swapped or not, both whole, never one alone.
+#[test]
+fn a_restore_cut_short_at_any_step_keeps_both_copies() {
+    for stop in 1..=8 {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = root_with_kept(&tmp, true);
+        let (tea, older) = (
+            tree_of(&root.path().join("tea")),
+            tree_of(&root.path().join(".previous/tea")),
+        );
+        let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            root.lock().restore_steps(
+                Path::new("tea"),
+                Path::new(".previous/tea"),
+                hook(stop, 0, &std::cell::Cell::new(0)),
+            )
+        }));
+        assert_eq!(quit.is_err(), stop <= 7, "stop {stop}");
+        root.recover().unwrap();
+        let now = (
+            tree_of(&root.path().join("tea")),
+            tree_of(&root.path().join(".previous/tea")),
+        );
+        let want = if stop > 3 {
+            (older.clone(), tea.clone())
+        } else {
+            (tea.clone(), older.clone())
+        };
+        assert_eq!(now, want, "stop {stop}");
+        assert_eq!(hidden_left(&root), Vec::<String>::new(), "stop {stop}");
+    }
+}
+
+/// A restore with no entry brings the kept copy back as it.
+#[test]
+fn a_restore_with_no_entry_brings_the_kept_copy_back() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, true);
+    std::fs::remove_dir_all(root.path().join("tea")).unwrap();
+    root.lock()
+        .restore(Path::new("tea"), Path::new(".previous/tea"))
+        .unwrap();
+    assert_eq!(
+        std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
+        b"older"
+    );
+    assert!(!root.path().join(".previous/tea").exists());
+    assert_eq!(hidden_left(&root), Vec::<String>::new());
+}
+
+/// An entry set aside with nothing in its place (the tree went missing
+/// meanwhile) is put back, never removed; one with no journal is kept.
+#[test]
+fn recover_never_removes_an_entry_set_aside_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, false);
+    let p = root.path();
+    let tea = tree_of(&p.join("tea"));
+    let tag = nofollow::random_tag();
+    std::fs::write(
+        p.join(format!("{JOURNAL}{tag}")),
+        format!("put\ntea\n{PUTTING}{tag}\n"),
+    )
+    .unwrap();
+    std::fs::rename(p.join("tea"), p.join(format!("{ASIDE}{tag}"))).unwrap();
+    // No `.putting-<tag>`: taken for placed, yet nothing is at `tea`.
+    root.recover().unwrap();
+    assert_eq!(tree_of(&p.join("tea")), tea);
+    assert_eq!(hidden_left(&root), Vec::<String>::new());
+    // Set aside with no journal (none made so): kept, as is.
+    let other = nofollow::random_tag();
+    std::fs::create_dir_all(p.join(format!("{ASIDE}{other}/x"))).unwrap();
+    std::fs::create_dir_all(p.join(format!("{DROPPING}{other}/y"))).unwrap();
+    assert_eq!(root.recover().unwrap(), 0);
+    assert_eq!(hidden_left(&root).len(), 2);
+}
+
+/// A tree built and never journaled (the app quit while copying) is a
+/// copy of a source still there: removed. One with its journal is the
+/// journal's to settle.
+#[test]
+fn recover_removes_a_tree_never_journaled() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, false);
+    let p = root.path();
+    let tea = tree_of(&p.join("tea"));
+    let tag = nofollow::random_tag();
+    build_new(&p.join(format!("{PUTTING}{tag}"))).unwrap();
+    assert_eq!(root.recover().unwrap(), 1);
+    assert_eq!(hidden_left(&root), Vec::<String>::new());
+    assert_eq!(tree_of(&p.join("tea")), tea);
+}
+
+/// A journal is a file an agent can write: one that names a source other
+/// than its own staging or keep, a keep not under a hidden folder, an
+/// entry that is a path or hidden, is no put and moves nothing.
+#[test]
+fn a_journal_naming_other_paths_moves_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, true);
+    let p = root.path();
+    let tag = nofollow::random_tag();
+    std::fs::rename(p.join("tea"), p.join(format!("{ASIDE}{tag}"))).unwrap();
+    for record in [
+        "put\ntea\nkept\n".to_owned(),
+        format!("put\ntea\n{PUTTING}{tag}\nkept"),
+        format!("put\nkept/x\n{PUTTING}{tag}\n"),
+        format!("put\n.previous\n{PUTTING}{tag}\n"),
+        format!("put\n../tea\n{PUTTING}{tag}\n"),
+        format!("put\ntea\n{PUTTING}{tag}\n\nmore"),
+    ] {
+        std::fs::write(p.join(format!("{JOURNAL}{tag}")), &record).unwrap();
+        let before = tree_of(tmp.path());
+        root.recover().unwrap();
+        assert_eq!(tree_of(tmp.path()), before, "{record:?}");
+    }
+}
+
+/// `.previous` a link to a folder outside: a put that keeps there moves
+/// nothing through it (the old tree stays), and the folder outside keeps
+/// what it holds.
+#[test]
+fn a_keep_through_a_link_is_refused_and_put_back() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_of_three(&tmp);
+    let outside = tmp.path().join("elsewhere");
+    std::fs::create_dir_all(outside.join("tea")).unwrap();
+    std::fs::write(outside.join("tea/keep.txt"), "theirs").unwrap();
+    symlink(&outside, root.path().join(".previous")).unwrap();
+    let before = tree_of(tmp.path());
+    assert!(put(&root, true, |_| Ok(())).is_err());
+    assert_eq!(tree_of(tmp.path()), before);
+}
+
+/// Only one plain visible name is put or restored; a keep must lie under
+/// a hidden folder. Nothing is built for a path refused.
+#[test]
+fn put_takes_one_visible_name_and_a_hidden_keep() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, true);
+    let before = tree_of(tmp.path());
+    for (rel, keep) in [
+        ("tea/assets", None),
+        ("..", None),
+        (".previous", None),
+        ("", None),
+        ("tea", Some("kept/tea")),
+        ("tea", Some("tea")),
+    ] {
+        let built = std::cell::Cell::new(false);
+        let res = root
+            .lock()
+            .put_tree(Path::new(rel), keep.map(Path::new), |at: &Path| {
+                built.set(true);
+                build_new(at)
+            });
+        assert!(res.is_err() && !built.get(), "{rel:?} {keep:?}");
+        let res = root
+            .lock()
+            .restore(Path::new(rel), Path::new(keep.unwrap_or(".previous/tea")));
+        assert!(res.is_err(), "restore {rel:?} {keep:?}");
+    }
+    assert_eq!(tree_of(tmp.path()), before);
+}
+
+/// A build that fails puts nothing: the entry is as it was, no journal.
+#[test]
+fn a_build_that_fails_puts_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, false);
+    let before = tree_of(tmp.path());
+    let res = root.lock().put_tree(Path::new("tea"), None, |at: &Path| {
+        build_new(at)?;
+        std::fs::remove_dir_all(at)?;
+        Err::<(), _>(std::io::Error::other("too large"))
+    });
+    assert!(res.is_err());
+    assert_eq!(tree_of(tmp.path()), before);
+}
+
+/// Stopped with the entry (the user's link) set aside, then an agent
+/// wrote a file at its name: recover moves nothing over that file; both
+/// stay, and so do the tree built and the journal, run after run.
+#[test]
+fn recover_moves_nothing_over_what_took_the_entrys_place() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root_with_kept(&tmp, false);
+    let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        root.lock().put_tree_steps(
+            Path::new("linked"),
+            None,
+            build_new,
+            hook(3, 0, &std::cell::Cell::new(0)),
+        )
+    }));
+    assert!(quit.is_err());
+    let p = root.path();
+    std::fs::write(p.join("linked"), "the agent's").unwrap();
+    // Twice: the tree built stays with its journal, else a later run
+    // would take it for placed and the file for the new entry.
+    root.recover().unwrap();
+    root.recover().unwrap();
+    assert_eq!(std::fs::read(p.join("linked")).unwrap(), b"the agent's");
+    let aside: Vec<_> = hidden_left(&root)
+        .into_iter()
+        .filter(|n| n.starts_with(ASIDE))
+        .collect();
+    assert_eq!(aside.len(), 1, "the link set aside is kept");
+    assert_eq!(
+        std::fs::read_link(p.join(&aside[0])).unwrap(),
+        p.join("kept")
+    );
+    assert!(hidden_left(&root).iter().any(|n| n.starts_with(JOURNAL)));
+}

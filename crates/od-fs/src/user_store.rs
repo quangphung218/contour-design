@@ -262,6 +262,323 @@ impl Guard<'_> {
         stop(Step::Removed)?;
         std::fs::remove_file(root.join(&journal))
     }
+
+    /// Puts a new tree in place of the entry `rel` (one plain visible name
+    /// under the root; nothing there is fine): `build` makes and fills the
+    /// folder it is given (a new hidden `.putting-<tag>` in the root, not
+    /// there yet), then it is renamed into place. The entry there before
+    /// goes to `keep` (a path under a hidden folder of the root, which
+    /// must be there: `.previous/<id>`), and what `keep` held goes; with no
+    /// `keep` it goes.
+    ///
+    /// Crash-safe: a journal `.journal-<tag>` is written once the tree is
+    /// built, then the entry is set aside (`.aside-<tag>`), the tree put in
+    /// its place, what `keep` held set aside (`.dropping-<tag>`), the entry
+    /// moved to `keep`; then what is left set aside is renamed
+    /// `.removing-<tag>`, the journal removed, and that removed (a recover
+    /// removes it too: never put back once the tree is in). An app stopped
+    /// at any step leaves for [`UserRoot::recover`] the entry before or
+    /// after, never neither; a step that fails here puts everything back.
+    ///
+    /// # Errors
+    /// `build`'s (what it made is its to remove); `rel` or `keep` not
+    /// plain, a folder on the way a link, the journal's or a rename's
+    /// (all put back). Once placed it is done: a failure to remove the old
+    /// copy or the journal is logged and left for [`UserRoot::recover`].
+    pub fn put_tree<E: From<std::io::Error>>(
+        &self,
+        rel: &Path,
+        keep: Option<&Path>,
+        build: impl FnOnce(&Path) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.put_tree_steps(rel, keep, build, |_| Ok(()))
+    }
+
+    /// [`Self::put_tree`], `step` called before each step: an error from
+    /// it fails that step, a panic stops there as an app quitting would.
+    #[doc(hidden)]
+    pub fn put_tree_steps<E: From<std::io::Error>>(
+        &self,
+        rel: &Path,
+        keep: Option<&Path>,
+        build: impl FnOnce(&Path) -> Result<(), E>,
+        step: impl FnMut(PutStep) -> std::io::Result<()>,
+    ) -> Result<(), E> {
+        let tag = nofollow::random_tag();
+        let staged = PathBuf::from(format!("{PUTTING}{tag}"));
+        let put = Put::new(&tag, rel, &staged, keep)?;
+        build(&self.root.path.join(&staged))?;
+        Ok(self.place(&put, step)?)
+    }
+
+    /// Swaps the entry `rel` and the copy kept at `kept` (as
+    /// [`Self::put_tree`] keeps one): `kept` becomes the entry, the entry
+    /// (when there) is kept at `kept`. Crash-safe as [`Self::put_tree`].
+    ///
+    /// # Errors
+    /// As [`Self::put_tree`]; nothing at `kept` is `NotFound` (the entry,
+    /// set aside first, is put back).
+    pub fn restore(&self, rel: &Path, kept: &Path) -> std::io::Result<()> {
+        self.restore_steps(rel, kept, |_| Ok(()))
+    }
+
+    /// [`Self::restore`] with the `step` of [`Self::put_tree_steps`].
+    #[doc(hidden)]
+    pub fn restore_steps(
+        &self,
+        rel: &Path,
+        kept: &Path,
+        step: impl FnMut(PutStep) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        let put = Put::new(&nofollow::random_tag(), rel, kept, Some(kept))?;
+        self.place(&put, step)
+    }
+
+    fn place(
+        &self,
+        p: &Put,
+        mut step: impl FnMut(PutStep) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        let root = &self.root.path;
+        let drop_staged = || {
+            if p.staged {
+                let _ = remove_staged(&root.join(&p.s));
+            }
+        };
+        let name = format!("{JOURNAL}{}", p.tag);
+        let journal = root.join(&name);
+        let journaled = step(PutStep::Journal)
+            .and_then(|()| replace_under(root, Path::new(&name), &p.record()));
+        if let Err(e) = journaled {
+            drop_staged();
+            return Err(e);
+        }
+        let there = |rel: &Path| std::fs::symlink_metadata(root.join(rel)).is_ok();
+        let had = there(&p.r);
+        let undo = |e: std::io::Error, placed: bool| {
+            let back = if placed && !there(&p.s) {
+                move_at(root, &p.r, &p.s)
+            } else {
+                Ok(())
+            };
+            match back.and_then(|()| p.settle(root)) {
+                Ok(()) => {
+                    let _ = std::fs::remove_file(&journal);
+                }
+                Err(u) => tracing::warn!(error = %u, "put not undone, left for recover"),
+            }
+            e
+        };
+        if had && let Err(e) = step(PutStep::Aside).and_then(|()| move_at(root, &p.r, &p.a)) {
+            return Err(undo(e, false));
+        }
+        if let Err(e) = step(PutStep::Place).and_then(|()| move_at(root, &p.s, &p.r)) {
+            return Err(undo(e, false));
+        }
+        if let Some(k) = p.k.as_deref().filter(|_| had) {
+            let kept = if there(k) {
+                step(PutStep::Drop).and_then(|()| move_at(root, k, &p.d))
+            } else {
+                Ok(())
+            };
+            if let Err(e) = kept
+                .and_then(|()| step(PutStep::Keep))
+                .and_then(|()| move_at(root, &p.a, k))
+            {
+                return Err(undo(e, true));
+            }
+        }
+        // Placed: what was set aside (the entry, with no keep; what the
+        // keep held) is no copy anyone gets back now. Renamed to a remove's
+        // name before the journal goes, so no later recover takes it for
+        // an entry to put back (one deleted since would come back).
+        let retired = PathBuf::from(format!("{REMOVING}{}", p.tag));
+        let left = [&p.a, &p.d].into_iter().find(|n| there(n));
+        let retire = step(PutStep::Retire).and_then(|()| match left {
+            Some(left) => move_at(root, left, &retired),
+            None => Ok(()),
+        });
+        if let Err(e) = retire.or_else(|_| p.clean(root)) {
+            tracing::warn!(error = %e, "replaced entry not removed, kept hidden");
+        }
+        if let Err(e) = step(PutStep::Forget).and_then(|()| std::fs::remove_file(&journal)) {
+            // Done all the same: recover finds the tree placed.
+            tracing::warn!(error = %e, "put journal left for recover");
+        }
+        if let Err(e) = step(PutStep::Clean).and_then(|()| remove_gone(&root.join(&retired))) {
+            tracing::warn!(error = %e, "replaced entry left for recover");
+        }
+        Ok(())
+    }
+}
+
+/// The steps of a [`Guard::put_tree`] or [`Guard::restore`], for a test to
+/// fail or stop at; each is called before it is taken.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutStep {
+    /// The journal written.
+    Journal,
+    /// The entry set aside (when there).
+    Aside,
+    /// The new tree (or the kept copy) put in its place.
+    Place,
+    /// What `keep` held set aside (when there).
+    Drop,
+    /// The entry moved to `keep`.
+    Keep,
+    /// What was set aside renamed to `.removing-<tag>`.
+    Retire,
+    /// The journal removed.
+    Forget,
+    /// `.removing-<tag>` removed.
+    Clean,
+}
+
+/// A put under way, by the paths under the root it moves between: `r`
+/// the entry, `s` the tree put there (`.putting-<tag>`, or the kept copy
+/// a restore brings back), `k` where the entry is kept, `a` and `d` the
+/// entry and what `k` held, set aside.
+#[derive(Debug)]
+struct Put {
+    tag: String,
+    r: PathBuf,
+    s: PathBuf,
+    k: Option<PathBuf>,
+    a: PathBuf,
+    d: PathBuf,
+    staged: bool,
+}
+
+impl Put {
+    /// Checks the paths: `r` one plain visible name, `k` under a hidden
+    /// folder, `s` the staging of `tag` or `k` itself.
+    fn new(tag: &str, r: &Path, s: &Path, k: Option<&Path>) -> std::io::Result<Self> {
+        let (dirs, name) = split(r)?;
+        if !dirs.is_empty() || name.as_encoded_bytes().starts_with(b".") {
+            return Err(bad_path(r));
+        }
+        if let Some(k) = k {
+            let (dirs, _) = split(k)?;
+            if !dirs
+                .first()
+                .is_some_and(|d| d.as_encoded_bytes().starts_with(b"."))
+            {
+                return Err(bad_path(k));
+            }
+        }
+        let staging = PathBuf::from(format!("{PUTTING}{tag}"));
+        if s != staging && Some(s) != k {
+            return Err(bad_path(s));
+        }
+        Ok(Self {
+            tag: tag.to_owned(),
+            r: r.to_path_buf(),
+            s: s.to_path_buf(),
+            k: k.map(Path::to_path_buf),
+            a: PathBuf::from(format!("{ASIDE}{tag}")),
+            d: PathBuf::from(format!("{DROPPING}{tag}")),
+            staged: s == staging,
+        })
+    }
+
+    /// `put\n<r>\n<s>\n<k>` (`k` empty when none).
+    fn record(&self) -> Vec<u8> {
+        let mut out = b"put".to_vec();
+        for p in [Some(&self.r), Some(&self.s), self.k.as_ref()] {
+            out.push(b'\n');
+            out.extend_from_slice(p.map_or(&[][..], |p| p.as_os_str().as_encoded_bytes()));
+        }
+        out
+    }
+
+    /// The put of journal `.journal-<tag>` holding `bytes`, checked as
+    /// [`Self::new`] checks it (a journal is a file an agent can write).
+    fn read(tag: &str, bytes: &[u8]) -> Option<Self> {
+        let text = std::str::from_utf8(bytes.strip_prefix(b"put\n")?).ok()?;
+        let mut lines = text.split('\n');
+        let (r, s, k) = (lines.next()?, lines.next()?, lines.next()?);
+        if lines.next().is_some() {
+            return None;
+        }
+        let k = (!k.is_empty()).then(|| Path::new(k));
+        Self::new(tag, Path::new(r), Path::new(s), k).ok()
+    }
+
+    /// Puts what an app stopped (or a step failed) left in place, by what
+    /// is there: the tree not placed yet (`s` there), the entry back; once
+    /// placed, the entry on to `k`. The entry set aside is never removed
+    /// while nothing is in its place.
+    fn settle(&self, root: &Path) -> std::io::Result<()> {
+        let there = |rel: &Path| std::fs::symlink_metadata(root.join(rel)).is_ok();
+        let back = |from: &Path, to: &Path| {
+            if !there(from) {
+                Ok(())
+            } else if there(to) {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!("{} is in the way", to.display()),
+                ))
+            } else {
+                move_at(root, from, to)
+            }
+        };
+        if there(&self.s) {
+            back(&self.a, &self.r)?;
+            if let Some(k) = &self.k {
+                back(&self.d, k)?;
+            }
+            if self.staged {
+                remove_staged(&root.join(&self.s))?;
+            }
+            return Ok(());
+        }
+        if !there(&self.r) {
+            return back(&self.a, &self.r);
+        }
+        if let Some(k) = self.k.as_deref().filter(|_| there(&self.a)) {
+            if there(k) {
+                move_at(root, k, &self.d)?;
+            }
+            move_at(root, &self.a, k)?;
+        }
+        self.clean(root)
+    }
+
+    /// Removes what was set aside once the entry is in place.
+    fn clean(&self, root: &Path) -> std::io::Result<()> {
+        for gone in [&self.d, &self.a] {
+            remove_gone(&root.join(gone))?;
+        }
+        Ok(())
+    }
+}
+
+/// Renames `from` to `to` (paths under `root`), each through its folder's
+/// descriptor: no folder on the way that is a link is followed (but an
+/// entry, which may be the user's own link).
+#[cfg(unix)]
+fn move_at(root: &Path, from: &Path, to: &Path) -> std::io::Result<()> {
+    let (from_dirs, from_name) = split(from)?;
+    let (to_dirs, to_name) = split(to)?;
+    let from_dir = at::folder(root, &from_dirs)?.ok_or(std::io::ErrorKind::NotFound)?;
+    let to_dir = at::folder(root, &to_dirs)?.ok_or(std::io::ErrorKind::NotFound)?;
+    nix::fcntl::renameat(&from_dir, from_name, &to_dir, to_name).map_err(Into::into)
+}
+
+#[cfg(not(unix))]
+fn move_at(root: &Path, from: &Path, to: &Path) -> std::io::Result<()> {
+    for rel in [from, to] {
+        let (dirs, _) = split(rel)?;
+        let mut at = root.to_path_buf();
+        for dir in dirs {
+            at.push(dir);
+            if !std::fs::symlink_metadata(&at)?.is_dir() {
+                return Err(std::io::ErrorKind::NotADirectory.into());
+            }
+        }
+    }
+    std::fs::rename(root.join(from), root.join(to))
 }
 
 /// The steps of a [`Guard::remove`], for a test to stop at.
@@ -272,11 +589,16 @@ pub(crate) enum Step {
     Removed,
 }
 
-/// Names [`Guard::remove`] makes in the root: `<JOURNAL><tag>` holds the
-/// operation (`remove\n<entry name>`; 4b adds kinds), `<REMOVING><tag>` the
-/// entry on its way out.
+/// Names [`Guard::remove`] and [`Guard::put_tree`] make in the root:
+/// `<JOURNAL><tag>` holds the operation (`remove\n<entry name>`, or a
+/// [`Put`]), `<REMOVING><tag>` the entry on its way out, `<PUTTING><tag>`
+/// a tree being built, `<ASIDE><tag>` and `<DROPPING><tag>` what a put set
+/// aside.
 const JOURNAL: &str = ".journal-";
 const REMOVING: &str = ".removing-";
+const PUTTING: &str = ".putting-";
+const ASIDE: &str = ".aside-";
+const DROPPING: &str = ".dropping-";
 
 /// Removes what is at `path`: a folder and what it holds (no link in it
 /// followed), else the file or link itself.
@@ -285,6 +607,14 @@ fn remove_staged(path: &Path) -> std::io::Result<()> {
         std::fs::remove_dir_all(path)
     } else {
         std::fs::remove_file(path)
+    }
+}
+
+/// [`remove_staged`], nothing there being fine.
+fn remove_gone(path: &Path) -> std::io::Result<()> {
+    match remove_staged(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
     }
 }
 
@@ -306,8 +636,11 @@ fn is_temp(name: &str) -> bool {
 impl UserRoot {
     /// Finishes what an app stopped on the way left, once at start-up,
     /// under the lock: a journaled remove is finished (its entry, hidden
-    /// already, removed; one never renamed is left whole), a
-    /// `.removing-<tag>` with no journal removed, and the temp files of a
+    /// already, removed; one never renamed is left whole), a journaled
+    /// [`Guard::put_tree`] or [`Guard::restore`] put back (tree not placed
+    /// yet) or finished (placed), the entry never left missing, a
+    /// `.removing-<tag>` or `.putting-<tag>` with no journal removed (an
+    /// `.aside-<tag>` or `.dropping-<tag>` with none is kept), and the temp files of a
     /// [`Guard::write`] cut short (`.<file>.<tag>.tmp`, in the root and in
     /// each entry) removed. Nothing else is touched: a journal of another
     /// kind is kept. Returns how many names it removed.
@@ -339,8 +672,20 @@ impl UserRoot {
                 if read.bytes.starts_with(b"remove\n") {
                     clear(self.path.join(format!("{REMOVING}{tag}")));
                     clear(self.path.join(name));
+                } else if let Some(put) = Put::read(tag, &read.bytes) {
+                    match put.settle(&self.path) {
+                        Ok(()) => clear(self.path.join(name)),
+                        Err(e) => tracing::warn!(journal = name, error = %e, "put not settled"),
+                    }
                 }
             } else if name.strip_prefix(REMOVING).is_some_and(is_tag) {
+                clear(self.path.join(name));
+            } else if let Some(tag) = name.strip_prefix(PUTTING).filter(|t| is_tag(t))
+                && std::fs::symlink_metadata(self.path.join(format!("{JOURNAL}{tag}"))).is_err()
+            {
+                // Built, never journaled: a copy of a source still there.
+                // With its journal it is the journal's: gone, the journal
+                // would take the tree for placed.
                 clear(self.path.join(name));
             } else if is_temp(name) {
                 if !std::fs::symlink_metadata(self.path.join(name)).is_ok_and(|m| m.is_dir()) {
@@ -405,8 +750,9 @@ mod at {
             Err(e) => return Err(e),
         };
         for (depth, dir) in dirs.iter().enumerate() {
-            // The entry may be the user's own link; nothing below it.
-            let flags = if depth == 0 {
+            // The entry may be the user's own link; nothing below it, and
+            // no hidden folder of the root (`.previous`) is an entry.
+            let flags = if depth == 0 && !dir.as_encoded_bytes().starts_with(b".") {
                 DIR
             } else {
                 DIR | OFlag::O_NOFOLLOW

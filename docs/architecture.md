@@ -39,7 +39,7 @@ Guards between them:
 | `od-job` | process-tree kill (POSIX groups, Windows Job Objects) | none |
 | `od-runtime` | agent definitions, detection, spawn, stream parsers, run engine, BYOK | contracts, job, runs, store |
 | `od-content` | index of skills, templates, design systems, craft, plugins; prompt assembly | contracts, fs |
-| `od-fs` | file access in folders an agent can write: no link followed, no FIFO waited on (`nofollow`); one lock per user root, tagged read and compare-and-write, crash-safe remove and start-up `recover` (`user_store`) | none |
+| `od-fs` | file access in folders an agent can write: no link followed, no FIFO waited on (`nofollow`); one lock per user root, tagged read and compare-and-write, crash-safe remove and put of a tree (install, replace, restore) and start-up `recover` (`user_store`) | none |
 | `od-preview` | bridge injection, CSP, preview scopes, file watcher events, lint | contracts, render-cdp, store |
 | `od-export` | browser-free export (HTML, ZIP, PDF/PPTX from images), `Renderer` trait | none |
 | `od-render-cdp` | `Renderer` over CDP with the installed Chrome; ffmpeg | export |
