@@ -118,6 +118,16 @@ impl MemoryFiles {
         }
     }
 
+    /// Removes what a write of the memory files cut short left (a temp
+    /// file beside `MEMORY.md` or `config.json`): run once, when the store
+    /// opens ([`od_fs::user_store::UserRoot::recover`]).
+    ///
+    /// # Errors
+    /// Listing the folder.
+    pub fn recover(&self) -> std::io::Result<usize> {
+        self.root.recover()
+    }
+
     #[must_use]
     pub fn dir(&self) -> &Path {
         self.root.path()

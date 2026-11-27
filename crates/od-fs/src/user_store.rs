@@ -208,6 +208,158 @@ impl Guard<'_> {
         replace_under(&self.root.path, rel, bytes)?;
         Ok(Tag::of(bytes))
     }
+
+    /// Removes the entry `rel` (one plain name under the root, not hidden):
+    /// a folder with all it holds, or, when the entry is a link (the user's
+    /// own), the link alone, never what it points at. A link below the
+    /// entry is removed as a link, never followed.
+    ///
+    /// Crash-safe: a journal `.journal-<tag>` is written first, then the
+    /// entry is renamed to `.removing-<tag>` (hidden: no index lists it),
+    /// then removed, then the journal. An app stopped on the way leaves
+    /// the entry whole (before the rename) or hidden for
+    /// [`UserRoot::recover`] to finish (after it).
+    ///
+    /// # Errors
+    /// `rel` not one plain visible name, nothing there, the journal's or the
+    /// rename's (the entry is left as it was). Once renamed the entry is
+    /// gone from view: a failure to remove what it held is logged and left
+    /// for [`UserRoot::recover`].
+    pub fn remove(&self, rel: &Path) -> std::io::Result<()> {
+        self.remove_steps(rel, |_| Ok(()))
+    }
+
+    /// [`Self::remove`], `stop` called after each step: an error from it
+    /// ends the remove there, as an app stopped at that step would.
+    pub(crate) fn remove_steps(
+        &self,
+        rel: &Path,
+        mut stop: impl FnMut(Step) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        let (dirs, name) = split(rel)?;
+        if !dirs.is_empty() || name.as_encoded_bytes().starts_with(b".") {
+            return Err(bad_path(rel));
+        }
+        let root = &self.root.path;
+        std::fs::symlink_metadata(root.join(name))?;
+        let tag = nofollow::random_tag();
+        let journal = format!("{JOURNAL}{tag}");
+        let mut record = b"remove\n".to_vec();
+        record.extend_from_slice(name.as_encoded_bytes());
+        replace_under(root, Path::new(&journal), &record)?;
+        stop(Step::Journaled)?;
+        let staged = root.join(format!("{REMOVING}{tag}"));
+        // The name's last part is never followed: a link moves as a link.
+        if let Err(e) = std::fs::rename(root.join(name), &staged) {
+            let _ = std::fs::remove_file(root.join(&journal));
+            return Err(e);
+        }
+        stop(Step::Staged)?;
+        if let Err(e) = remove_staged(&staged) {
+            tracing::warn!(at = %staged.display(), error = %e, "removed entry left for recover");
+            return Ok(());
+        }
+        stop(Step::Removed)?;
+        std::fs::remove_file(root.join(&journal))
+    }
+}
+
+/// The steps of a [`Guard::remove`], for a test to stop at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Step {
+    Journaled,
+    Staged,
+    Removed,
+}
+
+/// Names [`Guard::remove`] makes in the root: `<JOURNAL><tag>` holds the
+/// operation (`remove\n<entry name>`; 4b adds kinds), `<REMOVING><tag>` the
+/// entry on its way out.
+const JOURNAL: &str = ".journal-";
+const REMOVING: &str = ".removing-";
+
+/// Removes what is at `path`: a folder and what it holds (no link in it
+/// followed), else the file or link itself.
+fn remove_staged(path: &Path) -> std::io::Result<()> {
+    if std::fs::symlink_metadata(path)?.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    }
+}
+
+/// Whether `s` is a [`nofollow::random_tag`]: 16 lowercase hex digits.
+fn is_tag(s: &str) -> bool {
+    s.len() == 16
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Whether `name` is a temp file a [`Guard::write`] left: `.<file>.<tag>.tmp`.
+fn is_temp(name: &str) -> bool {
+    name.strip_prefix('.')
+        .and_then(|n| n.strip_suffix(".tmp"))
+        .and_then(|n| n.rsplit_once('.'))
+        .is_some_and(|(file, tag)| !file.is_empty() && is_tag(tag))
+}
+
+impl UserRoot {
+    /// Finishes what an app stopped on the way left, once at start-up,
+    /// under the lock: a journaled remove is finished (its entry, hidden
+    /// already, removed; one never renamed is left whole), a
+    /// `.removing-<tag>` with no journal removed, and the temp files of a
+    /// [`Guard::write`] cut short (`.<file>.<tag>.tmp`, in the root and in
+    /// each entry) removed. Nothing else is touched: a journal of another
+    /// kind is kept. Returns how many names it removed.
+    ///
+    /// # Errors
+    /// Listing the root (none there is `Ok(0)`). One leftover that cannot
+    /// go is logged and stops nothing else.
+    pub fn recover(&self) -> std::io::Result<usize> {
+        let guard = self.lock();
+        let names: Vec<String> = match std::fs::read_dir(&self.path) {
+            Ok(list) => list
+                .flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(e),
+        };
+        let mut gone = 0;
+        let mut clear = |path: PathBuf| match remove_staged(&path) {
+            Ok(()) => gone += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!(at = %path.display(), error = %e, "leftover not removed"),
+        };
+        for name in &names {
+            if let Some(tag) = name.strip_prefix(JOURNAL).filter(|t| is_tag(t)) {
+                let Found::File(read) = guard.read(Path::new(name)) else {
+                    continue;
+                };
+                if read.bytes.starts_with(b"remove\n") {
+                    clear(self.path.join(format!("{REMOVING}{tag}")));
+                    clear(self.path.join(name));
+                }
+            } else if name.strip_prefix(REMOVING).is_some_and(is_tag) {
+                clear(self.path.join(name));
+            } else if is_temp(name) {
+                if !std::fs::symlink_metadata(self.path.join(name)).is_ok_and(|m| m.is_dir()) {
+                    clear(self.path.join(name));
+                }
+            } else if !name.starts_with('.')
+                && let Ok(list) = std::fs::read_dir(self.path.join(name))
+            {
+                // The entry may be the user's own link; nothing below it.
+                for e in list.flatten() {
+                    let temp = e.file_name().to_str().is_some_and(is_temp);
+                    if temp && e.file_type().is_ok_and(|t| !t.is_dir()) {
+                        clear(e.path());
+                    }
+                }
+            }
+        }
+        Ok(gone)
+    }
 }
 
 fn bad_path(rel: &Path) -> std::io::Error {

@@ -201,20 +201,38 @@ pub async fn save(
         body.name.clone_from(&entry.info.id);
     }
     let root = user_root(&state);
-    let is_user = entry.info.source == ContentSource::User;
-    let skill_id = entry.info.id.clone();
-    write_and_reload(&state, move || {
-        Ok(user_content::save_skill(
+    let mut is_user = entry.info.source == ContentSource::User;
+    let (id, skill_id) = (entry.info.id.clone(), entry.info.id.clone());
+    let bundled_root = state.content.roots().bundled_skills.clone();
+    let saved = write_and_reload(&state, move || {
+        let mut dir = entry.dir;
+        // "Save anyway" on an override deleted on disk (the index, not read
+        // again, still lists it as the user's): made again from the bundled
+        // skill of that id, its `od:` block and side files, never a
+        // `SKILL.md` alone hiding the bundled one.
+        if is_user
+            && if_match.0.is_none()
+            && std::fs::symlink_metadata(dir.join("SKILL.md"))
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            && let Some(bundled) = od_content::skills::list_skills(&[bundled_root], false)
+                .into_iter()
+                .find(|e| e.info.id == skill_id)
+        {
+            dir = bundled.dir;
+            is_user = false;
+        }
+        user_content::save_skill(
             &root,
             &skill_id,
-            &entry.dir,
+            &dir,
             is_user,
             &body.into(),
             if_match.0.as_deref(),
-        )?)
+        )?;
+        Ok(!is_user)
     })
     .await?;
-    Ok(Json(json!({ "id": entry.info.id, "override": !is_user })))
+    Ok(Json(json!({ "id": id, "override": saved })))
 }
 
 pub async fn delete(

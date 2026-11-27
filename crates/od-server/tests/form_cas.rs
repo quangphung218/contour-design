@@ -725,3 +725,37 @@ async fn an_override_deleted_on_disk_shows_the_bundled_copy_again() {
         "the override the agent deleted stays deleted"
     );
 }
+
+/// "Save anyway" (`If-Match: *`) on an override an agent deleted whole
+/// while its form was open (the index, not read again, still lists it as
+/// the user's): the override is made again from the bundled skill, with
+/// its `od:` block and its side files, then the form's text written. Not
+/// an override holding a `SKILL.md` alone, which hides the bundled one.
+#[tokio::test]
+async fn save_anyway_over_a_deleted_override_makes_it_again_from_the_bundled_skill() {
+    let d = daemon().await;
+    let (_, bundled_tag) = tagged(&d, "/api/skills/animate").await;
+    let body = json!({ "name": "animate", "body": "My override." });
+    assert_eq!(
+        put(&d, "/api/skills/animate", &body, Some(&bundled_tag)).await,
+        200
+    );
+    let over = d.data.join("skills/animate");
+    assert!(over.join("references/RECIPES.md").is_file());
+    std::fs::remove_dir_all(&over).unwrap();
+    let typed = json!({ "name": "animate", "body": "Typed." });
+    assert_eq!(put(&d, "/api/skills/animate", &typed, Some("*")).await, 200);
+    let text = std::fs::read_to_string(over.join("SKILL.md")).unwrap();
+    assert!(
+        text.contains("mode: utility"),
+        "the od: block is kept: {text}"
+    );
+    assert!(text.contains("Typed."), "{text}");
+    for side in ["references/RECIPES.md", "LICENSE", "SOURCES.md"] {
+        assert_eq!(
+            std::fs::read(over.join(side)).unwrap(),
+            std::fs::read(content_root().join("skills/animate").join(side)).unwrap(),
+            "{side}"
+        );
+    }
+}
