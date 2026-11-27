@@ -138,8 +138,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     skill. No form is ever given the tag of nothing (`GONE_TAG`), and a Save that sends it is a 412; a `PUT` of a skill gone
     from the index is a 412 with a tag, and `*` ("Save anyway") puts it back as a user skill.
     A form's Save of `SKILL.md`, `DESIGN.md` or `MEMORY.md` goes through `Guard::write` (`../od-fs/src/user_store.rs`:
-    every folder below the root opened `O_NOFOLLOW`, temp file `O_EXCL` of a random name, fsync, `renameat`;
-    one test per question of the six in `user_store_tests.rs`). Any other write of one goes only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
+    the root and the entry under it (a skill's or design system's folder, which may be the user's own link: the index
+    lists it) are followed, every folder below the entry and the file itself `O_NOFOLLOW`, temp file `O_EXCL` of a random
+    name, fsync, `renameat`; one test per question of the six in `user_store_tests.rs`). The skill form's `GET` tags
+    `SKILL.md` through the same `Guard::read` (`user_content::skill_tag`), so GET and PUT see one file
+    (`tests/linked_entries.rs`). Any other write of one goes only through `user_content::write_replacing` (`od_content::nofollow::replace_file`:
     a new file of a random name made `O_EXCL|O_NOFOLLOW`, bits set on its descriptor, renamed over it: no half-written read,
     no write through a link at the file or at the temp name), every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the
     names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content`, `od-server` and `../od-store/src/memory_index.rs`, `KEPT` with why). The memory index and config are written with `Guard::write` too (`../od-store/tests/memory_files.rs`).
