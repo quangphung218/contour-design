@@ -127,7 +127,7 @@ fn skill_for_form(
     match steady_read(&dir, source, &entry.info.id, settle) {
         Reread::Steady(now) => {
             let tag = now.tag.clone();
-            (now, tag)
+            (*now, tag)
         }
         Reread::Broken(tag) => (entry, tag),
         Reread::Unsteady => {
@@ -149,7 +149,7 @@ const SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
 #[derive(Debug)]
 enum Reread {
     /// The skill as its `SKILL.md` is, the file unchanged over `settle`.
-    Steady(SkillEntry),
+    Steady(Box<SkillEntry>),
     /// A `SKILL.md` that is no skill (cannot be parsed or read: too large,
     /// a link, gone), unchanged over `settle`: its tag.
     Broken(String),
@@ -173,7 +173,7 @@ fn steady_read(
         settle();
         let after = user_content::skill_tag(dir);
         match read.map(|entries| this_skill(entries, id)) {
-            Some(Some(entry)) if entry.tag == after => return Reread::Steady(entry),
+            Some(Some(entry)) if entry.tag == after => return Reread::Steady(Box::new(entry)),
             // An example `<parent>:<key>` the folder no longer has.
             Some(None) => return Reread::Unsteady,
             None if before == after => return Reread::Broken(after),

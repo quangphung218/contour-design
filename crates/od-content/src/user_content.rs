@@ -294,7 +294,8 @@ pub fn save_skill(
 /// Writes `bytes` as `path` through a hidden file of its own beside it,
 /// renamed over `path`: a read never finds it half written (the index, a
 /// form's `GET`), and a link put there is replaced, never written through.
-/// Every write of a `SKILL.md` or `DESIGN.md` goes through it
+/// A file there keeps its permission bits; a read-only one is refused
+/// (`PermissionDenied`), as a write in place is. Every write of a `SKILL.md` or `DESIGN.md` goes through it
 /// (`od-server/tests/user_file_writes.rs`).
 ///
 /// # Errors
@@ -305,8 +306,22 @@ pub fn write_replacing(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let name = path
         .file_name()
         .map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
+    // A file there keeps its permission bits, and one made read-only is
+    // refused as a write in place would be (a rename would replace it).
+    let kept = match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_file() && m.permissions().readonly() => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("{} is read-only", path.display()),
+            ));
+        }
+        Ok(m) if m.is_file() => Some(m.permissions()),
+        _ => None,
+    };
     let tmp = path.with_file_name(format!(".{name}.{}.{n}.tmp", std::process::id()));
-    let written = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, path));
+    let written = std::fs::write(&tmp, bytes)
+        .and_then(|()| kept.map_or(Ok(()), |p| std::fs::set_permissions(&tmp, p)))
+        .and_then(|()| std::fs::rename(&tmp, path));
     if written.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
@@ -1715,6 +1730,31 @@ mod tests {
             .map(|e| e.file_name())
             .collect();
         assert_eq!(left.len(), 1, "a temp file left: {left:?}");
+    }
+
+    /// A file replaced keeps its permission bits, and a read-only one is
+    /// refused, as a write in place would be (PR #351 review: a rename
+    /// replaces a file the user locked, and drops its `chmod`).
+    #[cfg(unix)]
+    #[test]
+    fn a_file_replaced_keeps_its_bits_and_a_locked_one_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("SKILL.md");
+        std::fs::write(&file, "old").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        write_replacing(&file, b"new").unwrap();
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640);
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
+        let locked = write_replacing(&file, b"newer");
+        assert_eq!(
+            locked.map_err(|e| e.kind()),
+            Err(std::io::ErrorKind::PermissionDenied)
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+        let left = std::fs::read_dir(tmp.path()).unwrap().count();
+        assert_eq!(left, 1, "a temp file left");
     }
 
     #[test]
