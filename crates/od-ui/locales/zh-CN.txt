@@ -1874,4 +1874,5 @@ UsageSkillTurnsSince = 自 {0} 起统计
 ChangedElsewhere = 打开后已在别处被修改。重新加载会显示新版本并丢弃已输入的内容；仍然保存会覆盖它。
 ReloadNewCopy = 重新加载
 ReloadFailed = 无法加载新版本：{0}
+SkillNamedAlike = 未保存：你的技能 {0} 名称几乎相同（只有大小写不同），会被覆盖。请重命名或删除它后再保存。
 MemoryIndexLoadFailed = 无法加载索引：{0}

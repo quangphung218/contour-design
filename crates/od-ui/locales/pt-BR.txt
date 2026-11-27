@@ -1875,4 +1875,5 @@ UsageSkillTurnsSince = Contado desde {0}
 ChangedElsewhere = Alterado em outro lugar desde que você abriu. Recarregar mostra a cópia nova e descarta o que você digitou; Salvar mesmo assim a substitui.
 ReloadNewCopy = Recarregar
 ReloadFailed = Não foi possível carregar a nova cópia: {0}
+SkillNamedAlike = Não salvo: sua skill {0} tem quase o mesmo nome (só muda maiúscula ou minúscula) e seria sobrescrita. Renomeie ou remova, depois salve.
 MemoryIndexLoadFailed = Não foi possível carregar o índice: {0}

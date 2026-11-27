@@ -1502,7 +1502,18 @@ async fn save_skill_edit(id: String, body: Value, tag: Option<String>) -> EditSa
     match api::put_if_match::<_, Value>(&url, &body, &tag).await {
         Ok(_) => EditSave::Saved,
         Err(e) if e.changed_since() => EditSave::Changed,
-        Err(e) => EditSave::Failed(api::failure(T::MdSaveFailed, &e)),
+        Err(e) => EditSave::Failed(save_failure(&e)),
+    }
+}
+
+/// What the skill form says of a Save refused. A 409 names a user skill
+/// whose folder differs from this one's only in case (`"Ad-Creative"` for
+/// `ad-creative`: one folder on macOS and Windows), which the Save would
+/// write over.
+fn save_failure(e: &api::HttpError) -> String {
+    match (e.status, e.message.split('"').nth(1)) {
+        (409, Some(twin)) if !twin.is_empty() => tf(T::SkillNamedAlike, &[twin]),
+        _ => api::failure(T::MdSaveFailed, e),
     }
 }
 
@@ -2588,6 +2599,28 @@ fn AgentSkillImport(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Save refused for a skill named alike says which skill is in the
+    /// way and what to do (PR #351 review), not "Save failed".
+    #[test]
+    fn a_save_refused_for_a_skill_named_alike_says_so() {
+        let e = api::HttpError {
+            status: 409,
+            code: Some(od_contracts::ErrorCode::Conflict),
+            message: "skill \"Ad-Creative\" already exists".to_owned(),
+            request_id: None,
+        };
+        let said = save_failure(&e);
+        assert!(said.contains("Ad-Creative"), "{said}");
+        assert_eq!(said, tf(T::SkillNamedAlike, &["Ad-Creative"]));
+        let other = api::HttpError {
+            status: 500,
+            code: None,
+            message: "boom".to_owned(),
+            request_id: None,
+        };
+        assert_eq!(save_failure(&other), api::failure(T::MdSaveFailed, &other));
+    }
 
     /// Every hidden character the review marks, at each end of its
     /// ranges, shows as its code; text around it is kept as it is.

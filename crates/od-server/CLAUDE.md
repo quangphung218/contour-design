@@ -127,15 +127,20 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     GET and PUT tag the same file: for a skill, the one a save writes over (`user_content::skill_write_dir`:
     an override on disk, named `id` byte for byte, before the bundled folder; a user skill named like it in
     another case or Unicode form is a 409, never written over); a skill changed on disk since the index read it is read
-    again by its `GET` for its own answer (`SkillEntry.tag`, `routes/content.rs:steady_read`), never stored in the
-    shared index (a read may find it half written in place; a run's prompt reads the index). A Save writes `SKILL.md`
-    through a file renamed over it (no half-written read, no write through a link).
+    again by its `GET` for its own answer (`routes/content.rs:skill_for_form`), never stored in the shared index (a read
+    may find it half written in place; a run's prompt reads the index): held still over `SETTLE`, that file (empty, or
+    under another `name:`, too); written all along, the index's copy with its own tag (the Save is a 412); not a skill
+    (too large, unparsable), the index's copy tagged with that file, so a Save puts a skill there again.
+    A `SKILL.md` or `DESIGN.md` is written only through `user_content::write_replacing` (a file renamed over it: no
+    half-written read, no write through a link), and a folder under the user root is named by an id only after the
+    names on disk are checked (`tests/user_file_writes.rs`, `syn` scan of `od-content` and `od-server`, `KEPT` with why).
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and
       24 saves at once from one copy land once, per lock; `a_skill_read_while_written_in_place_leaves_the_index_whole`,
       `a_bundled_skill_saved_beside_one_named_alike_writes_nothing`), `src/cas.rs::tests`
     - `src/routes/library/design_systems.rs::an_accept_waits_for_a_save_of_design_md` (the lock in `decide`),
-      `src/routes/content.rs::a_skill_md_cut_to_nothing_is_not_read_as_the_skill`,
+      `src/routes/content.rs::tests` (`skill_for_form`, `steady_read`), `tests/form_cas.rs::a_skill_md_left_empty_opens_the_form_on_it`,
+      `::an_override_named_otherwise_is_shown_and_kept`, `tests/user_file_writes.rs`,
       `../od-content/src/user_content.rs::a_save_never_lands_in_a_skill_named_alike`, `::a_save_replaces_a_link_and_writes_nothing_through_it`
     - e2e `../od-ui/e2e/library.e2e.mjs` (skill form, DESIGN.md editor), `../od-ui/e2e/c2.e2e.mjs` (memory index)
 

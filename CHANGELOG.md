@@ -10,7 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Fixed
 
-- A failed Reload keeps your typing; a skill save never lands in a skill named alike in another case.
+- The skill form opens on the file on disk, keeps your typing when Reload fails, and never saves over an agent's or a look-alike skill.
 
 ## [0.2.0-beta.71] - 2026-11-27
 

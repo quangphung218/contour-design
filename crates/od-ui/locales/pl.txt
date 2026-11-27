@@ -1875,4 +1875,5 @@ UsageSkillTurnsSince = Liczone od {0}
 ChangedElsewhere = Zmieniono w innym miejscu od otwarcia. Odśwież pokaże nową kopię i odrzuci wpisany tekst; Zapisz mimo to ją nadpisze.
 ReloadNewCopy = Odśwież
 ReloadFailed = Nie udało się wczytać nowej wersji: {0}
+SkillNamedAlike = Nie zapisano: Twój skill {0} ma prawie tę samą nazwę (różni się tylko wielkością liter) i zostałby nadpisany. Zmień jego nazwę lub usuń go, potem zapisz.
 MemoryIndexLoadFailed = Nie udało się wczytać indeksu: {0}
