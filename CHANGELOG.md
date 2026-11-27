@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Installing or replacing a skill or plugin, and copying one to Claude Code, never writes through a link an agent planted.
+
 ## [0.2.0-beta.72] - 2026-11-27
 
 ### Fixed

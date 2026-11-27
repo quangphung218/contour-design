@@ -3451,3 +3451,42 @@ async fn design_system_from_sources() {
     let brands = d.get_json("/api/design-systems/brands").await;
     assert!(brands["brands"].as_array().unwrap().len() >= 30);
 }
+
+/// A copy whose last steps fail (the source's `metadata.json` is a folder,
+/// so the copy's title cannot be written) leaves nothing on disk and
+/// nothing listed, even after the index is read again: it is built whole
+/// beside its place and renamed in (`copy_dir_into_place`), never half.
+#[tokio::test]
+async fn a_design_system_copy_that_fails_leaves_nothing_listed() {
+    let d = daemon().await;
+    let (src, assets) = ds_copy(&d, "airbnb", "Broken source").await;
+    let src_dir = assets.parent().unwrap().to_path_buf();
+    let meta = src_dir.join("metadata.json");
+    let _ = std::fs::remove_file(&meta);
+    std::fs::create_dir_all(meta.join("blocked")).unwrap();
+    let root = d.data.join("design-systems");
+    let before: std::collections::BTreeSet<String> = std::fs::read_dir(&root)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    let (s, v) = call(
+        &d,
+        "POST",
+        &format!("/api/design-systems/{src}/copy"),
+        Some(json!({ "name": "Half" })),
+    )
+    .await;
+    assert_ne!(s, 200, "the copy cannot be finished: {v}");
+    let after: std::collections::BTreeSet<String> = std::fs::read_dir(&root)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(after, before, "a half copy or its staging stays on disk");
+    // A later write reloads the index: still no `user:half`.
+    ds_copy(&d, "airbnb", "After").await;
+    let list = d.get_json("/api/design-systems").await;
+    assert!(
+        !list.to_string().contains("user:half"),
+        "a half copy is listed: {list}"
+    );
+}
