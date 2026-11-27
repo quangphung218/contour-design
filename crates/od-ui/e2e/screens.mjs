@@ -185,7 +185,8 @@ try {
     });
     await page.keyboard.press('Escape');
     await shot('studio-shortcuts', async () => {
-      await page.getByTestId('open-shortcuts').click();
+      await page.getByTestId('quick-menu').click();
+      await page.getByTestId('quick-shortcuts').click();
       await page.getByTestId('shortcuts').waitFor();
     });
     await page.getByTestId('shortcuts-close').click();

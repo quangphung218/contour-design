@@ -157,7 +157,7 @@ try {
   // Skills have their own item, right above Plugins, and their own page:
   // no Plugins/Skills switch on either. An old link to a skill
   // (`/plugins?skill=`) opens it on the Skills in place of itself.
-  const navHrefs = await page.locator('nav.sidenav > a').evaluateAll((l) => l.map((a) => a.getAttribute('href')));
+  const navHrefs = await page.locator('nav.sidenav a').evaluateAll((l) => l.map((a) => a.getAttribute('href')));
   assert.equal(navHrefs.indexOf('/skills') + 1, navHrefs.indexOf('/plugins'), `Skills right above Plugins: ${navHrefs}`);
   await page.locator('nav a[href="/skills"]').click();
   await page.getByTestId('skills-page').locator('h1', { hasText: 'Skills' }).waitFor();

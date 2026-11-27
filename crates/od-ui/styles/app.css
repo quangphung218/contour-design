@@ -38,7 +38,12 @@
 .brand-mark.large { width: 44px; height: 44px; border-radius: var(--radius-lg); }
 .brand-mark.large svg { width: 30px; height: 30px; }
 
-.sidenav { flex: 1; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+/* The pages scroll in a short window (desktop's smallest is 600 px less
+   the title bar); the Settings button below them stays in view. */
+.sidenav { flex: 1; display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+/* Room for the focus outline (2 px, 2 px out), which a scroller clips. */
+.sidenav { padding: 4px; margin: -4px; }
+.sidebar-foot { flex: none; display: flex; flex-direction: column; padding-top: var(--space-2); }
 .nav-link {
   display: flex; align-items: center; gap: var(--space-2-5);
   height: var(--control-md);
@@ -60,6 +65,16 @@
 }
 .nav-link[aria-current="page"] .ico { color: var(--color-accent); }
 .nav-label { overflow: hidden; text-overflow: ellipsis; }
+/* The pages in groups by what they are for; the name shows beside the
+   labels only (it is a .nav-label: the rail hides it). */
+.nav-group { display: flex; flex-direction: column; gap: 2px; }
+.nav-group + .nav-group { margin-top: var(--space-3); }
+.nav-group-label {
+  padding: var(--space-1) var(--space-2-5);
+  font-size: var(--text-xs); font-weight: var(--weight-medium);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
 
 .sidebar.rail { width: var(--sidebar-rail); }
 .sidebar.rail .brand-name, .sidebar.rail .nav-label { display: none; }
@@ -1742,12 +1757,12 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
 /* Phone: every control in the rail, menus, the Settings nav, the studio
    switch, the Next chips and the small actions under a turn, the Settings and empty-state buttons and Home's
    gallery links is a full 44 px touch target. Collapse does
-   nothing while the rail is forced, and a phone has no keyboard
-   shortcuts, so both buttons go and the rail keeps its height. Last in
+   nothing while the rail is forced, so its button goes and the rail
+   keeps its height. Last in
    the file, over the rail's 40 px. */
 @media (max-width: 480px) {
   .sidebar { padding-inline: calc((var(--sidebar-rail) - 44px) / 2); }
-  .sidebar .sidebar-toggle, .sidebar [data-testid="open-shortcuts"] { display: none; }
+  .sidebar .sidebar-toggle { display: none; }
   .sidebar .brand { justify-content: center; width: 44px; height: 44px; padding: 0; flex: none; margin: 0 auto; }
   .sidebar :is(.palette-trigger, .nav-link), .sidebar.rail :is(.palette-trigger, .nav-link) { width: 44px; height: 44px; }
   .menu-item { min-height: 44px; }

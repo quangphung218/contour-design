@@ -66,6 +66,10 @@ const GROUPS: [(T, &[(&str, T)]); 4] = [
 #[component]
 pub fn ShortcutsDialog() -> impl IntoView {
     let shell = Shell::get();
+    // A modal: it takes the focus, so Esc reaches it before a popup under
+    // it, and gives it back where it was (that popup, the composer).
+    let dialog = NodeRef::<leptos::html::Div>::new();
+    super::focus::focus_while_open(dialog, |_| None);
     let m = modifier();
     // Closed on the next task: closing inside a click would drop the
     // listeners the same click still reaches on its way up (microtasks run
@@ -86,6 +90,7 @@ pub fn ShortcutsDialog() -> impl IntoView {
                 aria-labelledby="shortcuts-title"
                 data-testid="shortcuts"
                 tabindex="-1"
+                node_ref=dialog
                 on:keydown=move |ev: web_sys::KeyboardEvent| {
                     if ev.key() == "Escape" {
                         close();

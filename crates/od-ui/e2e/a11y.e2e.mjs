@@ -209,6 +209,33 @@ try {
     assert.deepEqual(found, [], `${found.length} critical/serious`);
   });
   await page.context().close();
+
+  // The sidebar's Settings button with its menu open, open and as a rail,
+  // in English and Vietnamese: the button's name is its shown text.
+  for (const locale of ['en', 'vi']) {
+    await setLocale(locale);
+    page = await newPage(1440, 900, 'light');
+    for (const rail of [false, true]) {
+      const key = `quick-menu-${rail ? 'rail' : 'open'}-${locale}`;
+      await check(`axe ${key}`, async () => {
+        await page.goto(BASE + '/');
+        await until(async () => (await page.locator('html').getAttribute('lang')) === locale, `${locale} UI`);
+        const isRail = async () => (await page.locator('.sidebar').getAttribute('class')).includes('rail');
+        if ((await isRail()) !== rail) {
+          await page.keyboard.press('Control+b');
+          await until(async () => (await isRail()) === rail, 'sidebar state');
+        }
+        await page.getByTestId('quick-menu').click();
+        await page.getByTestId('quick-menu-pop').waitFor();
+        await shot(page, key);
+        const found = await axe(page);
+        report.axe[key] = found;
+        assert.deepEqual(found, [], `${found.length} critical/serious`);
+        await page.keyboard.press('Escape');
+      });
+    }
+    await page.context().close();
+  }
   await setLocale('en');
 
   // 1440: tooltip, focus, tab keys, live region, transparent swatch.

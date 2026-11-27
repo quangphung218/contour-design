@@ -133,6 +133,51 @@ pub fn group_keys(ev: &web_sys::KeyboardEvent, select: bool) {
     }
 }
 
+/// Up, Down, Home and End inside an open menu (the handler on the menu):
+/// focus the next of its `items` (a selector), wrapping, as in the WAI-ARIA
+/// menu pattern. A `<select>` keeps its own arrows; Tab still leaves.
+pub fn menu_keys(ev: &web_sys::KeyboardEvent, items: &str) {
+    let key = ev.key();
+    if !is_menu_key(&key) {
+        return;
+    }
+    let element =
+        |t: Option<web_sys::EventTarget>| t.and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+    let (Some(menu), Some(from)) = (element(ev.current_target()), element(ev.target())) else {
+        return;
+    };
+    if from.tag_name().eq_ignore_ascii_case("select") && key != "Home" && key != "End" {
+        return;
+    }
+    let Ok(found) = menu.query_selector_all(items) else {
+        return;
+    };
+    let items: Vec<web_sys::HtmlElement> = (0..found.length())
+        .filter_map(|i| found.item(i)?.dyn_into().ok())
+        .filter(|e: &web_sys::HtmlElement| !e.has_attribute("disabled"))
+        .collect();
+    let at = items.iter().position(|t| **t == from);
+    let next = match at {
+        Some(at) => next_index(&key, at, items.len()),
+        // Focus on the menu itself: Down or Home goes to the first item.
+        None if !items.is_empty() => Some(if key == "ArrowUp" || key == "End" {
+            items.len() - 1
+        } else {
+            0
+        }),
+        None => None,
+    };
+    if let Some(next) = next {
+        ev.prevent_default();
+        let _ = items[next].focus();
+    }
+}
+
+/// The keys [`menu_keys`] handles: Left and Right stay with the page.
+fn is_menu_key(key: &str) -> bool {
+    matches!(key, "ArrowUp" | "ArrowDown" | "Home" | "End")
+}
+
 /// Where an arrow, Home or End key moves from `at` among `len` items
 /// (wrapping); `None` for any other key.
 fn next_index(key: &str, at: usize, len: usize) -> Option<usize> {
@@ -157,7 +202,25 @@ pub fn roving(picked: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::next_index;
+    use super::{is_menu_key, next_index};
+
+    #[test]
+    fn a_menu_takes_up_down_home_end_only() {
+        for k in ["ArrowUp", "ArrowDown", "Home", "End"] {
+            assert!(is_menu_key(k), "{k}");
+        }
+        for k in [
+            "ArrowLeft",
+            "ArrowRight",
+            "Tab",
+            "Enter",
+            " ",
+            "Escape",
+            "a",
+        ] {
+            assert!(!is_menu_key(k), "{k}");
+        }
+    }
 
     /// Each `autofocus` attribute in `src`, as `file:line` (QA-094: a
     /// document applies it once; use [`super::focus_on_mount`]).

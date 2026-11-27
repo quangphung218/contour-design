@@ -388,9 +388,9 @@ fn Shelled() -> impl IntoView {
         } else if ev.key() == "Escape" && shell.shortcuts.get_untracked() {
             shell.shortcuts.set(false);
         } else if modifier && !ev.alt_key() && !ev.shift_key() && ev.key() == "," {
-            // Through the sidebar link, so the router handles it.
+            // The quick menu opens it, inside the router (leave guard).
             ev.prevent_default();
-            click_link("/settings");
+            quick_menu::request_settings();
         } else if modifier
             && !ev.alt_key()
             && !ev.shift_key()
@@ -424,7 +424,7 @@ fn Shelled() -> impl IntoView {
             }
             Some("shortcuts") => shell.shortcuts.set(true),
             Some("palette") => shell.palette.set(true),
-            Some("settings") => click_link("/settings"),
+            // Settings, Help ▸ Documentation and Report Issue: the quick menu.
             // View ▸ Reload (⌘R): the shell restarts the page unless it
             // answers; the leave guard asks first if work would be lost.
             Some("reload") => {
@@ -551,21 +551,6 @@ const OPEN_PROJECT_MENU: &str = "open-project:";
 /// Window event that toggles the sidebar (Cmd/Ctrl+B, desktop menu).
 const TOGGLE_SIDEBAR_EVENT: &str = "od:toggle-sidebar";
 
-/// Follows the sidebar link to `href` as if clicked.
-pub(crate) fn click_link(href: &str) {
-    let link = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| {
-            d.query_selector(&format!(".sidebar a[href=\"{href}\"]"))
-                .ok()
-                .flatten()
-        })
-        .and_then(|e| wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlElement>(e).ok());
-    if let Some(a) = link {
-        a.click();
-    }
-}
-
 /// `localStorage` keys of the sidebar state: the Studio has its own, since
 /// it wants the room and starts collapsed.
 const SIDEBAR_KEY: &str = "od.sidebar.collapsed";
@@ -597,7 +582,8 @@ fn NotFound() -> impl IntoView {
     }
 }
 
-/// Left navigation: brand, pages, settings at the bottom. Collapses to an
+/// Left navigation: brand, pages in three groups, the Settings button at
+/// the bottom (`quick_menu`). Collapses to an
 /// icon rail; the choice is remembered per context (Studio or the rest).
 #[component]
 fn Sidebar() -> impl IntoView {
@@ -643,6 +629,17 @@ fn Sidebar() -> impl IntoView {
             </A>
         }
     };
+    // Pages grouped by what they are for; the group name shows only beside
+    // the labels (the rail hides both).
+    let group = |name: T, links: AnyView| {
+        let name = t(name);
+        view! {
+            <div class="nav-group" role="group" aria-label=name>
+                <span class="nav-group-label nav-label" aria-hidden="true">{name}</span>
+                {links}
+            </div>
+        }
+    };
     view! {
         <aside class="sidebar" class:rail=rail>
             <div class="sidebar-top">
@@ -677,31 +674,29 @@ fn Sidebar() -> impl IntoView {
                 <kbd class="nav-label">{format!("{}K", shortcuts::modifier())}</kbd>
             </button>
             <nav class="sidenav" aria-label=t(T::MainNavigation)>
-                {link("/", Glyph::Home, T::NavHome, true)}
-                {link("/projects", Glyph::Projects, T::NavProjects, false)}
-                {link("/templates", Glyph::Grid, T::NavTemplates, false)}
-                {link("/design-systems", Glyph::DesignSystem, T::NavDesignSystems, false)}
-                {link("/skills", Glyph::Book, T::NavSkills, false)}
-                {link("/plugins", Glyph::Plugin, T::NavPlugins, false)}
-                {link("/media", Glyph::Image, T::NavMedia, false)}
-                {link("/automations", Glyph::Automations, T::NavAutomations, false)}
-                {link("/integrations", Glyph::Mcp, T::NavIntegrations, false)}
-                {link("/inbox", Glyph::Inbox, T::NavInbox, false)}
-                <span class="spacer"></span>
-                <quick_menu::QuickMenu rail=Signal::derive(rail)/>
-                <button
-                    class="nav-link"
-                    data-testid="open-shortcuts"
-                    aria-label=t(T::KeyboardShortcuts)
-                    data-tip=tip(t(T::KeyboardShortcuts))
-                    data-tip-pos="right"
-                    on:click=move |_| shell.shortcuts.set(true)
-                >
-                    {icon(Glyph::Keyboard)}
-                    <span class="nav-label">{t(T::KeyboardShortcuts)}</span>
-                </button>
-                {link("/settings", Glyph::Settings, T::NavSettings, false)}
+                {group(T::NavGroupCreate, view! {
+                    {link("/", Glyph::Home, T::NavHome, true)}
+                    {link("/projects", Glyph::Projects, T::NavProjects, false)}
+                    {link("/templates", Glyph::Grid, T::NavTemplates, false)}
+                }.into_any())}
+                {group(T::NavGroupLibrary, view! {
+                    {link("/design-systems", Glyph::DesignSystem, T::NavDesignSystems, false)}
+                    {link("/skills", Glyph::Book, T::NavSkills, false)}
+                    {link("/plugins", Glyph::Plugin, T::NavPlugins, false)}
+                    {link("/media", Glyph::Image, T::NavMedia, false)}
+                }.into_any())}
+                {group(T::NavGroupAutomate, view! {
+                    {link("/automations", Glyph::Automations, T::NavAutomations, false)}
+                    {link("/integrations", Glyph::Mcp, T::NavIntegrations, false)}
+                    {link("/inbox", Glyph::Inbox, T::NavInbox, false)}
+                }.into_any())}
             </nav>
+            // Settings and everything around it (theme, language, shortcuts,
+            // Help) behind one button, out of the pages' scroll: a short
+            // window scrolls the pages, the button stays.
+            <div class="sidebar-foot">
+                <quick_menu::QuickMenu rail=Signal::derive(rail)/>
+            </div>
         </aside>
     }
 }

@@ -10,7 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Changed
 
-- Settings ▸ Memory warns when MEMORY.md cannot be read, and no memory reaches a chat until the index is saved again.
+- The sidebar groups its pages and ends in one Settings button holding theme, language, shortcuts and help; "Local mode" is gone.
 
 ## [0.2.0-beta.74] - 2026-11-27
 
