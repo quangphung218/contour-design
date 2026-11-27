@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.74] - 2026-11-27
+
 ### Changed
 
 - Side chat opens from a round button at the preview's bottom right instead of a tab; closing it keeps your typing and its answer.
@@ -1527,7 +1529,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.73...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.74...HEAD
+[0.2.0-beta.74]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.73...v0.2.0-beta.74
 [0.2.0-beta.73]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.72...v0.2.0-beta.73
 [0.2.0-beta.72]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.71...v0.2.0-beta.72
 [0.2.0-beta.71]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.70...v0.2.0-beta.71
