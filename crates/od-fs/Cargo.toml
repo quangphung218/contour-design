@@ -1,0 +1,18 @@
+[package]
+name = "od-fs"
+description = "File access in folders an agent can write: no link followed, no FIFO waited on"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

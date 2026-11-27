@@ -89,7 +89,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `tests/library.rs::no_request_copies_a_skill_to_claude_code`, `::a_personal_skill_is_copied_to_claude_code_once`,
       `::copy_to_claude_code_follows_no_link`, `::copy_to_claude_code_checks_the_whole_skill_first`,
       `::a_skill_changed_after_its_preview_is_not_copied`; e2e `../od-ui/e2e/library.e2e.mjs` (`copyToClaudeDesktop`)
-    - `../od-content/src/nofollow.rs::a_link_swapped_in_for_a_file_is_never_followed`, `::a_link_swapped_in_for_a_folder_is_never_followed`,
+    - `../od-fs/src/nofollow.rs::a_link_swapped_in_for_a_file_is_never_followed`, `::a_link_swapped_in_for_a_folder_is_never_followed`,
       `::a_fifo_swapped_in_for_a_file_never_blocks`, `::the_budget_counts_what_is_read`; `user_content.rs::a_copy_keeps_the_permission_bits_it_reviewed`
     - `../od-content/src/user_content.rs::an_export_copies_only_the_content_reviewed`, `::a_skill_with_no_description_is_copied`,
       `::an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy`,
@@ -149,12 +149,12 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     fails, and an override's first copy and Copy design system are built in a hidden `.copying-<name>-<tag>`
     (`user_content::copy_dir_into_place`), finished there, then renamed into place; something already at the name is a
     409 named by its folder name.
-    - `../od-content/tests/planted_links.rs`, `../od-content/src/nofollow.rs::a_new_dir_writes_through_no_link_planted_in_it`,
+    - `../od-content/tests/planted_links.rs`, `../od-fs/src/nofollow.rs::a_new_dir_writes_through_no_link_planted_in_it`,
       `::a_new_dir_is_new`, `../od-content/src/user_content.rs::leftovers_are_read_by_id_with_a_random_tag_or_a_pid`,
       `::an_install_cut_short_with_a_random_tag_is_put_back`,
       `../od-content/src/design_system_gen.rs::a_link_planted_in_the_staging_folder_is_never_written_through`,
       `src/doctor.rs::the_data_folder_check_never_writes_through_a_planted_link`, `::the_probe_file_is_made_new`,
-      `../od-content/src/nofollow.rs::a_new_dir_swapped_for_a_link_before_it_is_opened_is_refused`,
+      `../od-fs/src/nofollow.rs::a_new_dir_swapped_for_a_link_before_it_is_opened_is_refused`,
       `../od-content/src/user_content.rs::a_copy_into_place_is_whole_or_not_there`, `::a_copy_cut_short_removes_its_folder`
     - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and
       24 saves at once from one copy land once, per lock; `a_skill_read_while_written_in_place_leaves_the_index_whole`,

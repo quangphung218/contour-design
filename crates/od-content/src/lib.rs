@@ -12,7 +12,7 @@ pub mod design_system_gen;
 pub mod design_systems;
 pub mod frontmatter;
 pub mod index;
-pub mod nofollow;
+pub use od_fs::nofollow;
 pub mod pipeline;
 pub mod plugin_validate;
 pub mod plugins;

@@ -14,6 +14,7 @@ homepage = "https://github.com/quangphung218/contour-design"
 od-contracts = { path = "crates/od-contracts" }
 od-store = { path = "crates/od-store" }
 od-content = { path = "crates/od-content" }
+od-fs = { path = "crates/od-fs" }
 od-server = { path = "crates/od-server" }
 od-runtime = { path = "crates/od-runtime" }
 od-runs = { path = "crates/od-runs" }
