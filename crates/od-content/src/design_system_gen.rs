@@ -372,11 +372,13 @@ fn install_checked(
     // never listed) folder, so two jobs for one name do not collide. Its
     // name is random and it is made new (`create_dir`): a link planted at a
     // name worked out beforehand would send every file written there out.
-    let tmp = user_root.join(format!(".installing-{}", crate::nofollow::random_tag()));
-    std::fs::create_dir(&tmp).map_err(io)?;
+    // Its files are made through its descriptor (`NewDir`): a link planted
+    // once its name is listed is never written through either.
+    let path = user_root.join(format!(".installing-{}", crate::nofollow::random_tag()));
+    let tmp = crate::nofollow::NewDir::create(&path).map_err(io)?;
     let built = build_and_place(files, &tmp, user_root, req, origin);
     if built.is_err() {
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&path);
     }
     built
 }
@@ -385,13 +387,18 @@ fn install_checked(
 /// takes that folder first, the next free one.
 fn build_and_place(
     files: &Staged,
-    tmp: &Path,
+    made: &crate::nofollow::NewDir,
     user_root: &Path,
     req: &GenerateRequest,
     origin: &str,
 ) -> Result<Installed, GenError> {
-    std::fs::write(tmp.join("DESIGN.md"), &files.design).map_err(io)?;
-    std::fs::write(tmp.join("tokens.css"), &files.tokens).map_err(io)?;
+    let tmp = made.path();
+    let write = |name: &str, bytes: &[u8]| {
+        use std::io::Write;
+        made.new_file(Path::new(name))?.write_all(bytes)
+    };
+    write("DESIGN.md", files.design.as_bytes()).map_err(io)?;
+    write("tokens.css", files.tokens.as_bytes()).map_err(io)?;
     let slug = slugify(&req.name);
     let category = req.category.clone().unwrap_or_else(|| "Custom".to_owned());
     let mut tries = 0;
@@ -418,7 +425,13 @@ fn build_and_place(
         for (file, value) in [("manifest.json", manifest), ("metadata.json", metadata)] {
             let text =
                 serde_json::to_string_pretty(&value).map_err(|e| GenError::Io(e.to_string()))?;
-            std::fs::write(tmp.join(file), text).map_err(io)?;
+            // Written again for the next free folder: the one before goes
+            // first (unlinked through the folder's descriptor).
+            match made.remove_file(Path::new(file)) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io(e)),
+                _ => {}
+            }
+            write(file, text.as_bytes()).map_err(io)?;
         }
         // Claim the folder: another job may have made it in the meantime.
         if std::fs::create_dir(&dest).is_err() {
@@ -632,6 +645,38 @@ mod tests {
                 format!("user:{}", manifest["id"].as_str().unwrap()),
                 d.summary.id,
                 "manifest id matches its folder"
+            );
+        }
+    }
+
+    /// The staging folder is the agent's to write too: a link put in it
+    /// once it is listed (its random name seen) is never written through,
+    /// whichever file it sits at.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_planted_in_the_staging_folder_is_never_written_through() {
+        for at in ["DESIGN.md", "tokens.css", "manifest.json", "metadata.json"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let user = tmp.path().join("design-systems");
+            std::fs::create_dir_all(&user).unwrap();
+            let victim = tmp.path().join("victim.txt");
+            std::fs::write(&victim, "the user's own file").unwrap();
+            let staging =
+                crate::nofollow::NewDir::create(&user.join(".installing-planted")).unwrap();
+            std::os::unix::fs::symlink(&victim, staging.path().join(at)).unwrap();
+            let req = GenerateRequest::new("Trà Đá", "Street tea stall.", None).unwrap();
+            let files = Staged {
+                design: good_design("Trà Đá"),
+                tokens: TOKENS.to_owned(),
+            };
+            // Refused (`DESIGN.md`, `tokens.css`), or the link unlinked
+            // and the file made new in its place (the JSON files, written
+            // again for each folder tried): never written through.
+            let _ = build_and_place(&files, &staging, &user, &req, "x");
+            assert_eq!(
+                std::fs::read_to_string(&victim).unwrap(),
+                "the user's own file",
+                "{at}: written through the link"
             );
         }
     }

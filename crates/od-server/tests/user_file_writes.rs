@@ -16,6 +16,13 @@
 //!   `replace_file`): `fs::write`, `File::create` or `.create(true)` open a
 //!   link planted at a temp name and write wherever it points.
 //!
+//! - `pid`: no name is made from `std::process::id()`: an agent works a
+//!   pid out and plants a folder or link at that name first (install
+//!   staging `.installing-<id>-<pid>` was written through, 2026-11-27).
+//!   A name in a folder an agent can write takes
+//!   `od_content::nofollow::random_tag()`, and a folder filled there is
+//!   made new and written through its descriptor (`nofollow::NewDir`).
+//!
 //! What stays is in `KEPT`, by file, function and count, with why.
 //!
 //! The sources are parsed as Rust (`syn`): comments and strings are no
@@ -47,13 +54,6 @@ const USER_FILES: &[&str] = &["SKILL.md", "DESIGN.md"];
 /// Writes that stay: file (relative to this crate), function, rule, how
 /// many, why.
 const KEPT: &[(&str, &str, &str, usize, &str)] = &[
-    (
-        "../od-content/src/design_system_gen.rs",
-        "build_and_place",
-        "write",
-        1,
-        "into a hidden staging folder made in the same function, renamed into place whole",
-    ),
     (
         "src/routes/library/design_systems.rs",
         "import",
@@ -153,11 +153,11 @@ const KEPT: &[(&str, &str, &str, usize, &str)] = &[
         "after `entry_like` finds no entry of that name in another case, under `REPLACE_LOCK`",
     ),
     (
-        "../od-content/src/design_system_gen.rs",
-        "build_and_place",
-        "tmp",
+        "src/routes/w3/reference.rs",
+        "hold",
+        "pid",
         1,
-        "its files are written in the folder its caller made new (`create_dir`, a random name): nothing planted is in it",
+        "the pid is written in the mark's body (who holds it), never a name",
     ),
     (
         "src/routes/library/design_systems.rs",
@@ -564,6 +564,9 @@ impl<'ast> Visit<'ast> for Writes<'_> {
                 (Some("fs"), Some("write")) | (Some("File"), Some("create"))
             );
             self.plain_call |= writes;
+            if full.len() >= 2 && full[full.len() - 2] == "process" && last == Some("id") {
+                self.push("pid", Self::line(&c.func));
+            }
             if matches!((prev, last), (Some("fs"), Some("rename" | "hard_link")))
                 && self.renames.is_none()
             {
@@ -860,6 +863,37 @@ fn every_spelling_of_a_write_is_caught() {
             "fn f() { std::fs::write(&tmp, b); std::fs::hard_link(&tmp, p); OpenOptions::new().write(true).create_new(true).open(p); }",
             "tmp",
         ),
+        // A name made from the pid, however written (2026-11-27: install
+        // staging `.installing-<id>-<pid>` was written through).
+        (
+            "fn f(user_root: &Path) { user_root.join(format!(\".installing-{id}-{}\", std::process::id())); }",
+            "pid",
+        ),
+        (
+            "fn f() { let p = ::std::process::id(); let n = format!(\".x-{p}\"); }",
+            "pid",
+        ),
+        (
+            "fn f() { held.join(format!(\n    \".incoming-{id}-{}\",\n    std::process\n        ::id()\n)); }",
+            "pid",
+        ),
+        (
+            "use std::process; fn f() { d.join(process::id().to_string()); }",
+            "pid",
+        ),
+        (
+            "use std::process as p; fn f() { d.join(p::id().to_string()); }",
+            "pid",
+        ),
+        (
+            "use std::process::id as pid; fn f() { d.join(pid().to_string()); }",
+            "pid",
+        ),
+        ("use std::process::id; fn f() { let n = || id(); }", "pid"),
+        (
+            "impl S {\n    fn f() { assert!(d.join(std::process::id().to_string()).exists()); }\n}",
+            "pid",
+        ),
         // The user root through a chain of calls (PR #351 review).
         (
             "fn f(s: &S) { let _p = s.store.data_dir().user_skills_dir().join(&id); }",
@@ -937,6 +971,11 @@ fn f() {}"#,
         "fn f() { std::fs::write(&p, b); }",
         "fn f(s: &S) { s.store.data_dir().user_skills_dir().join(\"x\"); }",
         "// user_root.join(id)\nfn f() {}",
+        "// std::process::id()\nfn f() {}",
+        "fn f() { let s = \"std::process::id()\"; }",
+        "#[cfg(test)] mod tests { fn t() { std::process::id(); } }",
+        "fn f() { d.join(format!(\".x-{}\", nofollow::random_tag())); }",
+        "fn f() { s.id(); child.id(); }",
     ] {
         assert!(rules(src).is_empty(), "{src}: {:?}", rules(src));
     }
