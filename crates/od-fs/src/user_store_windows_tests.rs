@@ -59,7 +59,7 @@ fn names_in(dir: &Path) -> Vec<String> {
 fn own_is_whole(own: &Path, at: &str) {
     assert_eq!(std::fs::read(own.join("SKILL.md")).unwrap(), b"own", "{at}");
     assert_eq!(
-        std::fs::read(own.join("assets/a.css")).unwrap(),
+        std::fs::read(own.join("assets").join("a.css")).unwrap(),
         b"css",
         "{at}"
     );
@@ -72,7 +72,7 @@ fn an_entry_linked_to_a_folder_goes_as_a_link_alone() {
         let own = tmp.path().join("own");
         std::fs::create_dir_all(own.join("assets")).unwrap();
         std::fs::write(own.join("SKILL.md"), "own").unwrap();
-        std::fs::write(own.join("assets/a.css"), "css").unwrap();
+        std::fs::write(own.join("assets").join("a.css"), "css").unwrap();
         let root = UserRoot::open(&tmp.path().join("root"), 1024);
         std::fs::create_dir_all(root.path().join(".previous")).unwrap();
         if !link_folder(kind, &own, &root.path().join("tea")) {
@@ -90,12 +90,16 @@ fn an_entry_linked_to_a_folder_goes_as_a_link_alone() {
         own_is_whole(&own, &at);
 
         // Guard::remove_hidden (`remove_gone`, as `recover` and a put's clean-up).
-        assert!(link_folder(kind, &own, &root.path().join(".previous/tea")));
+        assert!(link_folder(
+            kind,
+            &own,
+            &root.path().join(".previous").join("tea")
+        ));
         root.lock()
             .remove_hidden(Path::new(".previous/tea"))
             .unwrap();
         assert!(
-            std::fs::symlink_metadata(root.path().join(".previous/tea")).is_err(),
+            std::fs::symlink_metadata(root.path().join(".previous").join("tea")).is_err(),
             "{at}: the kept link is left"
         );
         own_is_whole(&own, &at);
