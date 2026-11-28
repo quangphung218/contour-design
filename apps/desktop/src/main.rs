@@ -925,10 +925,49 @@ async fn save_file(
     let Some(path) = rx.await.ok().flatten().and_then(|p| p.into_path().ok()) else {
         return Ok(None);
     };
-    tokio::fs::write(&path, bytes)
+    let bytes = bytes.clone();
+    let at = path.clone();
+    tokio::task::spawn_blocking(move || write_replacing_whole(&at, &bytes))
         .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// Writes `bytes` to a new file next to `path`, then renames it over
+/// `path`: a failed write (full disk, removed drive) leaves the old file
+/// whole, and a link at `path` is replaced, not written through (QA-126).
+fn write_replacing_whole(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let dir = path
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut n = 0u32;
+    let (tmp, mut file) = loop {
+        let tmp = dir.join(format!(".{name}.{}.{n}.part", std::process::id()));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+        {
+            Ok(f) => break (tmp, f),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && n < 100 => n += 1,
+            Err(e) => return Err(e),
+        }
+    };
+    let done = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| std::fs::rename(&tmp, path));
+    if done.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    done
 }
 
 /// `encodeURIComponent`'s inverse; a bad escape stays as it is.
@@ -1869,6 +1908,39 @@ fn remove_webview_temp(tmp: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn save_replaces_the_old_file_whole_and_leaves_no_part_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deck.pdf");
+        std::fs::write(&path, "old old old").unwrap();
+        write_replacing_whole(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["deck.pdf"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_onto_a_link_replaces_the_link_not_the_file_it_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = dir.path().join("other.txt");
+        std::fs::write(&other, "keep").unwrap();
+        let path = dir.path().join("deck.pdf");
+        std::os::unix::fs::symlink(&other, &path).unwrap();
+        write_replacing_whole(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&other).unwrap(), b"keep");
+        assert!(
+            !std::fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+    }
     use shell_state::{StopReason, stopped_preview_url};
 
     /// Invokes `cmd` from a page at `page` in the app built with this
