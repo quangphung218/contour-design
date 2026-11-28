@@ -1177,9 +1177,15 @@ fn Gallery(
         kept.set(suggested.get_untracked());
         pick.run(s);
     });
+    let search_ref = NodeRef::<leptos::html::Input>::new();
+    // The button goes with the empty grid it sits in: focus moves to the
+    // search box, not to the page.
     let clear = move || {
         query.set(String::new());
         purpose.set(None);
+        if let Some(el) = search_ref.get_untracked() {
+            let _ = el.focus();
+        }
     };
     view! {
         <section class="home-section">
@@ -1211,6 +1217,7 @@ fn Gallery(
                             class="input small"
                             type="search"
                             data-testid="home-tpl-search"
+                            node_ref=search_ref
                             placeholder=t(T::SearchTemplates)
                             aria-label=t(T::SearchTemplates)
                             prop:value=move || query.get()
@@ -1276,7 +1283,7 @@ fn Gallery(
                     Some(list) if list.is_empty() && filtering() => view! {
                         <div class="empty" data-testid="template-no-match">
                             <p>{t(T::NoMatches)}</p>
-                            <button type="button" class="btn small" on:click=move |_| clear()>{t(T::ClearFilters)}</button>
+                            <button type="button" class="btn small" data-testid="template-clear-filters" on:click=move |_| clear()>{t(T::ClearFilters)}</button>
                         </div>
                     }
                     .into_any(),

@@ -779,6 +779,17 @@ impl StudioCtx {
 
     /// Sends a user turn, or queues it while a run is going.
     pub fn send(self, text: String, shell: Shell) {
+        // The user's own Send takes the attached comments now: picking is
+        // over until comment mode is turned on again. Queued (a run going),
+        // they wait and the mode stays; the queue sending on its own later
+        // never turns it off, so a comment being typed then stays open.
+        let goes_now = !text.trim().is_empty() && self.live_run.get_untracked().is_none();
+        let takes_comments = self
+            .comments
+            .with_untracked(|c| c.iter().any(|c| c.status == CommentStatus::Attached));
+        if goes_now && takes_comments && self.comment_mode.get_untracked() {
+            self.set_comment_mode(false);
+        }
         self.send_at(text, shell, js_sys::Date::now() as i64, false, None, None);
     }
 
@@ -894,11 +905,6 @@ impl StudioCtx {
                     .collect()
             })
         };
-        // The comments are on their way: picking is over until the user
-        // turns comment mode on again (an open draft is kept for then).
-        if !attached.is_empty() && self.comment_mode.get_untracked() {
-            self.set_comment_mode(false);
-        }
         let req = ChatRequest {
             agent_id,
             message: extras.message,

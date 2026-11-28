@@ -221,6 +221,11 @@ try {
   const rows = page.getByTestId('ds-row');
   await until(async () => (await rows.count()) > 100, 'preset list');
   results.presets = await rows.count();
+  // Clear search goes with the empty list: focus to the search box.
+  await page.getByTestId('ds-search').fill('zzzz-no-such-system');
+  await page.getByTestId('ds-clear-search').click();
+  await until(async () => (await rows.count()) > 100, 'search cleared');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'ds-search', 'focus after Clear search');
   await page.getByTestId('ds-search').fill('airbnb');
   await until(async () => (await rows.count()) === 1, 'search narrows the list');
   await rows.first().click();
@@ -1994,6 +1999,11 @@ try {
   // length (App feature tour: 1080×1920, 12 s), not Motion's defaults
   // (16:9, 10 s) nor the selects' first options (1:1, 3 s).
   await page.goto(BASE + '/templates');
+  // Clear filters goes with the empty grid: focus to the search box.
+  await page.getByTestId('tpl-search').fill('zzzz-no-such-template');
+  await page.getByTestId('tpl-clear-filters').click();
+  await until(async () => (await page.getByTestId('tpl-search').inputValue()) === '', 'template filters cleared');
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.testid), 'tpl-search', 'focus after Clear filters');
   await tpl.filter({ hasText: 'App feature tour' }).first().click();
   await page.getByTestId('tpl-use').click();
   await page.waitForURL((u) => u.pathname === '/');

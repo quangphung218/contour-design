@@ -191,6 +191,21 @@ try {
   await page.getByTestId('template-no-match').getByRole('button').click();
   assert.equal(await search.inputValue(), '');
   await until(async () => (await gridCards.count()) === 8, 'filters cleared');
+  // Clear filters goes with the empty grid: focus moves to the search box,
+  // not to the page, by mouse and by keyboard, wide and on a phone.
+  const focusedTestid = () => page.evaluate(() => document.activeElement?.dataset?.testid || document.activeElement?.tagName);
+  assert.equal(await focusedTestid(), 'home-tpl-search', 'focus after Clear filters (click)');
+  await search.fill('zzzz-no-such-template');
+  await page.getByTestId('template-no-match').getByRole('button').focus();
+  await page.keyboard.press('Enter');
+  await until(async () => (await gridCards.count()) === 8, 'filters cleared by keyboard');
+  assert.equal(await focusedTestid(), 'home-tpl-search', 'focus after Clear filters (Enter)');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await search.fill('zzzz-no-such-template');
+  await page.getByTestId('template-no-match').getByRole('button').click();
+  await until(async () => (await search.inputValue()) === '', 'filters cleared at 390');
+  assert.equal(await focusedTestid(), 'home-tpl-search', 'focus after Clear filters at 390 px');
+  await page.setViewportSize({ width: 1360, height: 860 });
   // Purpose chips: Pitch shows the pitch decks, a second click clears it.
   const pitch = page.locator('[data-testid="purpose-chip"][data-purpose="pitch"]');
   assert.ok((await page.getByTestId('purpose-chip').count()) >= 6, 'All + purposes');
@@ -1122,6 +1137,45 @@ try {
   assert.equal(await page.getByTestId('load-retry').count(), 0, 'Retry for a project that does not exist');
   await page.getByTestId('load-error').locator('a[href="/projects"]').waitFor();
   results.loadError = 'ok';
+
+  // 16d. The queue sending a message on its own takes the attached comments
+  // but leaves comment mode on, so a comment being typed then stays open;
+  // only the user's own Send ends picking (step 9).
+  const qRes = await fetch(`${BASE}/api/projects`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Queue comments' }) });
+  const qProject = (await qRes.json()).project;
+  await page.goto(`${BASE}/projects/${qProject.id}`);
+  const qComposer = page.getByTestId('composer');
+  const qAssistant = page.getByTestId('assistant-msg');
+  const qFrame = page.frameLocator('[data-testid="preview"]');
+  await qComposer.fill('first page');
+  await qComposer.press('Enter');
+  await qFrame.locator('#title').waitFor();
+  await until(async () => (await qAssistant.first().getAttribute('data-state')) === 'succeeded', 'queue project turn 1');
+  await qComposer.fill('slow queue run');
+  await qComposer.press('Enter');
+  await page.getByTestId('stop').waitFor();
+  await page.getByTestId('comment-mode').click();
+  await page.waitForTimeout(150);
+  await qFrame.locator('#title').click();
+  await page.getByTestId('comment-note').fill('Queue me');
+  await page.getByTestId('comment-add').click();
+  await page.getByTestId('comment-chip').waitFor();
+  await qComposer.fill('after the long run');
+  await qComposer.press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'message queued behind the slow run');
+  assert.equal(await page.getByTestId('comment-mode').getAttribute('aria-pressed'), 'true', 'queued: comment mode stays');
+  // A second comment typed while the queue waits.
+  await qFrame.locator('p').first().click();
+  await page.getByTestId('comment-note').fill('still typing');
+  const sentBefore = runBodies.length;
+  await until(async () => runBodies.length > sentBefore, 'the queue sends on its own', 30_000);
+  const queued = runBodies[runBodies.length - 1];
+  assert.equal(queued.message, 'after the long run');
+  assert.equal(queued.commentAttachments.length, 1);
+  assert.equal(await page.getByTestId('comment-mode').getAttribute('aria-pressed'), 'true', 'the queue does not end comment mode');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'still typing', 'the comment being typed stays open');
+  await until(async () => (await qAssistant.last().getAttribute('data-state')) === 'succeeded', 'queued turn end', 60_000);
+  results.queueKeepsCommentMode = 'ok';
 
   // 17. Nothing left loopback during the whole scenario.
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);
