@@ -142,7 +142,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     A form's Save of `SKILL.md`, `DESIGN.md` or `MEMORY.md` goes through `Guard::write` (`../od-fs/src/user_store.rs`:
     the root and the entry under it (a skill's or design system's folder, which may be the user's own link: the index
     lists it) are followed, every folder below the entry and the file itself `O_NOFOLLOW`, temp file `O_EXCL` of a random
-    name, fsync, `renameat`; one test per question of the six in `user_store_tests.rs`). The skill form's `GET` tags
+    name, fsync, `renameat`; a new file (`Expect::Absent`: a first Save, a new asset) is `linkat`ed in instead, never over
+    one an agent made after the read, `::a_new_file_never_replaces_one_made_after_the_read`; one test per question of
+    the six in `user_store_tests.rs`). The skill form's `GET` tags
     `SKILL.md` through the same `Guard::read` (`user_content::skill_tag`), so GET and PUT see one file
     (`tests/linked_entries.rs`). Every other write of one (an accepted revision, its undo) goes through `Guard::write` too,
     every temp file renamed into place is made `create_new`, and a folder under the user root is named by an id only after the

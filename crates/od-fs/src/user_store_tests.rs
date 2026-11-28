@@ -313,6 +313,59 @@ fn absent_is_refused_over_a_file_there() {
     assert!(matches!(res, Err(WriteError::Stale)));
 }
 
+/// An agent makes the file while a write of a new one runs (the agent
+/// takes no lock of ours): one of the two is kept whole, never the agent's
+/// lost under ours with both told it went (an asset uploaded under the
+/// name an agent just wrote).
+#[test]
+fn a_new_file_never_replaces_one_made_after_the_read() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let (mut lost, mut raced) = (0, 0);
+    for i in 0..400 {
+        let name = format!("tea/a{i}.png");
+        let path = root.path().join(&name);
+        let stop = AtomicBool::new(false);
+        let (agent, ours) = std::thread::scope(|s| {
+            let agent = s.spawn(|| {
+                while !stop.load(Ordering::Relaxed) {
+                    let made = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&path);
+                    if let Ok(mut f) = made {
+                        std::io::Write::write_all(&mut f, b"agent").unwrap();
+                        return true;
+                    }
+                }
+                false
+            });
+            let ours = root.lock().write(Path::new(&name), b"ours", Expect::Absent);
+            stop.store(true, Ordering::Relaxed);
+            (agent.join().unwrap(), ours)
+        });
+        match (agent, ours) {
+            (true, Ok(_)) => lost += 1,
+            (true, Err(WriteError::Stale)) => {
+                raced += 1;
+                assert_eq!(std::fs::read(&path).unwrap(), b"agent");
+            }
+            (false, Ok(_)) => assert_eq!(std::fs::read(&path).unwrap(), b"ours"),
+            (_, Err(e)) => panic!("write {i}: {e:?}"),
+        }
+    }
+    assert_eq!(
+        lost, 0,
+        "an agent's file replaced, both told it went ({raced} kept)"
+    );
+    assert!(
+        names_in(&root.path().join("tea"))
+            .iter()
+            .all(|n| !n.ends_with(".tmp"))
+    );
+}
+
 // Question 5: a name alike in another case.
 
 #[test]

@@ -641,6 +641,38 @@ pub fn replace_file(
     }
 }
 
+/// Makes `path` the new file `bytes`, never over anything there: written
+/// through a new file beside it, synced, hard-linked at `path` (fails,
+/// `AlreadyExists`, on anything there), then the new file's name removed.
+///
+/// # Errors
+/// The open's, write's or link's; the new file is removed.
+#[cfg(not(unix))]
+pub(crate) fn create_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let name = path
+        .file_name()
+        .map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
+    let mut tries = 0;
+    let (tmp, mut file) = loop {
+        let tmp = path.with_file_name(format!(".{name}.{}.tmp", random_tag()));
+        match new_file(&tmp) {
+            Ok(file) => break (tmp, file),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && tries < 3 => tries += 1,
+            Err(e) => return Err(e),
+        }
+    };
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| {
+            drop(file);
+            std::fs::hard_link(&tmp, path)
+        });
+    let _ = std::fs::remove_file(&tmp);
+    written
+}
+
 /// [`replace_file`] through the new file `tmp`.
 fn replace_file_through(
     path: &Path,
