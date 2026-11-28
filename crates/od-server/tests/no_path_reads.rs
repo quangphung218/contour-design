@@ -44,12 +44,6 @@ const HELPER: &str = "../od-fs/src/nofollow.rs";
 /// Reads that stay: file (relative to this crate), rule, how many, why.
 const ALLOWED: &[(&str, &str, usize, &str)] = &[
     (
-        "src/routes/library/design_systems.rs",
-        "OpenOptions",
-        2,
-        "writes only (`create_new` of the sent names' temp file and of an uploaded asset), never a read",
-    ),
-    (
         "src/routes/library/templates.rs",
         "read_file",
         1,

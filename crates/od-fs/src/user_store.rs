@@ -199,20 +199,33 @@ impl Guard<'_> {
     /// Writes `bytes` as the file at `rel` when what is there is what
     /// `expect` says; the folders on its way must be there. A file there
     /// keeps its permission bits; a read-only one is refused
-    /// (`PermissionDenied`), as a write in place would be.
+    /// (`PermissionDenied`), as a write in place would be. With
+    /// [`Expect::Absent`] the file is made new and never replaces one: one
+    /// an agent made after the read (no lock of ours holds it off) is
+    /// kept, [`WriteError::Stale`].
     ///
     /// # Errors
     /// [`WriteError::Stale`] with nothing written; [`WriteError::Io`] (`rel`
     /// not plain, a folder on its way a link or missing, the write's).
     pub fn write(&self, rel: &Path, bytes: &[u8], expect: Expect) -> Result<Tag, WriteError> {
-        let fits = match (&expect, self.read(rel)) {
-            (Expect::Any, _) | (Expect::Absent, Found::Missing) => true,
-            (Expect::Tag(t), Found::File(read)) => *t == read.tag,
-            (Expect::Tag(t), Found::Unreadable(_)) => t.as_str() == Tag::UNREADABLE,
-            _ => false,
+        // `Any` reads nothing: an asset of 20 MB is past a root's limit.
+        let fits = match &expect {
+            Expect::Any => true,
+            expect => match (expect, self.read(rel)) {
+                (Expect::Absent, Found::Missing) => true,
+                (Expect::Tag(t), Found::File(read)) => *t == read.tag,
+                (Expect::Tag(t), Found::Unreadable(_)) => t.as_str() == Tag::UNREADABLE,
+                _ => false,
+            },
         };
         if !fits {
             return Err(WriteError::Stale);
+        }
+        if expect == Expect::Absent {
+            return match create_under(&self.root.path, rel, bytes) {
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(WriteError::Stale),
+                done => done.map(|()| Tag::of(bytes)).map_err(Into::into),
+            };
         }
         replace_under(&self.root.path, rel, bytes)?;
         Ok(Tag::of(bytes))
@@ -377,19 +390,188 @@ impl Guard<'_> {
         remove_gone(&self.root.path.join(rel))
     }
 
-    /// Makes the new folder `name` (one plain name) right in the root,
-    /// through the root's descriptor (unix `mkdirat`): something there
+    /// Makes the new folder `rel` (a plain relative path: an entry, or a
+    /// folder below one) through its parent's descriptor (unix `mkdirat`;
+    /// no folder below the entry that is a link followed): something there
     /// already, a link too, is `AlreadyExists`, never followed or taken.
     ///
     /// # Errors
-    /// `name` not one plain name, `AlreadyExists`, the root missing
-    /// (`NotFound`), the make's.
-    pub fn make_dir(&self, name: &Path) -> std::io::Result<()> {
-        let (dirs, last) = split(name)?;
-        if !dirs.is_empty() {
-            return Err(bad_path(name));
+    /// `rel` not plain, `AlreadyExists`, the root or a folder on the way
+    /// missing (`NotFound`) or a link, the make's.
+    pub fn make_dir(&self, rel: &Path) -> std::io::Result<()> {
+        let (dirs, last) = split(rel)?;
+        make_dir_at(&self.root.path, &dirs, last)
+    }
+
+    /// Removes the file `rel` below an entry (`<entry>/…/<file>`): a link
+    /// there goes as a link, never what it points at; no folder below the
+    /// entry that is a link is followed; a folder is refused.
+    ///
+    /// # Errors
+    /// `rel` not plain or right in the root, nothing there (`NotFound`), a
+    /// folder on the way a link, the remove's.
+    pub fn remove_file(&self, rel: &Path) -> std::io::Result<()> {
+        let (dirs, last) = split(rel)?;
+        if dirs.is_empty() {
+            return Err(bad_path(rel));
         }
-        make_dir_at(&self.root.path, last)
+        remove_file_at(&self.root.path, &dirs, last)
+    }
+
+    /// Puts a new entry in the root, never over one: the first of `names`
+    /// (each one plain visible name) with nothing at it (a link too) and no
+    /// entry named alike in another case (`Ad-Creative` for `ad-creative`:
+    /// one folder on macOS and Windows, two skills on Linux). `tree` makes
+    /// what goes in it, given the name (a manifest names its folder); it
+    /// is written into a new hidden `.putting-<tag>` through that folder's
+    /// descriptor ([`nofollow::write_tree`]: no link planted in it written
+    /// through), `last` last, then renamed to the name. The name is chosen
+    /// and taken under the root's lock: two puts of this process never
+    /// pick the same one. Returns the name.
+    ///
+    /// An app stopped on the way leaves only the hidden `.putting-<tag>`
+    /// (no journal: [`UserRoot::recover`] removes it), never a part of the
+    /// tree at the name. A write that fails removes it.
+    ///
+    /// # Errors
+    /// `tree`'s; a name not plain or hidden; none of `names` free
+    /// (`AlreadyExists`); the root not made; a write's or the rename's
+    /// (another process took the name meanwhile: `AlreadyExists` too).
+    pub fn put_new<E: From<std::io::Error>>(
+        &self,
+        names: impl IntoIterator<Item = String>,
+        tree: impl FnOnce(&str) -> Result<nofollow::Tree, E>,
+        last: Option<&Path>,
+    ) -> Result<String, E> {
+        self.put_new_steps(names, tree, last, |_| Ok(()))
+    }
+
+    /// [`Self::put_new`], `step` called before the rename
+    /// ([`PutStep::Place`]): an error fails it, a panic stops there.
+    #[doc(hidden)]
+    pub fn put_new_steps<E: From<std::io::Error>>(
+        &self,
+        names: impl IntoIterator<Item = String>,
+        tree: impl FnOnce(&str) -> Result<nofollow::Tree, E>,
+        last: Option<&Path>,
+        mut step: impl FnMut(PutStep) -> std::io::Result<()>,
+    ) -> Result<String, E> {
+        self.root.make_root()?;
+        let name = self.free_name(names)?;
+        let tree = tree(&name)?;
+        let staged = PathBuf::from(format!("{PUTTING}{}", nofollow::random_tag()));
+        let at = self.root.path.join(&staged);
+        let made = nofollow::NewDir::create(&at)?;
+        let placed = nofollow::write_tree(&tree, &made, last)
+            .and_then(|()| step(PutStep::Place))
+            .and_then(|()| {
+                // Not ours to take: something made there since the pick
+                // (another process; a rename would replace an empty folder).
+                if std::fs::symlink_metadata(self.root.path.join(&name)).is_ok() {
+                    return Err(std::io::ErrorKind::AlreadyExists.into());
+                }
+                move_at(&self.root.path, &staged, Path::new(&name))
+            });
+        if let Err(e) = placed {
+            let _ = remove_staged(&at);
+            return Err(e.into());
+        }
+        Ok(name)
+    }
+
+    /// The first of `names` free in the root, as [`Self::put_new`] takes it.
+    fn free_name(&self, names: impl IntoIterator<Item = String>) -> std::io::Result<String> {
+        let folded = |n: &str| n.to_lowercase();
+        let there: std::collections::HashSet<String> = match std::fs::read_dir(&self.root.path) {
+            Ok(list) => list
+                .flatten()
+                .map(|e| folded(&e.file_name().to_string_lossy()))
+                .collect(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Default::default(),
+            Err(e) => return Err(e),
+        };
+        for name in names {
+            let (dirs, last) = split(Path::new(&name))?;
+            if !dirs.is_empty() || last.as_encoded_bytes().starts_with(b".") {
+                return Err(bad_path(Path::new(&name)));
+            }
+            // Every name there, a link too: listed.
+            if !there.contains(&folded(&name)) {
+                return Ok(name);
+            }
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "no free name",
+        ))
+    }
+
+    /// Makes the new entry `name` (one plain visible name) right where it
+    /// is listed, with no hidden folder beside it (a root another program
+    /// lists, `HOME/.claude/skills`: it would load one as an entry): the
+    /// folder made new (`create_dir`, something there `AlreadyExists`), then
+    /// `mark` (an empty file), `tree` through its descriptor, `last` last,
+    /// and `mark` removed. Cut short, the folder holds `mark` and no `last`
+    /// ([`Self::remove_unfinished`] takes it); a write that fails removes
+    /// the folder.
+    ///
+    /// # Errors
+    /// `name` not one plain visible name, `AlreadyExists`, a write's.
+    pub fn make_tree(
+        &self,
+        name: &Path,
+        tree: &nofollow::Tree,
+        last: Option<&Path>,
+        mark: &Path,
+    ) -> std::io::Result<()> {
+        self.make_tree_steps(name, tree, last, mark, |_| Ok(()))
+    }
+
+    /// [`Self::make_tree`], `step` called once the mark is in, before the
+    /// tree ([`PutStep::Place`]): a panic stops there as an app quitting.
+    #[doc(hidden)]
+    pub fn make_tree_steps(
+        &self,
+        name: &Path,
+        tree: &nofollow::Tree,
+        last: Option<&Path>,
+        mark: &Path,
+        mut step: impl FnMut(PutStep) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        entry_name(name)?;
+        self.root.make_root()?;
+        let at = self.root.path.join(name);
+        let made = nofollow::NewDir::create(&at)?;
+        let done = made
+            .new_file(mark)
+            .map(drop)
+            .and_then(|()| step(PutStep::Place))
+            .and_then(|()| nofollow::write_tree(tree, &made, last))
+            .and_then(|()| made.remove_file(mark));
+        if let Err(e) = done {
+            let _ = remove_staged(&at);
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    /// Removes the entry `name` when it is a [`Self::make_tree`] cut short:
+    /// a folder (not a link) holding `mark` and no `last`. Anything else
+    /// there is kept, `AlreadyExists`.
+    ///
+    /// # Errors
+    /// `name` not one plain visible name, `AlreadyExists`, the remove's.
+    pub fn remove_unfinished(&self, name: &Path, mark: &Path, last: &Path) -> std::io::Result<()> {
+        entry_name(name)?;
+        let at = self.root.path.join(name);
+        let is = |p: &Path| std::fs::symlink_metadata(at.join(p)).is_ok();
+        let unfinished = std::fs::symlink_metadata(&at).is_ok_and(|m| m.is_dir())
+            && std::fs::symlink_metadata(at.join(mark)).is_ok_and(|m| m.is_file())
+            && !is(last);
+        if !unfinished {
+            return Err(std::io::ErrorKind::AlreadyExists.into());
+        }
+        remove_staged(&at)
     }
 
     /// Swaps the entry `rel` and the copy kept at `kept` (as
@@ -647,26 +829,76 @@ fn folder_link_free(root: &Path, dirs: &[&std::ffi::OsStr]) -> std::io::Result<(
 #[cfg(not(unix))]
 fn folder_link_free(root: &Path, dirs: &[&std::ffi::OsStr]) -> std::io::Result<()> {
     let mut at = root.to_path_buf();
-    for dir in dirs {
+    for (depth, dir) in dirs.iter().enumerate() {
         at.push(dir);
-        if !std::fs::symlink_metadata(&at)?.is_dir() {
+        // The entry may be the user's own link (as on unix); nothing below.
+        let meta = if depth == 0 && !dir.as_encoded_bytes().starts_with(b".") {
+            std::fs::metadata(&at)?
+        } else {
+            std::fs::symlink_metadata(&at)?
+        };
+        if !meta.is_dir() {
             return Err(std::io::ErrorKind::NotADirectory.into());
         }
     }
     Ok(())
 }
 
-/// Makes folder `name` right in `root`, through the root's descriptor.
+/// Checks that `name` is one plain visible name (an entry).
+fn entry_name(name: &Path) -> std::io::Result<()> {
+    let (dirs, last) = split(name)?;
+    if !dirs.is_empty() || last.as_encoded_bytes().starts_with(b".") {
+        return Err(bad_path(name));
+    }
+    Ok(())
+}
+
+/// Makes folder `name` in `dirs` under `root`, through its descriptor.
 #[cfg(unix)]
-fn make_dir_at(root: &Path, name: &std::ffi::OsStr) -> std::io::Result<()> {
-    let dir = at::folder(root, &[])?.ok_or(std::io::ErrorKind::NotFound)?;
+fn make_dir_at(
+    root: &Path,
+    dirs: &[&std::ffi::OsStr],
+    name: &std::ffi::OsStr,
+) -> std::io::Result<()> {
+    let dir = at::folder(root, dirs)?.ok_or(std::io::ErrorKind::NotFound)?;
     nix::sys::stat::mkdirat(&dir, name, nix::sys::stat::Mode::from_bits_truncate(0o777))
         .map_err(Into::into)
 }
 
 #[cfg(not(unix))]
-fn make_dir_at(root: &Path, name: &std::ffi::OsStr) -> std::io::Result<()> {
-    std::fs::create_dir(root.join(name))
+fn make_dir_at(
+    root: &Path,
+    dirs: &[&std::ffi::OsStr],
+    name: &std::ffi::OsStr,
+) -> std::io::Result<()> {
+    folder_link_free(root, dirs)?;
+    let mut at = root.to_path_buf();
+    at.extend(dirs);
+    std::fs::create_dir(at.join(name))
+}
+
+/// Removes file `name` in `dirs` under `root`, through its descriptor.
+#[cfg(unix)]
+fn remove_file_at(
+    root: &Path,
+    dirs: &[&std::ffi::OsStr],
+    name: &std::ffi::OsStr,
+) -> std::io::Result<()> {
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+    let dir = at::folder(root, dirs)?.ok_or(std::io::ErrorKind::NotFound)?;
+    unlinkat(&dir, name, UnlinkatFlags::NoRemoveDir).map_err(Into::into)
+}
+
+#[cfg(not(unix))]
+fn remove_file_at(
+    root: &Path,
+    dirs: &[&std::ffi::OsStr],
+    name: &std::ffi::OsStr,
+) -> std::io::Result<()> {
+    folder_link_free(root, dirs)?;
+    let mut at = root.to_path_buf();
+    at.extend(dirs);
+    std::fs::remove_file(at.join(name))
 }
 
 /// Renames `from` to `to` (paths under `root`), each through its folder's
@@ -940,6 +1172,21 @@ fn read_under(root: &Path, rel: &Path, limit: u64) -> Result<Option<ReadFile>, U
 /// name in the same folder, synced, renamed over it.
 #[cfg(unix)]
 fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    put_file_under(root, rel, bytes, false)
+}
+
+/// Makes `rel` under `root` the new file `bytes`, never over anything
+/// there: written through a new file of a random name, synced, then
+/// linked at `rel` (`linkat` fails, `AlreadyExists`, on anything there:
+/// a file, a link, a folder), then the new file's name removed.
+#[cfg(unix)]
+fn create_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    put_file_under(root, rel, bytes, true)
+}
+
+/// [`replace_under`], or [`create_under`] when `new_only`.
+#[cfg(unix)]
+fn put_file_under(root: &Path, rel: &Path, bytes: &[u8], new_only: bool) -> std::io::Result<()> {
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, renameat};
     use nix::sys::stat::{Mode, fstatat};
@@ -982,8 +1229,16 @@ fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
             file.write_all(bytes)?;
             file.sync_all()
         })
-        .and_then(|()| renameat(&dir, tmp.as_str(), &dir, name).map_err(Into::into));
-    if written.is_err() {
+        .and_then(|()| {
+            if new_only {
+                nix::unistd::linkat(&dir, tmp.as_str(), &dir, name, AtFlags::empty())
+            } else {
+                renameat(&dir, tmp.as_str(), &dir, name)
+            }
+            .map_err(Into::into)
+        });
+    // Linked, the new file's own name goes too.
+    if written.is_err() || new_only {
         let _ = unlinkat(&dir, tmp.as_str(), UnlinkatFlags::NoRemoveDir);
     }
     written
@@ -1005,6 +1260,26 @@ fn new_file_at(
 
 #[cfg(not(unix))]
 fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let path = file_path_under(root, rel)?;
+    let kept = match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.is_file() && m.permissions().readonly() => {
+            return Err(std::io::ErrorKind::PermissionDenied.into());
+        }
+        Ok(m) if m.is_file() => Some(m.permissions()),
+        _ => None,
+    };
+    nofollow::replace_file(&path, bytes, kept)
+}
+
+#[cfg(not(unix))]
+fn create_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    nofollow::create_file(&file_path_under(root, rel)?, bytes)
+}
+
+/// The path of `rel` under `root`, its folders checked (no link below the
+/// entry).
+#[cfg(not(unix))]
+fn file_path_under(root: &Path, rel: &Path) -> std::io::Result<PathBuf> {
     let (dirs, _) = split(rel)?;
     let mut at = root.to_path_buf();
     for (depth, dir) in dirs.iter().enumerate() {
@@ -1019,15 +1294,7 @@ fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
             return Err(std::io::ErrorKind::NotADirectory.into());
         }
     }
-    let path = root.join(rel);
-    let kept = match std::fs::symlink_metadata(&path) {
-        Ok(m) if m.is_file() && m.permissions().readonly() => {
-            return Err(std::io::ErrorKind::PermissionDenied.into());
-        }
-        Ok(m) if m.is_file() => Some(m.permissions()),
-        _ => None,
-    };
-    nofollow::replace_file(&path, bytes, kept)
+    Ok(root.join(rel))
 }
 
 #[cfg(test)]

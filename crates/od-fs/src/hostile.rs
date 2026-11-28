@@ -210,11 +210,14 @@ pub(crate) enum Call {
     Restore,
     MakeDir,
     RemoveHidden,
+    PutNew,
+    MakeTree,
+    RemoveFile,
     Recover,
 }
 
 impl Call {
-    pub(crate) const ALL: [Self; 11] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::Read,
         Self::ReadBelow,
         Self::Write,
@@ -225,6 +228,9 @@ impl Call {
         Self::Restore,
         Self::MakeDir,
         Self::RemoveHidden,
+        Self::PutNew,
+        Self::MakeTree,
+        Self::RemoveFile,
         Self::Recover,
     ];
 
@@ -268,6 +274,16 @@ impl Call {
             Self::Restore => Outcome::Done(g.restore(tea, Path::new(".previous/tea"))),
             Self::MakeDir => Outcome::Done(g.make_dir(tea)),
             Self::RemoveHidden => Outcome::Done(g.remove_hidden(Path::new(".previous/tea"))),
+            Self::PutNew => {
+                Outcome::Done(g.put_new(["tea".to_owned()], |_| Ok(tree), None).map(drop))
+            }
+            Self::MakeTree => Outcome::Done(g.make_tree(
+                tea,
+                &tree,
+                Some(Path::new("SKILL.md")),
+                Path::new(".mark"),
+            )),
+            Self::RemoveFile => Outcome::Done(g.remove_file(Path::new("tea/assets/a.css"))),
             Self::Recover => unreachable!(),
         }
     }
@@ -408,8 +424,20 @@ fn every_guard_call_holds_up_in_every_hazard() {
                         "{at}"
                     );
                 }
-                (Hazard::CaseTwin, Call::MakeDir, Outcome::Done(r)) => {
+                (Hazard::CaseTwin, Call::MakeDir | Call::MakeTree, Outcome::Done(r)) => {
                     assert_eq!(r.is_err(), h.folds_case(), "{at}: {r:?}");
+                }
+                // A new entry is never one there, nor one named alike.
+                (_, Call::PutNew | Call::MakeTree, Outcome::Done(r)) => {
+                    assert_eq!(
+                        r.as_ref().map_err(std::io::Error::kind),
+                        Err(std::io::ErrorKind::AlreadyExists),
+                        "{at}"
+                    );
+                }
+                // A file below the entry goes only where no link is on the way.
+                (Hazard::LinkBelowEntry, Call::RemoveFile, Outcome::Done(r)) => {
+                    assert!(r.is_err(), "{at}: removed through a link");
                 }
                 _ => {}
             }

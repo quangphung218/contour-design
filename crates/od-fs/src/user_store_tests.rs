@@ -313,6 +313,59 @@ fn absent_is_refused_over_a_file_there() {
     assert!(matches!(res, Err(WriteError::Stale)));
 }
 
+/// An agent makes the file while a write of a new one runs (the agent
+/// takes no lock of ours): one of the two is kept whole, never the agent's
+/// lost under ours with both told it went (an asset uploaded under the
+/// name an agent just wrote).
+#[test]
+fn a_new_file_never_replaces_one_made_after_the_read() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let (mut lost, mut raced) = (0, 0);
+    for i in 0..400 {
+        let name = format!("tea/a{i}.png");
+        let path = root.path().join(&name);
+        let stop = AtomicBool::new(false);
+        let (agent, ours) = std::thread::scope(|s| {
+            let agent = s.spawn(|| {
+                while !stop.load(Ordering::Relaxed) {
+                    let made = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&path);
+                    if let Ok(mut f) = made {
+                        std::io::Write::write_all(&mut f, b"agent").unwrap();
+                        return true;
+                    }
+                }
+                false
+            });
+            let ours = root.lock().write(Path::new(&name), b"ours", Expect::Absent);
+            stop.store(true, Ordering::Relaxed);
+            (agent.join().unwrap(), ours)
+        });
+        match (agent, ours) {
+            (true, Ok(_)) => lost += 1,
+            (true, Err(WriteError::Stale)) => {
+                raced += 1;
+                assert_eq!(std::fs::read(&path).unwrap(), b"agent");
+            }
+            (false, Ok(_)) => assert_eq!(std::fs::read(&path).unwrap(), b"ours"),
+            (_, Err(e)) => panic!("write {i}: {e:?}"),
+        }
+    }
+    assert_eq!(
+        lost, 0,
+        "an agent's file replaced, both told it went ({raced} kept)"
+    );
+    assert!(
+        names_in(&root.path().join("tea"))
+            .iter()
+            .all(|n| !n.ends_with(".tmp"))
+    );
+}
+
 // Question 5: a name alike in another case.
 
 #[test]
@@ -1121,8 +1174,9 @@ fn recover_moves_nothing_over_what_took_the_entrys_place() {
 // memory index take instead of `std::fs` (`tests/user_file_writes.rs`
 // rule `fs`).
 
-/// One plain name, made new: a path below it is refused, and a link (or
-/// anything) at the name is `AlreadyExists`, never followed.
+/// A name made new, an entry or a folder below one: a link (or anything)
+/// at the name is `AlreadyExists`, never followed, and a link below the
+/// entry is never made in.
 #[test]
 fn make_dir_makes_one_new_name_and_follows_no_link() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1130,10 +1184,15 @@ fn make_dir_makes_one_new_name_and_follows_no_link() {
     let g = root.lock();
     let kind = |r: std::io::Result<()>| r.map_err(|e| e.kind());
     assert_eq!(
-        kind(g.make_dir(Path::new("tea/x"))),
+        kind(g.make_dir(Path::new("../x"))),
         Err(std::io::ErrorKind::InvalidInput)
     );
-    assert!(!root.path().join("tea/x").exists());
+    g.make_dir(Path::new("tea/x")).unwrap();
+    assert!(root.path().join("tea/x").is_dir());
+    std::fs::create_dir(tmp.path().join("away")).unwrap();
+    symlink(tmp.path().join("away"), root.path().join("tea/linked")).unwrap();
+    assert!(g.make_dir(Path::new("tea/linked/y")).is_err());
+    assert_eq!(names_in(&tmp.path().join("away")), Vec::<String>::new());
     std::fs::create_dir(tmp.path().join("outside")).unwrap();
     symlink(tmp.path().join("outside"), root.path().join("linked")).unwrap();
     assert_eq!(
@@ -1206,4 +1265,332 @@ fn put_copy_makes_the_root_and_leaves_nothing_when_a_write_fails() {
         std::fs::read(root.path().join("tea/SKILL.md")).unwrap(),
         b"new"
     );
+}
+
+// put_new, make_tree, remove_unfinished, remove_file: a new entry never
+// over one (Copy design system, a generated one, an override's first
+// copy; Copy to Claude Code), a file below an entry removed.
+
+fn small_tree(name: &str) -> crate::nofollow::Tree {
+    let file = |b: &[u8]| ReadFile {
+        bytes: b.to_vec(),
+        mode: 0o644,
+    };
+    crate::nofollow::Tree {
+        dirs: vec![PathBuf::from("assets")],
+        files: vec![
+            (PathBuf::from("assets/a.css"), file(b"css")),
+            (PathBuf::from("manifest.json"), file(name.as_bytes())),
+        ],
+    }
+}
+
+fn names(base: &str) -> impl Iterator<Item = String> + '_ {
+    (1..5).map(move |n| {
+        if n == 1 {
+            base.to_owned()
+        } else {
+            format!("{base}-{n}")
+        }
+    })
+}
+
+/// The first free name, given to the tree; a link, a file or a folder
+/// named alike in another case takes a name; nothing hidden is left.
+#[test]
+fn put_new_takes_the_first_free_name_and_never_one_there() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    std::fs::create_dir(tmp.path().join("away")).unwrap();
+    symlink(tmp.path().join("away"), root.path().join("mint")).unwrap();
+    std::fs::write(root.path().join("mint-2"), "file").unwrap();
+    std::fs::create_dir(root.path().join("Mint-3")).unwrap();
+    let got = root
+        .lock()
+        .put_new(
+            names("mint"),
+            |n| Ok::<_, std::io::Error>(small_tree(n)),
+            None,
+        )
+        .unwrap();
+    assert_eq!(got, "mint-4");
+    assert_eq!(
+        std::fs::read(root.path().join("mint-4/manifest.json")).unwrap(),
+        b"mint-4"
+    );
+    assert_eq!(names_in(&tmp.path().join("away")), Vec::<String>::new());
+    assert_eq!(names_in(&root.path().join("Mint-3")), Vec::<String>::new());
+    assert_eq!(std::fs::read(root.path().join("mint-2")).unwrap(), b"file");
+    assert_eq!(hidden_left(&root), Vec::<String>::new());
+    let none = root.lock().put_new(
+        ["tea".to_owned()],
+        |n| Ok::<_, std::io::Error>(small_tree(n)),
+        None,
+    );
+    assert_eq!(
+        none.map_err(|e| e.kind()),
+        Err(std::io::ErrorKind::AlreadyExists)
+    );
+    for bad in ["a/b", ".hidden", ".."] {
+        let refused = root.lock().put_new(
+            [bad.to_owned()],
+            |n| Ok::<_, std::io::Error>(small_tree(n)),
+            None,
+        );
+        assert!(refused.is_err(), "{bad}");
+    }
+}
+
+/// Two puts of one name at once land in two folders, each whole.
+#[test]
+fn two_puts_of_one_name_at_once_take_two_names() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let start = std::sync::Barrier::new(2);
+    let got: Vec<String> = std::thread::scope(|s| {
+        let runs: Vec<_> = (0..2)
+            .map(|_| {
+                s.spawn(|| {
+                    let r = UserRoot::open(root.path(), LIMIT);
+                    start.wait();
+                    r.lock()
+                        .put_new(
+                            names("mint"),
+                            |n| {
+                                // Slow enough for the other to pick meanwhile.
+                                std::thread::sleep(Duration::from_millis(50));
+                                Ok::<_, std::io::Error>(small_tree(n))
+                            },
+                            None,
+                        )
+                        .unwrap()
+                })
+            })
+            .collect();
+        runs.into_iter().map(|r| r.join().unwrap()).collect()
+    });
+    let mut got = got;
+    got.sort();
+    assert_eq!(got, ["mint", "mint-2"]);
+    for n in &got {
+        assert_eq!(
+            std::fs::read(root.path().join(n).join("manifest.json")).unwrap(),
+            n.as_bytes()
+        );
+    }
+}
+
+/// Stopped before the rename: only the hidden staging is there, which
+/// recover removes; a step that fails leaves nothing.
+#[test]
+fn a_put_new_cut_short_is_nothing_at_the_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        root.lock().put_new_steps(
+            names("mint"),
+            |n| Ok::<_, std::io::Error>(small_tree(n)),
+            None,
+            |step| panic!("quit before {step:?}"),
+        )
+    }));
+    assert!(quit.is_err());
+    assert!(!root.path().join("mint").exists());
+    assert_eq!(hidden_left(&root).len(), 1, "{:?}", hidden_left(&root));
+    assert_eq!(root.recover().unwrap(), 1);
+    assert_eq!(names_in(root.path()), ["tea"]);
+    let failed = root.lock().put_new_steps(
+        names("mint"),
+        |n| Ok::<_, std::io::Error>(small_tree(n)),
+        None,
+        |_| Err(std::io::Error::other("full")),
+    );
+    assert!(failed.is_err());
+    assert_eq!(names_in(root.path()), ["tea"]);
+}
+
+/// A name taken after the pick (another process) is never replaced, even
+/// by an empty folder a rename would take.
+#[test]
+fn a_name_taken_after_the_pick_is_kept() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let at = root.path().join("mint");
+    let res = root.lock().put_new_steps(
+        names("mint"),
+        |n| Ok::<_, std::io::Error>(small_tree(n)),
+        None,
+        |_| std::fs::create_dir(&at),
+    );
+    assert_eq!(
+        res.map_err(|e| e.kind()),
+        Err(std::io::ErrorKind::AlreadyExists)
+    );
+    assert_eq!(names_in(&at), Vec::<String>::new());
+    assert_eq!(names_in(root.path()), ["mint", "tea"]);
+}
+
+/// Made at its name with nothing hidden beside it: the mark goes once
+/// `last` is in; a folder there is kept; a copy cut short (mark, no
+/// `last`) is removed by `remove_unfinished`, nothing else is.
+#[test]
+fn make_tree_writes_at_its_name_and_only_its_unfinished_copy_goes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = UserRoot::open(&tmp.path().join("skills"), LIMIT);
+    let g = root.lock();
+    let mark = Path::new(".mark");
+    let last = Path::new("manifest.json");
+    g.make_tree(Path::new("mint"), &small_tree("m"), Some(last), mark)
+        .unwrap();
+    assert_eq!(names_in(root.path()), ["mint"]);
+    assert_eq!(
+        names_in(&root.path().join("mint")),
+        ["assets", "manifest.json"]
+    );
+    let again = g.make_tree(Path::new("mint"), &small_tree("x"), Some(last), mark);
+    assert_eq!(
+        again.map_err(|e| e.kind()),
+        Err(std::io::ErrorKind::AlreadyExists)
+    );
+    assert_eq!(
+        std::fs::read(root.path().join("mint/manifest.json")).unwrap(),
+        b"m"
+    );
+    assert!(g.remove_unfinished(Path::new("mint"), mark, last).is_err());
+    assert!(root.path().join("mint/manifest.json").is_file());
+    // A mark beside `last` (a copy done, the mark left), or neither: kept.
+    std::fs::create_dir_all(root.path().join("done")).unwrap();
+    std::fs::write(root.path().join("done/.mark"), "").unwrap();
+    std::fs::write(root.path().join("done/manifest.json"), "d").unwrap();
+    assert!(g.remove_unfinished(Path::new("done"), mark, last).is_err());
+    std::fs::create_dir_all(root.path().join("theirs")).unwrap();
+    assert!(
+        g.remove_unfinished(Path::new("theirs"), mark, last)
+            .is_err()
+    );
+    assert!(root.path().join("done/manifest.json").is_file());
+    assert!(root.path().join("theirs").is_dir());
+    std::fs::create_dir_all(root.path().join("cut/assets")).unwrap();
+    std::fs::write(root.path().join("cut/.mark"), "").unwrap();
+    g.remove_unfinished(Path::new("cut"), mark, last).unwrap();
+    assert!(!root.path().join("cut").exists());
+    // A link at the name is no copy of ours, whatever it points at.
+    std::fs::create_dir_all(tmp.path().join("away")).unwrap();
+    std::fs::write(tmp.path().join("away/.mark"), "").unwrap();
+    symlink(tmp.path().join("away"), root.path().join("linked")).unwrap();
+    assert!(
+        g.remove_unfinished(Path::new("linked"), mark, last)
+            .is_err()
+    );
+    assert!(tmp.path().join("away/.mark").is_file());
+    // A write that fails removes the folder made.
+    let broken = crate::nofollow::Tree {
+        dirs: vec![],
+        files: vec![(
+            PathBuf::from("missing/x"),
+            ReadFile {
+                bytes: b"x".to_vec(),
+                mode: 0o644,
+            },
+        )],
+    };
+    assert!(g.make_tree(Path::new("half"), &broken, None, mark).is_err());
+    assert!(!root.path().join("half").exists());
+    // One plain visible name: nothing hidden beside it, nothing elsewhere.
+    for bad in [".hid", "a/b", "../out"] {
+        assert!(
+            g.make_tree(Path::new(bad), &small_tree("m"), Some(last), mark)
+                .is_err(),
+            "{bad}"
+        );
+        assert!(
+            g.remove_unfinished(Path::new(bad), mark, last).is_err(),
+            "{bad}"
+        );
+    }
+    assert_eq!(names_in(root.path()), ["done", "linked", "mint", "theirs"]);
+    assert!(!tmp.path().join("out").exists());
+    // Outside the root, a copy cut short of ours is never removed.
+    std::fs::create_dir_all(tmp.path().join("out")).unwrap();
+    std::fs::write(tmp.path().join("out/.mark"), "").unwrap();
+    assert!(
+        g.remove_unfinished(Path::new("../out"), mark, last)
+            .is_err()
+    );
+    assert!(tmp.path().join("out/.mark").is_file());
+}
+
+/// Stopped once the mark is in: the folder holds the mark and no `last`,
+/// the copy cut short `remove_unfinished` takes.
+#[test]
+fn a_make_tree_cut_short_is_marked_unfinished() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = UserRoot::open(&tmp.path().join("skills"), LIMIT);
+    let g = root.lock();
+    let (mark, last) = (Path::new(".mark"), Path::new("manifest.json"));
+    let quit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        g.make_tree_steps(
+            Path::new("mint"),
+            &small_tree("m"),
+            Some(last),
+            mark,
+            |step| panic!("quit before {step:?}"),
+        )
+    }));
+    assert!(quit.is_err());
+    assert_eq!(names_in(&root.path().join("mint")), [".mark"]);
+    g.remove_unfinished(Path::new("mint"), mark, last).unwrap();
+    g.make_tree(Path::new("mint"), &small_tree("m"), Some(last), mark)
+        .unwrap();
+    assert_eq!(
+        names_in(&root.path().join("mint")),
+        ["assets", "manifest.json"]
+    );
+}
+
+/// A file below an entry goes; a link there goes as a link; a folder, a
+/// name right in the root and a link below the entry are refused.
+#[test]
+fn remove_file_takes_a_file_below_an_entry_and_follows_no_link() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    std::fs::create_dir_all(root.path().join("tea/assets")).unwrap();
+    std::fs::write(root.path().join("tea/assets/a.png"), "png").unwrap();
+    std::fs::create_dir(tmp.path().join("away")).unwrap();
+    std::fs::write(tmp.path().join("away/a.png"), "kept").unwrap();
+    symlink(tmp.path().join("away/a.png"), root.path().join("tea/l.png")).unwrap();
+    symlink(tmp.path().join("away"), root.path().join("tea/linked")).unwrap();
+    let g = root.lock();
+    g.remove_file(Path::new("tea/assets/a.png")).unwrap();
+    assert!(!root.path().join("tea/assets/a.png").exists());
+    g.remove_file(Path::new("tea/l.png")).unwrap();
+    assert!(tmp.path().join("away/a.png").is_file());
+    assert!(g.remove_file(Path::new("tea/linked/a.png")).is_err());
+    assert!(tmp.path().join("away/a.png").is_file());
+    assert!(g.remove_file(Path::new("tea/assets")).is_err());
+    assert!(root.path().join("tea/assets").is_dir());
+    // Right in the root is an entry's place: `remove` (journaled) takes it.
+    std::fs::write(root.path().join("loose.md"), "entry").unwrap();
+    assert!(g.remove_file(Path::new("loose.md")).is_err());
+    assert!(root.path().join("loose.md").is_file());
+    assert_eq!(
+        g.remove_file(Path::new("tea/none.png"))
+            .map_err(|e| e.kind()),
+        Err(std::io::ErrorKind::NotFound)
+    );
+}
+
+/// `Any` reads nothing first: a file past the root's limit is written over.
+#[test]
+fn a_write_over_anything_reads_no_file_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = root(&tmp);
+    let big = vec![b'x'; usize::try_from(LIMIT).unwrap() * 4];
+    root.lock()
+        .write(Path::new("tea/big.png"), &big, Expect::Any)
+        .unwrap();
+    root.lock()
+        .write(Path::new("tea/big.png"), &big, Expect::Any)
+        .unwrap();
+    assert_eq!(std::fs::read(root.path().join("tea/big.png")).unwrap(), big);
 }

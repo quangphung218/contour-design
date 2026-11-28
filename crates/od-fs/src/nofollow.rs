@@ -355,14 +355,12 @@ fn walk_path(
 /// is `AlreadyExists`, never opened. Elsewhere (Windows) the folders on the
 /// way are checked for reparse points and files are made `create_new`.
 ///
-/// Public for what is not under a user root yet: Copy design system and an
-/// override's first copy (`od_content::user_content::copy_dir`), a
-/// generated design system, Copy to Claude Code (PR 6 moves them to
-/// [`crate::user_store`]). Under a user root, write through
-/// [`crate::user_store::Guard::put_copy`]; `od-server/tests/user_file_writes.rs`
-/// (rule `fs`) refuses a call of it there outside its `KEPT`.
+/// Crate-only: every folder filled from a tree goes through
+/// [`crate::user_store::Guard`] (`put_copy`, `put_new`, `make_tree`).
 #[derive(Debug)]
-pub struct NewDir {
+pub(crate) struct NewDir {
+    // Read on Windows (paths, no descriptor) and by tests.
+    #[cfg_attr(all(unix, not(test)), allow(dead_code))]
     path: PathBuf,
     #[cfg(unix)]
     fd: std::os::fd::OwnedFd,
@@ -410,7 +408,8 @@ impl NewDir {
         .map_err(std::io::Error::from)
     }
 
-    /// The path it was made at (for messages and the moves after).
+    /// The path it was made at (tests plant links in it by path).
+    #[cfg(all(unix, test))]
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
@@ -584,9 +583,8 @@ fn plain(rel: &Path) -> std::io::Result<(Vec<&OsStr>, &OsStr)> {
 /// # Errors
 /// The first write that fails.
 ///
-/// Public for the callers [`NewDir`] names; under a user root
-/// [`crate::user_store::Guard::put_copy`] calls it.
-pub fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Result<()> {
+/// Crate-only, as [`NewDir`].
+pub(crate) fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Result<()> {
     use std::io::Write;
     for d in &tree.dirs {
         to.create_dir(d)?;
@@ -622,9 +620,8 @@ pub fn write_tree(tree: &Tree, to: &NewDir, last: Option<&Path>) -> std::io::Res
 /// The open's, write's or rename's; the new file is removed.
 ///
 /// Public for files outside a user root (`app-config.json`, a generated UI
-/// file in a project: `od-server` `routes/ui.rs`, `routes/genui.rs`) and
-/// `user_content::write_replacing` (design system files, PR 6). Under a
-/// user root, write through [`crate::user_store::Guard::write`] (rule `fs`).
+/// file in a project: `od-server` `routes/ui.rs`, `routes/genui.rs`). Under
+/// a user root, write through [`crate::user_store::Guard::write`] (rule `fs`).
 pub fn replace_file(
     path: &Path,
     bytes: &[u8],
@@ -642,6 +639,38 @@ pub fn replace_file(
             done => return done,
         }
     }
+}
+
+/// Makes `path` the new file `bytes`, never over anything there: written
+/// through a new file beside it, synced, hard-linked at `path` (fails,
+/// `AlreadyExists`, on anything there), then the new file's name removed.
+///
+/// # Errors
+/// The open's, write's or link's; the new file is removed.
+#[cfg(not(unix))]
+pub(crate) fn create_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let name = path
+        .file_name()
+        .map_or_else(Default::default, |n| n.to_string_lossy().into_owned());
+    let mut tries = 0;
+    let (tmp, mut file) = loop {
+        let tmp = path.with_file_name(format!(".{name}.{}.tmp", random_tag()));
+        match new_file(&tmp) {
+            Ok(file) => break (tmp, file),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && tries < 3 => tries += 1,
+            Err(e) => return Err(e),
+        }
+    };
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| {
+            drop(file);
+            std::fs::hard_link(&tmp, path)
+        });
+    let _ = std::fs::remove_file(&tmp);
+    written
 }
 
 /// [`replace_file`] through the new file `tmp`.
