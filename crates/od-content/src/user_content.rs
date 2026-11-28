@@ -322,10 +322,12 @@ pub fn save_skill(
     } else {
         let dir = user_root.join(id);
         if !dir.exists() {
-            // Whole or not at all: a copy cut short (a link an agent
-            // planted) leaves no override for the next Save to take as
-            // done.
-            copy_dir_into_place(current_dir, &dir, u64::MAX, |_| Ok::<(), WriteError>(()))?;
+            // Whole or not at all, never over a folder there: built hidden,
+            // renamed in (`Guard::put_new`); a copy cut short leaves no
+            // override for the next Save to take as done.
+            let tree = read_copy(current_dir, u64::MAX)?;
+            one.put_new([id.to_owned()], |_| Ok(tree), None)
+                .map_err(|e| made_error(&dir, e))?;
         }
         dir
     };
@@ -428,39 +430,7 @@ pub fn delete_user_dir(user_root: &Path, dir: &Path) -> Result<(), WriteError> {
     root.lock().remove(Path::new(name)).map_err(io)
 }
 
-/// Copies `from` into a new folder `to`, made here (`create_dir`: a folder
-/// or link already at `to` is [`WriteError::Exists`], never filled or
-/// followed) and written through its descriptor ([`nofollow::write_tree`]:
-/// a link an agent plants in it meanwhile is never written through)
-/// (folders and regular files only,
-/// with their permission bits; no link at any depth, no FIFO, no hidden
-/// entry but `.claude-plugin`: [`nofollow::read_tree`]). Fails past
-/// `budget` bytes, counted as read. `from` itself may be a link the
-/// caller accepted (a folder the user picked, an indexed design system):
-/// it is resolved once, and only what lies under it is read link-free.
-///
-/// # Errors
-/// [`WriteError::BadRequest`] when too large, [`WriteError::Exists`] for
-/// something at `to` already, [`WriteError::Io`] (`to` removed when it was
-/// made here).
-pub fn copy_dir(from: &Path, to: &Path, budget: u64) -> Result<u64, WriteError> {
-    let tree = read_copy(from, budget)?;
-    // The root above it may not be there yet (a first install, a first
-    // override): made as before; only `to` must be new.
-    if let Some(parent) = to.parent() {
-        std::fs::create_dir_all(parent).map_err(io)?;
-    }
-    let made = nofollow::NewDir::create(to).map_err(|e| made_error(to, e))?;
-    // Made here: a copy cut short (a link planted in it) is removed, never
-    // left for a caller to take for done.
-    if let Err(e) = nofollow::write_tree(&tree, &made, None) {
-        let _ = std::fs::remove_dir_all(to);
-        return Err(io(e));
-    }
-    Ok(tree.files.iter().map(|(_, f)| f.bytes.len() as u64).sum())
-}
-
-/// What [`copy_dir`] copies of `from`: `from` resolved once, what lies
+/// What a copy takes of `from`: `from` resolved once, what lies
 /// under it read link-free ([`nofollow::read_tree`]), up to `budget` bytes.
 pub fn read_copy(from: &Path, budget: u64) -> Result<nofollow::Tree, WriteError> {
     let from = std::fs::canonicalize(from).map_err(io)?;
@@ -481,44 +451,6 @@ fn made_error(at: &Path, e: std::io::Error) -> WriteError {
 fn folder_name(at: &Path) -> String {
     at.file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
-}
-
-/// Copies `from` as the new folder `to`, whole or not at all: built (as
-/// [`copy_dir`] builds) in a hidden folder beside it,
-/// `.copying-<name>-<random tag>`, which `finish` may change further
-/// (Copy design system rewrites its manifest), then renamed to `to`. An
-/// index never lists the hidden folder; on any failure it is removed and
-/// nothing is at `to`, so nothing half copied is ever taken for done.
-/// Something at `to` already (a folder, a link, a name differing only in
-/// case on macOS and Windows) is [`WriteError::Exists`]. Cut short (the
-/// app quit) before the rename, the hidden folder stays and `from` is
-/// untouched.
-///
-/// # Errors
-/// [`copy_dir`]'s, `finish`'s, [`WriteError::Exists`], [`WriteError::Io`].
-pub fn copy_dir_into_place<E: From<WriteError>>(
-    from: &Path,
-    to: &Path,
-    budget: u64,
-    finish: impl FnOnce(&Path) -> Result<(), E>,
-) -> Result<u64, E> {
-    let staging = to.with_file_name(format!(
-        ".copying-{}-{}",
-        folder_name(to),
-        nofollow::random_tag()
-    ));
-    // Not made here (the name taken): not ours to remove.
-    let copied = copy_dir(from, &staging, budget)?;
-    let placed = finish(&staging).and_then(|()| {
-        if std::fs::symlink_metadata(to).is_ok() {
-            return Err(WriteError::Exists(folder_name(to)).into());
-        }
-        std::fs::rename(&staging, to).map_err(|e| made_error(to, e).into())
-    });
-    if placed.is_err() {
-        let _ = std::fs::remove_dir_all(&staging);
-    }
-    placed.map(|()| copied)
 }
 
 /// Installs the plugin in `source` (a local folder with `SKILL.md` or
@@ -604,9 +536,6 @@ fn entry_like(dir: &Path, id: &str) -> Result<Option<String>, WriteError> {
         .find(|name| !name.starts_with('.') && od_contracts::name_key(name) == key))
 }
 
-/// One export into an agent's skills at a time in this process.
-static EXPORT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 /// The file a copy into an agent's skills holds until its `SKILL.md` is
 /// there: a folder with it and no `SKILL.md` is a copy of Contour's that
 /// was cut short (the app quit), which the next copy replaces. The next
@@ -683,7 +612,7 @@ const MAX_CHECKED_SCRIPT_BYTES: u64 = 1024 * 1024;
 /// What is read ([`nofollow::read_tree`]): folders and regular files, no
 /// link at any depth and no FIFO, even one swapped in while it reads; no
 /// hidden entry at the top (Claude Code would load a hidden folder there
-/// as a skill), and below it only `.claude-plugin`, as [`copy_dir`] does.
+/// as a skill), and below it only `.claude-plugin`, as [`read_copy`] does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportFiles {
     /// Folders under the skill folder, parents first.
@@ -729,7 +658,7 @@ impl ExportFiles {
     }
 
     /// Reads the skill folder `source` as an install copies it
-    /// ([`copy_dir`]: `.claude-plugin` kept at the top too), at most
+    /// ([`read_copy`]: `.claude-plugin` kept at the top too), at most
     /// [`MAX_PLUGIN_BYTES`]: an imported skill and its source compare
     /// equal by [`Self::hash`] until one of them changes.
     ///
@@ -857,12 +786,6 @@ impl ExportFiles {
             files: self.files.clone(),
         }
     }
-
-    /// Writes this content into the folder `to` (made here), with each
-    /// file's permission bits, the top `SKILL.md` last.
-    fn write_into(&self, to: &nofollow::NewDir) -> Result<(), WriteError> {
-        nofollow::write_tree(&self.tree(), to, Some(Path::new("SKILL.md"))).map_err(io)
-    }
 }
 
 /// Copies the user skill `id` in `source` (a folder right in `user_root`:
@@ -932,39 +855,35 @@ fn export_skill_with(
             "skill {id:?} changed since it was shown: review it again"
         )));
     }
-    std::fs::create_dir_all(dest_root).map_err(io)?;
-    let _one = EXPORT_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A root of its own, outside `<data>`: its lock holds two copies
+    // apart, and nothing hidden is made in it (Claude Code would load it).
+    let root = UserRoot::open(dest_root, MAX_PLUGIN_BYTES);
+    root.make_root().map_err(io)?;
+    let one = root.lock();
+    let (mark, skill_md) = (Path::new(EXPORT_MARK), Path::new("SKILL.md"));
+    let exists = |name: &str, e: std::io::Error| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            WriteError::Exists(name.to_owned())
+        } else {
+            io(e)
+        }
+    };
     match existing_export(dest_root, id)? {
         None => {}
         // Ours, cut short: never a skill, replaced.
         Some(e) if e.kind == ExistingKind::Unfinished => {
-            std::fs::remove_dir_all(&e.path).map_err(io)?;
+            one.remove_unfinished(Path::new(&e.name), mark, skill_md)
+                .map_err(|err| exists(&e.name, err))?;
         }
         Some(e) => return Err(WriteError::Exists(e.name)),
     }
     let dest = dest_root.join(id);
     before_claim();
     // The folder is ours only if this makes it; what goes in it goes
-    // through its descriptor (an agent can write `dest_root` too).
-    let made = match nofollow::NewDir::create(&dest) {
-        Ok(made) => made,
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(WriteError::Exists(id.to_owned()));
-        }
-        Err(e) => return Err(io(e)),
-    };
-    let mark = Path::new(EXPORT_MARK);
-    let copied = made
-        .new_file(mark)
-        .map_err(io)
-        .and_then(|_| files.write_into(&made))
-        .and_then(|()| made.remove_file(mark).map_err(io));
-    if let Err(e) = copied {
-        let _ = std::fs::remove_dir_all(&dest);
-        return Err(e);
-    }
+    // through its descriptor (an agent can write `dest_root` too), the
+    // mark first and `SKILL.md` last.
+    one.make_tree(Path::new(id), &files.tree(), Some(skill_md), mark)
+        .map_err(|e| exists(id, e))?;
     Ok((dest, files))
 }
 
@@ -1044,7 +963,7 @@ fn read_skill(
 ) -> Result<(String, serde_json::Map<String, serde_json::Value>), WriteError> {
     let skill_md = source.join("SKILL.md");
     // A link is refused here, even one swapped in after a check, and a
-    // FIFO is no file (`nofollow::read_file`): `copy_dir` skips both, so
+    // FIFO is no file (`nofollow::read_file`): `read_copy` skips both, so
     // the copy would have no SKILL.md.
     let raw = match nofollow::read_file(&skill_md, MAX_PLUGIN_BYTES) {
         Ok(Some(f)) => String::from_utf8(f.bytes)
@@ -2457,8 +2376,8 @@ mod tests {
         assert_eq!(mode(&written.join("scripts/x.py")), 0o755);
         // An install or an override copy keeps them too.
         let copy = tmp.path().join("copy");
-        copy_dir(&tea, &copy, u64::MAX).unwrap();
-        assert_eq!(mode(&copy.join("scripts/x.py")), 0o755);
+        install_skill(&tea, &copy, |_| false).unwrap();
+        assert_eq!(mode(&copy.join("tea/scripts/x.py")), 0o755);
     }
 
     /// A skill with no description is copied: Claude Code 2.1.332 still
@@ -2779,6 +2698,39 @@ mod tests {
         );
     }
 
+    /// Two copies of one skill at once: the root's lock holds the second
+    /// off until the first is done, then it finds that copy there. With
+    /// no lock the second would make the folder first and the user's own
+    /// click be refused (or, a copy cut short, one remove the other's).
+    #[test]
+    fn two_copies_at_once_wait_for_each_other() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let tea = skill_dir(&user, "tea", "---\nname: tea\ndescription: D.\n---\n");
+        let hash = hash_of(&tea);
+        let (done, finished) = std::sync::mpsc::channel();
+        let mut second = None;
+        let first = export_skill_with(&user, &tea, "tea", &dest, &hash, || {
+            let (user, tea, dest, hash) = (user.clone(), tea.clone(), dest.clone(), hash.clone());
+            second = Some(std::thread::spawn(move || {
+                let got = export_skill(&user, &tea, "tea", &dest, &hash);
+                let _ = done.send(());
+                got
+            }));
+            // Held off by the lock, it cannot finish while this copy runs.
+            let _ = finished.recv_timeout(std::time::Duration::from_millis(500));
+        });
+        let second = second.unwrap().join().unwrap();
+        assert!(first.is_ok(), "the first copy: {first:?}");
+        assert!(
+            matches!(&second, Err(WriteError::Exists(name)) if name == "tea"),
+            "the second copy: {second:?}"
+        );
+        assert!(dest.join("tea/SKILL.md").is_file());
+        assert!(!dest.join("tea").join(EXPORT_MARK).exists());
+    }
+
     /// Claude Code loads a folder once it has a SKILL.md: that comes last,
     /// so a copy cut short is no skill.
     #[test]
@@ -2903,13 +2855,10 @@ mod tests {
         let link = tmp.path().join("link");
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        let to = tmp.path().join("copy");
-        copy_dir(&link, &to, u64::MAX).unwrap();
-        assert!(to.join("SKILL.md").is_file());
-        assert!(!to.join("scripts/out").exists());
-
         let user = tmp.path().join("user");
         assert_eq!(install_skill(&link, &user, |_| false).unwrap(), "tea");
+        assert!(user.join("tea/SKILL.md").is_file());
+        assert!(!user.join("tea/scripts/out").exists());
     }
 
     /// An agent CLI folder `tea` (with `scripts/run.sh`) imported as the
@@ -3272,104 +3221,44 @@ mod tests {
         assert!(!has_previous_skill(&user, "tea"));
     }
 
-    /// A copy into place is whole or not there (PR #353 review): a step
-    /// that fails after the copy leaves nothing at `to` and no hidden
-    /// folder; something at `to` already (a folder, a link) is `Exists`
-    /// named by its folder name, never filled.
+    /// An override's first copy is whole or not there: something at its
+    /// name (a link `exists()` does not see) is `Exists` named by its
+    /// folder name, never replaced; nothing hidden is left beside it.
     #[cfg(unix)]
     #[test]
-    fn a_copy_into_place_is_whole_or_not_there() {
+    fn an_overrides_first_copy_is_whole_or_not_there() {
         let tmp = tempfile::tempdir().unwrap();
-        let from = tmp.path().join("from");
-        std::fs::create_dir_all(from.join("assets")).unwrap();
-        std::fs::write(from.join("SKILL.md"), "s").unwrap();
-        std::fs::write(from.join("assets/a.css"), "a").unwrap();
-        let root = tmp.path().join("root");
-        std::fs::create_dir(&root).unwrap();
-        let to = root.join("tea");
-        let failed: Result<u64, WriteError> = copy_dir_into_place(&from, &to, u64::MAX, |s| {
-            assert!(
-                s.join("assets/a.css").is_file(),
-                "finish sees the whole copy"
-            );
-            Err(WriteError::Io("cut short".into()))
-        });
-        assert!(matches!(failed, Err(WriteError::Io(_))));
-        assert!(
-            std::fs::read_dir(&root).unwrap().next().is_none(),
-            "{:?}",
-            names(&root)
-        );
-        // Taken: a folder there, or a link to one outside.
-        let outside = tmp.path().join("outside");
-        std::fs::create_dir(&outside).unwrap();
-        std::os::unix::fs::symlink(&outside, &to).unwrap();
-        let taken = copy_dir_into_place(&from, &to, u64::MAX, |_| Ok::<(), WriteError>(()));
+        let bundled = tmp.path().join("bundled/tea");
+        std::fs::create_dir_all(bundled.join("assets")).unwrap();
+        std::fs::write(
+            bundled.join("SKILL.md"),
+            "---\nname: tea\ndescription: Brews tea.\n---\nBody\n",
+        )
+        .unwrap();
+        std::fs::write(bundled.join("assets/a.css"), "a").unwrap();
+        let user = tmp.path().join("user");
+        std::fs::create_dir(&user).unwrap();
+        // A dangling name: `exists()` says no, `put_new` sees the link.
+        std::os::unix::fs::symlink(tmp.path().join("gone"), user.join("tea")).unwrap();
+        let draft = SkillDraft {
+            name: "tea".into(),
+            description: "d".into(),
+            triggers: vec![],
+            body: "edited".into(),
+        };
+        let taken = save_skill(&user, "tea", &bundled, false, &draft, None);
         assert!(
             matches!(&taken, Err(WriteError::Exists(n)) if n == "tea"),
             "{taken:?}"
         );
-        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
-        assert_eq!(names(&root), ["tea"]);
-        std::fs::remove_file(&to).unwrap();
-        // Landed: whole, nothing hidden beside it.
-        copy_dir_into_place(&from, &to, u64::MAX, |_| Ok::<(), WriteError>(())).unwrap();
+        assert_eq!(names(&user), ["tea"]);
+        std::fs::remove_file(user.join("tea")).unwrap();
+        save_skill(&user, "tea", &bundled, false, &draft, None).unwrap();
         assert_eq!(
-            std::fs::read_to_string(to.join("assets/a.css")).unwrap(),
+            std::fs::read_to_string(user.join("tea/assets/a.css")).unwrap(),
             "a"
         );
-        assert_eq!(names(&root), ["tea"]);
-        // `copy_dir` itself: something at `to` is named, not pathed.
-        let there = copy_dir(&from, &to, u64::MAX);
-        assert!(
-            matches!(&there, Err(WriteError::Exists(n)) if n == "tea"),
-            "{there:?}"
-        );
-    }
-
-    /// `copy_dir` cut short after making its folder (a link planted in
-    /// it) removes it: nothing half copied is left.
-    #[cfg(unix)]
-    #[test]
-    fn a_copy_cut_short_removes_its_folder() {
-        let tmp = tempfile::tempdir().unwrap();
-        let from = tmp.path().join("from");
-        std::fs::create_dir_all(&from).unwrap();
-        for i in 0..50 {
-            std::fs::write(from.join(format!("f{i:02}")), "x").unwrap();
-        }
-        let victim = tmp.path().join("victim");
-        std::fs::write(&victim, "mine").unwrap();
-        let to = tmp.path().join("to");
-        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let planter = {
-            let (stop, at, victim) = (std::sync::Arc::clone(&stop), to.join("f49"), victim.clone());
-            std::thread::spawn(move || {
-                // Once: an agent writing on while the folder is removed
-                // could keep it (`remove_dir_all` then fails).
-                while !stop.load(std::sync::atomic::Ordering::Relaxed)
-                    && std::os::unix::fs::symlink(&victim, &at).is_err()
-                {}
-            })
-        };
-        let mut cut = false;
-        for _ in 0..200 {
-            if copy_dir(&from, &to, u64::MAX).is_err() {
-                cut = true;
-                assert!(std::fs::symlink_metadata(&to).is_err(), "left half copied");
-                break;
-            }
-            // The planter may land its one link while the copy goes
-            // (`DirectoryNotEmpty`, seen on Linux CI); it stops then, so a
-            // second remove takes the link (never followed) too.
-            if std::fs::remove_dir_all(&to).is_err() {
-                std::fs::remove_dir_all(&to).unwrap();
-            }
-        }
-        stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        planter.join().unwrap();
-        assert!(cut, "no copy was cut short in 200 tries");
-        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "mine");
+        assert_eq!(names(&user), ["tea"]);
     }
 
     /// What a replace, install or restore leaves is named with a random

@@ -506,6 +506,74 @@ impl Guard<'_> {
         ))
     }
 
+    /// Makes the new entry `name` (one plain visible name) right where it
+    /// is listed, with no hidden folder beside it (a root another program
+    /// lists, `HOME/.claude/skills`: it would load one as an entry): the
+    /// folder made new (`create_dir`, something there `AlreadyExists`), then
+    /// `mark` (an empty file), `tree` through its descriptor, `last` last,
+    /// and `mark` removed. Cut short, the folder holds `mark` and no `last`
+    /// ([`Self::remove_unfinished`] takes it); a write that fails removes
+    /// the folder.
+    ///
+    /// # Errors
+    /// `name` not one plain visible name, `AlreadyExists`, a write's.
+    pub fn make_tree(
+        &self,
+        name: &Path,
+        tree: &nofollow::Tree,
+        last: Option<&Path>,
+        mark: &Path,
+    ) -> std::io::Result<()> {
+        self.make_tree_steps(name, tree, last, mark, |_| Ok(()))
+    }
+
+    /// [`Self::make_tree`], `step` called once the mark is in, before the
+    /// tree ([`PutStep::Place`]): a panic stops there as an app quitting.
+    #[doc(hidden)]
+    pub fn make_tree_steps(
+        &self,
+        name: &Path,
+        tree: &nofollow::Tree,
+        last: Option<&Path>,
+        mark: &Path,
+        mut step: impl FnMut(PutStep) -> std::io::Result<()>,
+    ) -> std::io::Result<()> {
+        entry_name(name)?;
+        self.root.make_root()?;
+        let at = self.root.path.join(name);
+        let made = nofollow::NewDir::create(&at)?;
+        let done = made
+            .new_file(mark)
+            .map(drop)
+            .and_then(|()| step(PutStep::Place))
+            .and_then(|()| nofollow::write_tree(tree, &made, last))
+            .and_then(|()| made.remove_file(mark));
+        if let Err(e) = done {
+            let _ = remove_staged(&at);
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    /// Removes the entry `name` when it is a [`Self::make_tree`] cut short:
+    /// a folder (not a link) holding `mark` and no `last`. Anything else
+    /// there is kept, `AlreadyExists`.
+    ///
+    /// # Errors
+    /// `name` not one plain visible name, `AlreadyExists`, the remove's.
+    pub fn remove_unfinished(&self, name: &Path, mark: &Path, last: &Path) -> std::io::Result<()> {
+        entry_name(name)?;
+        let at = self.root.path.join(name);
+        let is = |p: &Path| std::fs::symlink_metadata(at.join(p)).is_ok();
+        let unfinished = std::fs::symlink_metadata(&at).is_ok_and(|m| m.is_dir())
+            && std::fs::symlink_metadata(at.join(mark)).is_ok_and(|m| m.is_file())
+            && !is(last);
+        if !unfinished {
+            return Err(std::io::ErrorKind::AlreadyExists.into());
+        }
+        remove_staged(&at)
+    }
+
     /// Swaps the entry `rel` and the copy kept at `kept` (as
     /// [`Self::put_tree`] keeps one): `kept` becomes the entry, the entry
     /// (when there) is kept at `kept`. Crash-safe as [`Self::put_tree`].
@@ -772,6 +840,15 @@ fn folder_link_free(root: &Path, dirs: &[&std::ffi::OsStr]) -> std::io::Result<(
         if !meta.is_dir() {
             return Err(std::io::ErrorKind::NotADirectory.into());
         }
+    }
+    Ok(())
+}
+
+/// Checks that `name` is one plain visible name (an entry).
+fn entry_name(name: &Path) -> std::io::Result<()> {
+    let (dirs, last) = split(name)?;
+    if !dirs.is_empty() || last.as_encoded_bytes().starts_with(b".") {
+        return Err(bad_path(name));
     }
     Ok(())
 }

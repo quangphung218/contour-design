@@ -84,7 +84,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     skill (no `description` is a warning), into the agents' `HOME/.claude/skills/<id>`,
     never over anything there: an entry of that name in any case or Unicode form is refused by its name on disk, the
     folder is claimed with `create_dir`, nothing hidden is written beside it, `SKILL.md` comes last, and a copy of ours cut
-    short (`.contour-copy` mark, no `SKILL.md`) is replaced, whole. The warnings are `ExportFiles::check` (whole SKILL.md
+    short (`.contour-copy` mark, no `SKILL.md`) is replaced, whole. That folder is a `UserRoot` of its own (its lock holds
+    two copies apart): `Guard::make_tree` (made at its name, mark first, filled through its descriptor) and
+    `Guard::remove_unfinished`. The warnings are `ExportFiles::check` (whole SKILL.md
     and `scripts/`, of the same bytes).
     - `tests/library.rs::no_request_copies_a_skill_to_claude_code`, `::a_personal_skill_is_copied_to_claude_code_once`,
       `::copy_to_claude_code_follows_no_link`, `::copy_to_claude_code_checks_the_whole_skill_first`,
@@ -94,7 +96,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `../od-content/src/user_content.rs::an_export_copies_only_the_content_reviewed`, `::a_skill_with_no_description_is_copied`,
       `::an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy`,
       `::export_copies_a_user_skill_and_never_writes_over`, `::an_export_never_shows_a_hidden_folder_in_the_agents_skills`,
-      `::a_folder_made_right_before_the_copy_is_kept`, `::the_skill_md_lands_after_everything_else`
+      `::a_folder_made_right_before_the_copy_is_kept`, `::two_copies_at_once_wait_for_each_other`, `::the_skill_md_lands_after_everything_else`
     - The review marks hidden characters in `SKILL.md` (Unicode `Default_Ignorable_Code_Point` and `Bidi_Control`: tags, zero-width,
       bidi controls and marks, variation selectors, soft hyphen, Hangul fillers…) as `⟨U+…⟩` with a warning
       (`../od-ui/src/app/plugins_page.rs::the_review_marks_every_hidden_character`; the table checked against ICU's data:
@@ -150,20 +152,21 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     A module that reads and writes a user root (`ZONE` in `tests/user_file_writes.rs`: `user_content.rs`, `skills.rs`,
     `plugins.rs`, `index.rs`, `design_system_gen.rs`, `memory_index.rs`, `routes/library/**`, the memory routes,
     `routes/content.rs`, `skill_export.rs`, `routes/platform/evolution.rs`, `routes/file_ops.rs`: Save as template, `routes/w3/design_systems.rs`) changes the disk only through `od_fs::user_store` (`Guard::write`, `remove`,
-    `put_tree`, `put_copy`, `put_new`, `restore`, `make_dir`, `remove_file`, `remove_hidden`, `UserRoot::make_root`): rule `fs` refuses there any
+    `put_tree`, `put_copy`, `put_new`, `make_tree`, `remove_unfinished`, `restore`, `make_dir`, `remove_file`,
+    `remove_hidden`, `UserRoot::make_root`): rule `fs` refuses there any
     `std::fs`/`tokio::fs` write, remove, rename, copy, link, bits or owner, `File::create`, `DirBuilder`, open options that
     write (any argument but `false` or a reference), `set_permissions`/`set_len`/`persist` on a file, a `nix` `…at` call,
     `unlink`/`mkdir`/`rmdir`, an `open` with a flag that writes, `libc`, `tempfile`'s `…_in`, `Command::new("rm"|"mv"|"cp"…)`,
     a `use …::fs::*`, each named as a value too (`.map(std::fs::remove_file)`, `let w = std::fs::write`), and a function elsewhere in `od-content`, `od-server`, `od-store` or
     `od_fs::nofollow` that does (found by name, to a fixed point); `KEPT` with why (a temp folder or a generation's staging
-    outside every user root; `PR 6b`: an override's first copy, Copy to Claude Code). `../od-fs/src/hostile.rs` runs every `Guard` call against a linked entry, a link below it, a link or
+    outside every user root, an older version's leftovers moved back at start-up). `../od-fs/src/hostile.rs` runs every `Guard` call against a linked entry, a link below it, a link or
     FIFO at the file, a file too large, a `0555` folder and a name alike in another case.
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     A folder filled from a tree (install, install over a user skill, Replace from source, an override's first copy,
     Copy design system, a generated design system, Copy to Claude Code) is made new (`nofollow::NewDir`: `create_dir`, never
     one already there) and filled through its descriptor (`mkdirat`, `openat` `O_CREAT|O_EXCL|O_NOFOLLOW`, bits set on the
     descriptor; Windows `create_new` and no reparse point on the way): a link an agent plants in it is never written
-    through. Staging names (`.putting-`, `.aside-`, `.dropping-`, `.copying-`) take `nofollow::random_tag()`, never a pid
+    through. Staging names (`.putting-`, `.aside-`, `.dropping-`) take `nofollow::random_tag()`, never a pid
     (`user_file_writes.rs` rule `pid`); what a run cut short left is still read back by id with a pid or a tag.
     A Library delete (skill, plugin, design system: `user_content::delete_user_dir`) goes through `Guard::remove` under the
     root's lock: an entry that is the user's own link goes as a link, never the folder it points at; a folder is journaled
@@ -180,11 +183,9 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     "Save anyway" (`*`) on an override deleted on disk while the index still lists it as the user's makes it again from
     the bundled skill (`routes/library/skills.rs:save`), `od:` block and side files kept, never a `SKILL.md` alone.
     - `tests/form_cas.rs::save_anyway_over_a_deleted_override_makes_it_again_from_the_bundled_skill`
-    No half-copied folder is ever left where an index lists it: `copy_dir` removes the folder it made when a write
-    fails, and an override's first copy is built in a hidden `.copying-<name>-<tag>`
-    (`user_content::copy_dir_into_place`), finished there, then renamed into place; something already at the name is a
-    409 named by its folder name. Copy design system and a generated or imported design system go through
-    `Guard::put_new`: the name picked and taken under the root's lock (the first free `<slug>`, `<slug>-2`…: nothing at it,
+    No half-copied folder is ever left where an index lists it, and none is put over one there: an override's first copy
+    (something already at its name is a 409 named by its folder name), Copy design system and a generated or imported
+    design system go through `Guard::put_new`: the name picked and taken under the root's lock (the first free `<slug>`, `<slug>-2`…: nothing at it,
     a link too, and no entry alike in another case; two Copies at once land in two folders), the tree built in a hidden
     `.putting-<tag>` through its descriptor, renamed in; a write that fails removes it, an app stopped leaves only that
     hidden folder (no journal: `recover` removes it). A design system's `metadata.json` (Set status), revisions, an accept
@@ -195,6 +196,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `../od-fs/src/user_store_tests.rs::put_new_takes_the_first_free_name_and_never_one_there`,
       `::two_puts_of_one_name_at_once_take_two_names`, `::a_put_new_cut_short_is_nothing_at_the_name`,
       `::a_name_taken_after_the_pick_is_kept`, `::remove_file_takes_a_file_below_an_entry_and_follows_no_link`,
+      `::make_tree_writes_at_its_name_and_only_its_unfinished_copy_goes`,
       `tests/library.rs::copies_under_one_name_at_once_land_in_folders_of_their_own`,
       `src/routes/library/design_systems.rs::metadata_is_never_found_cut`, `::a_status_over_metadata_changed_since_is_refused`,
       `::an_install_cut_short_with_a_random_tag_is_put_back`,
@@ -202,7 +204,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `::installs_of_one_name_at_once_take_a_folder_each`,
       `src/doctor.rs::the_data_folder_check_never_writes_through_a_planted_link`, `::the_probe_file_is_made_new`,
       `../od-fs/src/nofollow.rs::a_new_dir_swapped_for_a_link_before_it_is_opened_is_refused`,
-      `../od-content/src/user_content.rs::a_copy_into_place_is_whole_or_not_there`, `::a_copy_cut_short_removes_its_folder`
+      `../od-content/src/user_content.rs::an_overrides_first_copy_is_whole_or_not_there`
     - `tests/put_reads_if_match.rs` (source scan with `syn`), `tests/form_cas.rs` (412 → GET again → 200, and
       24 saves at once from one copy land once, per lock; `a_skill_read_while_written_in_place_leaves_the_index_whole`,
       `a_bundled_skill_saved_beside_one_named_alike_writes_nothing`), `src/cas.rs::tests`
