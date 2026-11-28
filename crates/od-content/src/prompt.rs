@@ -39,6 +39,19 @@ const COMMENT_IDENTITY_EDIT_DIRECTIVE: &str = legacy!("COMMENT_IDENTITY_EDIT_DIR
 const SEP: &str = "\n\n---\n\n";
 const LOCALE_EXEMPT_TERMS: &str = "Keep brand names, code, and technical identifiers as-is, and honor an explicit user request for a different output language.";
 
+/// The last step of a turn that wrote HTML: Contour's own lint, so a P0
+/// is fixed before the user sees it (`od lint` takes the project id, then
+/// the file; `--fail-on` values are lower case).
+const LINT_BEFORE_HANDOFF: &str = "## Lint before you finish
+
+When this turn wrote or edited an HTML file, the last step before your final message is Contour's lint, once per HTML file you changed (`<file>` is its path inside the project, such as `index.html`):
+
+```sh
+\"$OD_NODE_BIN\" \"$OD_BIN\" lint \"$OD_PROJECT_ID\" <file> --fail-on p0
+```
+
+Exit code 1 means the file has a P0 finding: fix every P0 it lists in the file itself, then run the command again until it exits 0. P1 and P2 findings are optional. If the command cannot run at all (not found, daemon unreachable), skip this step and do not mention it in your reply.";
+
 /// Contour's own rule (QA-110): the preview, PDF and PNG load nothing from
 /// the network (decisions: no outbound network), so a linked web font
 /// never shows there while the exported HTML loads it. It comes after the
@@ -294,6 +307,9 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     p.push(FILESYSTEM_HANDOFF_OVERRIDE.to_owned());
     if !ask {
         p.push(SKILL_WRITE_BOUNDARY.to_owned());
+    }
+    if !ask {
+        p.push(format!("{SEP}{LINT_BEFORE_HANDOFF}"));
     }
     p.push(format!("{SEP}{STRUCTURED_CLARIFICATION}"));
     p.push(format!("{SEP}{TURN_RENDERING}"));
@@ -624,9 +640,13 @@ pub fn with_comment_attachments(
     out.push_str("\n\n<attached-preview-comments>\n");
     out.push_str(
         "Hard scope: change ONLY the elements identified below by file and selector. \
-         Do not modify sibling sections, parent layout, global CSS or design tokens; \
-         mention other issues in your reply instead. If the request cannot be done \
-         inside this scope, ask the user first.\n",
+         One exception: when a comment asks to add or remove something next to its \
+         element (\"add X above\", \"remove the line below\"), you may insert or \
+         delete one sibling element directly before or after it. Put added content in \
+         that new sibling, not inside the element, so the element keeps its own \
+         content. Do not modify other sibling sections, parent layout, global CSS or \
+         design tokens; mention other issues in your reply instead. If the request \
+         cannot be done inside this scope, ask the user first.\n",
     );
     for (i, c) in comments.iter().enumerate() {
         let order = if c.order == 0 {
@@ -867,6 +887,66 @@ mod tests {
             ..PromptInput::default()
         });
         assert!(!ask.contains(rule), "Ask mode writes no file");
+    }
+
+    /// The agent lints what it wrote before handing off, with the CLI's
+    /// real arguments: project id, then file, `--fail-on p0` (lower case;
+    /// clap rejects `P0`). Every mode that writes files; not Ask.
+    #[test]
+    fn modes_that_write_files_end_with_od_lint() {
+        let rule = "## Lint before you finish";
+        let command = r#""$OD_NODE_BIN" "$OD_BIN" lint "$OD_PROJECT_ID" <file> --fail-on p0"#;
+        for mode in [SessionMode::Design, SessionMode::Plan] {
+            let text = compose_instructions(&PromptInput {
+                session_mode: mode,
+                ..PromptInput::default()
+            });
+            assert_eq!(text.matches(rule).count(), 1, "{mode:?}");
+            let block = &text[pos(&text, rule)..];
+            assert!(block.contains(command), "{block}");
+            assert!(block.contains("fix every P0"));
+            assert!(block.contains("until it exits 0"));
+            assert!(!block.contains("--fail-on P0"));
+            let handoff = "This run uses OpenDesign's filesystem execution profile.";
+            assert!(
+                pos(&text, handoff) < pos(&text, rule),
+                "after the handoff rhythm"
+            );
+        }
+        let ask = compose_instructions(&PromptInput {
+            session_mode: SessionMode::Chat,
+            ..PromptInput::default()
+        });
+        assert!(!ask.contains(rule), "Ask mode writes no file");
+        assert!(!ask.contains("--fail-on"));
+    }
+
+    /// Spec 1.2 scope, widened for "add X above" (PO 28/11: the agent put
+    /// a tagline inside the h1): a sibling right before or after may be
+    /// added or removed; parent layout and global CSS stay off limits.
+    #[test]
+    fn comment_scope_allows_an_adjacent_sibling_only() {
+        let c = od_contracts::CommentAttachment {
+            file_path: "index.html".into(),
+            selector: "h1".into(),
+            label: "h1".into(),
+            current_text: "May".into(),
+            comment: "add a small tagline above".into(),
+            ..od_contracts::CommentAttachment::default()
+        };
+        let out = with_comment_attachments("Fix", &[c]);
+        let scope = &out[pos(&out, "Hard scope:")..pos(&out, "\n1. ")];
+        assert!(scope.contains("change ONLY the elements identified below"));
+        assert!(
+            scope.contains(
+                "you may insert or delete one sibling element directly before or after it"
+            )
+        );
+        assert!(scope.contains("not inside the element, so the element keeps its own content"));
+        assert!(scope.contains(
+            "Do not modify other sibling sections, parent layout, global CSS or design tokens"
+        ));
+        assert!(scope.contains("ask the user first"));
     }
 
     #[test]
