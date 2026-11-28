@@ -27,8 +27,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    The memory files (`src/memory_index.rs`: `<data>/memory/MEMORY.md`, `config.json`) go through `od_fs::user_store`
    under the folder's lock: written with `Guard::write` (random temp name, `O_EXCL|O_NOFOLLOW`, fsync, rename, over
    what was read), read with `Guard::read` (no link followed, no FIFO waited on, bounded). An index that is there but
-   cannot be read is `Stored::Unreadable`, never `Missing`: it links no entry (fail closed).
-   - `tests/memory_files.rs` (one test per question of the six); `../od-server/tests/user_file_writes.rs`, `no_path_reads.rs` scan it
+   cannot be read is `Stored::Unreadable`, never `Missing`: it links no entry (fail closed). So for `config.json`
+   (`StoredConfig::Unreadable`: a link, a FIFO, too large, not a config): memory is off for the turn, and
+   `GET /api/memory/config` says `unreadable` (Settings ▸ Memory shows it) until a switch writes the file again.
+   - `tests/memory_files.rs` (one test per question of the six; `a_config_that_cannot_be_read_turns_memory_off`);
+     `../od-server/tests/c2.rs::an_unreadable_memory_config_turns_memory_off`; `../od-server/tests/user_file_writes.rs`, `no_path_reads.rs` scan it
 3. A linked history is refused before the page is written (`src/versions.rs:refuse_linked_history`).
    An upload learns its name only after writing, so it is deleted again.
    - `src/comments.rs::a_history_folder_that_is_a_link_is_not_written_through`
