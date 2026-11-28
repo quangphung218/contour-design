@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A memory config.json that cannot be read now turns memory off, and Settings ▸ Memory says so.
+
 ## [0.2.0-beta.77] - 2026-11-28
 
 ### Fixed
