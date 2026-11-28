@@ -950,11 +950,31 @@ const DROPPING: &str = ".dropping-";
 /// Removes what is at `path`: a folder and what it holds (no link in it
 /// followed), else the file or link itself.
 fn remove_staged(path: &Path) -> std::io::Result<()> {
-    if std::fs::symlink_metadata(path)?.is_dir() {
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.is_dir() {
         std::fs::remove_dir_all(path)
+    } else if is_folder_link(&meta) {
+        // `RemoveDirectoryW` takes the link away, never what it points at.
+        std::fs::remove_dir(path)
     } else {
         std::fs::remove_file(path)
     }
+}
+
+/// Whether `meta` is of a link to a folder that only a folder's remove
+/// takes (a directory symlink or a junction on Windows: `DeleteFileW`
+/// refuses both, and `remove_file`'s fallback, a POSIX delete, needs NTFS
+/// on Windows 10 1809 or later; a data folder on exFAT has none).
+/// Elsewhere a link goes as a file.
+#[cfg(windows)]
+fn is_folder_link(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::FileTypeExt;
+    meta.file_type().is_symlink_dir()
+}
+
+#[cfg(not(windows))]
+fn is_folder_link(_: &std::fs::Metadata) -> bool {
+    false
 }
 
 /// [`remove_staged`], nothing there being fine.
@@ -1300,3 +1320,7 @@ fn file_path_under(root: &Path, rel: &Path) -> std::io::Result<PathBuf> {
 #[cfg(test)]
 #[path = "user_store_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "user_store_windows_tests.rs"]
+mod windows_tests;
