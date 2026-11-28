@@ -16,6 +16,9 @@ All notable changes to Contour are recorded here. The format follows
 
 - Saving an export over an existing file writes a new copy first, so a failed save keeps the old file whole (#371).
 - A memory config.json that cannot be read now turns memory off, and Settings ▸ Memory says so.
+- Official deck templates no longer end the first turn with a P0 lint; untagged slides in a deck with its own theme are P2.
+- A comment like "add a tagline above" now adds a sibling element instead of putting the tagline inside the selected one.
+- The agent runs `od lint` on the HTML it wrote and fixes every P0 before ending its turn.
 
 ## [0.2.0-beta.77] - 2026-11-28
 

@@ -452,7 +452,7 @@ const container=document.getElementById('slideContainer');
 const dots=document.querySelectorAll('.nav-dot');
 const counter=document.getElementById('slideCounter');
 const slides=document.querySelectorAll('.slide');
-function goToSlide(n){const slide=document.getElementById('slide-'+n);if(slide)slide.scrollIntoView({behavior:'smooth'});}
+function goToSlide(n){const slide=document.getElementById('slide-'+n);if(slide)container.scrollTo({top:slide.offsetTop,behavior:'smooth'});}
 dots.forEach(dot=>{dot.addEventListener('click',()=>{goToSlide(dot.dataset.slide);});});
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;let current=1;dots.forEach((d,i)=>{if(d.classList.contains('active'))current=i+1;});
 if(e.key==='ArrowDown'||e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();if(current<10)goToSlide(current+1);}
