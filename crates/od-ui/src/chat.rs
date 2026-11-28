@@ -55,6 +55,16 @@ pub struct ToolCall {
     pub edited: Option<u64>,
 }
 
+/// A file-writing call whose arguments still stream (`tool_in_flight`):
+/// the agent is writing `path`, `bytes` so far. Live only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InFlight {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub bytes: u64,
+}
+
 impl ToolCall {
     /// Whether the row is one the engine adds when the turn ends, to list
     /// files changed outside the file tools (`od_runtime::turn_files`):
@@ -212,6 +222,9 @@ pub struct AssistantTurn {
     /// until the agent puts out something newer (text, thinking, a tool
     /// call or its result): a stale label says nothing about now.
     pub status: Option<String>,
+    /// The file the agent is writing right now, before its call is whole;
+    /// gone once the call (or any newer output) arrives.
+    pub in_flight: Option<InFlight>,
     /// The latest plan the agent wrote with `TodoWrite`.
     pub todos: Vec<Todo>,
     /// The run's project folder (from `start`), to make written paths
@@ -252,6 +265,7 @@ impl AssistantTurn {
             run_id: None,
             model: None,
             status: None,
+            in_flight: None,
             todos: Vec::new(),
             cwd: None,
             critique: None,
@@ -301,6 +315,7 @@ impl AssistantTurn {
             RunFrame::End(end) => {
                 self.state = end.status.into();
                 self.status = None;
+                self.in_flight = None;
                 self.failure = end.failure_category;
                 self.ended_at = Some(end.terminal_at);
                 if let Some(error) = crate::events::end_error(&end) {
@@ -335,6 +350,7 @@ impl AssistantTurn {
                 | AgentEvent::ToolResult { .. }
         ) {
             self.status = None;
+            self.in_flight = None;
         }
         match ev {
             AgentEvent::Status { label, model, .. } => {
@@ -417,6 +433,20 @@ impl AssistantTurn {
                 crate::i18n::T::ToolLoopStopped,
                 &[&tool_name, &count.to_string()],
             ))),
+            AgentEvent::ToolInFlight {
+                id,
+                name,
+                path,
+                bytes,
+            } => {
+                self.status = None;
+                self.in_flight = Some(InFlight {
+                    id,
+                    name,
+                    path,
+                    bytes,
+                });
+            }
             AgentEvent::Critique { report } => self.critique = Some(report),
             AgentEvent::NextSteps { suggestions } => self.suggestions = suggestions,
             AgentEvent::Media { task } => {
@@ -1203,6 +1233,54 @@ mod tests {
         assert!(!Block::Thinking(" \n ".into()).shows());
         assert!(Block::Thinking("why".into()).shows());
         assert!(Block::Text(String::new()).shows());
+    }
+
+    fn in_flight(id: &str, path: &str, bytes: u64) -> RunFrame {
+        agent(
+            json!({"type": "tool_in_flight", "id": id, "name": "Write", "path": path, "bytes": bytes}),
+        )
+    }
+
+    #[test]
+    fn a_file_being_written_shows_until_its_call_or_newer_output() {
+        let mut t = AssistantTurn::new();
+        t.apply(agent(json!({"type": "thinking_start"})));
+        t.apply(agent(json!({"type": "status", "label": "thinking"})));
+        t.apply(in_flight("w", "/p/index.html", 180));
+        assert_eq!(t.status, None, "the write is newer than the label");
+        t.apply(in_flight("w", "/p/index.html", 2048));
+        assert_eq!(
+            t.in_flight,
+            Some(InFlight {
+                id: "w".into(),
+                name: "Write".into(),
+                path: "/p/index.html".into(),
+                bytes: 2048,
+            })
+        );
+        // No block of its own: the call's row comes with its `tool_use`.
+        assert_eq!(t.blocks.len(), 1);
+        t.apply(agent(
+            json!({"type": "tool_use", "id": "w", "name": "Write",
+            "input": {"file_path": "/p/index.html", "content": "x"}}),
+        ));
+        assert_eq!(t.in_flight, None);
+        for newer in [
+            json!({"type": "text_delta", "delta": "Done"}),
+            json!({"type": "thinking_start"}),
+            json!({"type": "thinking_delta", "delta": "hm"}),
+            json!({"type": "tool_result", "toolUseId": "w", "content": "ok", "isError": false}),
+        ] {
+            t.apply(in_flight("v", "/p/b.html", 10));
+            t.apply(agent(newer.clone()));
+            assert_eq!(t.in_flight, None, "{newer}");
+        }
+        t.apply(in_flight("v", "/p/b.html", 10));
+        t.apply(decode_frame(
+            "end",
+            r#"{"status":"canceled","code":null,"terminalAt":1}"#,
+        ));
+        assert_eq!(t.in_flight, None, "a stopped run writes nothing more");
     }
 
     #[test]

@@ -1106,9 +1106,10 @@ fn run_ref(turn: &AssistantTurn) -> Option<&str> {
 fn working_detail(turn: &AssistantTurn, run_ms: Option<i64>) -> String {
     let act = activity(turn);
     let mut parts = vec![activity_text(&act)];
-    if let Some(file) = last_file(turn)
-        .filter(|f| !matches!(&act, Activity::Writing(w) | Activity::Editing(w) if w == f))
-    {
+    if let Some(file) = last_file(turn).filter(|f| {
+        !matches!(&act, Activity::Writing(w) | Activity::Editing(w)
+                | Activity::Streaming { file: w, .. } if w == f)
+    }) {
         parts.push(tf(T::ActLastFile, &[&file]));
     }
     if let Some(ms) = run_ms {
@@ -1118,7 +1119,7 @@ fn working_detail(turn: &AssistantTurn, run_ms: Option<i64>) -> String {
 }
 
 /// What the run does now, in words.
-fn activity_text(act: &Activity) -> String {
+pub fn activity_text(act: &Activity) -> String {
     match act {
         Activity::Waiting => t(T::ActWaiting).to_owned(),
         Activity::Thinking => t(T::ActThinking).to_owned(),
@@ -1126,6 +1127,14 @@ fn activity_text(act: &Activity) -> String {
         Activity::Compacting => t(T::ActCompacting).to_owned(),
         Activity::Writing(f) => tf(T::ActWriting, &[f]),
         Activity::Editing(f) => tf(T::ActEditing, &[f]),
+        Activity::Streaming { file, bytes, edit } => tf(
+            if *edit {
+                T::ActEditingSize
+            } else {
+                T::ActWritingSize
+            },
+            &[file, &super::lib_ui::size_label(*bytes)],
+        ),
         Activity::Reading(f) => tf(T::ActReading, &[f]),
         Activity::Command => t(T::ActCommand).to_owned(),
         Activity::Tool(name) => tf(T::ActTool, &[name]),
@@ -2025,6 +2034,50 @@ mod tests {
         ChatItem, LoopRow, Retry, SkillLoop, ToolCall, process_summary, saved_skill_id, tool_label,
         tool_texts,
     };
+
+    #[test]
+    fn a_file_being_written_reads_with_its_size_and_is_not_also_the_last_file() {
+        use crate::chat::{AssistantTurn, Block, InFlight, TurnState};
+        let mut turn = AssistantTurn {
+            state: TurnState::Running,
+            ..AssistantTurn::new()
+        };
+        turn.blocks.push(Block::Tool(ToolCall {
+            id: "a".into(),
+            name: "Write".into(),
+            summary: "hero.css".into(),
+            path: Some("/p/hero.css".into()),
+            result: Some(false),
+            files: None,
+            edited: None,
+        }));
+        turn.in_flight = Some(InFlight {
+            id: "b".into(),
+            name: "Write".into(),
+            path: "/p/may-cafe-landing.html".into(),
+            bytes: 14 * 1024,
+        });
+        assert_eq!(
+            super::working_detail(&turn, None),
+            "Writing may-cafe-landing.html · 14 KB · last: hero.css"
+        );
+        turn.blocks.push(Block::Tool(ToolCall {
+            id: "c".into(),
+            name: "Write".into(),
+            summary: "may-cafe-landing.html".into(),
+            path: Some("/p/may-cafe-landing.html".into()),
+            result: Some(false),
+            files: None,
+            edited: None,
+        }));
+        if let Some(call) = turn.in_flight.as_mut() {
+            call.name = "Edit".into();
+        }
+        assert_eq!(
+            super::working_detail(&turn, None),
+            "Editing may-cafe-landing.html · 14 KB"
+        );
+    }
 
     /// Only a skill the user picked was typed as `@x`; the project's and
     /// a plugin's come unasked and are named for where they came from.

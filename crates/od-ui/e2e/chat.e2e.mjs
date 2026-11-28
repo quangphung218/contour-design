@@ -1073,6 +1073,33 @@ try {
     results.unaskedSkills = 'ok';
   }
 
+  // 17b. A file still being written is named in the chat and the empty
+  // preview from the first bytes of its call (`tool_in_flight`): the mock
+  // pauses 2 s right after the path, before any content or `tool_use`.
+  {
+    const r = await api('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'In flight' }) });
+    await page.goto(`${BASE}/projects/${r.project.id}`);
+    await page.getByTestId('preview-empty').waitFor();
+    await page.getByTestId('composer').fill('an inflight page');
+    const sent = Date.now();
+    await page.getByTestId('composer').press('Enter');
+    const live = page.getByTestId('assistant-msg').first();
+    const detail = live.locator('[data-testid="run-state"][data-phase="working"] .muted');
+    const writing = page.getByTestId('preview-writing');
+    await until(async () => /^Writing index\.html · \d+ B · \d+:\d\d$/.test((await detail.textContent().catch(() => '')) || ''), 'chat names the file in flight', 5000);
+    const named = Date.now() - sent;
+    assert.match(await writing.textContent(), /^Writing index\.html · \d+ B$/);
+    // Named from the path alone: no tool row yet, the call is not whole.
+    assert.equal(await live.locator('.tool-summary').count(), 0, 'no tool row before the call is whole');
+    await page.screenshot({ path: OUT + 'chat-in-flight.png' });
+    // Then it grows with the content, kilobyte by kilobyte.
+    await until(async () => / · [2-9] KB · /.test(await detail.textContent()), 'the size grows', 8000);
+    await lastTurnDone(1);
+    assert.equal(await writing.count(), 0, 'gone once the page is there');
+    assert.doesNotMatch(await live.textContent(), / KB/, 'no size left once the call is whole');
+    results.inFlight = `named after ${named} ms`;
+  }
+
   // 18. Dark screenshots of the new pieces, then Vietnamese strings.
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.getByTestId('plus-menu').click();

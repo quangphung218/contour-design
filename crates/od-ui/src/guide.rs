@@ -77,6 +77,13 @@ pub enum Activity {
     Compacting,
     Writing(String),
     Editing(String),
+    /// A file whose call is still streaming: `bytes` of it so far. `edit`
+    /// for a tool that changes part of a file rather than writing it whole.
+    Streaming {
+        file: String,
+        bytes: u64,
+        edit: bool,
+    },
     Reading(String),
     Command,
     Tool(String),
@@ -85,6 +92,13 @@ pub enum Activity {
 /// The running turn's current activity.
 #[must_use]
 pub fn activity(turn: &AssistantTurn) -> Activity {
+    if let Some(call) = &turn.in_flight {
+        return Activity::Streaming {
+            file: file_name(&call.path),
+            bytes: call.bytes,
+            edit: !matches!(call.name.as_str(), "Write" | "write_file"),
+        };
+    }
     match turn.status.as_deref() {
         Some("thinking") => return Activity::Thinking,
         Some("compacting") => return Activity::Compacting,
@@ -461,6 +475,43 @@ mod tests {
             files: None,
             edited: None,
         })
+    }
+
+    #[test]
+    fn a_file_still_streaming_is_named_with_its_size() {
+        let mut t = turn(TurnState::Running, vec![Block::Thinking("plan".into())]);
+        assert_eq!(activity(&t), Activity::Thinking);
+        t.in_flight = Some(crate::chat::InFlight {
+            id: "w".into(),
+            name: "Write".into(),
+            path: "/p/site/may-cafe.html".into(),
+            bytes: 14 * 1024,
+        });
+        let streaming = |file: &str, bytes, edit| Activity::Streaming {
+            file: file.into(),
+            bytes,
+            edit,
+        };
+        assert_eq!(activity(&t), streaming("may-cafe.html", 14 * 1024, false));
+        // Even under a label that came before it.
+        t.status = Some("thinking".into());
+        assert_eq!(activity(&t), streaming("may-cafe.html", 14 * 1024, false));
+        for (name, edit) in [
+            ("write_file", false),
+            ("Edit", true),
+            ("MultiEdit", true),
+            ("NotebookEdit", true),
+        ] {
+            if let Some(call) = t.in_flight.as_mut() {
+                call.name = name.into();
+                call.path = "C:\\p\\a.ipynb".into();
+            }
+            assert_eq!(
+                activity(&t),
+                streaming("a.ipynb", 14 * 1024, edit),
+                "{name}"
+            );
+        }
     }
 
     #[test]
