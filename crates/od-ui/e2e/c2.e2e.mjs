@@ -142,6 +142,13 @@ try {
   await page.goto(BASE + '/');
   await page.waitForURL('**/onboarding');
   await page.locator('[data-testid="onboarding-test"] [data-ok="true"]').waitFor({ timeout: 20_000 });
+  // Continue is in view at 1440×900 without scrolling (product walk 28/11: it sat under the fold).
+  // A short window (600 px): the card is taller than it, Continue stays in view.
+  await page.setViewportSize({ width: 1366, height: 600 });
+  await sleep(200);
+  const cont = await page.getByTestId('onboarding-continue').boundingBox();
+  assert.ok(cont && cont.y >= 0 && cont.y + cont.height <= 600, `Continue in view: ${JSON.stringify(cont)}`);
+  await page.setViewportSize({ width: 1440, height: 900 });
   const brandStep = page.getByTestId('onboarding-brand');
   assert.equal(await page.getByTestId('onboarding-brand-extract').isDisabled(), true, 'needs a URL');
   await page.getByTestId('onboarding-brand-url').fill('acme-coffee.com');
