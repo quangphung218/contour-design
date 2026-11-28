@@ -456,6 +456,21 @@ try {
   assert.equal(await page.getByTestId('memory-index-unreadable').count(), 0, 'the notice goes once saved');
   assert.ok(lstatSync(indexFile).isFile(), 'a file of its own replaces the link');
   assert.equal(readFileSync(outside, 'utf8'), '# not the index\n', 'nothing written through the link');
+  // config.json there but not readable (a link to a config that turns
+  // memory on): memory is off and the page says so; a switch writes it again.
+  const configFile = join(data, 'memory', 'config.json');
+  const configOutside = join(data, 'on.json');
+  writeFileSync(configOutside, '{"enabled":true}');
+  rmSync(configFile, { force: true });
+  symlinkSync(configOutside, configFile);
+  await page.reload();
+  await page.getByTestId('memory-config-unreadable').waitFor();
+  assert.equal(await page.getByTestId('memory-enabled').isChecked(), false, 'an unreadable config is memory off');
+  await page.getByTestId('memory-enabled').check();
+  await until(async () => (await api('/api/memory/config')).unreadable === false, 'switch wrote the config');
+  await until(async () => (await page.getByTestId('memory-config-unreadable').count()) === 0, 'the notice goes once written');
+  assert.ok(lstatSync(configFile).isFile(), 'a file of its own replaces the link');
+  assert.equal(readFileSync(configOutside, 'utf8'), '{"enabled":true}', 'nothing written through the link');
   await shot('settings-memory', async () => page.getByTestId('memory-controls').scrollIntoViewIfNeeded());
   await page.getByTestId('memory-enabled').uncheck();
   await page.getByTestId('memory-off').waitFor();
