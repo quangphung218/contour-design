@@ -557,3 +557,104 @@ async fn the_agent_sees_its_cwd_in_pwd() {
     let pwd: Vec<&str> = env.lines().filter(|l| l.starts_with("PWD=")).collect();
     assert_eq!(pwd, [format!("PWD={}", project.display())], "{env}");
 }
+
+/// A fast write: the parser names the file every kilobyte (31 times here),
+/// the engine lets the first through and then at most four a second.
+#[tokio::test]
+async fn tool_in_flight_goes_out_at_most_four_times_a_second() {
+    use serde_json::json;
+    let tmp = tempfile::tempdir().unwrap();
+    let mocks = tmp.path().join("mocks");
+    std::fs::create_dir_all(&mocks).unwrap();
+    let frame = |event: serde_json::Value| {
+        json!({"type": "stream_event", "event": event, "parent_tool_use_id": null}).to_string()
+    };
+    let delta = |partial: &str| {
+        frame(json!({"type": "content_block_delta", "index": 0,
+            "delta": {"type": "input_json_delta", "partial_json": partial}}))
+    };
+    let mut lines = vec![
+        json!({"type": "system", "subtype": "init", "session_id": "s", "model": "mock"})
+            .to_string(),
+        frame(json!({"type": "message_start", "message": {"id": "m1"}})),
+        frame(json!({"type": "content_block_start", "index": 0,
+            "content_block": {"type": "tool_use", "id": "t1", "name": "Write", "input": {}}})),
+        delta("{\"file_path\": \"page.html\", \"content\": \""),
+    ];
+    let chunk = "x".repeat(1100);
+    lines.extend((0..30).map(|_| delta(&chunk)));
+    lines.push(delta("\"}"));
+    lines.push(frame(json!({"type": "content_block_stop", "index": 0})));
+    lines.push(frame(
+        json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"}}),
+    ));
+    lines.push(
+        json!({"type": "result", "subtype": "success", "is_error": false,
+            "stop_reason": "end_turn", "usage": {"input_tokens": 1}})
+        .to_string(),
+    );
+    let stream = tmp.path().join("stream.jsonl");
+    std::fs::write(&stream, lines.join("\n") + "\n").unwrap();
+    write_mock(
+        &mocks,
+        "claude",
+        &format!(
+            r#"case "$1" in --version|-p) [ "$2" = "--help" ] && exit 0;; esac
+IFS= read -r line
+cat "{}"
+"#,
+            stream.display()
+        ),
+    );
+    let runs = Runs::new(tmp.path().join("runs"));
+    let (run, _) = runs
+        .create_or_reuse(RunMeta {
+            run_id: "fast".into(),
+            agent_id: "claude".into(),
+            ..RunMeta::default()
+        })
+        .unwrap();
+    let engine = RunEngine::new(EngineConfig::from_env().with_path_prefix(&mocks));
+    let started = std::time::Instant::now();
+    let outcome = engine
+        .launch(LaunchSpec {
+            run: run.clone(),
+            def: &CLAUDE,
+            cwd: tmp.path().to_path_buf(),
+            prompt: "go".into(),
+            fallback_prompt: None,
+            model: None,
+            reasoning: None,
+            service_tier: None,
+            bin: None,
+            extra_dirs: Vec::new(),
+            resume_session_id: None,
+            permission: PermissionMode::Auto,
+            env: vec![("PATH".into(), engine.config().path.clone())],
+            project_id: None,
+            byok: None,
+            mcp: od_runtime::McpLaunch::default(),
+            next_step_key: None,
+        })
+        .await
+        .unwrap();
+    let took = started.elapsed();
+    assert_eq!(outcome.status, RunStatus::Succeeded);
+    let mut sub = run.subscribe(0);
+    let mut rows = Vec::new();
+    while let Some(ev) = sub.next().await {
+        if ev.event == sse::AGENT && ev.data["type"] == "tool_in_flight" {
+            rows.push(ev.data.clone());
+        }
+    }
+    assert!(!rows.is_empty(), "no tool_in_flight");
+    assert_eq!(rows[0]["path"], "page.html");
+    assert_eq!(rows[0]["id"], "t1");
+    // The first, plus one per 250 ms the run took at most.
+    let allowed = 1 + took.as_millis() / 250;
+    assert!(
+        (rows.len() as u128) <= allowed && rows.len() < 31,
+        "{} updates in {took:?}",
+        rows.len()
+    );
+}

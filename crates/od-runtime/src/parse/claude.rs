@@ -6,6 +6,7 @@
 //! them, content arrives only on the `assistant` wrapper (one per content
 //! block on 2.1.259) and the only turn boundary is the `result` frame.
 
+use super::tool_path::ToolPathScanner;
 use super::{StreamParser, normalize_task_status, raw_event, str_field, stringify_content};
 use od_contracts::AgentEvent;
 use regex::Regex;
@@ -22,7 +23,18 @@ struct Block {
     input: String,
     /// `content_block_start.content_block.input`, if present.
     input_value: Option<Value>,
+    /// Reads the written file's path out of `input` as it streams; only
+    /// for file-writing tools.
+    path_scanner: Option<ToolPathScanner>,
+    /// That path, once complete.
+    path: Option<String>,
+    /// `input` bytes at the last `tool_in_flight`.
+    reported_bytes: usize,
 }
+
+/// Bytes of arguments between two `tool_in_flight` updates of one call
+/// (the engine also spaces them in time).
+pub const IN_FLIGHT_STEP_BYTES: usize = 1024;
 
 #[derive(Debug, Clone)]
 struct Task {
@@ -55,6 +67,37 @@ pub struct ClaudeParser {
     pending_task_lists: HashSet<String>,
     canonical_task_tool_ids: HashSet<String>,
     next_task_id: u64,
+}
+
+/// `tool_in_flight` for a file-writing call whose arguments grew by
+/// `partial`: once its path is complete, then every
+/// [`IN_FLIGHT_STEP_BYTES`] of arguments.
+fn in_flight(state: &mut Block, partial: &str, out: &mut Vec<AgentEvent>) {
+    let (Some(id), Some(name)) = (&state.id, &state.name) else {
+        return;
+    };
+    let fresh = match (&state.path, state.path_scanner.as_mut()) {
+        (None, Some(scanner)) => scanner.push(partial),
+        _ => None,
+    };
+    let due = match (&fresh, &state.path) {
+        (Some(_), _) => true,
+        (None, Some(_)) => state.input.len() - state.reported_bytes >= IN_FLIGHT_STEP_BYTES,
+        (None, None) => false,
+    };
+    if let Some(path) = fresh {
+        state.path = Some(path);
+    }
+    let Some(path) = state.path.as_ref().filter(|_| due) else {
+        return;
+    };
+    state.reported_bytes = state.input.len();
+    out.push(AgentEvent::ToolInFlight {
+        id: id.clone(),
+        name: name.clone(),
+        path: path.clone(),
+        bytes: u64::try_from(state.input.len()).unwrap_or(u64::MAX),
+    });
 }
 
 static TASK_CREATED_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -186,14 +229,22 @@ impl ClaudeParser {
                 if kind.as_deref() == Some("thinking") {
                     out.push(AgentEvent::ThinkingStart);
                 }
+                let name = str_field(block, "name").map(str::to_owned);
+                let path_scanner = name
+                    .as_deref()
+                    .filter(|_| kind.as_deref() == Some("tool_use"))
+                    .and_then(ToolPathScanner::for_tool);
                 self.blocks.insert(
                     key,
                     Block {
                         kind,
-                        name: str_field(block, "name").map(str::to_owned),
+                        name,
                         id: str_field(block, "id").map(str::to_owned),
                         input: String::new(),
                         input_value: block.get("input").cloned(),
+                        path_scanner,
+                        path: None,
+                        reported_bytes: 0,
                     },
                 );
             }
@@ -275,6 +326,7 @@ impl ClaudeParser {
                         delta: partial.to_owned(),
                     });
                 }
+                in_flight(state, partial, out);
             }
             _ => {}
         }

@@ -62,6 +62,16 @@ pub enum AgentEvent {
         name: String,
         delta: String,
     },
+    /// A file-writing tool call still streaming its arguments: the file it
+    /// writes (complete, read from the first bytes) and how many bytes of
+    /// arguments have arrived so far. Live only, never stored; the call's
+    /// `tool_use` with the same `id` supersedes it.
+    ToolInFlight {
+        id: String,
+        name: String,
+        path: String,
+        bytes: u64,
+    },
     /// One per main-stream assistant message; sub-agent frames never fire it.
     #[serde(rename_all = "camelCase")]
     TurnEnd {

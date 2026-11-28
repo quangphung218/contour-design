@@ -1615,6 +1615,8 @@ messages! {
     ActCompacting => "Compacting the conversation", "Đang thu gọn hội thoại";
     ActWriting => "Writing {0}", "Đang viết {0}";
     ActEditing => "Editing {0}", "Đang sửa {0}";
+    ActWritingSize => "Writing {0} · {1}", "Đang viết {0} · {1}";
+    ActEditingSize => "Editing {0} · {1}", "Đang sửa {0} · {1}";
     ActReading => "Reading {0}", "Đang đọc {0}";
     ActCommand => "Running a command", "Đang chạy lệnh";
     ActTool => "Using {0}", "Đang dùng {0}";
