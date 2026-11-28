@@ -17,7 +17,7 @@
   --warn: #f5a524;
   --bad:  #e0445a;
   --grad: linear-gradient(135deg,#3b6cff,#7a5cff 55%,#ff5c8a);
-  --grad-soft: linear-gradient(135deg,#eef2ff,#f5ecff 55%,#ffeef5);
+  --grad-soft: linear-gradient(135deg,#f1f5f9,#fdf4ec 55%,#ffeef5);
   --radius: 18px;
   --radius-sm: 12px;
   --radius-lg: 26px;

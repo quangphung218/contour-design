@@ -93,6 +93,21 @@ re!(
     r#"(?i)<section\s+class\s*=\s*["'][^"']*\bslide\b[^"']*["']"#
 );
 re!(SLIDE_THEME, r"\b(light|dark|hero\s+light|hero\s+dark)\b");
+re!(CLASS_ATTR, r#"(?i)\bclass\s*=\s*["']([^"']*)["']"#);
+re!(THEME_CLASS_SELECTOR, r"\.(?:light|dark)(?:[^\w-]|$)");
+re!(
+    OWN_THEME_TOKENS,
+    r"(?i)(?:^|[\s,}])(?::root|html|body|\.deck)(?:[^\w{-][^{}]*)?\{[^{}]*--[\w-]+\s*:"
+);
+re!(DATA_THEME_ATTR, r"(?i)\sdata-theme\s*=");
+re!(
+    SLIDE_THEME_SELECTOR,
+    r"^(?:\.slide\.([\w-]+)|\.([\w-]+)\.slide)$"
+);
+re!(BACKGROUND_DECL, r"(?i)(?:^|[;\s])background(?:-color)?\s*:");
+re!(LINK_TAG, r"(?is)<link\b[^>]*>");
+re!(REL_STYLESHEET, r#"(?i)\srel\s*=\s*["']?stylesheet\b"#);
+re!(HREF_ATTR, r#"(?i)\shref\s*=\s*["']([^"']*)["']"#);
 re!(HERO_DARK, r"hero\s+dark");
 re!(HERO_LIGHT, r"hero\s+light");
 re!(WORD_DARK, r"\bdark\b");
@@ -423,19 +438,40 @@ pub fn lint_artifact(raw_html: &str) -> Vec<LintFinding> {
 
 fn lint_slides(html: &str, out: &mut Vec<LintFinding>) {
     let slides: Vec<&str> = SLIDE_SECTION.find_iter(html).map(|m| m.as_str()).collect();
-    let themed = slides.iter().filter(|s| SLIDE_THEME.is_match(s)).count();
+    let own = own_slide_themes(html);
+    let themed = slides
+        .iter()
+        .filter(|s| {
+            SLIDE_THEME.is_match(s)
+                || CLASS_ATTR
+                    .captures(s)
+                    .is_some_and(|c| c[1].split_whitespace().any(|t| own.contains(t)))
+        })
+        .count();
     if !slides.is_empty() && themed < slides.len() {
-        out.push(finding(
-            LintSeverity::P0,
-            "slide-theme-missing",
-            format!(
-                "{} of {} slides lack a theme class (light / dark / hero light / hero dark).",
-                slides.len() - themed,
-                slides.len()
-            ),
-            "Every <section class=\"slide\"> must include exactly one theme class. Audit the slide list and add light/dark/hero modifiers.",
-            None,
-        ));
+        let missing = slides.len() - themed;
+        let total = slides.len();
+        out.push(if has_own_theme_system(html) {
+            finding(
+                LintSeverity::P2,
+                "slide-theme-missing",
+                format!(
+                    "{missing} of {total} slides lack a theme class (light / dark / hero light / hero dark); the deck themes itself with its own tokens instead."
+                ),
+                "Fine if intended: the deck's own tokens set its colours. To use Contour's light/dark rhythm, add one theme class to every <section class=\"slide\">.",
+                None,
+            )
+        } else {
+            finding(
+                LintSeverity::P0,
+                "slide-theme-missing",
+                format!(
+                    "{missing} of {total} slides lack a theme class (light / dark / hero light / hero dark)."
+                ),
+                "Every <section class=\"slide\"> must include exactly one theme class. Audit the slide list and add light/dark/hero modifiers.",
+                None,
+            )
+        });
     }
     // Dark is true, light false; untagged slides are skipped.
     let seq: Vec<bool> = slides
@@ -467,6 +503,68 @@ fn lint_slides(html: &str, out: &mut Vec<LintFinding>) {
             None,
         ));
     }
+}
+
+/// Classes the deck's CSS styles as a slide theme: a `.slide.X` (or
+/// `.X.slide`) rule that sets the background, like Broadside's `orange`.
+/// A slide carrying one has a theme, under the deck's own name.
+fn own_slide_themes(html: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for block in STYLE_BLOCK.captures_iter(html) {
+        let css = CSS_COMMENT.replace_all(&block[1], "");
+        for rule in CSS_RULE.captures_iter(&css) {
+            if !BACKGROUND_DECL.is_match(&rule[2]) {
+                continue;
+            }
+            for selector in rule[1].split(',').map(str::trim) {
+                if let Some(c) = SLIDE_THEME_SELECTOR.captures(selector) {
+                    let name = c.get(1).or_else(|| c.get(2)).map_or("", |m| m.as_str());
+                    out.insert(name.to_owned());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A deck that sets its colours with its own tokens (custom properties on
+/// `:root` / `html` / `body` / `.deck`, a `data-theme` attribute, or a
+/// stylesheet of its own next to it) and
+/// never uses Contour's `light` / `dark` classes, neither on an element
+/// nor in a selector. An untagged slide there is a style choice, not a
+/// slide that falls back to no theme.
+fn has_own_theme_system(html: &str) -> bool {
+    let uses_theme_class = CLASS_ATTR
+        .captures_iter(html)
+        .any(|c| c[1].split_whitespace().any(|t| t == "light" || t == "dark"))
+        || STYLE_BLOCK
+            .captures_iter(html)
+            .any(|b| THEME_CLASS_SELECTOR.is_match(&CSS_COMMENT.replace_all(&b[1], "")));
+    if uses_theme_class {
+        return false;
+    }
+    DATA_THEME_ATTR.is_match(html)
+        || has_local_stylesheet(html)
+        || STYLE_BLOCK
+            .captures_iter(html)
+            .any(|b| OWN_THEME_TOKENS.is_match(&CSS_COMMENT.replace_all(&b[1], "")))
+}
+
+/// A `<link rel="stylesheet">` to a file of the project (not a URL): the
+/// deck's theme lives there, out of this file's sight.
+fn has_local_stylesheet(html: &str) -> bool {
+    LINK_TAG.find_iter(html).any(|m| {
+        let tag = m.as_str();
+        REL_STYLESHEET.is_match(tag)
+            && HREF_ATTR.captures(tag).is_some_and(|c| {
+                let href = c[1].trim().to_ascii_lowercase();
+                !href.is_empty()
+                    && !href.starts_with("//")
+                    && !href.starts_with("http:")
+                    && !href.starts_with("https:")
+                    && !href.starts_with("data:")
+            })
+    })
 }
 
 /// The findings as a block for the agent's next turn, P0 first. Empty
@@ -981,6 +1079,111 @@ mod tests {
             ["slide-rhythm"]
         );
         assert!(ids(&deck(&["slide light", "slide dark", "slide light"])).is_empty());
+    }
+
+    /// A deck that themes itself (tokens, `data-theme`, its own
+    /// stylesheet) and never uses `light` / `dark` gets a P2, not a P0.
+    #[test]
+    fn a_deck_with_its_own_theme_system_is_p2() {
+        let theme = |html: &str| {
+            lint_artifact(html)
+                .into_iter()
+                .find(|f| f.id == "slide-theme-missing")
+                .map(|f| f.severity)
+        };
+        let slides =
+            "<section class=\"slide cover\">a</section><section class=\"slide\">b</section>";
+        let p2 = Some(LintSeverity::P2);
+        let p0 = Some(LintSeverity::P0);
+        // Own tokens, each place a deck puts them.
+        for css in [
+            ":root{--bg:#111;--fg:#eee}",
+            "html{--bg:#111}",
+            "body{--bg:#111}",
+            ".deck{--bg:#111}",
+            ":root[data-mode=x]{--bg:#111}",
+            "/* x */ .a{color:red}\n.deck .slide{--bg:#111}",
+        ] {
+            assert_eq!(theme(&format!("{}{slides}", style(css))), p2, "{css}");
+        }
+        assert_eq!(theme(&format!("<html data-theme=\"aurora\">{slides}")), p2);
+        assert_eq!(
+            theme(&format!(
+                "<link rel=\"stylesheet\" href=\"themes/a.css\">{slides}"
+            )),
+            p2
+        );
+        assert_eq!(
+            theme(&format!(
+                "<link href='../style.css' rel=stylesheet>{slides}"
+            )),
+            p2
+        );
+        // No theme of its own: still P0.
+        assert_eq!(theme(slides), p0);
+        for not_own in [
+            "<link rel=\"stylesheet\" href=\"https://cdn.x/a.css\">",
+            "<link rel=\"stylesheet\" href=\"//cdn.x/a.css\">",
+            "<link rel=\"preload\" href=\"a.css\">",
+            "<style>.deck-header{--bg:#111}</style>",
+            "<style>.tpl-html{--bg:#111}</style>",
+            "<style>.x{color:var(--bg)}</style>",
+            "<!-- <style>:root{--bg:#111}</style> -->",
+            "<style>/* :root{--bg:#111} */</style>",
+        ] {
+            assert_eq!(theme(&format!("{not_own}{slides}")), p0, "{not_own}");
+        }
+        // Light / dark used anywhere: the deck follows Contour's classes,
+        // so an untagged slide is a slip.
+        let tokens = style(":root{--bg:#111}");
+        for uses in [
+            "<body class=\"dark\">",
+            "<div class='card light'></div>",
+            "<style>.slide.dark{background:#000}</style>",
+            "<style>.light .muted{color:#555}</style>",
+            "<style>@media print{.dark{color:#000}}</style>",
+        ] {
+            assert_eq!(theme(&format!("{tokens}{uses}{slides}")), p0, "{uses}");
+        }
+        // Lookalikes are not Contour's classes.
+        for lookalike in [
+            "<body class=\"dark-mode\">",
+            "<div class=\"lightbox\"></div>",
+            "<div class=\"Dark\"></div><style>.Light{color:#fff}</style>",
+            "<style>.darker{color:#000}.light-text{color:#fff}</style>",
+        ] {
+            assert_eq!(
+                theme(&format!("{tokens}{lookalike}{slides}")),
+                p2,
+                "{lookalike}"
+            );
+        }
+    }
+
+    /// A class the deck styles as a slide theme (`.slide.X` with a
+    /// background) counts as that slide's theme.
+    #[test]
+    fn a_slide_theme_the_deck_defines_counts() {
+        let deck = |css: &str| {
+            ids(&format!(
+                "{}<section class=\"slide dark\" data-od-id=\"a\"></section><section class=\"slide orange\" data-od-id=\"b\"></section>",
+                style(css)
+            ))
+        };
+        assert!(deck(".slide.orange{background:#f60}").is_empty());
+        assert!(deck(".orange.slide{background-color:#f60}").is_empty());
+        assert!(deck(".a, .slide.orange {color:#fff; background: var(--o)}").is_empty());
+        assert!(deck("@media screen{.slide.orange{background:#f60}}").is_empty());
+        for not_a_theme in [
+            ".slide.orange{color:#f60}",
+            ".slide .orange{background:#f60}",
+            ".orange{background:#f60}",
+            ".slide.orange-ish{background:#f60}",
+            "/* .slide.orange{background:#f60} */",
+            ".slide.orange{color:#fff; /* background: #f60; */}",
+        ] {
+            assert_eq!(deck(not_a_theme), ["slide-theme-missing"], "{not_a_theme}");
+        }
     }
 
     #[test]
