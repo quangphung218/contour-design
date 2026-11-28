@@ -217,6 +217,11 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
       `::an_override_named_otherwise_is_shown_and_kept`, `tests/user_file_writes.rs`,
       `../od-content/src/user_content.rs::a_save_never_lands_in_a_skill_named_alike`, `::a_save_replaces_a_link_and_writes_nothing_through_it`
     - e2e `../od-ui/e2e/library.e2e.mjs` (skill form, DESIGN.md editor), `../od-ui/e2e/c2.e2e.mjs` (memory index)
+17. The pictures an agent takes of its render never reach the project: a Claude turn outside Ask mode gets
+    `OD_LOOK_DIR` (`src/routes/runs.rs:look_dir`, a system temp folder, also `--add-dir`), `od export --look` writes
+    there under a new name, and the folder goes when the run ends (`Finalize::look_dir`) or never launches.
+    - `tests/runs.rs::a_claude_turn_looks_into_a_folder_removed_when_it_ends`
+    - `../od-cli/tests/m5.rs::a_look_lands_in_the_turns_folder_never_in_the_project`, `../od-content/src/prompt.rs::an_agent_that_reads_images_looks_at_its_render_after_the_lint`
 
 ## Traps
 - A key owned by a dedicated route must be stripped from the generic PUT (#227).

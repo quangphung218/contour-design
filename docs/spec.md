@@ -230,6 +230,7 @@ Electron shell ──(sidecar IPC)── daemon (Express, Node 24) ── spawn 
 - **Env passed to the agent**:
   - `OD_DATA_DIR`, `OD_DAEMON_URL`, `OD_TOOL_TOKEN`, `OD_PROJECT_ID`, `OD_PROJECT_DIR`, `OD_BIN` (path to `od` so the agent can call tools);
   - Claude only: `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`;
+  - Contour: an agent that reads images (Claude) in a mode that writes files gets `OD_LOOK_DIR`, a temp folder of the turn's own outside the project (also `--add-dir`), where `od export --look` puts the picture it takes of its render; removed when the run ends;
   - `OD_API_TOKEN` is never passed.
 - **Skill staging**: the active skill is copied into `<cwd>/.od-skills/<name>-<hash>/`, no symlinks. The SKILL.md body gets a preamble pointing to the auxiliary files [S `skills.ts` `withSkillRootPreamble`; D `docs/skills-protocol.md` §3].
 

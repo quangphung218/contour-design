@@ -1547,3 +1547,114 @@ async fn stopping_the_server_does_not_wait_for_project_streams() {
     );
     drop(res);
 }
+
+/// PO 28/11 item 5: a Claude turn that writes files gets a folder of its
+/// own for the pictures of its render (`OD_LOOK_DIR`, outside the
+/// project, readable in Ask mode through `--add-dir`) and the prompt step
+/// that uses it; the folder is gone when the turn ends. An agent that
+/// cannot open an image, and Ask mode, get neither.
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn a_claude_turn_looks_into_a_folder_removed_when_it_ends() {
+    let d = daemon().await;
+    let log = d.mocks.display().to_string();
+    write_mock(
+        &d.mocks,
+        "claude",
+        &format!(
+            r#"{PROBES}
+echo "$*" >> "{log}/argv.log"
+echo "${{OD_LOOK_DIR:-none}}" >> "{log}/look.log"
+if [ -n "$OD_LOOK_DIR" ]; then printf x > "$OD_LOOK_DIR/look-1.png"; fi
+IFS= read -r line
+printf '%s\n' "$line" >> "{log}/prompts.log"
+printf '{{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn"}}\n'
+cat >/dev/null
+"#
+        ),
+    );
+    let fixture = fixture("codex/turn-exec-json.jsonl");
+    write_mock(
+        &d.mocks,
+        "codex",
+        &format!(
+            r#"{PROBES}
+echo "${{OD_LOOK_DIR:-none}}" >> "{log}/look.log"
+cat > "{log}/codex-prompt.txt"
+cat "{fixture}"
+"#,
+            fixture = fixture.display()
+        ),
+    );
+    let (project, _) = d.project().await;
+    async fn run(d: &Daemon, body: Value) {
+        let run = d.start(body).await;
+        let end = end_of(&d.events(&run.run_id, None).await).clone();
+        assert_eq!(end["status"], "succeeded", "{end}");
+    }
+    let rule = "## Look at your render before you finish";
+
+    run(
+        &d,
+        json!({"agentId": "claude", "projectId": project, "message": "go"}),
+    )
+    .await;
+    let looks: Vec<String> = std::fs::read_to_string(d.mocks.join("look.log"))
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let dir = std::path::PathBuf::from(&looks[0]);
+    assert!(dir.is_absolute(), "{looks:?}");
+    let project_dir = d.data.join("projects").join(&project);
+    assert!(!dir.starts_with(&project_dir), "outside the project");
+    assert!(!dir.starts_with(&d.data), "outside the data folder");
+    assert_eq!(
+        flag_value(&argv_lines(&d)[0], "--add-dir").as_deref(),
+        Some(looks[0].as_str()),
+        "Ask mode may read it"
+    );
+    let prompt = std::fs::read_to_string(d.mocks.join("prompts.log")).unwrap();
+    assert!(prompt.contains(rule));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while dir.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "{} left after the turn",
+            dir.display()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        !std::fs::read_dir(&project_dir).unwrap().any(|e| e
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("look-")),
+        "the picture never lands in the project"
+    );
+
+    // Ask mode writes no file: no look, no folder.
+    run(
+        &d,
+        json!({"agentId": "claude", "projectId": project, "message": "why?",
+               "sessionMode": "chat"}),
+    )
+    .await;
+    // An agent with no image reading, in a mode that writes: neither.
+    run(
+        &d,
+        json!({"agentId": "codex", "projectId": project, "message": "go",
+               "sessionMode": "design"}),
+    )
+    .await;
+    let looks = std::fs::read_to_string(d.mocks.join("look.log")).unwrap();
+    assert_eq!(looks.lines().skip(1).collect::<Vec<_>>(), ["none", "none"]);
+    let argv = argv_lines(&d);
+    assert_eq!(flag_value(&argv[1], "--add-dir"), None, "{}", argv[1]);
+    let prompts = std::fs::read_to_string(d.mocks.join("prompts.log")).unwrap();
+    assert!(!prompts.lines().nth(1).unwrap().contains(rule));
+    let codex = std::fs::read_to_string(d.mocks.join("codex-prompt.txt")).unwrap();
+    assert!(!codex.contains(rule));
+    assert!(codex.contains("## Lint before you finish"), "a design turn");
+}

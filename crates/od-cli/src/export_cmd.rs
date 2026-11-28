@@ -36,8 +36,13 @@ pub struct ExportArgs {
     format: Format,
     /// Output path, or `-` for stdout (default: the server's file name in
     /// the current directory).
-    #[arg(long, short)]
+    #[arg(long, short, conflicts_with = "look")]
     out: Option<PathBuf>,
+    /// Write under a new name into the agent turn's own folder
+    /// (`$OD_LOOK_DIR`, outside the project, removed when the turn ends)
+    /// and print the path: how an agent looks at its render.
+    #[arg(long)]
+    look: bool,
     /// Download name and PPTX title.
     #[arg(long)]
     title: Option<String>,
@@ -106,14 +111,27 @@ pub fn run(client: &Client, args: ExportArgs, json: bool) -> anyhow::Result<()> 
         audio_tracks,
     } = download;
     let target = match args.out {
+        _ if args.look => {
+            let dir = std::env::var_os(LOOK_DIR_ENV).filter(|d| !d.is_empty());
+            let dir = dir.ok_or_else(|| {
+                anyhow::anyhow!("--look writes into ${LOOK_DIR_ENV}, which only an agent turn sets")
+            })?;
+            write_look(std::path::Path::new(&dir), name.as_deref(), &bytes)?
+        }
         Some(p) if p.as_os_str() == "-" => {
             std::io::stdout().write_all(&bytes)?;
             return Ok(());
         }
-        Some(p) => p,
-        None => PathBuf::from(name.unwrap_or_else(|| "export".to_owned())),
+        Some(p) => {
+            std::fs::write(&p, &bytes)?;
+            p
+        }
+        None => {
+            let p = PathBuf::from(name.unwrap_or_else(|| "export".to_owned()));
+            std::fs::write(&p, &bytes)?;
+            p
+        }
     };
-    std::fs::write(&target, &bytes)?;
     if json {
         println!(
             "{}",
@@ -130,6 +148,28 @@ pub fn run(client: &Client, args: ExportArgs, json: bool) -> anyhow::Result<()> 
     Ok(())
 }
 
+/// The agent turn's own folder for `--look` pictures, set by the daemon.
+const LOOK_DIR_ENV: &str = "OD_LOOK_DIR";
+
+/// Writes `bytes` into `dir` under a new name (`look-<random>.<ext>`,
+/// the extension of the server's file name): created exclusively, so a
+/// file or link already there is never written over or through.
+fn write_look(dir: &std::path::Path, name: Option<&str>, bytes: &[u8]) -> anyhow::Result<PathBuf> {
+    let ext = name
+        .and_then(|n| std::path::Path::new(n).extension())
+        .and_then(|e| e.to_str())
+        .filter(|e| e.chars().all(|c| c.is_ascii_alphanumeric()))
+        .map_or_else(String::new, |e| format!(".{e}"));
+    let mut file = tempfile::Builder::new()
+        .prefix("look-")
+        .suffix(&ext)
+        .tempfile_in(dir)
+        .map_err(|e| anyhow::anyhow!("cannot write into {}: {e}", dir.display()))?;
+    file.write_all(bytes)?;
+    let (_, path) = file.keep()?;
+    Ok(path)
+}
+
 /// ` · no audio` or ` · N audio tracks` for an MP4 export; empty for
 /// other formats (no header).
 fn audio_note(tracks: Option<u32>) -> String {
@@ -144,6 +184,33 @@ fn audio_note(tracks: Option<u32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `--look` takes a new file each time, named by the server's
+    /// extension, never one already there.
+    #[test]
+    fn a_look_is_a_new_file_in_the_turns_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = write_look(dir.path(), Some("deck.png"), b"one").unwrap();
+        let b = write_look(dir.path(), Some("deck.png"), b"two").unwrap();
+        assert_ne!(a, b);
+        for (path, body) in [(&a, "one"), (&b, "two")] {
+            assert_eq!(path.parent(), Some(dir.path()));
+            let name = path.file_name().unwrap().to_str().unwrap();
+            assert!(
+                name.starts_with("look-") && name.ends_with(".png"),
+                "{name}"
+            );
+            assert_eq!(std::fs::read_to_string(path).unwrap(), body);
+        }
+        let odd = write_look(dir.path(), Some("x.p/ng"), b"x").unwrap();
+        assert!(odd.extension().is_none(), "{}", odd.display());
+        let none = write_look(dir.path(), None, b"x").unwrap();
+        assert_eq!(none.parent(), Some(dir.path()));
+        // The turn's folder gone (the turn ended): an error, nothing made.
+        let gone = dir.path().join("gone");
+        assert!(write_look(&gone, Some("a.png"), b"x").is_err());
+        assert!(!gone.exists());
+    }
 
     #[test]
     fn mp4_exports_say_how_much_sound_they_carry() {

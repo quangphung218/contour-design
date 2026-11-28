@@ -344,6 +344,8 @@ struct Prepared {
     byok: Option<od_runtime::byok::ByokConfig>,
     /// Design Jury on for this run.
     critique: bool,
+    /// The prompt asks the agent to look at its render (`--look`).
+    look: bool,
 }
 
 /// Design Jury for this run (spec 1.5): a skill that requires it or opts
@@ -569,6 +571,8 @@ async fn prepare_and_launch(
                 (Some(u), Some(h)) => Some(format!("{u}\n\n{h}")),
                 (u, h) => u.or(h),
             };
+            let look = session_mode != od_contracts::SessionMode::Chat
+                && prompt::agent_reads_images(def.id);
             let instructions = prompt::compose_instructions(&PromptInput {
                 session_mode,
                 locale: req2.locale.as_deref(),
@@ -581,6 +585,7 @@ async fn prepare_and_launch(
                 plugin_block: plugin.as_ref().map(|p| p.prompt_block.as_str()),
                 memory: &memory,
                 critique,
+                reads_images: look,
             });
             let critique = critique.is_some() && session_mode == od_contracts::SessionMode::Design;
             let stable_hash = prompt::stable_hash(&instructions);
@@ -659,6 +664,7 @@ async fn prepare_and_launch(
                 permission,
                 byok,
                 critique,
+                look,
             })
         })
         .await?;
@@ -672,6 +678,9 @@ async fn prepare_and_launch(
     if !canceled {
         crate::routes::genui::raise_for_run(state, run, req, project).await;
     }
+    // The pictures the agent takes of its render (`od export --look`):
+    // a folder of the turn's own, outside the project, removed at its end.
+    let look_dir = prepared.look.then(look_dir).flatten();
     let launched = {
         // Held across the check and `launch` so a concurrent cancel either
         // finds the run in the engine or leaves a pending cancel seen here.
@@ -706,6 +715,9 @@ async fn prepare_and_launch(
                 },
             );
             env.extend(mcp.env);
+            if let Some(dir) = &look_dir {
+                env.push((LOOK_DIR_ENV.into(), dir.path().into()));
+            }
             env.extend(crate::routes::manage::settings::env_for(&data_root, def.id));
             Some(engine.launch(LaunchSpec {
                 run: Arc::clone(run),
@@ -725,7 +737,12 @@ async fn prepare_and_launch(
                     models.and_then(|m| non_default(m.get(def.id)?.get("serviceTier")?.as_str()))
                 },
                 bin: crate::routes::manage::settings::custom_bin(&data_root, def.id),
-                extra_dirs: super::chat_ops::linked_dirs(&state.store, project),
+                extra_dirs: {
+                    // Claude in Ask mode reads only the folders it is given.
+                    let mut dirs = super::chat_ops::linked_dirs(&state.store, project);
+                    dirs.extend(look_dir.as_ref().map(|d| d.path().to_path_buf()));
+                    dirs
+                },
                 resume_session_id: prepared.resume_session_id,
                 permission: prepared.permission,
                 env,
@@ -740,6 +757,7 @@ async fn prepare_and_launch(
         if let Some(file) = &mcp.file {
             let _ = std::fs::remove_file(file);
         }
+        drop(look_dir);
         crate::routes::genui::drop_pending_for_run(state, run).await;
         // Stopped by a shutdown, not by Stop: told as Contour quitting.
         let category = state
@@ -776,6 +794,7 @@ async fn prepare_and_launch(
                 stable_hash: prepared.stable_hash,
                 critique: prepared.critique,
                 mcp_file: mcp.file,
+                look_dir,
             },
         )
         .instrument(tracing::info_span!("run", run_id = %run.id())),
@@ -798,6 +817,22 @@ struct Finalize {
     critique: bool,
     /// The run's MCP config (holds tokens); removed when the run ends.
     mcp_file: Option<PathBuf>,
+    /// The agent's pictures of its render; removed when the run ends.
+    look_dir: Option<tempfile::TempDir>,
+}
+
+/// Where `od export --look` writes (`od-cli` reads the same name).
+const LOOK_DIR_ENV: &str = "OD_LOOK_DIR";
+
+/// A new folder for one turn's pictures in the system temp folder (never
+/// in the project: the file list and the turn's changes never see it).
+/// `None` when it cannot be made: the agent then skips the look.
+fn look_dir() -> Option<tempfile::TempDir> {
+    tempfile::Builder::new()
+        .prefix("contour-look-")
+        .tempdir()
+        .inspect_err(|e| tracing::warn!(error = %e, "no folder for the agent's look"))
+        .ok()
 }
 
 /// Agent payloads that are only meaningful live.
@@ -814,7 +849,7 @@ async fn persist_run(
     state: AppState,
     run: Arc<Run>,
     handle: tokio::task::JoinHandle<RunOutcome>,
-    fin: Finalize,
+    mut fin: Finalize,
 ) {
     let mut sub = run.subscribe(0);
     let mut pending: Vec<Value> = Vec::new();
@@ -883,6 +918,11 @@ async fn persist_run(
     state.runs.tokens.revoke_run(run.id());
     if let Some(file) = &fin.mcp_file {
         let _ = std::fs::remove_file(file);
+    }
+    if let Some(dir) = fin.look_dir.take()
+        && let Err(e) = dir.close()
+    {
+        tracing::warn!(error = %e, "removing the agent's look folder");
     }
     let status = run.status();
     // Stopped, by Stop or by Contour quitting (QA-114): not the agent failing.
