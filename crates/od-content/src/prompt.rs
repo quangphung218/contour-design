@@ -50,7 +50,7 @@ When this turn wrote or edited an HTML file, the last step before your final mes
 \"$OD_NODE_BIN\" \"$OD_BIN\" lint \"$OD_PROJECT_ID\" <file> --fail-on p0
 ```
 
-Exit code 1 means the file has a P0 finding: fix every P0 it lists in the file itself, then run the command again until it exits 0. P1 and P2 findings are optional. If the command cannot run at all (not found, daemon unreachable), skip this step and do not mention it in your reply.";
+Exit code 1 means the file has a P0 finding: fix every P0 it lists in the file itself, then run the command again. Stop after two fix attempts: if a P0 is still listed, name it in one line of your reply instead of trying again. P1 and P2 findings are optional. If the command cannot run at all (not found, daemon unreachable), skip this step and do not mention it in your reply.";
 
 /// Contour's own rule (QA-110): the preview, PDF and PNG load nothing from
 /// the network (decisions: no outbound network), so a linked web font
@@ -905,7 +905,8 @@ mod tests {
             let block = &text[pos(&text, rule)..];
             assert!(block.contains(command), "{block}");
             assert!(block.contains("fix every P0"));
-            assert!(block.contains("until it exits 0"));
+            assert!(block.contains("Stop after two fix attempts"));
+            assert!(!block.contains("until it exits 0"));
             assert!(!block.contains("--fail-on P0"));
             let handoff = "This run uses OpenDesign's filesystem execution profile.";
             assert!(
