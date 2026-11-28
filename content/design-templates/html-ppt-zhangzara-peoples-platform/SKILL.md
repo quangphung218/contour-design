@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-peoples-platform
 en_name: "Make a Public-Transit Funding Case like a Transportation Policy Lead"
+en_short_name: "People's platform · Transit"
+vi_short_name: "People's platform · Giao thông"
 zh_name: "像交通政策负责人一样做公共交通投资论证"
 description: |
   A public-transit funding proposal for a city council — ridership need, the plan, the risk controls, and the ask. Built as a decision-grade policy briefing deck for city council, public board.

@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-signal
 en_name: "Write a Strategy Decision Memo like a Corp-Dev Lead"
+en_short_name: "Signal · Strategy memo"
+vi_short_name: "Signal · Quyết định chiến lược"
 zh_name: "像战略发展负责人一样写战略决策备忘"
 description: |
   OpenDesign's strategy memo: should it monetize the plugin registry now or hold — options, risks, and the recommendation. Built as a decision-grade corporate strategy deck for CEO, strategy team.

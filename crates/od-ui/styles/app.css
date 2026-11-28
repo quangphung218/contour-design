@@ -210,6 +210,14 @@ button.nav-link { width: 100%; border: 0; background: transparent; font: inherit
 
 .home-section { margin-top: var(--space-12); }
 .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3-5); }
+/* Home's template finder: search and purpose chips over the grid, then
+   the templates the brief suggests. */
+.template-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-bottom: var(--space-3); }
+.purpose-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.purpose-chips .chip { cursor: pointer; }
+.template-suggested { margin-bottom: var(--space-4); }
+.template-suggested h3 { display: flex; align-items: center; gap: var(--space-1-5); margin: 0 0 var(--space-2); font-weight: 500; }
+.template-grid .empty .btn { margin-top: var(--space-2); }
 .template-card {
   display: flex; flex-direction: column;
   padding: 0;
@@ -902,6 +910,9 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .queued .input { flex: 1; }
 .queued-actions { display: flex; gap: 2px; align-items: center; }
 .comment-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); padding: var(--space-2) var(--space-3) 0; }
+/* "1 comment goes with your next message · Send" over the chips. */
+.comment-chips-head { display: flex; flex-basis: 100%; align-items: center; gap: var(--space-1-5); color: var(--color-accent-text); font-size: var(--text-sm); }
+.comment-chips-head > span { flex: 1; min-width: 0; }
 .comment-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; border-color: transparent; background: var(--color-accent-soft); color: var(--color-accent-text); cursor: default; }
 .comment-chip:hover { border-color: transparent; color: var(--color-accent-text); }
 .warn-text { display: flex; gap: var(--space-2); align-items: center; margin: var(--space-2) var(--space-3) 0; padding: var(--space-2) var(--space-2-5); border-radius: var(--radius-md); background: var(--color-warning-soft); color: var(--color-warning); font-size: var(--text-sm); }
@@ -1770,7 +1781,8 @@ html[data-presenter] .main { margin: 0; border-radius: 0; }
   .studio-switch .seg { min-height: 44px; }
   .chip.next-step, .next-action, .next-chips-pending, .turn-skills .btn { min-height: 44px; }
   .settings-section .row.end .btn, .empty-state .btn { min-height: 44px; }
-  .home-section .section-head .btn { min-height: 44px; }
+  .home-section .section-head .btn, .purpose-chips .chip, .comment-chips-head .btn { min-height: 44px; }
+  .template-tools .lib-search, .template-tools .lib-search .input { width: 100%; }
   /* The title keeps its line; Show all and All templates go under it. */
   .home-section .section-head, .home-section .section-head > .row { flex-wrap: wrap; }
 }

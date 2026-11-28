@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-stencil-tablet
 en_name: "Present a Workplace-Safety Compliance Review like a Senior Regulator"
+en_short_name: "Stencil · Safety compliance"
+vi_short_name: "Stencil · Tuân thủ an toàn"
 zh_name: "像资深监管者一样做工作场所安全合规评审"
 description: |
   A workplace-safety compliance review for a manufacturing regulator — findings, the evidence chain, and the corrective mandate. Built as a decision-grade policy briefing deck for regulator, plant leadership.

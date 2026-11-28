@@ -1,6 +1,8 @@
 ---
 name: html-ppt-xhs-pastel-card
 en_name: "Write a Personal Manifesto Talk like a Narrative Podcast Producer"
+en_short_name: "Pastel card · Personal talk"
+vi_short_name: "Pastel card · Bài nói cá nhân"
 zh_name: "像叙事播客制作人一样写个人宣言演讲"
 description: |
   A personal manifesto: a year of saying yes — the premise, the scenes, the turn, and the meaning that lands. Built as a decision-grade story deck for community, talk audience.

@@ -20,6 +20,7 @@ use crate::intent::{
 };
 use crate::mention::Candidate;
 use crate::settings::AppConfig;
+use crate::template_find::{self, Purpose, matches_query, purposes_of};
 use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use od_contracts::{
@@ -399,10 +400,7 @@ pub fn Home() -> impl IntoView {
 
     let title = move || {
         if chip_picked.get() {
-            return tf(
-                T::HomeTitleCreate,
-                &[&t(chip.get().label_key()).to_lowercase()],
-            );
+            return tf(T::HomeTitleCreate, &[&chip.get().title_noun()]);
         }
         let words: Vec<&str> = t(T::HomeTitleWords).split(',').collect();
         let word = words
@@ -617,7 +615,7 @@ pub fn Home() -> impl IntoView {
                     templates=move || view! {
                         <Gallery
                             templates=chip_templates
-                            total=Signal::derive(move || templates.with(|t| t.as_ref().map_or(0, Vec::len)))
+                            brief=brief
                             selected=template
                             pick=pick_template
                         />
@@ -1103,16 +1101,86 @@ fn FromFolderForm(typing: RwSignal<Option<String>>) -> impl IntoView {
 const RECENT_DIRS_KEY: &str = "recentLinkedDirs";
 
 /// Featured templates of the chosen output type; a card picks it. Show all
-/// unfolds that type here; the link next to it opens every type (`total`)
-/// on the Templates page, so the two counts read as part and whole.
+/// unfolds that type here; the link next to it opens the Templates page,
+/// without a count, so it does not read as a second total of this type.
+/// A long list gets a search box and purpose chips, and the brief being
+/// typed suggests up to three templates above the grid (keywords only).
 #[component]
 fn Gallery(
     templates: Signal<Option<Vec<SkillSummary>>>,
-    total: Signal<usize>,
+    brief: RwSignal<String>,
     selected: RwSignal<Option<String>>,
     pick: Callback<SkillSummary>,
 ) -> impl IntoView {
     let show_all = RwSignal::new(false);
+    let query = RwSignal::new(String::new());
+    let purpose = RwSignal::new(None::<Purpose>);
+    // The purposes this output type's templates are filed under.
+    let purposes = Memo::new(move |_| -> Vec<Purpose> {
+        templates.with(|l| {
+            let Some(l) = l else { return Vec::new() };
+            let filed: Vec<Vec<Purpose>> = l.iter().map(purposes_of).collect();
+            Purpose::ALL
+                .into_iter()
+                .filter(|p| filed.iter().any(|f| f.contains(p)))
+                .collect()
+        })
+    });
+    // Another output type may not have the purpose picked for the last one.
+    Effect::new(move |_| {
+        let here = purposes.get();
+        if purpose.get_untracked().is_some_and(|p| !here.contains(&p)) {
+            purpose.set(None);
+        }
+    });
+    let searchable = move || templates.with(|l| l.as_ref().is_some_and(|l| l.len() > GALLERY));
+    let filtering =
+        move || searchable() && (purpose.get().is_some() || !query.with(|q| q.trim().is_empty()));
+    let shown = Memo::new(move |_| -> Option<Vec<SkillSummary>> {
+        let list = templates.get()?;
+        if !filtering() {
+            return Some(list);
+        }
+        let (q, p) = (query.get(), purpose.get());
+        Some(
+            list.into_iter()
+                .filter(|s| p.is_none_or(|p| purposes_of(s).contains(&p)))
+                .filter(|s| matches_query(s, &q))
+                .collect(),
+        )
+    });
+    // Up to three that fit the brief, while nothing else filters the grid
+    // and no template is picked: a pick from the grid fills an empty brief
+    // with its example prompt, and a row showing up then would push the
+    // grid down under the pointer. A pick from the row keeps the row it
+    // was made in, so the card clicked stays where it was.
+    let kept = RwSignal::new(Vec::<SkillSummary>::new());
+    let suggested = Memo::new(move |_| -> Vec<SkillSummary> {
+        if filtering() {
+            return Vec::new();
+        }
+        match selected.get() {
+            Some(id) => kept.with(|k| {
+                if k.iter().any(|s| s.info.id == id) {
+                    k.clone()
+                } else {
+                    Vec::new()
+                }
+            }),
+            None => {
+                let list = templates.get().unwrap_or_default();
+                brief.with(|b| template_find::suggest(b, &list))
+            }
+        }
+    });
+    let pick_suggested = Callback::new(move |s: SkillSummary| {
+        kept.set(suggested.get_untracked());
+        pick.run(s);
+    });
+    let clear = move || {
+        query.set(String::new());
+        purpose.set(None);
+    };
     view! {
         <section class="home-section">
             <div class="section-head">
@@ -1120,8 +1188,8 @@ fn Gallery(
                 <div class="row">
                 {move || {
                     let n = templates.with(|t| t.as_ref().map_or(0, Vec::len));
-                    (n > GALLERY).then(|| view! {
-                        <button class="btn ghost small" on:click=move |_| show_all.update(|s| *s = !*s)>
+                    (n > GALLERY && !filtering()).then(|| view! {
+                        <button class="btn ghost small" data-testid="home-show-all" on:click=move |_| show_all.update(|s| *s = !*s)>
                             {move || if show_all.get() {
                                 t(T::TemplatesShowFewer).to_owned()
                             } else {
@@ -1130,24 +1198,93 @@ fn Gallery(
                         </button>
                     })
                 }}
-                {move || (total.get() > 0).then(|| view! {
-                    <a class="btn ghost small" href="/templates" data-testid="home-all-templates">
-                        {tf(T::TemplatesBrowseAll, &[&total.get().to_string()])}
-                    </a>
-                })}
+                <a class="btn ghost small" href="/templates" data-testid="home-all-templates">
+                    {t(T::TemplatesLibrary)}
+                </a>
                 </div>
             </div>
-            <div class="template-grid">
-                {move || match templates.get() {
+            <Show when=searchable>
+                <div class="template-tools">
+                    <label class="lib-search">
+                        {icon(Glyph::Search)}
+                        <input
+                            class="input small"
+                            type="search"
+                            data-testid="home-tpl-search"
+                            placeholder=t(T::SearchTemplates)
+                            aria-label=t(T::SearchTemplates)
+                            prop:value=move || query.get()
+                            on:input=live(move |ev| query.set(event_target_value(&ev)))
+                        />
+                    </label>
+                    {move || (purposes.with(Vec::len) > 1).then(|| view! {
+                        <div class="purpose-chips" role="group" aria-label=t(T::TemplatesPurposes)>
+                            <button
+                                type="button"
+                                class="chip"
+                                class:active=move || purpose.get().is_none()
+                                aria-pressed=move || purpose.get().is_none().to_string()
+                                data-testid="purpose-chip"
+                                data-purpose="all"
+                                on:click=move |_| purpose.set(None)
+                            >
+                                {t(T::PurposeAll)}
+                            </button>
+                            {purposes
+                                .get()
+                                .into_iter()
+                                .map(|p| view! {
+                                    <button
+                                        type="button"
+                                        class="chip"
+                                        class:active=move || purpose.get() == Some(p)
+                                        aria-pressed=move || (purpose.get() == Some(p)).to_string()
+                                        data-testid="purpose-chip"
+                                        data-purpose=p.key()
+                                        on:click=move |_| purpose.update(|now| {
+                                            *now = (*now != Some(p)).then_some(p);
+                                        })
+                                    >
+                                        {t(p.label_key())}
+                                    </button>
+                                })
+                                .collect_view()}
+                        </div>
+                    })}
+                </div>
+            </Show>
+            {move || {
+                let list = suggested.get();
+                (!list.is_empty()).then(|| view! {
+                    <div class="template-suggested" data-testid="template-suggestions">
+                        <h3 class="subtle small">{icon(Glyph::Sparkle)}{t(T::TemplatesSuggested)}</h3>
+                        <div class="template-grid">
+                            {list
+                                .into_iter()
+                                .map(|s| view! { <TemplateCard template=s selected=selected pick=pick_suggested/> })
+                                .collect_view()}
+                        </div>
+                    </div>
+                })
+            }}
+            <div class="template-grid" data-testid="template-grid">
+                {move || match shown.get() {
                     None => (0..4)
                         .map(|_| view! { <div class="skeleton template-skeleton"></div> })
                         .collect_view()
                         .into_any(),
+                    Some(list) if list.is_empty() && filtering() => view! {
+                        <div class="empty" data-testid="template-no-match">
+                            <p>{t(T::NoMatches)}</p>
+                            <button type="button" class="btn small" on:click=move |_| clear()>{t(T::ClearFilters)}</button>
+                        </div>
+                    }
+                    .into_any(),
                     Some(list) if list.is_empty() => {
                         view! { <p class="empty">{t(T::NoTemplates)}</p> }.into_any()
                     }
                     Some(list) => {
-                        let take = if show_all.get() { list.len() } else { GALLERY };
+                        let take = if show_all.get() || filtering() { list.len() } else { GALLERY };
                         list.into_iter()
                             .take(take)
                             .map(|s| view! { <TemplateCard template=s selected=selected pick=pick/> })
@@ -1167,12 +1304,18 @@ fn TemplateCard(
     pick: Callback<SkillSummary>,
 ) -> impl IntoView {
     let id = template.info.id.clone();
+    let id_attr = id.clone();
     let is_selected = move || selected.get().as_deref() == Some(id.as_str());
     let name = template_name(&template);
-    let description = localized(
+    let about = localized(
         template.info.description_i18n.as_ref(),
         &template.info.description,
     );
+    // A short name on the card: the long one it stands for reads under it,
+    // and the description on hover.
+    let role = template_find::role_name(&template).map(|r| crate::i18n::rebrand(&r).into_owned());
+    let hover = role.is_some().then(|| about.clone());
+    let description = role.unwrap_or(about);
     let tint = format!("cover tint-{}", tint_of(&template.info.id));
     let tag = Some(template.info.scenario.trim())
         .filter(|s| !s.is_empty())
@@ -1197,6 +1340,8 @@ fn TemplateCard(
             tabindex="0"
             aria-pressed=move || is_selected().to_string()
             data-testid="template-card"
+            data-id=id_attr
+            title=hover
             on:click=move |_| pick.run(picked.clone())
             on:keydown=move |ev: web_sys::KeyboardEvent| {
                 if ev.key() == "Enter" || ev.key() == " " {
@@ -1223,19 +1368,10 @@ fn TemplateCard(
     }
 }
 
-/// The template's name in the UI language, else its own; a bare
-/// `kebab-case` id reads as words.
+/// The name on the card and in the picker
+/// ([`template_find::card_name`]: the short name if the template has one).
 fn template_name(s: &SkillSummary) -> String {
-    let name = localized(s.info.display_name.as_ref(), &s.info.name);
-    if name.contains(' ') || !name.contains('-') {
-        return name;
-    }
-    let words = name.replace('-', " ");
-    let mut chars = words.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().chain(chars).collect())
-        .unwrap_or(words)
+    crate::i18n::rebrand(&template_find::card_name(s)).into_owned()
 }
 
 fn localized(map: Option<&std::collections::BTreeMap<String, String>>, fallback: &str) -> String {

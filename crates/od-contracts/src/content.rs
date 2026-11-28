@@ -128,6 +128,15 @@ pub struct SkillInfo {
     pub example_prompt_i18n: Option<BTreeMap<String, String>>,
     pub aggregates_examples: bool,
     pub critique_policy: Option<CritiquePolicy>,
+    /// Contour only: the `tags` of the SKILL.md, for the Home template
+    /// search and its purpose groups.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Contour only: a short card name by locale (`en_short_name`,
+    /// `vi_short_name`), style and purpose in at most 30 characters; the
+    /// long `display_name` then reads under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_name: Option<BTreeMap<String, String>>,
 }
 
 /// Listing entry: metadata plus whether a body exists.

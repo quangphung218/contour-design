@@ -1,6 +1,8 @@
 ---
 name: html-ppt-tech-sharing
 en_name: "Give an Engineering Tech Talk like a Staff Developer-Advocate"
+en_short_name: "Tech sharing · Tech talk"
+vi_short_name: "Tech sharing · Talk kỹ thuật"
 zh_name: "像 Staff DevRel 一样做工程分享"
 description: |
   OpenDesign internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI literacy deck for engineers, dev community.

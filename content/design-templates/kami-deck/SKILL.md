@@ -1,6 +1,8 @@
 ---
 name: kami-deck
 en_name: "Turn a Study into a Lab Meeting Deck like a Senior Postdoc"
+en_short_name: "Kami · Lab meeting"
+vi_short_name: "Kami · Họp nhóm nghiên cứu"
 zh_name: "像资深博士后一样做组会研究汇报"
 description: |
   A lab-meeting deck on gut-microbiome links to sleep quality — the design, the results, the caveats, and the next experiment. Built as a decision-grade academic research deck for lab group, PI.

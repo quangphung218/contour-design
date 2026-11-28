@@ -894,6 +894,11 @@ impl StudioCtx {
                     .collect()
             })
         };
+        // The comments are on their way: picking is over until the user
+        // turns comment mode on again (an open draft is kept for then).
+        if !attached.is_empty() && self.comment_mode.get_untracked() {
+            self.set_comment_mode(false);
+        }
         let req = ChatRequest {
             agent_id,
             message: extras.message,

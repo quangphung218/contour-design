@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-vellum
 en_name: "Deliver a Humanities Research Lecture like a Tenured Art Historian"
+en_short_name: "Vellum · Humanities lecture"
+vi_short_name: "Vellum · Bài giảng nhân văn"
 zh_name: "像终身教授一样做人文研究讲座"
 description: |
   A humanities lecture: how Renaissance linear perspective reshaped early cartography — sources, argument, and evidence. Built as a decision-grade academic research deck for faculty, graduate seminar.

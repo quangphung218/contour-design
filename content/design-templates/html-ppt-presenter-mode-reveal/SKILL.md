@@ -1,6 +1,8 @@
 ---
 name: html-ppt-presenter-mode
 en_name: "Run a Live AI Product Demo like a Founding DevRel Lead"
+en_short_name: "Reveal · Live product demo"
+vi_short_name: "Reveal · Demo sản phẩm"
 zh_name: "像创始 DevRel 一样做现场 AI 演示"
 description: |
   OpenDesign live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI literacy deck for developers, prospects, community.

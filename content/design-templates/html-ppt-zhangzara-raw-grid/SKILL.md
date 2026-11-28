@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-raw-grid
 en_name: "Present a Poster-Series Case Study like a Festival Art Director"
+en_short_name: "Raw grid · Poster case study"
+vi_short_name: "Raw grid · Case study poster"
 zh_name: "像音乐节艺术总监一样讲海报系列案例"
 description: |
   A brutalist poster-series case study for a music festival — the concept, the system, and how it scaled across formats. Built as a decision-grade design craft deck for design peers, client.

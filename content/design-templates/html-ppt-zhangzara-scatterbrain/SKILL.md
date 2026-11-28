@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-scatterbrain
 en_name: "Pitch a Graduation Design Project like a Portfolio-Ready Design Student"
+en_short_name: "Scatterbrain · Grad project"
+vi_short_name: "Scatterbrain · Đồ án"
 zh_name: "像作品集出众的设计学生一样讲毕业设计"
 description: |
   A design-school graduation project: a civic wayfinding system for a transit hub — the brief, the process, and the outcome. Built as a decision-grade coursework defense deck for crit panel, faculty.

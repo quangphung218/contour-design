@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-creative-mode
 en_name: "Present a Visual-Identity System like a Lead Brand Designer"
+en_short_name: "Creative · Visual identity"
+vi_short_name: "Creative · Bộ nhận diện"
 zh_name: "像主创品牌设计师一样发布视觉识别系统"
 description: |
   A brand visual-identity system reveal for an outdoor label — logo, color, type, and the rules that keep it consistent. Built as a decision-grade design craft deck for brand team, client.

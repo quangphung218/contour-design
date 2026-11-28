@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-blue-professional
 en_name: "Present a Quarterly Business Review like a Chief of Staff"
+en_short_name: "Blue pro · Quarterly review"
+vi_short_name: "Blue pro · Báo cáo quý"
 zh_name: "像幕僚长一样做季度经营回顾"
 description: |
   OpenDesign's QBR for the executive committee: what moved, what stalled, and the resource reallocation ask. Built as a decision-grade corporate strategy deck for executive committee.

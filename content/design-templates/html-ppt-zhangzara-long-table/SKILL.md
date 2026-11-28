@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-long-table
 en_name: "Present a Unit-Economics Model like an FP&A Partner"
+en_short_name: "Long table · Unit economics"
+vi_short_name: "Long table · Unit economics"
 zh_name: "像 FP&A 伙伴一样讲清单位经济模型"
 description: |
   OpenDesign's unit-economics and BYOK cost model: the assumptions, the sensitivity, and why it scales. Built as a decision-grade data & finance deck for CFO, investors.

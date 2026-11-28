@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-retro-windows
 en_name: "Deliver a Security-Awareness Training like a CISO Enablement Team"
+en_short_name: "Retro · Security training"
+vi_short_name: "Retro · Đào tạo an ninh mạng"
 zh_name: "像 CISO 赋能团队一样做安全意识培训"
 description: |
   An IT security-awareness training on spotting phishing — the tells, the drill, and what to do in the first 60 seconds. Built as a decision-grade professional training deck for all employees.

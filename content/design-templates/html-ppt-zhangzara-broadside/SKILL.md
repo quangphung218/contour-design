@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-broadside
 en_name: "Write a Product-Launch Announcement like a PR & Comms Director"
+en_short_name: "Broadside · Launch news"
+vi_short_name: "Broadside · Thông cáo ra mắt"
 zh_name: "像公关传播总监一样写产品发布公告"
 description: |
   OpenDesign's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decision-grade marketing & GTM deck for press, community, prospects.

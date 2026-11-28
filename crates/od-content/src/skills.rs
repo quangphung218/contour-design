@@ -164,6 +164,8 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
         .unwrap_or_default()
         .to_owned();
     let display_name = localized_from_fields(data.get("en_name"), data.get("zh_name"));
+    let short_name = short_name_of(&data);
+    let tags = tags_of(data.get("tags"));
     let description_i18n =
         localized_from_fields(data.get("en_description"), data.get("zh_description"));
     let example_prompt_i18n = localized_from_record(od_get("example_prompt_i18n"));
@@ -206,6 +208,8 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
         example_prompt_i18n: example_prompt_i18n.clone(),
         aggregates_examples: !examples.is_empty(),
         critique_policy,
+        tags: tags.clone(),
+        short_name,
     };
     let mut out = Vec::with_capacity(1 + examples.len());
     for key in examples {
@@ -245,6 +249,9 @@ fn load_skill_dir(dir_name: &str, dir: &Path, source: ContentSource) -> Option<V
                 example_prompt_i18n: example_prompt_i18n.clone(),
                 aggregates_examples: false,
                 critique_policy,
+                tags: tags.clone(),
+                // Its own, never the parent's.
+                short_name: meta.and_then(Value::as_object).and_then(short_name_of),
             },
             body: full_body.clone(),
             dir: dir.to_path_buf(),
@@ -492,6 +499,33 @@ fn localized_from_fields(
         }
     }
     (!out.is_empty()).then_some(out)
+}
+
+/// Contour extension: the card's short name, `en_short_name` and
+/// `vi_short_name` (the original loader reads neither).
+/// A derived example reads them from its `od.examples.<key>` entry.
+fn short_name_of(data: &Map<String, Value>) -> Option<BTreeMap<String, String>> {
+    let out: BTreeMap<String, String> = [("en", "en_short_name"), ("vi", "vi_short_name")]
+        .into_iter()
+        .filter_map(|(locale, key)| {
+            let s = data.get(key)?.as_str()?.trim();
+            (!s.is_empty()).then(|| (locale.to_owned(), s.to_owned()))
+        })
+        .collect();
+    (!out.is_empty()).then_some(out)
+}
+
+/// The `tags` list of a SKILL.md: its non-empty strings, trimmed.
+fn tags_of(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn localized_from_record(value: Option<&Value>) -> Option<BTreeMap<String, String>> {
@@ -785,6 +819,45 @@ mod tests {
         assert_eq!(list[0].info.description, "user copy");
         assert!(list[0].info.aggregates_examples);
         assert!(list[0].body.contains("Skill root"));
+    }
+
+    #[test]
+    fn a_template_reads_its_tags_and_short_name_and_its_examples_keep_the_tags() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("deck");
+        std::fs::create_dir_all(dir.join("examples")).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            "---\nname: deck\nen_name: \"Pitch a Seed Round like a Partner\"\nen_short_name: \" Coral · Seed pitch \"\nvi_short_name: \"Coral · Gọi vốn\"\ndescription: d\ntags:\n  - \"fundraising-pitch\"\n  - \" \"\n  - 3\nod:\n  mode: deck\n  examples:\n    one:\n      en_short_name: \"One · Own\"\n---\nbody",
+        )
+        .unwrap();
+        std::fs::write(dir.join("examples/one.html"), "<p>").unwrap();
+        std::fs::write(dir.join("examples/two.html"), "<p>").unwrap();
+        let list = list_skills(&[tmp.path().to_path_buf()], true);
+        let parent = &list[0].info;
+        assert_eq!(parent.tags, ["fundraising-pitch"]);
+        let short = parent.short_name.as_ref().unwrap();
+        assert_eq!(short["en"], "Coral · Seed pitch");
+        assert_eq!(short["vi"], "Coral · Gọi vốn");
+        let json = serde_json::to_value(parent).unwrap();
+        assert_eq!(json["shortName"]["en"], "Coral · Seed pitch");
+        assert_eq!(json["tags"][0], "fundraising-pitch");
+        let own = &list[1].info;
+        assert_eq!(own.short_name.as_ref().unwrap()["en"], "One · Own");
+        assert!(!own.short_name.as_ref().unwrap().contains_key("vi"));
+        // An example without its own short name does not take the parent's.
+        let example = &list[2].info;
+        assert_eq!(example.tags, ["fundraising-pitch"]);
+        assert_eq!(example.short_name, None);
+
+        std::fs::write(
+            dir.join("SKILL.md"),
+            "---\nname: deck\ndescription: d\n---\nbody",
+        )
+        .unwrap();
+        let bare = &list_skills(&[tmp.path().to_path_buf()], true)[0].info;
+        let json = serde_json::to_value(bare).unwrap();
+        assert!(json.get("tags").is_none() && json.get("shortName").is_none());
     }
 
     #[test]

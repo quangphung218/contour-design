@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-daisy-days
 en_name: "Write a Customer Onboarding Workshop like a Field Enablement Director"
+en_short_name: "Daisy · Client workshop"
+vi_short_name: "Daisy · Workshop khách hàng"
 zh_name: "像客户成功赋能总监一样写客户上手工作坊"
 description: |
   A customer-success workshop onboarding users to a project-management app — the first-value path and the habits that retain. Built as a decision-grade professional training deck for new customers, CS team.

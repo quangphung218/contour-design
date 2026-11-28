@@ -1,6 +1,8 @@
 ---
 name: weekly-update
 en_name: "Run a Metrics Standup like a Data-Driven Ops Lead"
+en_short_name: "Weekly · Metrics standup"
+vi_short_name: "Weekly · Họp số liệu"
 zh_name: "像数据驱动的运营负责人一样开指标站会"
 description: |
   OpenDesign's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade data & finance deck for ops & growth team.

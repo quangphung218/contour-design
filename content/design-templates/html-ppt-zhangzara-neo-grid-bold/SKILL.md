@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-neo-grid-bold
 en_name: "Build a Designer Portfolio Narrative like a Hiring Bar-Raiser"
+en_short_name: "Neo grid · Design portfolio"
+vi_short_name: "Neo grid · Portfolio thiết kế"
 zh_name: "像招聘 Bar Raiser 一样搭设计作品集叙事"
 description: |
   A designer's portfolio narrative for a senior interview — three case studies, the craft, and the judgment behind each. Built as a decision-grade career deck for hiring panel.

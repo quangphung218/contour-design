@@ -1,6 +1,8 @@
 ---
 name: magazine-web-ppt
 en_name: "Write a Brand-to-Revenue Story like a Growth Strategy Lead"
+en_short_name: "Guizang · Brand growth story"
+vi_short_name: "Guizang · Chuyện thương hiệu"
 zh_name: "像增长策略负责人一样写品牌到收入故事"
 description: |
   For marketing and gtm work: bind launches, campaigns, events, and brand plans to growth and pipeline outcomes. Built around the core query "annual-marketing-plan", with GTM strategy lead judgment, buyer-ready proof, and this outcome: approve launch plan, campaign budget, or GTM motion.

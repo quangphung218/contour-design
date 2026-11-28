@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-biennale-yellow
 en_name: "Curate an Art Biennale Deck like a Museum Exhibition Director"
+en_short_name: "Biennale yellow · Art show"
+vi_short_name: "Biennale yellow · Triển lãm"
 zh_name: "像美术馆策展总监一样做双年展策展稿"
 description: |
   A curatorial deck for a contemporary art biennale — the thesis, the rooms, the works, and the visitor journey. Built as a decision-grade design craft deck for museum board, curators.

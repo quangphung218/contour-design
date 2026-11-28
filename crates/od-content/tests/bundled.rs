@@ -137,6 +137,10 @@ fn ours_skills(list: &[od_content::SkillEntry]) -> BTreeMap<String, Value> {
             let mut v = serde_json::to_value(&e.info).unwrap();
             // The golden run scanned a single root, so `source` is not comparable.
             v.as_object_mut().unwrap().remove("source");
+            // Contour's own fields: the Home template search reads `tags`
+            // and the card shows `shortName`; the original lists neither.
+            v.as_object_mut().unwrap().remove("tags");
+            v.as_object_mut().unwrap().remove("shortName");
             (e.info.id.clone(), normalize(v))
         })
         .collect()

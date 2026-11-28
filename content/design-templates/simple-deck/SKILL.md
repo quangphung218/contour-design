@@ -1,6 +1,8 @@
 ---
 name: simple-deck
 en_name: "Write an Operating Review like a Disciplined COO"
+en_short_name: "Simple · Operating review"
+vi_short_name: "Simple · Báo cáo vận hành"
 zh_name: "像克制的 COO 一样写经营复盘"
 description: |
   OpenDesign's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-grade corporate strategy deck for leadership team.

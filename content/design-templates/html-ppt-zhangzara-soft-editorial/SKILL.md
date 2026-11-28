@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-soft-editorial
 en_name: "Deliver a Digital-Transformation Roadmap like a Big-Four Partner"
+en_short_name: "Soft editorial · Roadmap"
+vi_short_name: "Soft editorial · Lộ trình số"
 zh_name: "像四大合伙人一样交付数字化转型路线图"
 description: |
   A digital-transformation roadmap for a legacy insurer — the diagnosis, the sequenced bets, and the operating rhythm to land them. Built as a decision-grade consulting deck for client executives.

@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-pink-script
 en_name: "Turn an Anniversary into a Photo Essay like a Wedding Storyteller"
+en_short_name: "Pink script · Photo essay"
+vi_short_name: "Pink script · Ảnh kỷ niệm"
 zh_name: "像婚礼讲述者一样把纪念日做成影像散文"
 description: |
   A wedding-anniversary tribute photo essay — a decade in scenes, the turning points, and the quiet meaning of staying. Built as a decision-grade story deck for couple, family, friends.

@@ -1,6 +1,8 @@
 ---
 name: html-ppt-product-launch
 en_name: "Pitch a Team Rollout like a Strategic Account Executive"
+en_short_name: "Launch · Sales proposal"
+vi_short_name: "Launch · Đề xuất bán hàng"
 zh_name: "像战略客户 AE 一样推动团队落地"
 description: |
   OpenDesign Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decision-grade B2B sales deck for design team lead, IT.

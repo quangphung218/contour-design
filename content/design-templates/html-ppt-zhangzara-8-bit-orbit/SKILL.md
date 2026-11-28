@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-8-bit-orbit
 en_name: "Turn a Hobby into a Story Deck like a Passion-Project Storyteller"
+en_short_name: "8-bit orbit · Hobby story"
+vi_short_name: "8-bit orbit · Chuyện sở thích"
 zh_name: "像热爱驱动的讲述者一样把爱好做成故事"
 description: |
   A gamer's journey building a retro-arcade collection — the obsession, the hunt, and what the machines came to mean. Built as a decision-grade story deck for friends, hobby community.

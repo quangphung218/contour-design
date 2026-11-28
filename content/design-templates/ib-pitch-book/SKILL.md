@@ -1,6 +1,8 @@
 ---
 name: ib-pitch-book
 en_name: "Write an Investor Pitch Book like a Growth-Equity Analyst"
+en_short_name: "Pitch book · Investor deck"
+vi_short_name: "Pitch book · Gọi vốn"
 zh_name: "像成长股权分析师一样写投资 Pitch Book"
 description: |
   OpenDesign's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-grade fundraising pitch deck for growth-equity investors.

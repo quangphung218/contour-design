@@ -1374,7 +1374,18 @@ messages! {
     TemplatesTitle => "Start from a template", "Bắt đầu từ template";
     TemplatesShowAll => "Show all {0}", "Xem cả {0}";
     TemplatesShowFewer => "Show fewer", "Thu gọn";
-    TemplatesBrowseAll => "All templates ({0})", "Tất cả template ({0})";
+    PurposeAll => "All", "Tất cả";
+    PurposePitch => "Pitch", "Gọi vốn";
+    PurposeReport => "Report", "Báo cáo";
+    PurposeTraining => "Training", "Đào tạo";
+    PurposeSales => "Sales & marketing", "Bán hàng";
+    PurposeEvent => "Event & talk", "Sự kiện";
+    PurposeStory => "Story & portfolio", "Câu chuyện";
+    TemplatesPurposes => "Purpose", "Mục đích";
+    TemplatesSuggested => "Fits your brief", "Hợp với brief";
+    TemplatesLibrary => "Template library", "Thư viện template";
+    CommentsGoNextOne => "1 comment goes with your next message", "1 bình luận sẽ gửi kèm tin nhắn tiếp theo";
+    CommentsGoNextMany => "{0} comments go with your next message", "{0} bình luận sẽ gửi kèm tin nhắn tiếp theo";
     TemplateSelected => "Selected", "Đang chọn";
     NoTemplates => "No templates for this output type yet.", "Chưa có template cho loại đầu ra này.";
     ProjectsEmptyTitle => "No projects yet", "Chưa có project nào";
@@ -1704,6 +1715,7 @@ messages! {
     // Track B3-chat: Home composer, chat composer, transcript actions.
     HomeTitleCreate => "Let’s create {0}", "Cùng tạo {0}";
     HomeTitleWords => "prototypes,slide decks,documents", "prototype,slide deck,tài liệu";
+    HomeTitleNouns => "a prototype,a website clone,a wireframe,a mobile app,a slide deck,a document,an image,a video,an audio clip,a motion graphic,a HyperFrames video,a WebGL scene,a live artifact", "prototype,bản clone website,wireframe,app mobile,slide deck,tài liệu,ảnh,video,âm thanh,motion,video HyperFrames,cảnh WebGL,live artifact";
     ChipWebClone => "Website clone", "Clone website";
     ChipWireframe => "Wireframe", "Wireframe";
     ChipMobileApp => "Mobile app", "App mobile";

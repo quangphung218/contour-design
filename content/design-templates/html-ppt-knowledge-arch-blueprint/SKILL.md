@@ -1,6 +1,8 @@
 ---
 name: html-ppt-knowledge-arch-blueprint
 en_name: "Turn an Incident Retro into a Learning Deck like a Platform VP"
+en_short_name: "Blueprint · Incident retro"
+vi_short_name: "Blueprint · Rút kinh nghiệm"
 zh_name: "像平台 VP 一样把事故复盘写成学习稿"
 description: |
   OpenDesign's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade product management deck for engineering, SRE, leadership.

@@ -1,6 +1,8 @@
 ---
 name: deck-museum-wall
 en_name: "Gallery-wall exhibition proposal"
+en_short_name: "Museum wall · Exhibition plan"
+vi_short_name: "Museum wall · Triển lãm"
 en_description: "A city museum pitches an exhibition about forgotten river trades, laid out like wall text and object labels."
 description: |
   A curatorial proposal deck styled as a gallery wall: bone-white

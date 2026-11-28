@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-mat
 en_name: "Write a Margin-Recovery Final Deck like a McKinsey Engagement Manager"
+en_short_name: "Mat · Margin recovery"
+vi_short_name: "Mat · Phục hồi biên lợi nhuận"
 zh_name: "像麦肯锡项目经理一样写利润率修复终稿"
 description: |
   A margin-recovery diagnosis for a regional grocery chain — the governing thought, the driver tree, the priorities, and the roadmap. Built as a decision-grade consulting deck for client sponsor, steering committee.
