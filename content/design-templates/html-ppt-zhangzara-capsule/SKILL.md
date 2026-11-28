@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-capsule
 en_name: "Write a Year-End Self-Review like a Promotion-Committee Insider"
+en_short_name: "Capsule · Year-end review"
+vi_short_name: "Capsule · Tự đánh giá cuối năm"
 zh_name: "像晋升委员会内部人一样写年终述职"
 description: |
   A year-end self-review for a product manager — the role, the outcomes, the learning, and the ask, all evidence-backed. Built as a decision-grade career deck for manager, review committee.

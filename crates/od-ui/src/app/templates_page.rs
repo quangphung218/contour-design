@@ -162,6 +162,7 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
     let platform = RwSignal::new(String::new());
     let scenario = RwSignal::new(String::new());
     let query = RwSignal::new(String::new());
+    let search_ref = NodeRef::<leptos::html::Input>::new();
     let preview = RwSignal::new(None::<SkillSummary>);
 
     let all = move || templates.get().unwrap_or_default();
@@ -226,7 +227,7 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
         <div class="lib-toolbar">
             <label class="lib-search">
                 {icon(Glyph::Search)}
-                <input class="input small" type="search" data-testid="tpl-search" placeholder=t(T::SearchTemplates) aria-label=t(T::SearchTemplates)
+                <input class="input small" type="search" data-testid="tpl-search" node_ref=search_ref placeholder=t(T::SearchTemplates) aria-label=t(T::SearchTemplates)
                     prop:value=move || query.get() on:input=live(move |ev| query.set(event_target_value(&ev)))/>
             </label>
             <div class="segmented small" role="group" aria-label=t(T::Platform)>
@@ -255,6 +256,11 @@ fn DesignTemplates(templates: LocalResource<Vec<SkillSummary>>) -> impl IntoView
                             platform.set(String::new());
                             scenario.set(String::new());
                             query.set(String::new());
+                            // The button goes with the empty grid: focus to
+                            // the search box, not to the page.
+                            if let Some(el) = search_ref.get_untracked() {
+                                let _ = el.focus();
+                            }
                         }>{t(T::ClearFilters)}</button>
                     </div>
                 }.into_any(),

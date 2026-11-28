@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-monochrome
 en_name: "Write a Grant Committee Brief like a Funded Principal Investigator"
+en_short_name: "Monochrome · Grant brief"
+vi_short_name: "Monochrome · Xin tài trợ"
 zh_name: "像拿到资助的 PI 一样写基金评审简报"
 description: |
   A grant proposal on CRISPR base-editing for sickle-cell disease — the hypothesis, the approach, the milestones, and the risk. Built as a decision-grade academic research deck for grant review committee.

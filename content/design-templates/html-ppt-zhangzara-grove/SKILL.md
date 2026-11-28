@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-grove
 en_name: "Write an Urban Green-Space Policy Brief like a City Sustainability Director"
+en_short_name: "Grove · Green-space policy"
+vi_short_name: "Grove · Chính sách cây xanh"
 zh_name: "像城市可持续总监一样写城市绿地政策简报"
 description: |
   A municipal urban-tree-canopy policy proposal — the public need, the evidence, the options, and the funding decision. Built as a decision-grade policy briefing deck for city council, agency reviewers.

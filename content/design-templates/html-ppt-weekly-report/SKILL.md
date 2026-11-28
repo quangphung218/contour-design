@@ -1,6 +1,8 @@
 ---
 name: html-ppt-weekly-report
 en_name: "Write a Weekly Growth Review like a Head of Analytics"
+en_short_name: "Weekly report · Growth review"
+vi_short_name: "Weekly report · Báo cáo tuần"
 zh_name: "像分析负责人一样写每周增长复盘"
 description: |
   OpenDesign's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-grade data & finance deck for growth & product team.

@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-cartesian
 en_name: "Present a Senior Thesis Defense like a Distinction-Grade Economics Student"
+en_short_name: "Cartesian · Thesis defense"
+vi_short_name: "Cartesian · Bảo vệ luận văn"
 zh_name: "像拿优等的经济学生一样做毕业论文答辩"
 description: |
   An economics senior thesis on the employment effects of local minimum-wage increases — identification strategy, evidence, and limitations. Built as a decision-grade coursework defense deck for thesis committee.

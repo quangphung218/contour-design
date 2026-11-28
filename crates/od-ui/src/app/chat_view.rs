@@ -405,6 +405,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
         }
     };
     let send_key = send;
+    let send_chip = send;
     let sources = Sources::load();
     let pick_files = RwSignal::new(0u32);
     let stage_files = Callback::new(move |files: Vec<web_sys::File>| {
@@ -612,7 +613,7 @@ pub fn ChatPane(ctx: StudioCtx) -> impl IntoView {
             <super::genui_view::GenuiSurfaces ctx=ctx/>
             <PlanPill ctx=ctx/>
             <QueueStack ctx=ctx/>
-            <CommentChips ctx=ctx/>
+            <CommentChips ctx=ctx send=Callback::new(move |()| send_chip())/>
             <ContextChips context=ctx.chat.context draft=draft/>
             <UploadTray
                 uploads=ctx.chat.uploads
@@ -899,9 +900,15 @@ fn QueueStack(ctx: StudioCtx) -> impl IntoView {
     }
 }
 
-/// Comments that go with the next message.
+/// Comments that go with the next message: a line that says so, with the
+/// composer's own Send (or Queue while a run goes), then a chip per comment.
 #[component]
-fn CommentChips(ctx: StudioCtx) -> impl IntoView {
+fn CommentChips(ctx: StudioCtx, send: Callback<()>) -> impl IntoView {
+    let uploading = move || {
+        ctx.chat
+            .uploads
+            .with(|u| u.iter().any(|x| x.state == UploadState::Uploading))
+    };
     move || {
         let attached: Vec<_> = ctx.comments.with(|c| {
             c.iter()
@@ -912,8 +919,33 @@ fn CommentChips(ctx: StudioCtx) -> impl IntoView {
         if attached.is_empty() {
             return None;
         }
+        let n = attached.len();
+        let goes = if n == 1 {
+            t(T::CommentsGoNextOne).to_owned()
+        } else {
+            tf(T::CommentsGoNextMany, &[&n.to_string()])
+        };
         Some(view! {
             <div class="comment-chips" aria-label=t(T::CommentsAttached)>
+                <div class="comment-chips-head" data-testid="comment-chips-head">
+                    {icon(Glyph::Comment)}
+                    <span>{goes}</span>
+                    {move || {
+                        let live = ctx.live_run.get().is_some();
+                        view! {
+                            <button
+                                type="button"
+                                class="btn small ghost"
+                                data-testid="comment-chips-send"
+                                disabled=move || uploading() || ctx.phase.with(StudioPhase::unusable)
+                                on:click=move |_| send.run(())
+                            >
+                                {icon(if live { Glyph::Queue } else { Glyph::Send })}
+                                {if live { t(T::Queue) } else { t(T::Send) }}
+                            </button>
+                        }
+                    }}
+                </div>
                 {attached
                     .into_iter()
                     .map(|c| {

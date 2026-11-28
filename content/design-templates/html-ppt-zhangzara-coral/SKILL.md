@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-coral
 en_name: "Plan a Community-Growth Campaign like a Head of Growth"
+en_short_name: "Coral · Growth campaign"
+vi_short_name: "Coral · Chiến dịch tăng trưởng"
 zh_name: "像增长负责人一样规划社区增长战役"
 description: |
   OpenDesign's community-growth campaign across GitHub, Discord, and X: the loops, the content calendar, and the pipeline math. Built as a decision-grade marketing & GTM deck for growth team, community lead.

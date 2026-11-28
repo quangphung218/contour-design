@@ -416,10 +416,16 @@ const VI_EN: &[(&str, &str)] = &[
 /// `words` with each [`VI_EN`] phrase in English, the longest phrase
 /// first at each word ("bieu do tuong tac" before "bieu do").
 fn in_english(words: Vec<String>) -> Vec<String> {
+    translated(words, VI_EN)
+}
+
+/// `words` with each phrase of `table` (folded Vietnamese → English) put
+/// in English, the longest phrase first at each word.
+pub(crate) fn translated(words: Vec<String>, table: &[(&str, &str)]) -> Vec<String> {
     let mut out = Vec::with_capacity(words.len());
     let mut i = 0;
     while i < words.len() {
-        let best = VI_EN
+        let best = table
             .iter()
             .filter_map(|(vi, en)| {
                 let n = vi.split(' ').count();
@@ -446,7 +452,7 @@ fn in_english(words: Vec<String>) -> Vec<String> {
 
 /// The words of `text`, lower case without diacritics (precomposed or
 /// combining) and in the singular, split at anything not a letter or digit.
-fn words_of(text: &str) -> Vec<String> {
+pub(crate) fn words_of(text: &str) -> Vec<String> {
     let folded: String = text
         .chars()
         .filter(|c| !('\u{300}'..='\u{36f}').contains(c))

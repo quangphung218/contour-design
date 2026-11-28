@@ -1,6 +1,8 @@
 ---
 name: html-ppt-xhs-white-editorial
 en_name: "Write a Staff-Engineer Promotion Case like a Calibration-Committee Insider"
+en_short_name: "White editorial · Promotion"
+vi_short_name: "White editorial · Thăng chức"
 zh_name: "像晋升评审内部人一样写 Staff 工程师晋升材料"
 description: |
   A staff-engineer promotion packet — scope, the proof moments, the artifacts, and the impact that clears the bar. Built as a decision-grade career deck for manager, calibration committee.

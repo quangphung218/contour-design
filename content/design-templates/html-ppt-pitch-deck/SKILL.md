@@ -1,6 +1,8 @@
 ---
 name: html-ppt-pitch-deck
 en_name: "Write a Demo Day Pitch like a Top Accelerator Partner"
+en_short_name: "Pitch · Demo day"
+vi_short_name: "Pitch · Demo day"
 zh_name: "像顶级加速器合伙人一样写 Demo Day 路演"
 description: |
   OpenDesign's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grade fundraising pitch deck for accelerator partners, angels.

@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-cobalt-grid
 en_name: "Write a Renewal & Expansion Business Case like an Account Director"
+en_short_name: "Cobalt grid · Renewal case"
+vi_short_name: "Cobalt grid · Gia hạn hợp đồng"
 zh_name: "像客户总监一样写续约与扩容论证"
 description: |
   OpenDesign renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a decision-grade B2B sales deck for champion, finance approver.

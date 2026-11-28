@@ -1,6 +1,8 @@
 ---
 name: html-ppt-testing-safety-alert
 en_name: "Brief a Health-System Board on Data Governance like a Chief Compliance Officer"
+en_short_name: "Safety alert · Board briefing"
+vi_short_name: "Safety alert · Báo cáo HĐQT"
 zh_name: "像首席合规官一样向医院董事会汇报数据治理"
 description: |
   A hospital data-governance briefing: patient-data risk, the control framework, accountability, and the approval the board must give. Built as a decision-grade policy briefing deck for health-system board, regulators.

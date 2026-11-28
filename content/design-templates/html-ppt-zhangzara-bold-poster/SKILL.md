@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-bold-poster
 en_name: "Write a Series A Growth Story like a Tier-1 VC Partner"
+en_short_name: "Bold poster · Series A story"
+vi_short_name: "Bold poster · Gọi vốn Series A"
 zh_name: "像一线 VC 合伙人一样写 A 轮增长叙事"
 description: |
   OpenDesign's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundraising pitch deck for Series A partners.

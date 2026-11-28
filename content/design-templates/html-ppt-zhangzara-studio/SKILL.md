@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-studio
 en_name: "Build a Studio Portfolio & Rate Deck like a Creative Studio Owner"
+en_short_name: "Studio · Portfolio & rates"
+vi_short_name: "Studio · Portfolio và báo giá"
 zh_name: "像创意工作室主理人一样做作品与报价稿"
 description: |
   A photography studio's portfolio-and-rate deck — the signature work, the process, and the packages that win the brief. Built as a decision-grade design craft deck for prospective clients.

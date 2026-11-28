@@ -1,6 +1,8 @@
 ---
 name: deck-clinic-flow
 en_name: "Clinic patient-flow improvement"
+en_short_name: "Clinic · Patient-flow review"
+vi_short_name: "Clinic · Luồng bệnh nhân"
 en_description: "A community clinic's plan to cut waiting times, mapped as a patient journey with wait bars and a calm clinical palette."
 description: |
   A healthcare improvement deck in a calm clinical style: soft

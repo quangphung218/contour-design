@@ -73,6 +73,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
     let systems = RwSignal::new(None::<Vec<DesignSystemSummary>>);
     let scope = RwSignal::new(Scope::Presets);
     let query = RwSignal::new(String::new());
+    let search_ref = NodeRef::<leptos::html::Input>::new();
     let surface = RwSignal::new(None::<Surface>);
     let category = RwSignal::new(String::new());
     let selected = RwSignal::new(query_param("id"));
@@ -210,6 +211,7 @@ pub fn DesignSystemsPage() -> impl IntoView {
                         class="input small"
                         type="search"
                         data-testid="ds-search"
+                        node_ref=search_ref
                         placeholder=t(T::DsSearch)
                         aria-label=t(T::DsSearch)
                         prop:value=move || query.get()
@@ -265,7 +267,14 @@ pub fn DesignSystemsPage() -> impl IntoView {
                                             <button class="btn small" on:click=move |_| creating.set(true)>{icon(Glyph::Add)}{t(T::Create)}</button>
                                         })}
                                         {(!mine && !query.with(|q| q.trim().is_empty())).then(|| view! {
-                                            <button class="btn small" data-testid="ds-clear-search" on:click=move |_| query.set(String::new())>{icon(Glyph::Close)}{t(T::ClearSearch)}</button>
+                                            <button class="btn small" data-testid="ds-clear-search" on:click=move |_| {
+                                                query.set(String::new());
+                                                // The button goes with the empty list:
+                                                // focus to the search box, not the page.
+                                                if let Some(el) = search_ref.get_untracked() {
+                                                    let _ = el.focus();
+                                                }
+                                            }>{icon(Glyph::Close)}{t(T::ClearSearch)}</button>
                                         })}
                                     </li>
                                 }.into_any()

@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-block-frame
 en_name: "Rescue a Messy Deck to Board-Grade like an Executive Design Director"
+en_short_name: "Block frame · Deck makeover"
+vi_short_name: "Block frame · Làm lại deck"
 zh_name: "像高管级设计总监一样把混乱 Deck 救到董事会级"
 description: |
   Rescuing a messy startup deck into a board-grade system — the diagnosis, the page grammar, and the rebuilt proof pages. Built as a decision-grade design craft deck for founders, exec presenter.

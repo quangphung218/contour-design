@@ -1,6 +1,8 @@
 ---
 name: html-ppt
 en_name: "Brief AI in Your Industry like a Tier-1 Consulting AI Vertical Lead"
+en_short_name: "Classic · AI strategy brief"
+vi_short_name: "Classic · Chiến lược AI"
 zh_name: "像一线咨询 AI 行业负责人一样讲清行业 AI"
 description: |
   For consulting delivery work: turn diagnosis, frameworks, and project work into a client-adoptable action plan. Built around the core query "consulting-final-deck", with engagement manager judgment, buyer-ready proof, and this outcome: accept the recommendation and commit owners to the roadmap.

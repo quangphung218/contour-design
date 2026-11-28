@@ -164,6 +164,106 @@ try {
   assert.equal(await cards.nth(0).getAttribute('aria-pressed'), 'false');
   results.templatePicker = 'ok';
 
+  // 2c. Finding a deck template: the title names "a slide deck"; search,
+  // purpose chips and the brief's suggestions narrow the long list; a
+  // card shows its short name with the long one under it.
+  const deckChip = page.locator('[data-testid="chip"][data-chip="deck"]');
+  await deckChip.click();
+  await page.getByTestId('home-title').getByText('Let’s create a slide deck').waitFor();
+  const grid = page.getByTestId('template-grid');
+  const gridCards = grid.getByTestId('template-card');
+  const search = page.getByTestId('home-tpl-search');
+  await search.waitFor();
+  await until(async () => (await gridCards.count()) === 8, 'deck gallery shows 8');
+  const showAll = page.getByTestId('home-show-all');
+  const deckTotal = Number((await showAll.innerText()).match(/\d+/)[0]);
+  assert.ok(deckTotal > 60, `deck templates: ${deckTotal}`);
+  // One count on the head: the library link has none (no "72" next to "185").
+  assert.equal(await page.getByTestId('home-all-templates').innerText(), 'Template library');
+  const ids = () => gridCards.evaluateAll((els) => els.map((e) => e.dataset.id));
+  // Search: every word, any order; the whole match list, no Show all.
+  await search.fill('menu launch');
+  await until(async () => (await ids()).includes('deck-menu-cards'), 'search finds the menu deck');
+  assert.ok((await gridCards.count()) < 8, 'search narrows the grid');
+  assert.equal(await showAll.count(), 0, 'Show all hides while filtering');
+  await search.fill('zzzz-no-such-template');
+  await page.getByTestId('template-no-match').waitFor();
+  await page.getByTestId('template-no-match').getByRole('button').click();
+  assert.equal(await search.inputValue(), '');
+  await until(async () => (await gridCards.count()) === 8, 'filters cleared');
+  // Clear filters goes with the empty grid: focus moves to the search box,
+  // not to the page, by mouse and by keyboard, wide and on a phone.
+  const focusedTestid = () => page.evaluate(() => document.activeElement?.dataset?.testid || document.activeElement?.tagName);
+  assert.equal(await focusedTestid(), 'home-tpl-search', 'focus after Clear filters (click)');
+  await search.fill('zzzz-no-such-template');
+  await page.getByTestId('template-no-match').getByRole('button').focus();
+  await page.keyboard.press('Enter');
+  await until(async () => (await gridCards.count()) === 8, 'filters cleared by keyboard');
+  assert.equal(await focusedTestid(), 'home-tpl-search', 'focus after Clear filters (Enter)');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await search.fill('zzzz-no-such-template');
+  await page.getByTestId('template-no-match').getByRole('button').click();
+  await until(async () => (await search.inputValue()) === '', 'filters cleared at 390');
+  assert.equal(await focusedTestid(), 'home-tpl-search', 'focus after Clear filters at 390 px');
+  await page.setViewportSize({ width: 1360, height: 860 });
+  // Purpose chips: Pitch shows the pitch decks, a second click clears it.
+  const pitch = page.locator('[data-testid="purpose-chip"][data-purpose="pitch"]');
+  assert.ok((await page.getByTestId('purpose-chip').count()) >= 6, 'All + purposes');
+  await pitch.click();
+  assert.equal(await pitch.getAttribute('aria-pressed'), 'true');
+  await until(async () => (await ids()).includes('ib-pitch-book'), 'pitch decks');
+  assert.ok(!(await ids()).includes('deck-postmortem-redline'), 'an incident review is not a pitch');
+  const pitchIds = await ids();
+  await search.fill('series');
+  await until(async () => {
+    const got = await ids();
+    return got.includes('html-ppt-zhangzara-bold-poster') && got.length < pitchIds.length
+      && got.every((id) => pitchIds.includes(id));
+  }, 'search within the purpose');
+  await search.fill('');
+  await pitch.click();
+  assert.equal(await pitch.getAttribute('aria-pressed'), 'false');
+  await until(async () => (await gridCards.count()) === 8, 'purpose cleared');
+  // The short name on the card, the role-play name under it.
+  await showAll.click();
+  const coral = grid.locator('[data-id="html-ppt-zhangzara-coral"]');
+  assert.equal(await coral.locator('.template-name').innerText(), 'Coral · Growth campaign');
+  assert.equal(await coral.locator('.template-desc').innerText(), 'Plan a Community-Growth Campaign like a Head of Growth');
+  await showAll.click();
+  // The brief suggests three at most, best first; a suggestion picks.
+  const suggestions = page.getByTestId('template-suggestions');
+  // 2b's picks left a template's example prompt in the brief.
+  await page.getByTestId('brief').fill('');
+  await until(async () => (await suggestions.count()) === 0, 'no brief, no suggestions');
+  await page.getByTestId('brief').fill('Seasonal menu launch for our cafe');
+  await suggestions.waitFor();
+  const suggested = suggestions.getByTestId('template-card');
+  assert.ok((await suggested.count()) <= 3);
+  assert.equal(await suggested.first().getAttribute('data-id'), 'deck-menu-cards');
+  const rowBefore = await suggested.evaluateAll((els) => els.map((e) => e.dataset.id));
+  await suggested.first().click();
+  assert.equal(await page.getByTestId('template').inputValue(), 'deck-menu-cards');
+  // The row a pick was made in stays as it was, the card marked picked.
+  assert.deepEqual(await suggested.evaluateAll((els) => els.map((e) => e.dataset.id)), rowBefore);
+  assert.equal(await suggested.first().getAttribute('aria-pressed'), 'true');
+  // A filter hides the suggestions; clearing it brings them back.
+  await search.fill('menu');
+  await until(async () => (await suggestions.count()) === 0, 'suggestions hide while searching');
+  await search.fill('');
+  await suggestions.waitFor();
+  // A pick from the grid: no row shows up over it (it would push the grid
+  // under the pointer); Default template brings the suggestions back.
+  await gridCards.nth(1).click();
+  await until(async () => (await suggestions.count()) === 0, 'no suggestions over a grid pick');
+  await page.getByTestId('template').selectOption('');
+  await suggestions.waitFor();
+  // Gone with the brief; back to Prototype for the next steps.
+  await page.getByTestId('brief').fill('');
+  await until(async () => (await suggestions.count()) === 0, 'suggestions go with the brief');
+  await page.locator('[data-testid="chip"][data-chip="prototype"]').click();
+  await page.getByTestId('home-title').getByText('Let’s create a prototype').waitFor();
+  results.templateFinder = 'ok';
+
   const brief = 'A landing page for a tea shop';
   await page.getByTestId('brief').fill(brief);
   await page.getByTestId('brief').press('Enter');
@@ -276,10 +376,17 @@ try {
   await page.getByTestId('comment-chip').getByText('Make the title green').waitFor();
   assert.doesNotMatch(await page.getByTestId('comment-chip').first().innerText(), / :/, 'space before the colon');
   await page.getByTestId('comment-pin').first().waitFor();
-  await page.getByTestId('comment-mode').click();
+  // The chips say the comment waits for the next message, with a Send
+  // that sends the composer's message; comment mode stays on till then.
+  const chipsHead = page.getByTestId('comment-chips-head');
+  assert.match(await chipsHead.innerText(), /1 comment goes with your next message/);
+  assert.equal(await page.getByTestId('comment-mode').getAttribute('aria-pressed'), 'true');
   await page.getByTestId('composer').fill('apply comments');
-  await page.getByTestId('composer').press('Enter');
+  await chipsHead.getByTestId('comment-chips-send').click();
   await assistant.nth(6).getByText('Saw preview comments.').waitFor();
+  // Sent: comment mode is off, the composer is empty.
+  await until(async () => (await page.getByTestId('comment-mode').getAttribute('aria-pressed')) === 'false', 'comment mode off after send');
+  assert.equal(await page.getByTestId('composer').inputValue(), '');
   const withComments = runBodies[runBodies.length - 1];
   assert.equal(withComments.message, 'apply comments');
   assert.equal(withComments.commentAttachments.length, 1);
@@ -1030,6 +1137,45 @@ try {
   assert.equal(await page.getByTestId('load-retry').count(), 0, 'Retry for a project that does not exist');
   await page.getByTestId('load-error').locator('a[href="/projects"]').waitFor();
   results.loadError = 'ok';
+
+  // 16d. The queue sending a message on its own takes the attached comments
+  // but leaves comment mode on, so a comment being typed then stays open;
+  // only the user's own Send ends picking (step 9).
+  const qRes = await fetch(`${BASE}/api/projects`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Queue comments' }) });
+  const qProject = (await qRes.json()).project;
+  await page.goto(`${BASE}/projects/${qProject.id}`);
+  const qComposer = page.getByTestId('composer');
+  const qAssistant = page.getByTestId('assistant-msg');
+  const qFrame = page.frameLocator('[data-testid="preview"]');
+  await qComposer.fill('first page');
+  await qComposer.press('Enter');
+  await qFrame.locator('#title').waitFor();
+  await until(async () => (await qAssistant.first().getAttribute('data-state')) === 'succeeded', 'queue project turn 1');
+  await qComposer.fill('slow queue run');
+  await qComposer.press('Enter');
+  await page.getByTestId('stop').waitFor();
+  await page.getByTestId('comment-mode').click();
+  await page.waitForTimeout(150);
+  await qFrame.locator('#title').click();
+  await page.getByTestId('comment-note').fill('Queue me');
+  await page.getByTestId('comment-add').click();
+  await page.getByTestId('comment-chip').waitFor();
+  await qComposer.fill('after the long run');
+  await qComposer.press('Enter');
+  await until(async () => (await page.getByTestId('queued').count()) === 1, 'message queued behind the slow run');
+  assert.equal(await page.getByTestId('comment-mode').getAttribute('aria-pressed'), 'true', 'queued: comment mode stays');
+  // A second comment typed while the queue waits.
+  await qFrame.locator('p').first().click();
+  await page.getByTestId('comment-note').fill('still typing');
+  const sentBefore = runBodies.length;
+  await until(async () => runBodies.length > sentBefore, 'the queue sends on its own', 30_000);
+  const queued = runBodies[runBodies.length - 1];
+  assert.equal(queued.message, 'after the long run');
+  assert.equal(queued.commentAttachments.length, 1);
+  assert.equal(await page.getByTestId('comment-mode').getAttribute('aria-pressed'), 'true', 'the queue does not end comment mode');
+  assert.equal(await page.getByTestId('comment-note').inputValue(), 'still typing', 'the comment being typed stays open');
+  await until(async () => (await qAssistant.last().getAttribute('data-state')) === 'succeeded', 'queued turn end', 60_000);
+  results.queueKeepsCommentMode = 'ok';
 
   // 17. Nothing left loopback during the whole scenario.
   assert.deepEqual(external, [], `external requests: ${external.join(', ')}`);

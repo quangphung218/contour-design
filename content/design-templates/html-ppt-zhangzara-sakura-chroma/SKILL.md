@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-sakura-chroma
 en_name: "Turn a Cherry-Blossom Trip into a Photo Essay like a Travel Editorial Director"
+en_short_name: "Sakura · Travel photo essay"
+vi_short_name: "Sakura · Ảnh du lịch"
 zh_name: "像旅行内容总监一样把樱花之旅做成影像散文"
 description: |
   A cherry-blossom-season travel photo essay through Kyoto — the arrival, the peak bloom, and the moment that made the trip. Built as a decision-grade story deck for friends, travel readers.

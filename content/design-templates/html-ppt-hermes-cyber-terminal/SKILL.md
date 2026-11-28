@@ -1,6 +1,8 @@
 ---
 name: html-ppt-hermes-cyber-terminal
 en_name: "Run a BYOK Model-Choice Session like an Applied-AI Engineer"
+en_short_name: "Cyber terminal · AI workshop"
+vi_short_name: "Cyber terminal · Workshop AI"
 zh_name: "像应用 AI 工程师一样讲 BYOK 选型"
 description: |
   OpenDesign + BYOK: choosing and wiring your own model, hands-on — cost, quality, and the routing decision. Built as a decision-grade AI literacy deck for engineers, IT, applied-AI teams.

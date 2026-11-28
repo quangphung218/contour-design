@@ -1,7 +1,7 @@
 //! Home composer logic: chip → project kind and default skill, project
 //! naming, and the create request (spec 1.1).
 
-use crate::i18n::T;
+use crate::i18n::{T, t};
 use od_contracts::{
     CreateProjectRequest, FilmFormat, ProjectKind, ProjectMetadata, SkillMode, SkillSummary,
 };
@@ -414,6 +414,34 @@ impl Chip {
         }
     }
 
+    /// What Home's title says it creates, with its article ("a slide
+    /// deck", "an image"): the chip's entry in `HomeTitleNouns`, else its
+    /// label in lower case.
+    #[must_use]
+    pub fn title_noun(self) -> String {
+        let at = match self {
+            Self::Prototype => 0,
+            Self::WebClone => 1,
+            Self::Wireframe => 2,
+            Self::MobileApp => 3,
+            Self::Deck => 4,
+            Self::Document => 5,
+            Self::Image => 6,
+            Self::Video => 7,
+            Self::Audio => 8,
+            Self::Motion => 9,
+            Self::HyperFrames => 10,
+            Self::WebGl => 11,
+            Self::LiveArtifact => 12,
+        };
+        t(T::HomeTitleNouns)
+            .split(',')
+            .nth(at)
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map_or_else(|| t(self.label_key()).to_lowercase(), str::to_owned)
+    }
+
     /// The chip's name in the UI.
     #[must_use]
     pub fn label_key(self) -> T {
@@ -534,7 +562,7 @@ pub fn chip_for_template(mode: SkillMode) -> Chip {
 }
 
 /// Templates offered for a chip (same mode), featured first, then by the
-/// name shown.
+/// name on the card ([`crate::template_find::card_name`]).
 #[must_use]
 pub fn templates_for(chip: Chip, templates: &[SkillSummary]) -> Vec<SkillSummary> {
     let mut out: Vec<SkillSummary> = templates
@@ -545,7 +573,7 @@ pub fn templates_for(chip: Chip, templates: &[SkillSummary]) -> Vec<SkillSummary
     out.sort_by_cached_key(|t| {
         (
             OrdF64(t.info.featured.unwrap_or(f64::MAX)),
-            template_name(t).to_lowercase(),
+            crate::template_find::card_name(t).to_lowercase(),
         )
     });
     out
@@ -634,6 +662,45 @@ impl HomeIntent {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_home_title_names_each_chip_with_its_article_in_every_language() {
+        use crate::i18n::{Locale, set_locale};
+        set_locale(Locale::En);
+        assert_eq!(Chip::Deck.title_noun(), "a slide deck");
+        assert_eq!(Chip::Image.title_noun(), "an image");
+        assert_eq!(Chip::LiveArtifact.title_noun(), "a live artifact");
+        set_locale(Locale::Vi);
+        assert_eq!(Chip::Deck.title_noun(), "slide deck");
+        set_locale(Locale::En);
+        // One entry per chip in every language, none empty.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales");
+        let mut texts = vec![
+            (
+                "en".to_owned(),
+                T::HomeTitleNouns.text(Locale::En).to_owned(),
+            ),
+            (
+                "vi".to_owned(),
+                T::HomeTitleNouns.text(Locale::Vi).to_owned(),
+            ),
+        ];
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let text = std::fs::read_to_string(&path).unwrap();
+            let line = text
+                .lines()
+                .find_map(|l| l.strip_prefix("HomeTitleNouns = "))
+                .unwrap_or_default()
+                .to_owned();
+            texts.push((path.display().to_string(), line));
+        }
+        for (tag, text) in texts {
+            let n: Vec<&str> = text.split(',').map(str::trim).collect();
+            assert_eq!(n.len(), Chip::ALL.len(), "{tag}: {text}");
+            assert!(n.iter().all(|w| !w.is_empty()), "{tag}: {text}");
+        }
+    }
 
     fn skill(id: &str, mode: &str, featured: Option<f64>, default_for: &[&str]) -> SkillSummary {
         serde_json::from_value(json!({

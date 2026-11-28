@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-playful
 en_name: "Run a Sales-Floor Training like a Top Retail Coach"
+en_short_name: "Playful · Sales training"
+vi_short_name: "Playful · Đào tạo bán hàng"
 zh_name: "像顶级零售教练一样做门店销售培训"
 description: |
   A retail sales-floor training on consultative selling — the flow, the role-plays, and the daily habit that lifts conversion. Built as a decision-grade professional training deck for store associates, floor managers.

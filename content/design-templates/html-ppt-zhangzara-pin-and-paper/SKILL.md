@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-pin-and-paper
 en_name: "Turn a Field-Study Capstone into a Defense Deck like a Star Biology Major"
+en_short_name: "Pin & paper · Capstone defense"
+vi_short_name: "Pin & paper · Bảo vệ đồ án"
 zh_name: "像明星生物学生一样做田野调查答辩"
 description: |
   A field-biology capstone on urban pollinator decline — the survey design, the data, the contribution, and the caveats. Built as a decision-grade coursework defense deck for faculty reviewers.

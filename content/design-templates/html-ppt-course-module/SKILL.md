@@ -1,6 +1,8 @@
 ---
 name: html-ppt-course-module
 en_name: "Build a New-Hire Onboarding Module like a Top Enablement Lead"
+en_short_name: "Course · New-hire training"
+vi_short_name: "Course · Đào tạo nhân viên mới"
 zh_name: "像顶级赋能负责人一样做新人培训模块"
 description: |
   A first-30-days onboarding module for new hospitality hires — the behaviors, the practice, the checks, and the manager follow-up. Built as a decision-grade professional training deck for new hires, managers.

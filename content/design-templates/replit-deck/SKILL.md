@@ -1,6 +1,8 @@
 ---
 name: replit-deck
 en_name: "Themed decision deck (8 styles)"
+en_short_name: "Themed · Decision deck"
+vi_short_name: "Themed · Deck ra quyết định"
 zh_name: "主题决策演示（8 种风格）"
 description: |
   For product and technical management work: turn PRDs, roadmaps, RFCs, architecture reviews, and retros into decision documents. Built around the core query "pm-feature-business-case-deck", with product strategy lead judgment, buyer-ready proof, and this outcome: approve the feature, architecture, roadmap, or incident follow-up.
@@ -33,6 +35,8 @@ od:
       en_description: "A worked example: a quarterly business review deck for a fictional company, Atlas."
     example-bluehouse:
       en_name: "Real estate ROI deck (Bluehouse)"
+      en_short_name: "Bluehouse · Real estate ROI"
+      vi_short_name: "Bluehouse · ROI bất động sản"
       en_description: "A worked example: a real estate return-on-investment deck for a fictional company, Bluehouse."
     example-helix:
       en_name: "Board update deck (Helix)"

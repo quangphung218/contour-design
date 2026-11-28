@@ -1,6 +1,8 @@
 ---
 name: html-ppt-zhangzara-retro-zine
 en_name: "Make a Neighborhood Zine Story like an Indie Photo Editor"
+en_short_name: "Retro zine · Local story"
+vi_short_name: "Retro zine · Chuyện khu phố"
 zh_name: "像独立图片编辑一样做街区 zine 故事"
 description: |
   A neighborhood zine on the disappearing corner shops — portraits, voices, and what a block loses when they close. Built as a decision-grade story deck for community, local readers.
