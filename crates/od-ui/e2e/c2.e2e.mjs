@@ -471,6 +471,10 @@ try {
   await until(async () => (await page.getByTestId('memory-config-unreadable').count()) === 0, 'the notice goes once written');
   assert.ok(lstatSync(configFile).isFile(), 'a file of its own replaces the link');
   assert.equal(readFileSync(configOutside, 'utf8'), '{"enabled":true}', 'nothing written through the link');
+  // The config written starts from the defaults (the one linked was never
+  // read): "Learn from chats", which the toast below needs, is on again.
+  await page.getByTestId('memory-hook-chatExtractionEnabled').check();
+  await until(async () => (await api('/api/memory/config')).chatExtractionEnabled === true, 'hook saved again');
   await shot('settings-memory', async () => page.getByTestId('memory-controls').scrollIntoViewIfNeeded());
   await page.getByTestId('memory-enabled').uncheck();
   await page.getByTestId('memory-off').waitFor();
