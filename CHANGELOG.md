@@ -8,6 +8,8 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0-beta.77] - 2026-11-28
+
 ### Fixed
 
 - Copying a design system twice at once makes two copies, and setting its status or uploading assets never leaves a file half written.
@@ -1548,7 +1550,8 @@ that runs entirely on your machine, at feature parity with the original app
 
 - The hidden ZIP input on the Projects page has an accessible name (axe `label`).
 
-[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.76...HEAD
+[Unreleased]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.77...HEAD
+[0.2.0-beta.77]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.76...v0.2.0-beta.77
 [0.2.0-beta.76]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.75...v0.2.0-beta.76
 [0.2.0-beta.75]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.74...v0.2.0-beta.75
 [0.2.0-beta.74]: https://github.com/quangphung218/contour-design/compare/v0.2.0-beta.73...v0.2.0-beta.74
