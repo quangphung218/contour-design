@@ -18,7 +18,8 @@ use axum::http::{HeaderValue, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use od_store::memory_index::{
-    self, MAX_INDEX_BYTES, MemoryConfig, MemoryConfigPatch, MemoryFiles, Stored, Suggestion,
+    self, MAX_INDEX_BYTES, MemoryConfig, MemoryConfigPatch, MemoryFiles, Stored, StoredConfig,
+    Suggestion,
 };
 use od_store::{Store, StoreError};
 use serde::{Deserialize, Serialize};
@@ -132,14 +133,30 @@ fn change(kind: &str, extra: Value) -> Value {
     v
 }
 
-pub async fn get_config(State(state): State<AppState>) -> ApiJson<MemoryConfig> {
-    ApiJson(files(&state.store).config())
+/// The config Settings shows: the one in force, and whether
+/// `config.json` is there but cannot be read (a link, a FIFO, too large,
+/// not a config): memory is then off until a switch writes it again.
+#[derive(Debug, Serialize)]
+pub struct ConfigResponse {
+    #[serde(flatten)]
+    pub config: MemoryConfig,
+    pub unreadable: bool,
 }
 
+pub async fn get_config(State(state): State<AppState>) -> ApiJson<ConfigResponse> {
+    let stored = files(&state.store).stored_config();
+    ApiJson(ConfigResponse {
+        config: stored.config(),
+        unreadable: stored == StoredConfig::Unreadable,
+    })
+}
+
+/// Applies `patch` to the config Settings shows (memory off for one that
+/// cannot be read) and writes it in place of what is there.
 pub async fn patch_config(
     State(state): State<AppState>,
     ApiJson(patch): ApiJson<MemoryConfigPatch>,
-) -> ApiResult<ApiJson<MemoryConfig>> {
+) -> ApiResult<ApiJson<ConfigResponse>> {
     let next = state
         .blocking(move |s| {
             let f = files(s);
@@ -152,7 +169,10 @@ pub async fn patch_config(
         &state.store,
         change("config", json!({ "enabled": next.enabled })),
     );
-    Ok(ApiJson(next))
+    Ok(ApiJson(ConfigResponse {
+        config: next,
+        unreadable: false,
+    }))
 }
 
 #[derive(Debug, Serialize, Deserialize)]

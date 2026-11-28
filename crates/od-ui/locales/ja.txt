@@ -1760,6 +1760,7 @@ MemoryImportPartial = {0} 件を保存、{1} 件は失敗しました。
 MemoryIndexTitle = MEMORY.md (インデックス)
 MemoryIndexHint = ここにリンクされた事実だけがプロンプトに入ります。行を消すとその事実はオフになり、項目は一覧に残ります。インデックスを保存するまで反映されません。
 MemoryIndexUnreadable = MEMORY.md を読めません（リンク、FIFO、またはサイズ超過）。そのためメモリはチャットに入りません。インデックスを保存すると書き直します。
+MemoryConfigUnreadable = config.json を読めません（リンク、FIFO、サイズ超過、または無効）。そのためメモリはオフです。スイッチを切り替えると書き直します。
 MemoryIndexSave = インデックスを保存
 MemoryIndexSaved = 保存しました
 MemoryUnsaved = 未保存の変更

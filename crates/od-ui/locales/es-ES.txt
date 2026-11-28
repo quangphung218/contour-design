@@ -1761,6 +1761,7 @@ MemoryImportPartial = {0} guardadas, {1} con error.
 MemoryIndexTitle = MEMORY.md (índice)
 MemoryIndexHint = Solo los datos enlazados aquí llegan al prompt. Borra una línea para desactivar un dato; la entrada sigue en la lista. No se guarda hasta pulsar Guardar índice.
 MemoryIndexUnreadable = No se puede leer MEMORY.md (un enlace, un FIFO o demasiado grande), así que ninguna memoria llega al chat. Guardar índice lo vuelve a escribir.
+MemoryConfigUnreadable = No se puede leer config.json (un enlace, un FIFO, demasiado grande o no válido), así que la memoria está desactivada. Cambiar un interruptor lo vuelve a escribir.
 MemoryIndexSave = Guardar índice
 MemoryIndexSaved = Índice guardado
 MemoryUnsaved = Cambios sin guardar

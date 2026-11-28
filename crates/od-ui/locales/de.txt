@@ -1755,6 +1755,7 @@ MemoryImportPartial = {0} gespeichert, {1} fehlgeschlagen.
 MemoryIndexTitle = MEMORY.md (Index)
 MemoryIndexHint = Nur hier verlinkte Fakten erreichen den Prompt. Lösche eine Zeile, um einen Fakt zu deaktivieren; der Eintrag bleibt in der Liste. Erst mit Index speichern gesichert.
 MemoryIndexUnreadable = MEMORY.md ist nicht lesbar (ein Link, ein FIFO oder zu groß), daher erreicht keine Erinnerung den Chat. Index speichern schreibt sie neu.
+MemoryConfigUnreadable = config.json ist nicht lesbar (ein Link, ein FIFO, zu groß oder ungültig), daher ist die Erinnerung aus. Ein Schalter schreibt sie neu.
 MemoryIndexSave = Index speichern
 MemoryIndexSaved = Index gespeichert
 MemoryUnsaved = Ungespeicherte Änderungen

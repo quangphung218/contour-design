@@ -1759,6 +1759,7 @@ MemoryImportPartial = 已保存 {0} 条，{1} 条失败。
 MemoryIndexTitle = MEMORY.md（索引）
 MemoryIndexHint = 只有此处链接的事实才会进入提示词。删除一行即关闭该事实，条目仍保留在列表中。点击保存索引前不会生效。
 MemoryIndexUnreadable = 无法读取 MEMORY.md（链接、FIFO 或过大），因此没有记忆进入对话。点击保存索引会重新写入。
+MemoryConfigUnreadable = 无法读取 config.json（链接、FIFO、过大或无效），因此记忆已关闭。切换任一开关会重新写入。
 MemoryIndexSave = 保存索引
 MemoryIndexSaved = 索引已保存
 MemoryUnsaved = 有未保存的更改

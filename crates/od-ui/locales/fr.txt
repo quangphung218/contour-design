@@ -1761,6 +1761,7 @@ MemoryImportPartial = {0} enregistrés, {1} en échec.
 MemoryIndexTitle = MEMORY.md (index)
 MemoryIndexHint = Seuls les faits liés ici arrivent dans le prompt. Supprimez une ligne pour désactiver un fait ; l'entrée reste dans la liste. Rien n'est enregistré avant Enregistrer l'index.
 MemoryIndexUnreadable = MEMORY.md est illisible (un lien, une FIFO ou trop gros) : aucune mémoire n'arrive dans le chat. Enregistrer l'index le réécrit.
+MemoryConfigUnreadable = config.json est illisible (un lien, une FIFO, trop gros ou invalide) : la mémoire est désactivée. Changer un interrupteur le réécrit.
 MemoryIndexSave = Enregistrer l'index
 MemoryIndexSaved = Index enregistré
 MemoryUnsaved = Modifications non enregistrées

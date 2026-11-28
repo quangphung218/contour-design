@@ -1754,6 +1754,7 @@ MemoryImportPartial = Tersimpan {0}, gagal {1}.
 MemoryIndexTitle = MEMORY.md (indeks)
 MemoryIndexHint = Hanya fakta yang ditautkan di sini yang masuk ke prompt. Hapus satu baris untuk menonaktifkan fakta; entri tetap ada di daftar. Belum tersimpan sampai Simpan indeks.
 MemoryIndexUnreadable = MEMORY.md tidak bisa dibaca (tautan, FIFO, atau terlalu besar), jadi tidak ada memori yang masuk ke chat. Simpan indeks akan menulisnya lagi.
+MemoryConfigUnreadable = config.json tidak bisa dibaca (tautan, FIFO, terlalu besar, atau tidak valid), jadi memori mati. Mengubah sakelar akan menulisnya lagi.
 MemoryIndexSave = Simpan indeks
 MemoryIndexSaved = Indeks tersimpan
 MemoryUnsaved = Perubahan belum disimpan

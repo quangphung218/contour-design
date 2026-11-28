@@ -10,7 +10,7 @@
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use od_store::manage::GlobalMemory;
-use od_store::memory_index::{self, CONFIG_FILE, INDEX_FILE, MemoryFiles, Stored};
+use od_store::memory_index::{self, CONFIG_FILE, INDEX_FILE, MemoryFiles, Stored, StoredConfig};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
 use std::path::Path;
 use std::time::Duration;
@@ -169,23 +169,58 @@ fn the_index_read_never_waits_on_a_fifo() {
     assert!(done, "stored_index waited on a FIFO for 3 s");
 }
 
+/// A config there but not readable is not a missing one: missing, the
+/// defaults hold (memory on); a link (to a config that turns memory on),
+/// a FIFO, one too large or not a config turn memory off, so no entry
+/// reaches the prompt (fail closed, as for `MEMORY.md`).
 #[test]
-fn the_config_read_never_follows_a_link_or_waits_on_a_fifo() {
+fn a_config_that_cannot_be_read_turns_memory_off() {
     let tmp = tempfile::tempdir().unwrap();
     let files = files_in(&tmp);
-    let off = tmp.path().join("off.json");
-    std::fs::write(&off, r#"{"enabled":false}"#).unwrap();
-    symlink(&off, files.dir().join(CONFIG_FILE)).unwrap();
-    assert!(files.config().enabled, "a linked config is not read");
+    let entries = vec![entry("a1")];
+    let at = files.dir().join(CONFIG_FILE);
+    let reaches_prompt = |files: &MemoryFiles| {
+        !memory_index::active(&files.config(), &Stored::Missing, &entries).is_empty()
+    };
+    assert_eq!(files.stored_config(), StoredConfig::Missing);
+    assert!(reaches_prompt(&files), "no config: the defaults hold");
 
-    std::fs::remove_file(files.dir().join(CONFIG_FILE)).unwrap();
-    let fifo = files.dir().join(CONFIG_FILE);
-    make_fifo(&fifo);
+    let on = tmp.path().join("on.json");
+    std::fs::write(&on, r#"{"enabled":true}"#).unwrap();
+    symlink(&on, &at).unwrap();
+    assert_eq!(files.stored_config(), StoredConfig::Unreadable, "a link");
+    assert!(!files.config().enabled);
+    assert!(!reaches_prompt(&files), "a linked config is not read");
+
+    std::fs::remove_file(&at).unwrap();
+    make_fifo(&at);
     let reader = files.clone();
-    let done = returns_in_time(&fifo, move || {
-        assert!(reader.config().enabled);
+    let done = returns_in_time(&at, move || {
+        assert_eq!(reader.stored_config(), StoredConfig::Unreadable, "a FIFO");
+        assert!(!reader.config().enabled);
     });
     assert!(done, "config waited on a FIFO for 3 s");
+    assert!(!reaches_prompt(&files), "a FIFO config");
+
+    std::fs::remove_file(&at).unwrap();
+    std::fs::write(
+        &at,
+        format!(r#"{{"enabled":true,"x":"{}"}}"#, "x".repeat(64 * 1024)),
+    )
+    .unwrap();
+    assert_eq!(files.stored_config(), StoredConfig::Unreadable, "too large");
+
+    std::fs::write(&at, "{not json").unwrap();
+    assert_eq!(
+        files.stored_config(),
+        StoredConfig::Unreadable,
+        "not a config"
+    );
+    assert!(!reaches_prompt(&files));
+
+    std::fs::write(&at, r#"{"profileEnabled":false}"#).unwrap();
+    let read = files.config();
+    assert!(read.enabled && !read.profile_enabled, "{read:?}");
 }
 
 #[test]
