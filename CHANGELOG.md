@@ -8,6 +8,10 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- While Claude writes a file, the chat and the empty preview show its name and size so far instead of "Thinking".
+
 ### Fixed
 
 - Saving an export over an existing file writes a new copy first, so a failed save keeps the old file whole (#371).

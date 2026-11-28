@@ -17,6 +17,7 @@ pub mod dsh_companion;
 pub mod engine;
 pub mod env;
 pub mod guard;
+pub mod in_flight;
 pub mod login_path;
 pub mod parse;
 pub mod process;
