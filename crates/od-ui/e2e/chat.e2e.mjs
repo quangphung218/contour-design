@@ -127,7 +127,7 @@ try {
   await page.getByTestId('chip-more').click();
   assert.equal(await page.getByTestId('chip-option').count(), 10);
   await page.locator('[data-testid="chip-option"][data-chip="video"]').click();
-  await title.getByText('Let’s create video').waitFor();
+  await title.getByText('Let’s create a video').waitFor();
   await page.getByTestId('media-bar').waitFor();
   await page.getByTestId('media-aspect').selectOption('9:16');
   await page.getByTestId('media-duration').selectOption('8');
