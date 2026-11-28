@@ -910,6 +910,15 @@ the released beta.47 with the real Claude Code is
 | FR-01 | First launch to three exported files | Empty data folder, mock `claude` on PATH | Onboarding (agent picked and tested) ▸ Continue ▸ brief + Enter ▸ one change in the chat ▸ Export HTML, PDF, Image ▸ PNG | Studio opens on Enter; preview shows v1 then v2 by itself; HTML holds v2; PDF starts `%PDF-`; PNG has the PNG signature; no page error, no request off the machine | P0 | auto (PDF and PNG only with Chrome) |
 | FR-02 | A page linking a Google font | Real agent, default prompt | Brief ▸ Export PDF | The PDF uses the font the page asks for, or the user is told it does not | P1 | manual (QA-110, decision pending) |
 
+## 31. A user's files an agent can also write, after beta.77 (`userstore.qa.mjs`)
+
+Skills, design systems, plugins and the memory files: each flow as the
+user does it, then the disk checked for the content and for no staging
+name left; `kill -9` during installs, replaces, restores and deletes;
+links the user made and links planted inside. Scenarios, results and the
+run command: [user-store-e2e-beta77.md](user-store-e2e-beta77.md)
+(US-01 to US-44).
+
 ## Not automated, and why
 
 - **Desktop shell (Tauri)**: native menus, Cmd+O folder dialog, Finder
