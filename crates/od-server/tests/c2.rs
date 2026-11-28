@@ -84,7 +84,7 @@ async fn memory_switch_hooks_and_index_decide_what_the_prompt_carries() {
     assert_eq!(
         cfg,
         json!({"enabled": true, "chatExtractionEnabled": false, "profileEnabled": true,
-               "rewriteEnabled": true, "verifyEnabled": true})
+               "rewriteEnabled": true, "verifyEnabled": true, "unreadable": false})
     );
     let teal = add_memory(&d, "user", "Brand colour is teal").await;
     let serif = add_memory(&d, "rule", "Headings are serif").await;
@@ -230,6 +230,51 @@ async fn an_unreadable_memory_index_lets_no_entry_into_the_prompt() {
     let index = d.get_json("/api/memory/index").await;
     assert_eq!(index["unreadable"], json!(false), "{index}");
     turn(&d, &project, &conversation, "again").await;
+    assert!(last_prompt(&d).contains("Brand colour is teal"));
+}
+
+/// `config.json` there but not readable (a link to a config that turns
+/// memory on, a FIFO) is not a missing one: memory is off for the turn,
+/// Settings is told, and a switch writes a file of its own there.
+#[cfg(unix)] // the mock agent is a `sh` script
+#[tokio::test]
+async fn an_unreadable_memory_config_turns_memory_off() {
+    let d = daemon().await;
+    write_mock(&d.mocks, "claude", &claude_logging(&d.mocks));
+    let (project, conversation) = d.project().await;
+    add_memory(&d, "user", "Brand colour is teal").await;
+    let outside = d.data.join("on.json");
+    std::fs::write(&outside, r#"{"enabled":true}"#).unwrap();
+    let config = d.data.join("memory/config.json");
+    std::fs::create_dir_all(d.data.join("memory")).unwrap();
+    std::os::unix::fs::symlink(&outside, &config).unwrap();
+
+    let cfg = d.get_json("/api/memory/config").await;
+    assert_eq!(cfg["unreadable"], json!(true), "{cfg}");
+    assert_eq!(cfg["enabled"], json!(false), "{cfg}");
+    turn(&d, &project, &conversation, "make a page").await;
+    let p = last_prompt(&d);
+    assert!(!p.contains("Brand colour is teal"), "fail closed: {p}");
+    assert!(!p.contains("Memory hooks"), "fail closed: {p}");
+
+    std::fs::remove_file(&config).unwrap();
+    nix::unistd::mkfifo(&config, nix::sys::stat::Mode::from_bits_truncate(0o644)).unwrap();
+    let cfg = d.get_json("/api/memory/config").await;
+    assert_eq!(cfg["unreadable"], json!(true), "{cfg}");
+    turn(&d, &project, &conversation, "again").await;
+    assert!(!last_prompt(&d).contains("Brand colour is teal"));
+
+    let (status, v) = send(
+        &d,
+        reqwest::Method::PATCH,
+        "/api/memory/config",
+        &json!({"enabled": true}),
+    )
+    .await;
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["unreadable"], json!(false), "{v}");
+    assert!(std::fs::symlink_metadata(&config).unwrap().is_file());
+    turn(&d, &project, &conversation, "once more").await;
     assert!(last_prompt(&d).contains("Brand colour is teal"));
 }
 

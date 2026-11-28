@@ -6,7 +6,8 @@
 //! entries reach the prompt, so deleting a line turns a fact off without
 //! deleting it. A missing index means every entry is linked; one that is
 //! there but cannot be read (a link, a FIFO, too large) links none: no
-//! memory reaches the prompt and Settings says so (fail closed).
+//! memory reaches the prompt and Settings says so (fail closed). So for
+//! the config: missing, the defaults hold; unreadable, memory is off.
 //!
 //! An agent can write this folder (its shell, or a call on loopback from
 //! outside its sandbox), so the files are read and written through
@@ -15,7 +16,6 @@
 //! `O_EXCL|O_NOFOLLOW`, synced, then renamed over the file it compared.
 
 use crate::manage::GlobalMemory;
-use od_fs::nofollow;
 use od_fs::user_store::{self, Expect, Found, Guard, UserRoot};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -110,6 +110,30 @@ pub enum Stored {
     Unreadable,
 }
 
+/// The stored config as read. Missing, the defaults hold (memory on);
+/// unreadable, memory is off (fail closed, as for [`Stored::Unreadable`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredConfig {
+    Config(MemoryConfig),
+    Missing,
+    Unreadable,
+}
+
+impl StoredConfig {
+    /// The config in force: an unreadable one turns memory off, never on.
+    #[must_use]
+    pub fn config(self) -> MemoryConfig {
+        match self {
+            Self::Config(c) => c,
+            Self::Missing => MemoryConfig::default(),
+            Self::Unreadable => MemoryConfig {
+                enabled: false,
+                ..MemoryConfig::default()
+            },
+        }
+    }
+}
+
 impl MemoryFiles {
     #[must_use]
     pub fn in_data_dir(root: &Path) -> Self {
@@ -133,15 +157,24 @@ impl MemoryFiles {
         self.root.path()
     }
 
-    /// The config; defaults when missing, unreadable, or not a regular
-    /// file (a link, a FIFO).
+    /// The config stored, read under the lock: one there that cannot be
+    /// read (a link, a FIFO, too large, not a config) is not one missing.
+    #[must_use]
+    pub fn stored_config(&self) -> StoredConfig {
+        match self.root.lock().read(Path::new(CONFIG_FILE)) {
+            Found::Missing => StoredConfig::Missing,
+            Found::File(read) if read.bytes.len() as u64 <= MAX_CONFIG_READ_BYTES => {
+                serde_json::from_slice(&read.bytes)
+                    .map_or(StoredConfig::Unreadable, StoredConfig::Config)
+            }
+            Found::File(_) | Found::Unreadable(_) => StoredConfig::Unreadable,
+        }
+    }
+
+    /// The config in force ([`StoredConfig::config`]).
     #[must_use]
     pub fn config(&self) -> MemoryConfig {
-        nofollow::read_file(&self.dir().join(CONFIG_FILE), MAX_CONFIG_READ_BYTES)
-            .ok()
-            .flatten()
-            .and_then(|f| serde_json::from_slice(&f.bytes).ok())
-            .unwrap_or_default()
+        self.stored_config().config()
     }
 
     /// # Errors

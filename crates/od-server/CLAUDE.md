@@ -126,7 +126,8 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     for a save, replace, restore, install; the folder holding the design system (`<data>/design-systems`) for a Save of `DESIGN.md` and an accepted revision;
     `<data>/memory` for the index editor, `link`/`unlink`), and `Guard::write` compares again with what that one read
     found (`Expect`) right before its rename. A `MEMORY.md` there but unreadable (a link, a FIFO, too large) is not a
-    missing one: no entry reaches a prompt and `GET /api/memory/index` says `unreadable` (Settings shows it). No `If-Match` is a 428 with nothing written
+    missing one: no entry reaches a prompt and `GET /api/memory/index` says `unreadable` (Settings shows it); a
+    `config.json` that cannot be read turns memory off and `GET /api/memory/config` says `unreadable`. No `If-Match` is a 428 with nothing written
     (the extractor refuses it); a write over whatever is there sends `If-Match: *`. The `ETag` is of the bytes the body
     shown came from, never of a second read.
     GET and PUT tag the same file: for a skill, the one a save writes over (`user_content::skill_write_dir`:
@@ -160,7 +161,10 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     a `use …::fs::*`, each named as a value too (`.map(std::fs::remove_file)`, `let w = std::fs::write`), and a function elsewhere in `od-content`, `od-server`, `od-store` or
     `od_fs::nofollow` that does (found by name, to a fixed point); `KEPT` with why (a temp folder or a generation's staging
     outside every user root, an older version's leftovers moved back at start-up). `../od-fs/src/hostile.rs` runs every `Guard` call against a linked entry, a link below it, a link or
-    FIFO at the file, a file too large, a `0555` folder and a name alike in another case.
+    FIFO at the file, a file too large, a `0555` folder and a name alike in another case; another crate's tests take it
+    with the feature `test-support` (dev-dependency only): `../od-content/tests/hostile_save.rs` (a skill's Save).
+    On Windows an entry that is a directory symlink or a junction goes as a link (`remove_staged`: `remove_dir`),
+    `../od-fs/src/user_store_windows_tests.rs`.
     Every `PUT` route takes `IfMatch` itself (not `Option<IfMatch>`) or is listed in `KEPT` with why.
     A folder filled from a tree (install, install over a user skill, Replace from source, an override's first copy,
     Copy design system, a generated design system, Copy to Claude Code) is made new (`nofollow::NewDir`: `create_dir`, never

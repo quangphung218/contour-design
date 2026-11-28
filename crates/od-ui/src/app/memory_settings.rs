@@ -72,6 +72,9 @@ pub fn MemoryControls() -> impl IntoView {
                 />
                 <span>{t(T::MemoryEnable)}</span>
             </label>
+            <Show when=move || flag("unreadable")>
+                <p class="error-text small" role="alert" data-testid="memory-config-unreadable">{t(T::MemoryConfigUnreadable)}</p>
+            </Show>
             <Show when=move || config.with(Option::is_some) && !enabled()>
                 <p class="memory-off" role="status" data-testid="memory-off">
                     {icon(Glyph::Warning)}

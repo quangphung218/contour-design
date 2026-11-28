@@ -1759,6 +1759,7 @@ MemoryImportPartial = {0} kaydedildi, {1} başarısız.
 MemoryIndexTitle = MEMORY.md (dizin)
 MemoryIndexHint = İstemi yalnızca burada bağlantısı olan bilgiler ulaşır. Bir bilgiyi kapatmak için satırı silin; kayıt listede kalır. Dizini kaydet'e basana kadar kaydedilmez.
 MemoryIndexUnreadable = MEMORY.md okunamıyor (bağlantı, FIFO veya çok büyük), bu yüzden hiçbir bellek sohbete ulaşmaz. Dizini kaydet onu yeniden yazar.
+MemoryConfigUnreadable = config.json okunamıyor (bağlantı, FIFO, çok büyük veya geçersiz), bu yüzden bellek kapalı. Bir anahtarı değiştirmek onu yeniden yazar.
 MemoryIndexSave = Dizini kaydet
 MemoryIndexSaved = Dizin kaydedildi
 MemoryUnsaved = Kaydedilmemiş değişiklikler

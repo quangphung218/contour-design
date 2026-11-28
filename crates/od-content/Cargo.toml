@@ -24,6 +24,8 @@ nix.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+# `od_fs::hostile`: a root as an agent leaves it at its worst (tests/hostile_save.rs).
+od-fs = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
 
 [[bench]]

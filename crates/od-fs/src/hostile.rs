@@ -5,23 +5,25 @@
 //! link below the entry, a link at the file, a FIFO, a file too large, a
 //! read-only folder, a folder named like the entry in another case.
 //!
-//! [`every_guard_call_holds_up_in_every_hazard`] runs every call of
-//! [`Guard`] (and [`UserRoot::recover`]) in each one.
+//! `every_guard_call_holds_up_in_every_hazard` runs every call of
+//! [`Guard`] (and [`UserRoot::recover`]) in each one. Another crate's
+//! tests take it with the feature `test-support` (a dev-dependency only),
+//! to run their own writer in each [`Hazard`] ([`finishes`]).
 
 #![allow(clippy::unwrap_used)] // test helpers fail loudly by design
 
 use crate::nofollow::{ReadFile, Tree};
-use crate::user_store::{Expect, Found, Guard, Tag, Unreadable, UserRoot};
-use std::os::unix::fs::{PermissionsExt, symlink};
+use crate::user_store::{Expect, Found, Guard, UserRoot};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// The read limit of a hostile root.
-pub(crate) const LIMIT: u64 = 1024;
+pub const LIMIT: u64 = 1024;
 
 /// What an agent may have left in the root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Hazard {
+pub enum Hazard {
     /// Nothing: the root as the app left it.
     None,
     /// `tea` is a link to a skill folder elsewhere (the user's own, which
@@ -42,7 +44,7 @@ pub(crate) enum Hazard {
 }
 
 impl Hazard {
-    pub(crate) const ALL: [Self; 8] = [
+    pub const ALL: [Self; 8] = [
         Self::None,
         Self::LinkedEntry,
         Self::LinkBelowEntry,
@@ -55,16 +57,16 @@ impl Hazard {
 }
 
 /// A root under a temp folder, with a folder outside it.
-pub(crate) struct Hostile {
+pub struct Hostile {
     tmp: tempfile::TempDir,
-    pub(crate) root: UserRoot,
+    pub root: UserRoot,
 }
 
 impl Hostile {
     /// `root/tea` (a `SKILL.md`, `assets/a.css`), `root/.previous/tea` (a
     /// kept copy), `outside/secret.txt`, `own/` (a skill folder of the
     /// user's outside the root).
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("root");
         std::fs::create_dir_all(path.join("tea/assets")).unwrap();
@@ -80,24 +82,30 @@ impl Hostile {
         Self { tmp, root }
     }
 
-    pub(crate) fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         self.root.path()
     }
 
     /// The folder no call may change.
-    pub(crate) fn outside(&self) -> PathBuf {
+    pub fn outside(&self) -> PathBuf {
         self.tmp.path().join("outside")
     }
 
+    /// The user's own skill folder outside the root, which
+    /// [`Hazard::LinkedEntry`] links as `tea`.
+    pub fn own(&self) -> PathBuf {
+        self.tmp.path().join("own")
+    }
+
     /// Puts `hazard` in the root.
-    pub(crate) fn plant(&self, hazard: Hazard) {
+    pub fn plant(&self, hazard: Hazard) {
         let tea = self.path().join("tea");
         let secret = self.outside().join("secret.txt");
         match hazard {
             Hazard::None => {}
             Hazard::LinkedEntry => {
                 std::fs::remove_dir_all(&tea).unwrap();
-                symlink(self.tmp.path().join("own"), &tea).unwrap();
+                symlink(self.own(), &tea).unwrap();
             }
             Hazard::LinkBelowEntry => {
                 std::fs::remove_dir_all(tea.join("assets")).unwrap();
@@ -130,7 +138,7 @@ impl Hostile {
 
     /// Every file and link under `dir` with its bytes (where a link
     /// points), no link followed.
-    pub(crate) fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    pub fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
         let mut out = Vec::new();
         let mut todo = vec![dir.to_path_buf()];
         while let Some(at) = todo.pop() {
@@ -159,7 +167,7 @@ impl Hostile {
     }
 
     /// Whether this disk takes `Tea` for `tea` (macOS, Windows).
-    pub(crate) fn folds_case(&self) -> bool {
+    pub fn folds_case(&self) -> bool {
         let probe = self.tmp.path().join("CaseProbe");
         std::fs::write(&probe, "").unwrap();
         let folds = self.tmp.path().join("caseprobe").exists();
@@ -167,9 +175,19 @@ impl Hostile {
         folds
     }
 
+    /// Opens the FIFO of [`Hazard::Fifo`] for writing (non-blocking: no
+    /// reader, no open), so a reader stuck on it goes on before the test
+    /// fails.
+    pub fn release_fifo(&self) {
+        let _ = std::fs::OpenOptions::new()
+            .write(true)
+            .custom_flags(nix::libc::O_NONBLOCK)
+            .open(self.path().join("tea/SKILL.md"));
+    }
+
     /// The temp files a [`Guard::write`] cut short would leave
     /// (`.<file>.<tag>.tmp`) anywhere in the root.
-    pub(crate) fn temp_files(&self) -> Vec<PathBuf> {
+    pub fn temp_files(&self) -> Vec<PathBuf> {
         Self::snapshot(self.path())
             .into_iter()
             .map(|(p, _)| p)
@@ -179,6 +197,12 @@ impl Hostile {
                     .is_some_and(|n| n.starts_with('.') && n.ends_with(".tmp"))
             })
             .collect()
+    }
+}
+
+impl Default for Hostile {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -199,7 +223,7 @@ impl Drop for Hostile {
 
 /// A call of [`Guard`] on `tea`, as a route makes it.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Call {
+pub enum Call {
     Read,
     ReadBelow,
     Write,
@@ -217,7 +241,7 @@ pub(crate) enum Call {
 }
 
 impl Call {
-    pub(crate) const ALL: [Self; 14] = [
+    pub const ALL: [Self; 14] = [
         Self::Read,
         Self::ReadBelow,
         Self::Write,
@@ -235,7 +259,7 @@ impl Call {
     ];
 
     /// Runs the call on `root`; what it found, for the test to check.
-    pub(crate) fn run(self, root: &UserRoot) -> Outcome {
+    pub fn run(self, root: &UserRoot) -> Outcome {
         let tree = Tree {
             dirs: vec![PathBuf::from("assets")],
             files: vec![
@@ -305,18 +329,24 @@ fn io(e: crate::user_store::WriteError) -> std::io::Error {
 
 /// What a call found.
 #[derive(Debug)]
-pub(crate) enum Outcome {
+pub enum Outcome {
     Read(Found),
     Done(std::io::Result<()>),
 }
 
 /// Runs `call` on a thread of its own: `None` when it is still running
 /// after 3 s (it waits on a FIFO).
-pub(crate) fn within(root: &UserRoot, call: Call) -> Option<Outcome> {
-    let (tx, rx) = std::sync::mpsc::channel();
+pub fn within(root: &UserRoot, call: Call) -> Option<Outcome> {
     let root = root.clone();
+    finishes(move || call.run(&root))
+}
+
+/// Runs `f` on a thread of its own: `None` when it is still running after
+/// 3 s (it waits on a FIFO). [`Hostile::release_fifo`] then lets it go.
+pub fn finishes<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let _ = tx.send(call.run(&root));
+        let _ = tx.send(f());
     });
     rx.recv_timeout(Duration::from_secs(3)).ok()
 }
@@ -325,8 +355,10 @@ pub(crate) fn within(root: &UserRoot, call: Call) -> Option<Outcome> {
 /// changes a byte outside the root, none leaves a temp file, a read
 /// tells a file it cannot read from one not there, and a name alike in
 /// another case is reached only where the disk takes it for the same.
+#[cfg(test)]
 #[test]
 fn every_guard_call_holds_up_in_every_hazard() {
+    use crate::user_store::{Tag, Unreadable};
     for hazard in Hazard::ALL {
         for call in Call::ALL {
             let h = Hostile::new();
@@ -335,11 +367,7 @@ fn every_guard_call_holds_up_in_every_hazard() {
             let twin = Hostile::snapshot(&h.path().join("Tea"));
             let at = format!("{call:?} in {hazard:?}");
             let Some(outcome) = within(&h.root, call) else {
-                // Let a reader stuck on the FIFO go before the test fails.
-                let _ = std::fs::OpenOptions::new()
-                    .write(true)
-                    .custom_flags(nix::libc::O_NONBLOCK)
-                    .open(h.path().join("tea/SKILL.md"));
+                h.release_fifo();
                 panic!("{at}: still running after 3 s");
             };
             assert_eq!(
@@ -392,7 +420,7 @@ fn every_guard_call_holds_up_in_every_hazard() {
                 (Hazard::LinkedEntry, Call::Remove, Outcome::Done(r)) => {
                     assert!(r.is_ok(), "{at}: {r:?}");
                     assert!(
-                        h.tmp.path().join("own/SKILL.md").is_file(),
+                        h.own().join("SKILL.md").is_file(),
                         "{at}: removed the folder linked"
                     );
                 }
@@ -445,9 +473,8 @@ fn every_guard_call_holds_up_in_every_hazard() {
     }
 }
 
+#[cfg(test)]
 fn tag_of(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     hex::encode(Sha256::digest(bytes))
 }
-
-use std::os::unix::fs::OpenOptionsExt;

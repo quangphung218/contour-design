@@ -1760,6 +1760,7 @@ MemoryImportPartial = {0}개 저장, {1}개 실패.
 MemoryIndexTitle = MEMORY.md (색인)
 MemoryIndexHint = 여기에 링크된 사실만 프롬프트에 들어갑니다. 줄을 지우면 그 사실이 꺼지고 항목은 목록에 남습니다. 색인 저장 전에는 반영되지 않습니다.
 MemoryIndexUnreadable = MEMORY.md를 읽을 수 없어(링크, FIFO 또는 너무 큼) 어떤 메모리도 채팅에 들어가지 않습니다. 색인 저장을 누르면 다시 씁니다.
+MemoryConfigUnreadable = config.json을 읽을 수 없어(링크, FIFO, 너무 큼 또는 잘못됨) 메모리가 꺼져 있습니다. 스위치를 바꾸면 다시 씁니다.
 MemoryIndexSave = 색인 저장
 MemoryIndexSaved = 색인 저장됨
 MemoryUnsaved = 저장되지 않은 변경

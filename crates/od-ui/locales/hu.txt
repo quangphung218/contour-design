@@ -1754,6 +1754,7 @@ MemoryImportPartial = {0} mentve, {1} sikertelen.
 MemoryIndexTitle = MEMORY.md (index)
 MemoryIndexHint = Csak az itt hivatkozott tények jutnak a promptba. Törölj egy sort, hogy kikapcsolj egy tényt; a bejegyzés a listában marad. Az Index mentéséig nem mentődik.
 MemoryIndexUnreadable = A MEMORY.md nem olvasható (hivatkozás, FIFO vagy túl nagy), így semmilyen emlék nem jut a csevegésbe. Az Index mentése újraírja.
+MemoryConfigUnreadable = A config.json nem olvasható (hivatkozás, FIFO, túl nagy vagy érvénytelen), így a memória ki van kapcsolva. Egy kapcsoló átállítása újraírja.
 MemoryIndexSave = Index mentése
 MemoryIndexSaved = Index mentve
 MemoryUnsaved = Mentetlen módosítások
