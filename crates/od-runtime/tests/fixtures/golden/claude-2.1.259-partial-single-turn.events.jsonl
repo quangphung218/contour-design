@@ -10,6 +10,7 @@
 {"type":"tool_input_delta","id":"toolu_01TCNVTdkEMcTY46oBndnpKA","name":"Write","delta":"bb-4b58-96e7-8180846e980a/"}
 {"type":"tool_input_delta","id":"toolu_01TCNVTdkEMcTY46oBndnpKA","name":"Write","delta":"scratchpad/w107/cwd/alpha.html"}
 {"type":"tool_input_delta","id":"toolu_01TCNVTdkEMcTY46oBndnpKA","name":"Write","delta":"\", \"content\": \"<!doctype html><html><body"}
+{"type":"tool_in_flight","id":"toolu_01TCNVTdkEMcTY46oBndnpKA","name":"Write","path":"/private/tmp/claude-501/-Users-elian-Documents-open-design/bff58f5e-18bb-4b58-96e7-8180846e980a/scratchpad/w107/cwd/alpha.html","bytes":182}
 {"type":"tool_input_delta","id":"toolu_01TCNVTdkEMcTY46oBndnpKA","name":"Write","delta":"><h1>Alpha</h1></body></html>"}
 {"type":"tool_input_delta","id":"toolu_01TCNVTdkEMcTY46oBndnpKA","name":"Write","delta":"\"}"}
 {"type":"request_usage","requestId":"msg_011CefjYa5dmmNWEB8GsnT8S","usage":{"input_tokens":10,"output_tokens":4,"cache_creation_input_tokens":9460,"cache_read_input_tokens":13615}}

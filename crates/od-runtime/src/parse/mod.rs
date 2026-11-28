@@ -15,10 +15,11 @@ mod opencode;
 mod pi;
 mod plain;
 mod qoder;
+mod tool_path;
 
 pub use acp::AcpSession;
 pub use antigravity::AntigravityParser;
-pub use claude::ClaudeParser;
+pub use claude::{ClaudeParser, IN_FLIGHT_STEP_BYTES};
 pub use codex::CodexParser;
 pub use copilot::CopilotParser;
 pub use cursor::CursorParser;
@@ -27,6 +28,7 @@ pub use opencode::OpenCodeParser;
 pub use pi::{PI_PARENT_SESSION_FAILED, PiSession};
 pub use plain::PlainParser;
 pub use qoder::QoderParser;
+pub use tool_path::{ToolPathScanner, is_file_write_tool};
 
 use crate::def::{PermissionMode, StreamFormat};
 use od_contracts::AgentEvent;

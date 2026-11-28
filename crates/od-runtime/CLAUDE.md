@@ -44,6 +44,13 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
    `run started` and either `run failed` or `run ended` there, whatever the agent (QA-117).
    - `../od-server/tests/request_id.rs::a_runs_lines_carry_its_run_id_and_the_request_that_started_it`
    - `../od-server/tests/request_id.rs::every_run_logs_its_start_and_end_in_its_span`
+8. A file-writing tool call is named while its arguments stream: `src/parse/tool_path.rs:ToolPathScanner`
+   reads the path from the first bytes (only a complete one, top-level key, write tools only), the Claude
+   parser sends `tool_in_flight` then once per KiB, and the engine lets at most four a second through per
+   call (`src/in_flight.rs:InFlightGate`). Live only: the server does not store it (`persisted`).
+   - `tests/in_flight.rs::a_10_kb_write_names_its_file_within_the_first_kilobyte`, `src/parse/tool_path.rs::tests`
+   - `tests/engine.rs::tool_in_flight_goes_out_at_most_four_times_a_second`
+   - `../od-server/tests/runs.rs::recorded_claude_stream_reaches_sse_as_the_golden_events`
 
 ## Traps
 - An agent's shell can turn any project path into a link; writing through it changes files outside the project (#206).

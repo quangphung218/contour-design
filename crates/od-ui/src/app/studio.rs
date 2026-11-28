@@ -1209,6 +1209,15 @@ impl StudioCtx {
             &["start", "agent", "error", "end"],
             move |name, data| {
                 let frame = decode_frame(name, &data);
+                // One per argument fragment (about a thousand for a 10 KB
+                // page) and nothing to show: `tool_in_flight` carries what
+                // the user sees of them.
+                if matches!(
+                    &frame,
+                    RunFrame::Agent(crate::events::AgentEvent::ToolInputDelta { .. })
+                ) {
+                    return;
+                }
                 let ended = match &frame {
                     RunFrame::End(end) => Some(end.status),
                     _ => None,
@@ -2826,6 +2835,22 @@ fn PreviewGone() -> impl IntoView {
 #[component]
 fn PreviewEmpty(ctx: StudioCtx) -> impl IntoView {
     let running = move || ctx.live_run.with(Option::is_some);
+    // "Writing index.html · 6 KB" under step 2 while the agent streams a
+    // file, before the preview has anything to show.
+    let writing = move || {
+        if !running() {
+            return None;
+        }
+        let turn = ctx.items.with(|items| {
+            items.iter().rev().find_map(|i| match &i.kind {
+                super::chat_view::ItemKind::Assistant(turn) => Some(*turn),
+                super::chat_view::ItemKind::User(_) => None,
+            })
+        })?;
+        let act = turn.with(crate::guide::activity);
+        matches!(act, crate::guide::Activity::Streaming { .. })
+            .then(|| super::chat_view::activity_text(&act))
+    };
     view! {
         <div class="empty-state preview-empty" data-testid="preview-empty">
             <span class="empty-icon">{move || if running() { view! { <span class="spinner"></span> }.into_any() } else { icon(Glyph::Desktop).into_any() }}</span>
@@ -2837,7 +2862,12 @@ fn PreviewEmpty(ctx: StudioCtx) -> impl IntoView {
                 // is under way (UI-010).
                 <ol class="empty-steps">
                     <li class:done=running>{t(T::PreviewStep1)}</li>
-                    <li class:current=running aria-current=move || running().then_some("step")>{t(T::PreviewStep2)}</li>
+                    <li class:current=running aria-current=move || running().then_some("step")>
+                        <span>
+                            {t(T::PreviewStep2)}
+                            {move || writing().map(|w| view! { <span class="muted empty-step-now" data-testid="preview-writing">{w}</span> })}
+                        </span>
+                    </li>
                     <li>{t(T::PreviewStep3)}</li>
                 </ol>
             </Show>

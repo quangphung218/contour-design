@@ -25,6 +25,7 @@
 # and one in a code fence. `twopages` writes index.html (with an emoji
 # icon, a lint finding) and about.html, then stops. A "Save as skill" turn
 # (`generated-skill/`) writes a skill and installs it with curl.
+# `inflight` streams the page's Write arguments first (see below).
 
 case "$1" in --version) echo "mock-claude 1.0.0"; exit 0;; esac
 if [ "$1" = "-p" ] && [ "$2" = "--help" ]; then echo "usage: mock"; exit 0; fi
@@ -228,6 +229,23 @@ case "$req" in *twopages*)
   done
   say "Wrote two pages."
   end_turn
+;; esac
+
+# `inflight`: the page's Write streams its arguments first, as Claude does
+# with partial messages: the path, a 2 s pause, then 6 KB of content in
+# 1.1 KB fragments. The chat names the file before the call is whole.
+case "$req" in *inflight*)
+  sp() { printf '{"type":"stream_event","event":%s,"parent_tool_use_id":null}\n' "$1"; }
+  delta() { sp "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"$1\"}}"; }
+  sp "{\"type\":\"message_start\",\"message\":{\"id\":\"m$$-s\"}}"
+  sp "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tool-$$\",\"name\":\"Write\",\"input\":{}}}"
+  delta '{\"file_path\": \"'"$PWD"'/index.html\", \"content\": \"'
+  sleep 2
+  x=$(printf '%1100s' '' | tr ' ' x)
+  i=0
+  while [ $i -lt 6 ]; do delta "$x"; i=$((i + 1)); sleep 0.4; done
+  delta '\"}'
+  sp '{"type":"content_block_stop","index":0}'
 ;; esac
 
 if [ -z "$skip" ]; then

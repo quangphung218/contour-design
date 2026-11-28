@@ -1126,6 +1126,7 @@ details[open] > summary .ico:last-child { transform: rotate(180deg); }
 .empty-steps li.done::before { content: "\2713"; background: var(--color-success-soft); color: var(--color-success); }
 .empty-steps li.current { color: var(--color-text); font-weight: var(--weight-medium); }
 .empty-steps li.current::before { background: var(--color-accent); color: var(--color-on-accent); }
+.empty-step-now { display: block; margin-top: var(--space-1); font-weight: var(--weight-regular); overflow-wrap: anywhere; }
 
 /* code view */
 .code-view { flex: 1; min-width: 0; align-self: stretch; overflow: auto; border-radius: var(--radius-md); background: var(--color-surface-raised); box-shadow: 0 0 0 1px var(--color-border), var(--shadow-sm); }

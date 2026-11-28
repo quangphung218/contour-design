@@ -557,16 +557,22 @@ async fn recorded_claude_stream_reaches_sse_as_the_golden_events() {
             .unwrap()
             .ends_with("alpha.html")
     );
-    // The stored message keeps the events minus live-only input deltas.
+    // The stored message keeps the events minus the live-only input deltas
+    // and in-flight rows.
     let messages = d.settled_messages(&project, &conversation).await;
     let stored = messages[1]["events"].as_array().unwrap();
     assert!(stored.iter().any(|e| e["type"] == "tool_use"));
-    assert!(stored.iter().all(|e| e["type"] != "tool_input_delta"));
     assert!(
-        agent_payloads(&events)
+        stored
             .iter()
-            .any(|e| e["type"] == "tool_input_delta")
+            .all(|e| e["type"] != "tool_input_delta" && e["type"] != "tool_in_flight")
     );
+    for live in ["tool_input_delta", "tool_in_flight"] {
+        assert!(
+            agent_payloads(&events).iter().any(|e| e["type"] == live),
+            "{live}"
+        );
+    }
     assert_eq!(
         messages[1]["content"],
         "DONE1<artifact type=\"text/html\" title=\"Beta\">\n<!doctype html><html><body><h1>Beta</h1></body></html>\n</artifact>"

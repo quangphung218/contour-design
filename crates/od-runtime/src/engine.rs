@@ -8,6 +8,7 @@ use crate::def::{
     SessionIdSource, StreamFormat,
 };
 use crate::guard::{ToolLoopGuard, ToolLoopLimits, Verdict};
+use crate::in_flight::InFlightGate;
 use crate::parse::{SessionContext, StreamParser, parser_for};
 use crate::process::{self, KILL_GRACE, SpawnSpec};
 use crate::{artifact, detect, turn_files};
@@ -1030,6 +1031,11 @@ impl RunEngine {
                     att.session_id = Some(id.clone());
                 }
                 AgentEvent::TextDelta { delta } => att.text_parts.push(delta.clone()),
+                AgentEvent::ToolInFlight { id, .. }
+                    if !att.in_flight.admit(id, tokio::time::Instant::now()) =>
+                {
+                    continue;
+                }
                 AgentEvent::ToolUse { name, input, .. } => {
                     if matches!(name.as_str(), "Write" | "Edit" | "MultiEdit")
                         && let Some(path) = input.get("file_path").and_then(Value::as_str)
@@ -1314,6 +1320,8 @@ struct Attempt {
     exit_code: Option<i32>,
     signal: Option<String>,
     failure: Option<(FailureCategory, String)>,
+    /// Spaces `tool_in_flight` updates in time.
+    in_flight: InFlightGate,
 }
 
 impl Attempt {

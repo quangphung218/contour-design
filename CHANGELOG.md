@@ -10,6 +10,7 @@ All notable changes to Contour are recorded here. The format follows
 
 ### Added
 
+- While Claude writes a file, the chat and the empty preview show its name and size so far instead of "Thinking".
 - Home's template gallery has a search box, purpose chips and three templates suggested from the brief; deck cards show short names.
 
 ### Fixed
