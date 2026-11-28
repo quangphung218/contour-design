@@ -8,7 +8,13 @@ All notable changes to Contour are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Home's template gallery has a search box, purpose chips and three templates suggested from the brief; deck cards show short names.
+
 ### Fixed
+
+- A comment added on the preview says it goes with your next message, with a Send button; comment mode turns off once it is sent.
 
 - Saving an export over an existing file writes a new copy first, so a failed save keeps the old file whole (#371).
 - A memory config.json that cannot be read now turns memory off, and Settings ▸ Memory says so.
