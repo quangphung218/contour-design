@@ -937,3 +937,171 @@ fn export_cli_writes_every_format() {
         Some((1920, 1080))
     );
 }
+
+/// `od export --format image` in the agent's working folder (the project).
+fn od_in(d: &Daemon, cwd: &Path, look: Option<&Path>, args: &[&str]) -> Output {
+    let mut cmd = Command::new(OD);
+    cmd.current_dir(cwd)
+        .arg("--daemon-url")
+        .arg(&d.url)
+        .args(args)
+        .env_remove("OD_LOOK_DIR");
+    if let Some(dir) = look {
+        cmd.env("OD_LOOK_DIR", dir);
+    }
+    cmd.output().unwrap()
+}
+
+/// PO 28/11 item 5: the picture an agent takes of its render (the
+/// prompt's own commands) lands in the turn's folder, never in the
+/// project it works in, and takes under 5 s once Chrome runs.
+#[test]
+fn a_look_lands_in_the_turns_folder_never_in_the_project() {
+    let d = start_daemon();
+    let created = od_ok(
+        &d,
+        &[
+            "--json", "project", "create", "--name", "Look", "--kind", "deck",
+        ],
+    );
+    let project = serde_json::from_slice::<Value>(&created.stdout).unwrap()["project"].clone();
+    let id = project["id"].as_str().unwrap().to_owned();
+    od_ok(
+        &d,
+        &["files", "write", &id, "index.html", "--content", DECK],
+    );
+    od_ok(
+        &d,
+        &[
+            "files",
+            "write",
+            &id,
+            "deck.css",
+            "--content",
+            ".slide{width:100vw;height:100vh}",
+        ],
+    );
+    let page = "<!doctype html><h1>Hi</h1><p style=\"height:1600px\">x</p>";
+    od_ok(&d, &["files", "write", &id, "page.html", "--content", page]);
+    let names = |d: &Daemon| {
+        let out = od_ok(d, &["--json", "files", "list", &id]);
+        let mut names: Vec<String> = serde_json::from_slice::<Value>(&out.stdout).unwrap()["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["name"].as_str().unwrap().to_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    let before = names(&d);
+    let cwd = tempfile::tempdir().unwrap();
+
+    // Outside a turn: an error, nothing written where the agent works.
+    let deck_args = [
+        "export",
+        &id,
+        "index.html",
+        "--format",
+        "image",
+        "--look",
+        "--deck",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+    ];
+    let out = od_in(&d, cwd.path(), None, &deck_args);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("OD_LOOK_DIR"));
+    assert_eq!(std::fs::read_dir(cwd.path()).unwrap().count(), 0);
+    let look = tempfile::tempdir().unwrap();
+    // `--out` beside `--look` is refused, not written where it names.
+    let out = od_in(
+        &d,
+        cwd.path(),
+        Some(look.path()),
+        &["export", &id, "index.html", "--look", "--out", "x.html"],
+    );
+    assert!(!out.status.success(), "--look and --out exclude each other");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot be used with"));
+    assert_eq!(std::fs::read_dir(cwd.path()).unwrap().count(), 0);
+    assert_eq!(std::fs::read_dir(look.path()).unwrap().count(), 0);
+
+    if std::env::var("OD_SKIP_CHROME_TESTS").as_deref() == Ok("1") {
+        eprintln!("OD_SKIP_CHROME_TESTS=1: skipping browser exports");
+        return;
+    }
+    let page_args = [
+        "export",
+        &id,
+        "page.html",
+        "--format",
+        "image",
+        "--look",
+        "--page",
+        "--width",
+        "1280",
+        "--height",
+        "800",
+        "--image-format",
+        "jpeg",
+    ];
+    let index_args = [
+        "export",
+        &id,
+        "index.html",
+        "--format",
+        "image",
+        "--look",
+        "--deck",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--index",
+        "2",
+    ];
+    // The first export starts Chrome; the agent's look comes after the
+    // lint, often after an earlier export, so each is timed warm too.
+    for (args, size) in [
+        (&deck_args[..], Some((1280, 720 * 5))),
+        (&page_args[..], None),
+        (&index_args[..], Some((1280, 720))),
+    ] {
+        for round in 0..2 {
+            let started = Instant::now();
+            let out = od_in(
+                &d,
+                cwd.path(),
+                Some(look.path()),
+                &["--json"].iter().chain(args).copied().collect::<Vec<_>>(),
+            );
+            let took = started.elapsed();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            eprintln!("look {:?} round {round}: {took:?}", args[2]);
+            if round == 1 {
+                assert!(took < Duration::from_secs(5), "{args:?} took {took:?}");
+            }
+            let printed: Value = serde_json::from_slice(&out.stdout).unwrap();
+            let path = std::path::PathBuf::from(printed["path"].as_str().unwrap());
+            assert_eq!(path.parent(), Some(look.path()), "{}", path.display());
+            let bytes = std::fs::read(&path).unwrap();
+            match size {
+                Some(size) => assert_eq!(od_export::image::png_size(&bytes), Some(size)),
+                None => assert!(bytes.starts_with(b"\xff\xd8"), "a JPEG page"),
+            }
+        }
+    }
+    assert_eq!(
+        std::fs::read_dir(look.path()).unwrap().count(),
+        6,
+        "a new file each time"
+    );
+    assert_eq!(std::fs::read_dir(cwd.path()).unwrap().count(), 0);
+    assert_eq!(names(&d), before, "nothing new in the project");
+}

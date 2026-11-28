@@ -52,6 +52,34 @@ When this turn wrote or edited an HTML file, the last step before your final mes
 
 Exit code 1 means the file has a P0 finding: fix every P0 it lists in the file itself, then run the command again. Stop after two fix attempts: if a P0 is still listed, name it in one line of your reply instead of trying again. P1 and P2 findings are optional. If the command cannot run at all (not found, daemon unreachable), skip this step and do not mention it in your reply.";
 
+/// After the lint, an agent that reads images looks at its own render
+/// (PO 28/11 item 5: 4/4 turns handed off unseen). `--look` writes into
+/// the turn's own folder outside the project (`$OD_LOOK_DIR`), removed
+/// when the turn ends; slides are 0-based (`--index`).
+const LOOK_BEFORE_HANDOFF: &str = "## Look at your render before you finish
+
+Right after the lint step, look at what you made once, as the user will see it. For each HTML file you changed, take one picture:
+
+```sh
+# a page
+\"$OD_NODE_BIN\" \"$OD_BIN\" export \"$OD_PROJECT_ID\" <file> --format image --look --page --width 1280 --height 800 --image-format jpeg
+# a deck: every slide, stacked top to bottom
+\"$OD_NODE_BIN\" \"$OD_BIN\" export \"$OD_PROJECT_ID\" <file> --format image --look --deck --width 1280 --height 720
+```
+
+For a deck of more than 6 slides, take up to 3 single slides you changed instead, adding `--index <n>` (0-based). The command prints the path of the picture; open that file with your image-reading tool and check for visible defects only: text overflowing or cut off, blocks overlapping, a blank page or slide, a broken image. If you see one, fix it in the file and run the lint step again, then stop: one fix round, no second picture. The picture lives in a temporary folder outside the project and is deleted when this turn ends: do not copy it into the project and do not mention its path. If the export fails, skip this step and do not mention it in your reply.";
+
+/// Agent CLIs that can open an image file the turn wrote. Runtime
+/// definitions carry no such capability, so only Claude Code for now.
+const IMAGE_READING_AGENTS: [&str; 1] = ["claude"];
+
+/// Whether the agent `id` can look at a picture of its render
+/// ([`PromptInput::reads_images`]).
+#[must_use]
+pub fn agent_reads_images(id: &str) -> bool {
+    IMAGE_READING_AGENTS.contains(&id)
+}
+
 /// Contour's own rule (QA-110): the preview, PDF and PNG load nothing from
 /// the network (decisions: no outbound network), so a linked web font
 /// never shows there while the exported HTML loads it. It comes after the
@@ -81,6 +109,9 @@ pub struct PromptInput<'a> {
     pub memory: &'a [String],
     /// Design Jury (critique theater) for this run, when enabled.
     pub critique: Option<CritiqueBrief<'a>>,
+    /// The agent can open an image file ([`agent_reads_images`]): the
+    /// turn ends with a look at its own render.
+    pub reads_images: bool,
 }
 
 /// What the Design Jury panel prompt needs.
@@ -310,6 +341,9 @@ pub fn compose_instructions(input: &PromptInput<'_>) -> String {
     }
     if !ask {
         p.push(format!("{SEP}{LINT_BEFORE_HANDOFF}"));
+        if input.reads_images {
+            p.push(format!("{SEP}{LOOK_BEFORE_HANDOFF}"));
+        }
     }
     p.push(format!("{SEP}{STRUCTURED_CLARIFICATION}"));
     p.push(format!("{SEP}{TURN_RENDERING}"));
@@ -920,6 +954,52 @@ mod tests {
         });
         assert!(!ask.contains(rule), "Ask mode writes no file");
         assert!(!ask.contains("--fail-on"));
+    }
+
+    /// PO 28/11 item 5: an agent that reads images looks at its render
+    /// after the lint, with the CLI's real flags (`--look` writes outside
+    /// the project; `--page`/`--deck`, `--index` 0-based), one fix round.
+    /// Not for an agent that cannot open an image, not in Ask mode.
+    #[test]
+    fn an_agent_that_reads_images_looks_at_its_render_after_the_lint() {
+        let rule = "## Look at your render before you finish";
+        let page = r#""$OD_NODE_BIN" "$OD_BIN" export "$OD_PROJECT_ID" <file> --format image --look --page --width 1280 --height 800 --image-format jpeg"#;
+        let deck = r#""$OD_NODE_BIN" "$OD_BIN" export "$OD_PROJECT_ID" <file> --format image --look --deck --width 1280 --height 720"#;
+        for mode in [SessionMode::Design, SessionMode::Plan] {
+            let text = compose_instructions(&PromptInput {
+                session_mode: mode,
+                reads_images: true,
+                ..PromptInput::default()
+            });
+            assert_eq!(text.matches(rule).count(), 1, "{mode:?}");
+            let block = &text[pos(&text, rule)..pos(&text, "## Structured clarification")];
+            assert!(block.contains(page), "{block}");
+            assert!(block.contains(deck), "{block}");
+            assert!(block.contains("`--index <n>` (0-based)"));
+            assert!(block.contains("one fix round, no second picture"));
+            assert!(block.contains("do not copy it into the project"));
+            assert!(block.contains("If the export fails, skip this step"));
+            assert!(
+                pos(&text, "## Lint before you finish") < pos(&text, rule),
+                "after the lint"
+            );
+            let blind = compose_instructions(&PromptInput {
+                session_mode: mode,
+                ..PromptInput::default()
+            });
+            assert!(!blind.contains(rule), "{mode:?}: no image reading");
+            assert!(!blind.contains("--look"));
+        }
+        let ask = compose_instructions(&PromptInput {
+            session_mode: SessionMode::Chat,
+            reads_images: true,
+            ..PromptInput::default()
+        });
+        assert!(!ask.contains(rule), "Ask mode writes no file");
+        assert!(agent_reads_images("claude"));
+        for other in ["codex", "gemini", "opencode", "byok", "", "Claude"] {
+            assert!(!agent_reads_images(other), "{other}");
+        }
     }
 
     /// Spec 1.2 scope, widened for "add X above" (PO 28/11: the agent put
