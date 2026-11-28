@@ -96,7 +96,7 @@ Map: `../../docs/architecture.md`. Paths below are relative to this folder.
     - `../od-content/src/user_content.rs::an_export_copies_only_the_content_reviewed`, `::a_skill_with_no_description_is_copied`,
       `::an_export_names_what_is_there_and_replaces_only_its_own_unfinished_copy`,
       `::export_copies_a_user_skill_and_never_writes_over`, `::an_export_never_shows_a_hidden_folder_in_the_agents_skills`,
-      `::a_folder_made_right_before_the_copy_is_kept`, `::the_skill_md_lands_after_everything_else`
+      `::a_folder_made_right_before_the_copy_is_kept`, `::two_copies_at_once_wait_for_each_other`, `::the_skill_md_lands_after_everything_else`
     - The review marks hidden characters in `SKILL.md` (Unicode `Default_Ignorable_Code_Point` and `Bidi_Control`: tags, zero-width,
       bidi controls and marks, variation selectors, soft hyphen, Hangul fillers…) as `⟨U+…⟩` with a warning
       (`../od-ui/src/app/plugins_page.rs::the_review_marks_every_hidden_character`; the table checked against ICU's data:

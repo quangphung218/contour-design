@@ -2698,6 +2698,39 @@ mod tests {
         );
     }
 
+    /// Two copies of one skill at once: the root's lock holds the second
+    /// off until the first is done, then it finds that copy there. With
+    /// no lock the second would make the folder first and the user's own
+    /// click be refused (or, a copy cut short, one remove the other's).
+    #[test]
+    fn two_copies_at_once_wait_for_each_other() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("data/skills");
+        let dest = tmp.path().join("home/.claude/skills");
+        let tea = skill_dir(&user, "tea", "---\nname: tea\ndescription: D.\n---\n");
+        let hash = hash_of(&tea);
+        let (done, finished) = std::sync::mpsc::channel();
+        let mut second = None;
+        let first = export_skill_with(&user, &tea, "tea", &dest, &hash, || {
+            let (user, tea, dest, hash) = (user.clone(), tea.clone(), dest.clone(), hash.clone());
+            second = Some(std::thread::spawn(move || {
+                let got = export_skill(&user, &tea, "tea", &dest, &hash);
+                let _ = done.send(());
+                got
+            }));
+            // Held off by the lock, it cannot finish while this copy runs.
+            let _ = finished.recv_timeout(std::time::Duration::from_millis(500));
+        });
+        let second = second.unwrap().join().unwrap();
+        assert!(first.is_ok(), "the first copy: {first:?}");
+        assert!(
+            matches!(&second, Err(WriteError::Exists(name)) if name == "tea"),
+            "the second copy: {second:?}"
+        );
+        assert!(dest.join("tea/SKILL.md").is_file());
+        assert!(!dest.join("tea").join(EXPORT_MARK).exists());
+    }
+
     /// Claude Code loads a folder once it has a SKILL.md: that comes last,
     /// so a copy cut short is no skill.
     #[test]
