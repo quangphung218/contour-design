@@ -6,9 +6,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# `od_fs::hostile` for another crate's tests: take it as a dev-dependency only.
+test-support = ["dep:tempfile"]
+
 [dependencies]
 hex.workspace = true
 sha2.workspace = true
+tempfile = { workspace = true, optional = true }
 tracing.workspace = true
 
 [target.'cfg(unix)'.dependencies]

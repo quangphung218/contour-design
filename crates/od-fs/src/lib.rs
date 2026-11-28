@@ -6,5 +6,7 @@
 pub mod nofollow;
 pub mod user_store;
 
-#[cfg(all(test, unix))]
-pub(crate) mod hostile;
+/// A root as an agent leaves it at its worst, for tests (here, and in
+/// another crate with the feature `test-support`).
+#[cfg(all(unix, any(test, feature = "test-support")))]
+pub mod hostile;
