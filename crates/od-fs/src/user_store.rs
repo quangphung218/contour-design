@@ -199,7 +199,10 @@ impl Guard<'_> {
     /// Writes `bytes` as the file at `rel` when what is there is what
     /// `expect` says; the folders on its way must be there. A file there
     /// keeps its permission bits; a read-only one is refused
-    /// (`PermissionDenied`), as a write in place would be.
+    /// (`PermissionDenied`), as a write in place would be. With
+    /// [`Expect::Absent`] the file is made new and never replaces one: one
+    /// an agent made after the read (no lock of ours holds it off) is
+    /// kept, [`WriteError::Stale`].
     ///
     /// # Errors
     /// [`WriteError::Stale`] with nothing written; [`WriteError::Io`] (`rel`
@@ -217,6 +220,12 @@ impl Guard<'_> {
         };
         if !fits {
             return Err(WriteError::Stale);
+        }
+        if expect == Expect::Absent {
+            return match create_under(&self.root.path, rel, bytes) {
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(WriteError::Stale),
+                done => done.map(|()| Tag::of(bytes)).map_err(Into::into),
+            };
         }
         replace_under(&self.root.path, rel, bytes)?;
         Ok(Tag::of(bytes))
@@ -1086,6 +1095,21 @@ fn read_under(root: &Path, rel: &Path, limit: u64) -> Result<Option<ReadFile>, U
 /// name in the same folder, synced, renamed over it.
 #[cfg(unix)]
 fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    put_file_under(root, rel, bytes, false)
+}
+
+/// Makes `rel` under `root` the new file `bytes`, never over anything
+/// there: written through a new file of a random name, synced, then
+/// linked at `rel` (`linkat` fails, `AlreadyExists`, on anything there:
+/// a file, a link, a folder), then the new file's name removed.
+#[cfg(unix)]
+fn create_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    put_file_under(root, rel, bytes, true)
+}
+
+/// [`replace_under`], or [`create_under`] when `new_only`.
+#[cfg(unix)]
+fn put_file_under(root: &Path, rel: &Path, bytes: &[u8], new_only: bool) -> std::io::Result<()> {
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, renameat};
     use nix::sys::stat::{Mode, fstatat};
@@ -1128,8 +1152,16 @@ fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
             file.write_all(bytes)?;
             file.sync_all()
         })
-        .and_then(|()| renameat(&dir, tmp.as_str(), &dir, name).map_err(Into::into));
-    if written.is_err() {
+        .and_then(|()| {
+            if new_only {
+                nix::unistd::linkat(&dir, tmp.as_str(), &dir, name, AtFlags::empty())
+            } else {
+                renameat(&dir, tmp.as_str(), &dir, name)
+            }
+            .map_err(Into::into)
+        });
+    // Linked, the new file's own name goes too.
+    if written.is_err() || new_only {
         let _ = unlinkat(&dir, tmp.as_str(), UnlinkatFlags::NoRemoveDir);
     }
     written
@@ -1151,6 +1183,26 @@ fn new_file_at(
 
 #[cfg(not(unix))]
 fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let path = file_path_under(root, rel)?;
+    let kept = match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.is_file() && m.permissions().readonly() => {
+            return Err(std::io::ErrorKind::PermissionDenied.into());
+        }
+        Ok(m) if m.is_file() => Some(m.permissions()),
+        _ => None,
+    };
+    nofollow::replace_file(&path, bytes, kept)
+}
+
+#[cfg(not(unix))]
+fn create_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    nofollow::create_file(&file_path_under(root, rel)?, bytes)
+}
+
+/// The path of `rel` under `root`, its folders checked (no link below the
+/// entry).
+#[cfg(not(unix))]
+fn file_path_under(root: &Path, rel: &Path) -> std::io::Result<PathBuf> {
     let (dirs, _) = split(rel)?;
     let mut at = root.to_path_buf();
     for (depth, dir) in dirs.iter().enumerate() {
@@ -1165,15 +1217,7 @@ fn replace_under(root: &Path, rel: &Path, bytes: &[u8]) -> std::io::Result<()> {
             return Err(std::io::ErrorKind::NotADirectory.into());
         }
     }
-    let path = root.join(rel);
-    let kept = match std::fs::symlink_metadata(&path) {
-        Ok(m) if m.is_file() && m.permissions().readonly() => {
-            return Err(std::io::ErrorKind::PermissionDenied.into());
-        }
-        Ok(m) if m.is_file() => Some(m.permissions()),
-        _ => None,
-    };
-    nofollow::replace_file(&path, bytes, kept)
+    Ok(root.join(rel))
 }
 
 #[cfg(test)]
